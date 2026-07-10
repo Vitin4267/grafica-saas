@@ -1,0 +1,489 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Cada gráfica é um tenant: todo dado abaixo pertence a uma Grafica
+// e nunca deve vazar entre tenants nas queries da aplicação.
+model Grafica {
+  id        String   @id @default(cuid())
+  nome      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Liga/desliga o compartilhamento da aba "Meu Negócio" com a equipe (não-DONO).
+  // Controle fino de quem exatamente vê fica em Usuario.acessoMeuNegocio — os dois
+  // precisam ser verdadeiros pra um funcionário enxergar a aba (ver podeVerMeuNegocio).
+  compartilharMeuNegocio Boolean @default(false)
+
+  usuarios              Usuario[]
+  clientes              Cliente[]
+  itensGrafica          ItemGrafica[]
+  itensCatalogoPrivados ItemCatalogo[]
+  orcamentos            Orcamento[]
+  pedidos               Pedido[]
+  parametros            ParametrosGrafica?
+
+  @@map("graficas")
+}
+
+// Parâmetros globais do motor de precificação avançado (M2/OFFSET), um por tenant.
+// v1: assume uma "prensa virtual" única por gráfica (custoHoraMaq, torres, etc.) —
+// suficiente pra maioria das gráficas pequenas/médias, sem modelar múltiplas máquinas.
+model ParametrosGrafica {
+  id        String @id @default(cuid())
+  graficaId String @unique
+
+  // Composição final do preço (spec §0 e §4)
+  overheadPercent          Decimal @default(0.15) @db.Decimal(5, 4)
+  margemPadrao             Decimal @default(0.20) @db.Decimal(5, 4)
+  impostoPercent           Decimal @default(0.06) @db.Decimal(5, 4)
+  comissaoPercent          Decimal @default(0) @db.Decimal(5, 4)
+  taxaFinanceiraPercent    Decimal @default(0) @db.Decimal(5, 4)
+  pedidoMinimo             Decimal @default(0) @db.Decimal(12, 2)
+  incrementoArredondamento Decimal @default(0.10) @db.Decimal(6, 2)
+
+  // Prensa offset virtual (spec §2)
+  custoHoraMaq       Decimal @default(0) @db.Decimal(12, 4)
+  torres             Int     @default(4)
+  custoChapa         Decimal @default(0) @db.Decimal(12, 4)
+  folhasAcerto       Int     @default(150)
+  tempoAcertoH       Decimal @default(0.5) @db.Decimal(6, 4)
+  custoMilheiroRod   Decimal @default(0) @db.Decimal(12, 4)
+  rodagemMinima      Decimal @default(0) @db.Decimal(12, 4)
+  perdaPercentPadrao Decimal @default(0.03) @db.Decimal(5, 4)
+
+  // Defaults de nesting em bobina (spec §1: s, g)
+  margemSegurancaPadrao Decimal @default(0.02) @db.Decimal(5, 4)
+  gapPecasPadrao        Decimal @default(0.008) @db.Decimal(5, 4)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+
+  @@map("parametros_grafica")
+}
+
+enum PapelUsuario {
+  DONO
+  ADMIN
+  OPERADOR
+}
+
+model Usuario {
+  id           String       @id @default(cuid())
+  graficaId    String
+  nome         String
+  email        String       @unique
+  senhaHash    String
+  papel        PapelUsuario @default(OPERADOR)
+  createdAt    DateTime     @default(now())
+
+  // Concedido individualmente pelo DONO em /usuarios. Só tem efeito se
+  // Grafica.compartilharMeuNegocio também estiver ligado — ver podeVerMeuNegocio.
+  // Irrelevante pra DONO, que sempre tem acesso.
+  acessoMeuNegocio Boolean @default(false)
+
+  grafica    Grafica     @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamentos Orcamento[]
+  sessoes    Sessao[]
+
+  @@index([graficaId])
+  @@map("usuarios")
+}
+
+// Sessão opaca: o cookie do usuário guarda só o token bruto, nunca persistido em texto puro aqui.
+// Guardar apenas o hash do token faz um vazamento do banco não virar sessões utilizáveis,
+// e apagar a linha revoga a sessão imediatamente (logout, troca de senha, etc).
+model Sessao {
+  id        String   @id @default(cuid())
+  usuarioId String
+  tokenHash String   @unique
+  userAgent String?
+  ip        String?
+  criadaEm  DateTime @default(now())
+  expiraEm  DateTime
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+  @@map("sessoes")
+}
+
+// Registro de tentativas de login (sucesso e falha) para permitir bloqueio temporário
+// por e-mail e por IP contra ataques de força bruta, sobrevivendo a reinícios do servidor.
+model TentativaLogin {
+  id        String   @id @default(cuid())
+  email     String
+  ip        String
+  sucesso   Boolean
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt])
+  @@map("tentativas_login")
+}
+
+model Cliente {
+  id        String   @id @default(cuid())
+  graficaId String
+  nome      String
+  email     String?
+  telefone  String?
+  documento String? // CPF ou CNPJ
+  createdAt DateTime @default(now())
+
+  grafica    Grafica     @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamentos Orcamento[]
+
+  @@index([graficaId])
+  @@map("clientes")
+}
+
+enum UnidadeMedida {
+  FOLHA
+  METRO_QUADRADO
+  METRO_LINEAR
+  UNIDADE
+  LITRO
+  KG
+  ROLO
+  PACOTE
+  CENTO
+  HORA
+}
+
+enum TipoItemCatalogo {
+  PRODUTO
+  MATERIA_PRIMA
+  SERVICO
+}
+
+// Modelo de cálculo de um PRODUTO: SIMPLES é o preço direto (precoVenda × área/quantidade,
+// como sempre funcionou); M2 e OFFSET acionam o motor avançado (src/lib/pricing) e exigem
+// configuração extra (bobinas ou formatos de folha). Sempre opt-in por item, nunca default.
+enum ModeloCalculo {
+  SIMPLES
+  M2
+  OFFSET
+}
+
+// Como um acabamento (SERVICO) é cobrado — spec §3. FOLHA_IMPRESSA é o caso mais sutil:
+// cobra pela folha de máquina ANTES do refile (ex: BOPP), não pela peça final.
+enum BaseCobranca {
+  UNIDADE
+  M2
+  FOLHA_IMPRESSA
+  METRO_LINEAR
+  FIXO
+  HORA
+}
+
+enum EstagioAcabamento {
+  PRE_REFILE
+  POS_REFILE
+}
+
+// Catálogo: base é mestre e compartilhada entre todas as gráficas (graficaId=null,
+// só criada via seed). Cada gráfica pode complementar com itens próprios que faltem
+// (graficaId preenchido, criados pelo botão "Adicionar" em /catalogo) — esses ficam
+// privados: só a gráfica dona vê e pode selecionar (ver salvarCatalogo/página do
+// catálogo, que sempre filtram por graficaId=null OU graficaId=tenant atual).
+// Cada gráfica escolhe, em ItemGrafica, o que ela realmente oferece/usa e define
+// seus próprios preços — o item de catálogo em si nunca muda por tenant.
+model ItemCatalogo {
+  id        String           @id @default(cuid())
+  graficaId String? // null = catálogo mestre; preenchido = item privado dessa gráfica
+  tipo      TipoItemCatalogo
+  categoria String
+  nome      String
+  descricao String?
+  unidade   UnidadeMedida?
+  createdAt DateTime         @default(now())
+
+  grafica      Grafica?      @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  itensGrafica ItemGrafica[]
+
+  // Nota: como o Postgres trata NULL como distinto em índices únicos, esta
+  // constraint não impede globais (graficaId=null) duplicados entre si — por
+  // isso o seed faz a própria checagem de duplicidade em vez de contar só com
+  // isto (ver prisma/seed.ts). Para itens privados (graficaId preenchido) a
+  // constraint funciona normalmente.
+  @@unique([graficaId, tipo, nome])
+  @@index([tipo, categoria])
+  @@index([graficaId])
+  @@map("itens_catalogo")
+}
+
+// Seleção da gráfica dentro do catálogo mestre: liga a gráfica a um ItemCatalogo
+// e guarda os preços que ELA define (compra = custo de aquisição/produção,
+// venda = quanto cobra do cliente). ativo=false "desliga" o item sem apagar
+// histórico (orçamentos e movimentações de estoque continuam íntegros).
+model ItemGrafica {
+  id             String   @id @default(cuid())
+  graficaId      String
+  itemCatalogoId String
+  ativo          Boolean  @default(true)
+  precoCompra    Decimal? @db.Decimal(12, 4)
+  precoVenda     Decimal? @db.Decimal(12, 2)
+  estoqueAtual   Decimal? @db.Decimal(12, 4)
+  estoqueMinimo  Decimal? @db.Decimal(12, 4)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Motor avançado — só relevante quando tipo=PRODUTO no ItemCatalogo relacionado.
+  modeloCalculo ModeloCalculo @default(SIMPLES)
+  viraFolha     Boolean       @default(false) // work-and-turn; só usado quando modeloCalculo=OFFSET
+
+  // Só relevante quando tipo=MATERIA_PRIMA e o material é papel usado em OFFSET.
+  // Separado de precoCompra pois a unidade de custo aqui é R$/kg, não R$/folha ou R$/m².
+  precoPorKg   Decimal? @db.Decimal(12, 4)
+  gramaturaGm2 Decimal? @db.Decimal(6, 1)
+
+  // Só relevante quando tipo=PRODUTO e modeloCalculo=M2.
+  custoImpressaoM2    Decimal? @db.Decimal(12, 4)
+  areaMinimaFaturavel Decimal? @db.Decimal(8, 4)
+
+  grafica      Grafica      @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  itemCatalogo ItemCatalogo @relation(fields: [itemCatalogoId], references: [id])
+
+  itensOrcamento OrcamentoItem[]
+  movimentacoes  MovimentacaoEstoque[]
+
+  bobinas                BobinaMaterial[]
+  formatosFolha          FormatoFolha[]
+  configuracaoAcabamento ConfiguracaoAcabamento?
+  usadoComoAcabamento    OrcamentoItemAcabamento[]
+
+  // Ficha técnica (spec de baixa automática de estoque): só relevante quando
+  // tipo=PRODUTO. fichaTecnica = quais matérias-primas este produto consome;
+  // usadoComoMateriaPrima = em quais fichas técnicas esta matéria-prima aparece.
+  fichaTecnica           FichaTecnicaItem[] @relation("FichaTecnicaDoProduto")
+  usadoComoMateriaPrima  FichaTecnicaItem[] @relation("MateriaPrimaConsumida")
+
+  @@unique([graficaId, itemCatalogoId])
+  @@index([graficaId])
+  @@map("itens_grafica")
+}
+
+// Quanto de uma matéria-prima um produto consome por unidade vendida (ex: 1 Cartão de
+// Visita consome 0,002 folha de Papel Couché 300g). Alimenta a baixa automática de
+// estoque quando um Pedido entra em produção (ver avancarPedido) — v1 só cobre
+// PRODUTO×quantidade do OrcamentoItem; acabamentos/serviços consumindo material próprio
+// (ex: BOPP na laminação) ficam de fora por ora.
+model FichaTecnicaItem {
+  id                   String   @id @default(cuid())
+  itemGraficaId        String // o produto (ItemGrafica tipo PRODUTO)
+  materiaPrimaId       String // a matéria-prima consumida (outro ItemGrafica, tipo MATERIA_PRIMA)
+  quantidadePorUnidade Decimal  @db.Decimal(12, 6)
+  createdAt            DateTime @default(now())
+
+  itemGrafica  ItemGrafica @relation("FichaTecnicaDoProduto", fields: [itemGraficaId], references: [id], onDelete: Cascade)
+  materiaPrima ItemGrafica @relation("MateriaPrimaConsumida", fields: [materiaPrimaId], references: [id], onDelete: Cascade)
+
+  @@unique([itemGraficaId, materiaPrimaId])
+  @@index([itemGraficaId])
+  @@index([materiaPrimaId])
+  @@map("ficha_tecnica_itens")
+}
+
+// Opções de bobina de um material (ex: Lona 440g vem em rolos de 1,00/1,20/1,50m).
+// custoM2 não é duplicado aqui — vem de ItemGrafica.precoCompra (fonte única).
+model BobinaMaterial {
+  id             String   @id @default(cuid())
+  itemGraficaId  String
+  larguraNominal Decimal  @db.Decimal(6, 3) // W_nominal, metros
+  refile         Decimal  @db.Decimal(6, 3) // m_refile por lado, metros
+  createdAt      DateTime @default(now())
+
+  itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id], onDelete: Cascade)
+
+  @@index([itemGraficaId])
+  @@map("bobinas_material")
+}
+
+// Formatos de folha de máquina de um papel (ex: Couché 300g em 66x96 e 33x48).
+model FormatoFolha {
+  id            String   @id @default(cuid())
+  itemGraficaId String
+  nome          String // ex: "Fechada 66x96"
+  larguraFolha  Decimal  @db.Decimal(6, 3) // L_f, metros
+  alturaFolha   Decimal  @db.Decimal(6, 3) // A_f, metros
+  createdAt     DateTime @default(now())
+
+  itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id], onDelete: Cascade)
+
+  @@index([itemGraficaId])
+  @@map("formatos_folha")
+}
+
+// Configura um SERVICO como acabamento do motor avançado (spec §3).
+// custoUnitario da fórmula não é campo novo — é o ItemGrafica.precoCompra do próprio serviço.
+model ConfiguracaoAcabamento {
+  id               String            @id @default(cuid())
+  itemGraficaId    String            @unique
+  baseCobranca     BaseCobranca
+  estagio          EstagioAcabamento
+  custoSetup       Decimal           @default(0) @db.Decimal(12, 4)
+  custoMinimo      Decimal           @default(0) @db.Decimal(12, 4)
+  custoFerramental Decimal?          @db.Decimal(12, 4)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id], onDelete: Cascade)
+
+  @@map("configuracoes_acabamento")
+}
+
+enum TipoMovimentacao {
+  ENTRADA
+  SAIDA
+}
+
+model MovimentacaoEstoque {
+  id            String           @id @default(cuid())
+  itemGraficaId String
+  tipo          TipoMovimentacao
+  quantidade    Decimal          @db.Decimal(12, 4)
+  motivo        String?
+  createdAt     DateTime         @default(now())
+
+  itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id], onDelete: Cascade)
+
+  @@index([itemGraficaId])
+  @@map("movimentacoes_estoque")
+}
+
+enum StatusOrcamento {
+  RASCUNHO
+  ENVIADO
+  APROVADO
+  REJEITADO
+}
+
+model Orcamento {
+  id               String          @id @default(cuid())
+  graficaId        String
+  clienteId        String
+  usuarioId        String
+  status           StatusOrcamento @default(RASCUNHO)
+  total            Decimal         @default(0) @db.Decimal(12, 2)
+  linkPublicoToken String?         @unique
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  cliente Cliente @relation(fields: [clienteId], references: [id])
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+  itens   OrcamentoItem[]
+  pedido  Pedido?
+
+  pagamentos Pagamento[]
+
+  @@index([graficaId])
+  @@map("orcamentos")
+}
+
+enum FormaPagamento {
+  DINHEIRO
+  PIX
+  CARTAO
+  BOLETO
+  TRANSFERENCIA
+  OUTRO
+}
+
+// Registro de pagamento (entrada, parcela, quitação) de um orçamento aprovado. Saldo
+// devedor é sempre calculado (total - soma dos pagamentos), nunca armazenado — evita
+// dessincronia. Só criado com o orçamento em APROVADO (ver registrarPagamento).
+model Pagamento {
+  id          String         @id @default(cuid())
+  orcamentoId String
+  valor       Decimal        @db.Decimal(12, 2)
+  forma       FormaPagamento
+  observacao  String?
+  createdAt   DateTime       @default(now())
+
+  orcamento Orcamento @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+
+  @@index([orcamentoId])
+  @@map("pagamentos")
+}
+
+model OrcamentoItem {
+  id            String   @id @default(cuid())
+  orcamentoId   String
+  itemGraficaId String
+  quantidade    Int
+  larguraCm     Decimal? @db.Decimal(8, 2)
+  alturaCm      Decimal? @db.Decimal(8, 2)
+  cores         String? // ex: "4x0", "4x4" — snapshot legível, sempre preenchido
+  acabamento    String? // texto livre, modo SIMPLES apenas
+
+  precoUnitario Decimal @db.Decimal(12, 2)
+  precoTotal    Decimal @db.Decimal(12, 2)
+
+  // Motor avançado (M2/OFFSET): snapshot do modelo usado + árvore de custo auditável
+  // (spec §0d). Fica null pra itens SIMPLES — nada muda no caminho existente.
+  modeloCalculo ModeloCalculo @default(SIMPLES)
+  corFrente     Int?
+  corVerso      Int?
+  breakdown     Json?
+
+  orcamento   Orcamento   @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+  itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id])
+
+  acabamentos OrcamentoItemAcabamento[]
+
+  @@index([orcamentoId])
+  @@map("orcamento_itens")
+}
+
+// Acabamentos estruturados aplicados a um item de orçamento no motor avançado
+// (substitui o texto livre "acabamento" quando modeloCalculo != SIMPLES).
+model OrcamentoItemAcabamento {
+  id              String  @id @default(cuid())
+  orcamentoItemId String
+  itemGraficaId   String // o SERVICO usado como acabamento
+  qtdBase         Decimal @db.Decimal(12, 4) // snapshot da base de cobrança usada
+  custoCalculado  Decimal @db.Decimal(12, 4)
+
+  orcamentoItem OrcamentoItem @relation(fields: [orcamentoItemId], references: [id], onDelete: Cascade)
+  itemGrafica   ItemGrafica   @relation(fields: [itemGraficaId], references: [id])
+
+  @@index([orcamentoItemId])
+  @@map("orcamento_item_acabamentos")
+}
+
+enum StatusPedido {
+  FILA
+  IMPRESSAO
+  ACABAMENTO
+  PRONTO
+  ENTREGUE
+}
+
+// Pedido nasce quando um Orcamento é aprovado: acompanha a produção física.
+model Pedido {
+  id          String       @id @default(cuid())
+  graficaId   String
+  orcamentoId String       @unique
+  status      StatusPedido @default(FILA)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  grafica   Grafica   @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamento Orcamento @relation(fields: [orcamentoId], references: [id])
+
+  @@index([graficaId])
+  @@map("pedidos")
+}
