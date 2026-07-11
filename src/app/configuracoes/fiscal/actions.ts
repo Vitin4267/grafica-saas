@@ -45,6 +45,12 @@ export async function salvarDadosFiscais(
     dados[campo] = typeof valor === "string" && valor.trim() ? valor.trim() : null;
   }
 
+  // CEP alimenta a emissão de nota fiscal de verdade (Focus NFe) — falhar
+  // aqui, com mensagem clara, é melhor que só descobrir na hora de emitir.
+  if (dados.enderecoCep && !/^\d{5}-?\d{3}$/.test(dados.enderecoCep)) {
+    return { ok: false, mensagem: "CEP inválido — use o formato 00000-000." };
+  }
+
   // Campo de token é write-only: em branco = "manter o valor salvo" (nunca
   // reexibimos o token de verdade no formulário, só os últimos 4 caracteres).
   const novoToken = formData.get("focusNfeToken");

@@ -25,6 +25,14 @@ export const ENDERECO_VAZIO: ValoresEndereco = {
   codigoIbge: "",
 };
 
+// Mantém formato 00000-000 enquanto digita — nunca converte pra number (CEP
+// começa com 0 em várias regiões do país, "01310-100" viraria 1310100).
+function formatarCep(valor: string): string {
+  const digitos = valor.replace(/\D/g, "").slice(0, 8);
+  if (digitos.length <= 5) return digitos;
+  return `${digitos.slice(0, 5)}-${digitos.slice(5)}`;
+}
+
 type RespostaViaCep = {
   erro?: boolean;
   logradouro?: string;
@@ -81,9 +89,15 @@ export function EnderecoFields({
         label="CEP"
         name="enderecoCep"
         value={endereco.cep}
-        onChange={(e) => definirCampo("cep")(e.target.value)}
+        onChange={(e) => definirCampo("cep")(formatarCep(e.target.value))}
         onBlur={(e) => buscarPorCep(e.target.value)}
         placeholder="00000-000"
+        inputMode="numeric"
+        maxLength={9}
+        // Desligado de propósito: o navegador às vezes "adivinha" errado e
+        // enfia o nome da rua salva aqui dentro. A busca por CEP (ViaCEP)
+        // já cobre o autopreenchimento de forma confiável.
+        autoComplete="off"
         hint={buscandoCep ? "Buscando endereço..." : undefined}
       />
       <Input
@@ -91,30 +105,35 @@ export function EnderecoFields({
         name="enderecoNumero"
         value={endereco.numero}
         onChange={(e) => definirCampo("numero")(e.target.value)}
+        autoComplete="off"
       />
       <Input
         label="Logradouro"
         name="enderecoLogradouro"
         value={endereco.logradouro}
         onChange={(e) => definirCampo("logradouro")(e.target.value)}
+        autoComplete="off"
       />
       <Input
         label="Complemento"
         name="enderecoComplemento"
         value={endereco.complemento}
         onChange={(e) => definirCampo("complemento")(e.target.value)}
+        autoComplete="off"
       />
       <Input
         label="Bairro"
         name="enderecoBairro"
         value={endereco.bairro}
         onChange={(e) => definirCampo("bairro")(e.target.value)}
+        autoComplete="off"
       />
       <Input
         label="Município"
         name="enderecoMunicipio"
         value={endereco.municipio}
         onChange={(e) => definirCampo("municipio")(e.target.value)}
+        autoComplete="off"
       />
       <Input
         label="UF"
@@ -122,6 +141,7 @@ export function EnderecoFields({
         value={endereco.uf}
         onChange={(e) => definirCampo("uf")(e.target.value.toUpperCase())}
         maxLength={2}
+        autoComplete="off"
       />
     </div>
   );

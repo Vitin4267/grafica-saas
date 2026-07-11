@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -26,6 +26,14 @@ type ValoresFiscais = {
   csosnPadrao: string;
 };
 
+// Mantém formato 00000-000 enquanto digita — nunca converte pra number (CEP
+// começa com 0 em várias regiões do país, "01310-100" viraria 1310100).
+function formatarCep(valor: string): string {
+  const digitos = valor.replace(/\D/g, "").slice(0, 8);
+  if (digitos.length <= 5) return digitos;
+  return `${digitos.slice(0, 5)}-${digitos.slice(5)}`;
+}
+
 export function DadosFiscaisForm({
   valoresIniciais,
   tokenMascarado,
@@ -34,6 +42,7 @@ export function DadosFiscaisForm({
   tokenMascarado: string | null;
 }) {
   const [state, formAction, isPending] = useActionState(salvarDadosFiscais, null);
+  const [cep, setCep] = useState(valoresIniciais.enderecoCep);
 
   return (
     <form action={formAction} className="flex flex-col gap-6">
@@ -99,37 +108,54 @@ export function DadosFiscaisForm({
           Endereço da empresa
         </h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Input label="CEP" name="enderecoCep" type="text" defaultValue={valoresIniciais.enderecoCep} />
+          <Input
+            label="CEP"
+            name="enderecoCep"
+            type="text"
+            value={cep}
+            onChange={(e) => setCep(formatarCep(e.target.value))}
+            placeholder="00000-000"
+            inputMode="numeric"
+            maxLength={9}
+            // Desligado de propósito: o navegador às vezes "adivinha" errado
+            // e enfia o nome da rua salva aqui dentro.
+            autoComplete="off"
+          />
           <Input
             label="UF"
             name="enderecoUf"
             type="text"
             maxLength={2}
             defaultValue={valoresIniciais.enderecoUf}
+            autoComplete="off"
           />
           <Input
             label="Logradouro"
             name="enderecoLogradouro"
             type="text"
             defaultValue={valoresIniciais.enderecoLogradouro}
+            autoComplete="off"
           />
           <Input
             label="Número"
             name="enderecoNumero"
             type="text"
             defaultValue={valoresIniciais.enderecoNumero}
+            autoComplete="off"
           />
           <Input
             label="Bairro"
             name="enderecoBairro"
             type="text"
             defaultValue={valoresIniciais.enderecoBairro}
+            autoComplete="off"
           />
           <Input
             label="Município"
             name="enderecoMunicipio"
             type="text"
             defaultValue={valoresIniciais.enderecoMunicipio}
+            autoComplete="off"
           />
         </div>
       </Card>
