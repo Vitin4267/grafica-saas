@@ -1,8 +1,16 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import {
+  podeVerMeuNegocio,
+  exigirVerModulo,
+  obterModulosVisiveis,
+} from "@/lib/auth/permissoes";
+import { resolverOrigemPublica } from "@/lib/url-publica";
+import { buscarCustoRealVsOrcado } from "@/lib/custo-producao";
+import { verificarProntidaoFiscal } from "@/lib/nota-fiscal";
+import { formatoMoeda } from "@/lib/moeda";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/Badge";
@@ -13,6 +21,8 @@ import { AdicionarItemForm } from "./AdicionarItemForm";
 import { TrocarClienteForm } from "./TrocarClienteForm";
 import { CompartilharOrcamento } from "./CompartilharOrcamento";
 import { PagamentosCard } from "./PagamentosCard";
+import { CustoProducaoCard } from "./CustoProducaoCard";
+import { NotaFiscalCard } from "./NotaFiscalCard";
 
 export default async function OrcamentoDetalhePage({
   params,
@@ -21,11 +31,8 @@ export default async function OrcamentoDetalhePage({
 }) {
   const { id } = await params;
   const usuario = await exigirUsuarioAutenticado();
-  const headerList = await headers();
-  const origem = `${
-    headerList.get("x-forwarded-proto") ??
-    (process.env.NODE_ENV === "production" ? "https" : "http")
-  }://${headerList.get("host")}`;
+  await exigirVerModulo(usuario, "ORCAMENTO");
+  const origem = await resolverOrigemPublica();
 
   const [orcamento, clientes, itensVendaveis] = await Promise.all([
     prisma.orcamento.findFirst({
@@ -33,6 +40,7 @@ export default async function OrcamentoDetalhePage({
       include: {
         cliente: true,
         pedido: true,
+        notaFiscal: true,
         itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
         pagamentos: { orderBy: { createdAt: "desc" } },
       },
@@ -52,26 +60,34 @@ export default async function OrcamentoDetalhePage({
     notFound();
   }
 
-  // TODO(review): esse Intl.NumberFormat pt-BR/BRL está redeclarado em pelo
-  // menos 6 arquivos (orcamento/page.tsx, CalculadoraForm.tsx, este arquivo,
-  // o/[token]/page.tsx, PagamentosCard.tsx, meu-negocio/page.tsx) sem nenhum
-  // helper compartilhado — um ajuste de formatação exige editar todos. Valeria
-  // extrair pra algo como src/lib/moeda.ts.
-  const formatoMoeda = new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
+  const custoComparado = orcamento.pedido
+    ? await buscarCustoRealVsOrcado(orcamento.pedido.id, usuario.graficaId)
+    : null;
+
+  let checagemFiscal: { pronto: boolean; pendencias: string[] } | null = null;
+  if (orcamento.status === "APROVADO" && !orcamento.notaFiscal) {
+    const dadosFiscais = await prisma.dadosFiscaisGrafica.findUnique({
+      where: { graficaId: usuario.graficaId },
+    });
+    checagemFiscal = verificarProntidaoFiscal({
+      dadosFiscais,
+      cliente: orcamento.cliente,
+      itens: orcamento.itens.map((item) => ({
+        nome: item.itemGrafica.itemCatalogo.nome,
+        ncm: item.itemGrafica.itemCatalogo.ncm,
+      })),
+    });
+  }
 
   return (
     <div className="flex flex-1 flex-col">
-      {/* TODO(review): falta mostrarMeuNegocio={podeVerMeuNegocio(usuario)} — sem
-          isso o link "Meu Negócio" some do menu enquanto o usuário está nesta
-          página, mesmo tendo acesso. Ver TODO em src/components/UserNav.tsx. */}
       <UserNav
         nome={usuario.nome}
         graficaNome={usuario.grafica.nome}
         papel={usuario.papel}
         paginaAtual="/orcamento"
+        mostrarMeuNegocio={podeVerMeuNegocio(usuario)}
+        modulosVisiveis={await obterModulosVisiveis(usuario)}
       />
 
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-10">
@@ -177,9 +193,17 @@ export default async function OrcamentoDetalhePage({
         </Card>
 
         <Card className="mb-6 p-5">
-          <p className="mb-3 text-sm font-medium text-slate-500">
-            Compartilhar com o cliente
-          </p>
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-sm font-medium text-slate-500">
+              Compartilhar com o cliente
+            </p>
+            <a
+              href={`/orcamento/${orcamento.id}/pdf`}
+              className="text-xs font-medium text-teal-700 hover:underline dark:text-teal-400"
+            >
+              Baixar PDF
+            </a>
+          </div>
           <CompartilharOrcamento
             orcamentoId={orcamento.id}
             linkExistente={
@@ -213,6 +237,18 @@ export default async function OrcamentoDetalhePage({
               <StatusBadge status={orcamento.pedido.status} tipo="pedido" />
             </Card>
           </Link>
+        )}
+
+        {custoComparado && custoComparado.itens.length > 0 && (
+          <CustoProducaoCard comparacao={custoComparado} />
+        )}
+
+        {orcamento.status === "APROVADO" && (
+          <NotaFiscalCard
+            orcamentoId={orcamento.id}
+            notaFiscal={orcamento.notaFiscal}
+            pendencias={checagemFiscal?.pendencias ?? []}
+          />
         )}
 
         <OrcamentoAcoes orcamentoId={orcamento.id} status={orcamento.status} />

@@ -5,15 +5,8 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { UsersIcon } from "@/components/icons";
+import { ROTULO_PAPEL } from "@/lib/papel-usuario";
 import { salvarAcessoMeuNegocio } from "./actions";
-
-// TODO(review): subconjunto duplicado do ROTULO_PAPEL de src/app/usuarios/page.tsx
-// (mesma pasta, arquivo vizinho) — se o rótulo de um papel mudar, dá pra
-// atualizar um e esquecer o outro. Valeria importar de um lugar só.
-const ROTULO_PAPEL: Record<string, string> = {
-  ADMIN: "Administrador",
-  OPERADOR: "Operador",
-};
 
 type Funcionario = {
   id: string;

@@ -31,13 +31,19 @@ model Grafica {
   orcamentos            Orcamento[]
   pedidos               Pedido[]
   parametros            ParametrosGrafica?
+  prensas               Prensa[]
+  dadosFiscais          DadosFiscaisGrafica?
+  notasFiscais          NotaFiscal[]
+  assistente            AssistenteGrafica?
+  despesas              Despesa[]
+  logsAuditoria         LogAuditoria[]
 
   @@map("graficas")
 }
 
 // Parâmetros globais do motor de precificação avançado (M2/OFFSET), um por tenant.
-// v1: assume uma "prensa virtual" única por gráfica (custoHoraMaq, torres, etc.) —
-// suficiente pra maioria das gráficas pequenas/médias, sem modelar múltiplas máquinas.
+// Os campos de custo de máquina (torres, custoHoraMaq etc.) viraram o modelo Prensa
+// — um tenant pode ter várias prensas offset com custos/rendimentos diferentes.
 model ParametrosGrafica {
   id        String @id @default(cuid())
   graficaId String @unique
@@ -51,16 +57,6 @@ model ParametrosGrafica {
   pedidoMinimo             Decimal @default(0) @db.Decimal(12, 2)
   incrementoArredondamento Decimal @default(0.10) @db.Decimal(6, 2)
 
-  // Prensa offset virtual (spec §2)
-  custoHoraMaq       Decimal @default(0) @db.Decimal(12, 4)
-  torres             Int     @default(4)
-  custoChapa         Decimal @default(0) @db.Decimal(12, 4)
-  folhasAcerto       Int     @default(150)
-  tempoAcertoH       Decimal @default(0.5) @db.Decimal(6, 4)
-  custoMilheiroRod   Decimal @default(0) @db.Decimal(12, 4)
-  rodagemMinima      Decimal @default(0) @db.Decimal(12, 4)
-  perdaPercentPadrao Decimal @default(0.03) @db.Decimal(5, 4)
-
   // Defaults de nesting em bobina (spec §1: s, g)
   margemSegurancaPadrao Decimal @default(0.02) @db.Decimal(5, 4)
   gapPecasPadrao        Decimal @default(0.008) @db.Decimal(5, 4)
@@ -71,6 +67,153 @@ model ParametrosGrafica {
   grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
 
   @@map("parametros_grafica")
+}
+
+// Uma prensa offset física do tenant. Produtos com modeloCalculo=OFFSET escolhem
+// uma prensa específica em ItemGrafica.prensaId — cada prensa tem seu próprio
+// custo de hora-máquina, chapas, torres etc. (ver spec §2, antes vivia em
+// ParametrosGrafica como uma "prensa virtual" única por gráfica).
+model Prensa {
+  id        String  @id @default(cuid())
+  graficaId String
+  nome      String
+  ativa     Boolean @default(true)
+
+  custoHoraMaq       Decimal @default(0) @db.Decimal(12, 4)
+  torres             Int     @default(4)
+  custoChapa         Decimal @default(0) @db.Decimal(12, 4)
+  folhasAcerto       Int     @default(150)
+  tempoAcertoH       Decimal @default(0.5) @db.Decimal(6, 4)
+  custoMilheiroRod   Decimal @default(0) @db.Decimal(12, 4)
+  rodagemMinima      Decimal @default(0) @db.Decimal(12, 4)
+  perdaPercentPadrao Decimal @default(0.03) @db.Decimal(5, 4)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica  Grafica       @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  produtos ItemGrafica[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("prensas")
+}
+
+// Dados fiscais da gráfica pra emitir nota fiscal via Focus NFe — 100% opt-in,
+// nunca pedido em /comecar ou /login, só configurado quando a gráfica realmente
+// for usar a função (ver NotaFiscalCard em /orcamento/[id]). Cada gráfica traz
+// sua PRÓPRIA conta na Focus NFe (não uma conta compartilhada do grafica-saas):
+// o token abaixo é o dela, e o site nunca armazena/manuseia certificado digital
+// — isso fica inteiramente do lado da Focus NFe.
+//
+// A API da Focus NFe exige os dados do emitente (CNPJ, razão social, endereço)
+// em TODA chamada de emissão — não fica pré-configurado na conta deles, por
+// isso precisamos guardar aqui também (confirmado no exemplo oficial da API).
+model DadosFiscaisGrafica {
+  id        String @id @default(cuid())
+  graficaId String @unique
+
+  focusNfeToken String? // token da CONTA DELES na Focus NFe — nunca uma conta nossa
+  ambiente      String  @default("homologacao") // homologacao | producao — nasce em homologação por segurança
+
+  cnpj              String?
+  razaoSocial       String?
+  nomeFantasia      String?
+  inscricaoEstadual String?
+  regimeTributario  String? // informativo (ex: "Simples Nacional") — orienta o CSOSN padrão
+
+  enderecoCep        String?
+  enderecoLogradouro String?
+  enderecoNumero     String?
+  enderecoBairro     String?
+  enderecoMunicipio  String?
+  enderecoUf         String?
+
+  naturezaOperacaoPadrao String @default("Venda de mercadoria")
+  cfopPadrao             String @default("5102") // venda dentro do estado, mercadoria de terceiros
+  csosnPadrao            String @default("102")  // Simples Nacional, tributada sem permissão de crédito
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+
+  @@map("dados_fiscais_grafica")
+}
+
+enum StatusNotaFiscal {
+  PROCESSANDO
+  AUTORIZADA
+  REJEITADA
+  CANCELADA
+  ERRO
+}
+
+// Uma nota fiscal emitida (ou em processamento) pra um orçamento aprovado.
+// 1:1 com Orcamento — mesmo padrão de Pedido. `referencia` é a chave que
+// mandamos pra Focus NFe pra identificar essa emissão (idempotência do lado
+// deles); `chaveAcesso` só existe depois de AUTORIZADA.
+model NotaFiscal {
+  id           String           @id @default(cuid())
+  graficaId    String
+  orcamentoId  String           @unique
+  referencia   String           @unique
+  status       StatusNotaFiscal @default(PROCESSANDO)
+  numero       String?
+  serie        String?
+  chaveAcesso  String?
+  xmlUrl       String?
+  danfeUrl     String?
+  mensagemErro String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  grafica   Grafica   @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamento Orcamento @relation(fields: [orcamentoId], references: [id])
+
+  @@index([graficaId])
+  @@map("notas_fiscais")
+}
+
+// Configuração do assistente de IA de uso do site — 100% opt-in, nunca pedido
+// em /comecar ou /login. A IA de verdade não roda aqui: o grafica-saas só
+// encaminha a pergunta do usuário + em qual página ele está pro workflow n8n
+// que a PRÓPRIA gráfica configurou (nunca uma conta nossa, mesmo modelo de
+// DadosFiscaisGrafica). É estritamente um guia de uso do site — a aplicação
+// NUNCA inclui orçamento, cliente, valor, pagamento ou nota fiscal no payload
+// enviado (ver src/lib/webhook-assistente.ts).
+model AssistenteGrafica {
+  id        String @id @default(cuid())
+  graficaId String @unique
+
+  // URL do workflow n8n do PRÓPRIO tenant — o path costuma carregar um UUID
+  // que funciona como token de capability (padrão de webhook do n8n), por
+  // isso é tratada como segredo (nunca reexibida por completo, ver
+  // /configuracoes/assistente).
+  webhookUrl String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+
+  @@map("assistente_grafica")
+}
+
+// Registro de cada pergunta enviada ao assistente — existe só pra rate limiting
+// (mesmo padrão de TentativaLogin: conta linhas numa janela de tempo). NÃO
+// guarda o texto da pergunta: não precisa pra esse propósito, e menos dado
+// guardado é menos dado pra vazar. Protege contra spam/gasto de token do n8n
+// da própria gráfica, tanto de um usuário sozinho quanto da gráfica toda.
+model PerguntaAssistenteLog {
+  id        String   @id @default(cuid())
+  graficaId String
+  usuarioId String
+  createdAt DateTime @default(now())
+
+  @@index([usuarioId, createdAt])
+  @@index([graficaId, createdAt])
+  @@map("pergunta_assistente_log")
 }
 
 enum PapelUsuario {
@@ -93,12 +236,39 @@ model Usuario {
   // Irrelevante pra DONO, que sempre tem acesso.
   acessoMeuNegocio Boolean @default(false)
 
-  grafica    Grafica     @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  orcamentos Orcamento[]
-  sessoes    Sessao[]
+  grafica     Grafica            @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamentos  Orcamento[]
+  sessoes     Sessao[]
+  permissoes  PermissaoUsuario[]
 
   @@index([graficaId])
   @@map("usuarios")
+}
+
+// Só existe controle granular por módulo pra papel OPERADOR — DONO e ADMIN
+// sempre têm acesso total, não passam por aqui (ver podeVerModulo/
+// podeEditarModulo em src/lib/auth/permissoes.ts). Ausência de linha pra um
+// módulo = sem acesso nenhum (nem ver), é o padrão mais seguro por omissão.
+enum ModuloPermissao {
+  ORCAMENTO
+  CLIENTES
+  CATALOGO
+  PRODUCAO
+  FINANCEIRO
+  CONFIGURACOES
+}
+
+model PermissaoUsuario {
+  id         String          @id @default(cuid())
+  usuarioId  String
+  modulo     ModuloPermissao
+  podeVer    Boolean         @default(false)
+  podeEditar Boolean         @default(false)
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, modulo])
+  @@map("permissoes_usuario")
 }
 
 // Sessão opaca: o cookie do usuário guarda só o token bruto, nunca persistido em texto puro aqui.
@@ -133,6 +303,18 @@ model TentativaLogin {
   @@map("tentativas_login")
 }
 
+// Conta tentativas de cadastro (/registro) por IP — sem isso, um bot pode criar
+// gráficas/usuários sem limite (spam de dados + custo de CPU do hash argon2id
+// a cada tentativa, já que ele só é evitado quando o e-mail já existe).
+model TentativaRegistro {
+  id        String   @id @default(cuid())
+  ip        String
+  createdAt DateTime @default(now())
+
+  @@index([ip, createdAt])
+  @@map("tentativas_registro")
+}
+
 model Cliente {
   id        String   @id @default(cuid())
   graficaId String
@@ -141,6 +323,18 @@ model Cliente {
   telefone  String?
   documento String? // CPF ou CNPJ
   createdAt DateTime @default(now())
+
+  // Endereço — opcional pra cadastro comum, mas exigido pra emitir nota fiscal
+  // (ver DadosFiscaisGrafica / NotaFiscal). enderecoCodigoIbge é nullable e não
+  // bloqueia emissão: o exemplo oficial da Focus NFe envia só município+UF.
+  enderecoCep         String?
+  enderecoLogradouro  String?
+  enderecoNumero      String?
+  enderecoComplemento String?
+  enderecoBairro      String?
+  enderecoMunicipio   String?
+  enderecoCodigoIbge  String?
+  enderecoUf          String?
 
   grafica    Grafica     @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   orcamentos Orcamento[]
@@ -208,6 +402,7 @@ model ItemCatalogo {
   nome      String
   descricao String?
   unidade   UnidadeMedida?
+  ncm       String? // classificação fiscal (NF-e) — nullable, só exigido no momento de emitir nota
   createdAt DateTime         @default(now())
 
   grafica      Grafica?      @relation(fields: [graficaId], references: [id], onDelete: Cascade)
@@ -244,10 +439,24 @@ model ItemGrafica {
   modeloCalculo ModeloCalculo @default(SIMPLES)
   viraFolha     Boolean       @default(false) // work-and-turn; só usado quando modeloCalculo=OFFSET
 
-  // Só relevante quando tipo=MATERIA_PRIMA e o material é papel usado em OFFSET.
-  // Separado de precoCompra pois a unidade de custo aqui é R$/kg, não R$/folha ou R$/m².
-  precoPorKg   Decimal? @db.Decimal(12, 4)
+  // Qual prensa física produz este item — só relevante/obrigatório (na aplicação)
+  // quando modeloCalculo=OFFSET. onDelete=Restrict: não deixa excluir uma prensa
+  // ainda em uso por algum produto.
+  prensaId String?
+
+  // Gramatura escolhida — só relevante quando modeloCalculo=OFFSET (produto) ou
+  // quando este item é usado como papel de outro produto (matéria-prima). No
+  // produto, alimenta tanto o peso físico real da folha quanto a busca (com
+  // fallback) na TabelaPrecoPapel do papel selecionado — ver `papelId` abaixo
+  // e src/lib/pricing/papel.ts.
   gramaturaGm2 Decimal? @db.Decimal(6, 1)
+
+  // Qual matéria-prima (papel) este produto Offset usa — só relevante/obrigatório
+  // (na aplicação) quando modeloCalculo=OFFSET. O preço por kg não fica mais
+  // digitado no produto: é resolvido em runtime pela TabelaPrecoPapel do papel
+  // referenciado aqui, usando gramaturaGm2 como chave (com fallback pra mais
+  // próxima). onDelete=Restrict: não deixa excluir um papel ainda em uso.
+  papelId String?
 
   // Só relevante quando tipo=PRODUTO e modeloCalculo=M2.
   custoImpressaoM2    Decimal? @db.Decimal(12, 4)
@@ -255,6 +464,8 @@ model ItemGrafica {
 
   grafica      Grafica      @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   itemCatalogo ItemCatalogo @relation(fields: [itemCatalogoId], references: [id])
+  prensa       Prensa?      @relation(fields: [prensaId], references: [id], onDelete: Restrict)
+  papel        ItemGrafica? @relation("PapelDoProdutoOffset", fields: [papelId], references: [id], onDelete: Restrict)
 
   itensOrcamento OrcamentoItem[]
   movimentacoes  MovimentacaoEstoque[]
@@ -270,9 +481,37 @@ model ItemGrafica {
   fichaTecnica           FichaTecnicaItem[] @relation("FichaTecnicaDoProduto")
   usadoComoMateriaPrima  FichaTecnicaItem[] @relation("MateriaPrimaConsumida")
 
+  // Papel: produtos Offset que usam este item como papel, e a tabela de
+  // preço por gramatura deste item quando ELE é o papel (tipo=MATERIA_PRIMA).
+  produtosQueUsam  ItemGrafica[]      @relation("PapelDoProdutoOffset")
+  tabelaPrecoPapel TabelaPrecoPapel[] @relation("TabelaDoPapel")
+
+  // Variantes deste item quando ELE é uma matéria-prima com sub-variação
+  // (ex: espessura de chapa) — ver comentário do model VarianteMateriaPrima.
+  variantes VarianteMateriaPrima[] @relation("VariantesDaMateriaPrima")
+
   @@unique([graficaId, itemCatalogoId])
   @@index([graficaId])
   @@map("itens_grafica")
+}
+
+// Tabela de preço por gramatura de um papel (ItemGrafica tipo=MATERIA_PRIMA).
+// Um papel = 1 cadastro no catálogo; a gramatura vira um subtópico aqui em vez
+// de virar um cadastro inteiro novo (ver comentário do model ItemGrafica).
+// resolverPrecoPapel (src/lib/pricing/papel.ts) busca aqui pela gramatura
+// exata e, se não achar, cai no fallback pela mais próxima.
+model TabelaPrecoPapel {
+  id            String   @id @default(cuid())
+  itemGraficaId String
+  gramatura     Int
+  precoKg       Decimal  @db.Decimal(12, 4)
+  createdAt     DateTime @default(now())
+
+  itemGrafica ItemGrafica @relation("TabelaDoPapel", fields: [itemGraficaId], references: [id], onDelete: Cascade)
+
+  @@unique([itemGraficaId, gramatura])
+  @@index([itemGraficaId])
+  @@map("tabela_preco_papel")
 }
 
 // Quanto de uma matéria-prima um produto consome por unidade vendida (ex: 1 Cartão de
@@ -287,13 +526,48 @@ model FichaTecnicaItem {
   quantidadePorUnidade Decimal  @db.Decimal(12, 6)
   createdAt            DateTime @default(now())
 
-  itemGrafica  ItemGrafica @relation("FichaTecnicaDoProduto", fields: [itemGraficaId], references: [id], onDelete: Cascade)
-  materiaPrima ItemGrafica @relation("MateriaPrimaConsumida", fields: [materiaPrimaId], references: [id], onDelete: Cascade)
+  // Qual variante da matéria-prima (ex: espessura de uma chapa) é consumida —
+  // só relevante/obrigatório (na aplicação) quando a matéria-prima tem
+  // VarianteMateriaPrima cadastrada. Sem variantes, fica null e o consumo é
+  // do ItemGrafica direto, como sempre foi.
+  varianteId String?
 
-  @@unique([itemGraficaId, materiaPrimaId])
+  itemGrafica  ItemGrafica           @relation("FichaTecnicaDoProduto", fields: [itemGraficaId], references: [id], onDelete: Cascade)
+  materiaPrima ItemGrafica           @relation("MateriaPrimaConsumida", fields: [materiaPrimaId], references: [id], onDelete: Cascade)
+  variante     VarianteMateriaPrima? @relation(fields: [varianteId], references: [id], onDelete: Restrict)
+
+  @@unique([itemGraficaId, materiaPrimaId, varianteId])
   @@index([itemGraficaId])
   @@index([materiaPrimaId])
+  @@index([varianteId])
   @@map("ficha_tecnica_itens")
+}
+
+// Variante de uma matéria-prima (ex: espessura de uma chapa: 2mm/3mm/5mm) —
+// mesma filosofia de TabelaPrecoPapel (1 cadastro de matéria-prima, N
+// subtópicos), mas aqui cada variante tem preço E estoque próprios, porque
+// (diferente da gramatura do papel) variantes físicas diferentes têm saldos
+// de estoque diferentes de verdade. `ativo=false` é soft-delete: nunca se
+// apaga uma variante que já foi referenciada por ficha técnica ou
+// movimentação de estoque, só se desativa (some da tela, histórico intacto).
+model VarianteMateriaPrima {
+  id            String   @id @default(cuid())
+  itemGraficaId String // a matéria-prima "pai" (ItemGrafica tipo=MATERIA_PRIMA)
+  rotulo        String // ex: "2mm", "3mm", "5mm"
+  ativo         Boolean  @default(true)
+  precoCompra   Decimal  @db.Decimal(12, 4)
+  estoqueAtual  Decimal? @db.Decimal(12, 4)
+  estoqueMinimo Decimal? @db.Decimal(12, 4)
+  createdAt     DateTime @default(now())
+
+  itemGrafica ItemGrafica @relation("VariantesDaMateriaPrima", fields: [itemGraficaId], references: [id], onDelete: Cascade)
+
+  fichaTecnica  FichaTecnicaItem[]
+  movimentacoes MovimentacaoEstoque[]
+
+  @@unique([itemGraficaId, rotulo])
+  @@index([itemGraficaId])
+  @@map("variantes_materia_prima")
 }
 
 // Opções de bobina de um material (ex: Lona 440g vem em rolos de 1,00/1,20/1,50m).
@@ -352,14 +626,29 @@ enum TipoMovimentacao {
 model MovimentacaoEstoque {
   id            String           @id @default(cuid())
   itemGraficaId String
+  // Qual pedido de produção gerou essa saída (quando aplicável) — permite
+  // comparar consumo real vs. previsto pela ficha técnica por pedido, em vez
+  // de depender de parsear o texto livre de `motivo`.
+  pedidoId      String?
   tipo          TipoMovimentacao
   quantidade    Decimal          @db.Decimal(12, 4)
   motivo        String?
   createdAt     DateTime         @default(now())
 
-  itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id], onDelete: Cascade)
+  // Qual variante da matéria-prima moveu (quando ela tem variantes) —
+  // itemGraficaId continua apontando pro "pai", pra joins/relatórios; isso
+  // aqui só desambigua QUAL saldo (2mm ou 5mm) foi decrementado. SetNull,
+  // igual pedidoId: preserva o histórico do movimento mesmo se a variante
+  // um dia for desativada/apagada.
+  varianteId String?
+
+  itemGrafica ItemGrafica           @relation(fields: [itemGraficaId], references: [id], onDelete: Cascade)
+  pedido      Pedido?               @relation(fields: [pedidoId], references: [id], onDelete: SetNull)
+  variante    VarianteMateriaPrima? @relation(fields: [varianteId], references: [id], onDelete: SetNull)
 
   @@index([itemGraficaId])
+  @@index([pedidoId])
+  @@index([varianteId])
   @@map("movimentacoes_estoque")
 }
 
@@ -386,6 +675,7 @@ model Orcamento {
   usuario Usuario @relation(fields: [usuarioId], references: [id])
   itens   OrcamentoItem[]
   pedido  Pedido?
+  notaFiscal NotaFiscal?
 
   pagamentos Pagamento[]
 
@@ -417,6 +707,77 @@ model Pagamento {
 
   @@index([orcamentoId])
   @@map("pagamentos")
+}
+
+enum StatusDespesa {
+  PENDENTE
+  PAGA
+}
+
+// Contraparte de Pagamento: dinheiro SAINDO da gráfica (fornecedor, aluguel,
+// conta fixa), não entrando. Sem modelo de Fornecedor relacional de propósito
+// (decisão já tomada antes) — descricao/categoria são texto livre.
+//
+// status/pagoEm nunca são editados por um form genérico de edição — só pelas
+// actions marcarComoPaga/marcarComoPendente (ver src/app/financeiro/actions.ts),
+// pra nunca existir uma combinação inconsistente tipo "paga sem data de pagamento".
+//
+// vencimento é a PRIMEIRA data-pura (sem hora) do schema inteiro — guardada
+// sempre como meia-noite UTC (`${valor}T00:00:00Z`) e SEMPRE exibida com
+// `timeZone: "UTC"` no formatador (src/lib/data.ts), pra não variar um dia
+// conforme o fuso de quem tá vendo. Todo campo de data-pura futuro deve
+// seguir o mesmo padrão.
+model Despesa {
+  id             String          @id @default(cuid())
+  graficaId      String
+  descricao      String
+  categoria      String?
+  valor          Decimal         @db.Decimal(12, 2)
+  vencimento     DateTime
+  status         StatusDespesa   @default(PENDENTE)
+  formaPagamento FormaPagamento?
+  pagoEm         DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  // Recorrência: recorrente=true marca que essa ocorrência faz parte de uma
+  // série mensal. serieRecorrenciaId agrupa as ocorrências da mesma série
+  // (a primeira ocorrência recebe o próprio id como serieRecorrenciaId — ver
+  // criarDespesa). Só a ocorrência de VENCIMENTO MAIS RECENTE de uma série é
+  // consultada pra decidir se gera a próxima (ver src/lib/despesa-recorrente.ts)
+  // — então desmarcar "recorrente" só nessa ocorrência mais recente já
+  // encerra a série, sem precisar tocar nas anteriores.
+  recorrente         Boolean @default(false)
+  serieRecorrenciaId String?
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+
+  @@index([graficaId])
+  @@index([graficaId, status, vencimento])
+  @@index([graficaId, serieRecorrenciaId])
+  @@map("despesas")
+}
+
+// Trilha de auditoria financeira: quem alterou o quê. usuarioNome é um
+// snapshot (não FK em Usuario) de propósito — o log tem que continuar legível
+// mesmo que o usuário seja removido da gráfica no futuro. entidadeId também
+// não é FK (mesmo motivo: excluirDespesa é hard delete, o log tem que
+// sobreviver ao registro que ele descreve).
+model LogAuditoria {
+  id          String   @id @default(cuid())
+  graficaId   String
+  usuarioId   String
+  usuarioNome String
+  acao        String
+  entidade    String
+  entidadeId  String
+  descricao   String
+  createdAt   DateTime @default(now())
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+
+  @@index([graficaId, createdAt])
+  @@map("logs_auditoria")
 }
 
 model OrcamentoItem {
@@ -483,6 +844,8 @@ model Pedido {
 
   grafica   Grafica   @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   orcamento Orcamento @relation(fields: [orcamentoId], references: [id])
+
+  movimentacoes MovimentacaoEstoque[]
 
   @@index([graficaId])
   @@map("pedidos")

@@ -201,6 +201,14 @@ export default function Home() {
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 text-sm text-slate-500 sm:flex-row">
           <Logo />
           <p>© {new Date().getFullYear()} Gráfica+. Todos os direitos reservados.</p>
+          <div className="flex items-center gap-4">
+            <Link href="/termos" className="hover:text-slate-700 dark:hover:text-slate-300">
+              Termos de Uso
+            </Link>
+            <Link href="/privacidade" className="hover:text-slate-700 dark:hover:text-slate-300">
+              Privacidade
+            </Link>
+          </div>
         </div>
       </footer>
     </div>

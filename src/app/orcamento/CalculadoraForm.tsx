@@ -2,6 +2,8 @@
 
 import { useActionState, useMemo, useState } from "react";
 import { calcularPreco } from "@/lib/orcamento";
+import { formatoMoeda } from "@/lib/moeda";
+import { gerarChave } from "@/lib/chave-local";
 import { Card } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
@@ -36,14 +38,6 @@ type ItemCarrinho = {
   precoTotal: string;
   modeloCalculo: "SIMPLES" | "M2" | "OFFSET";
 };
-
-function gerarChave() {
-  return typeof crypto !== "undefined" && crypto.randomUUID
-    ? crypto.randomUUID()
-    : Math.random().toString(36).slice(2);
-}
-
-const formatoMoeda = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
 export function CalculadoraForm({
   itens,

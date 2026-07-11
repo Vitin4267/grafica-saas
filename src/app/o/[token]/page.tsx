@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { formatoMoeda } from "@/lib/moeda";
 import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/Badge";
 import { Logo } from "@/components/Logo";
 import { RespostaPublica } from "./RespostaPublica";
@@ -25,11 +27,6 @@ export default async function OrcamentoPublicoPage({
   if (!orcamento) {
     notFound();
   }
-
-  const formatoMoeda = new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 dark:bg-slate-950">
@@ -82,6 +79,12 @@ export default async function OrcamentoPublicoPage({
             {formatoMoeda.format(Number(orcamento.total))}
           </p>
         </Card>
+
+        <a href={`/o/${token}/pdf`} className="mb-6 block">
+          <Button type="button" variant="outline" className="w-full">
+            Baixar PDF
+          </Button>
+        </a>
 
         {orcamento.status === "ENVIADO" && <RespostaPublica token={token} />}
         {orcamento.status === "APROVADO" && (

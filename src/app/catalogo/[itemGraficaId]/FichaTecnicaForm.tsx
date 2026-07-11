@@ -6,19 +6,17 @@ import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { ROTULO_UNIDADE } from "@/lib/unidade";
+import { gerarChave } from "@/lib/chave-local";
 import { salvarFichaTecnica } from "./actions";
 
-type MateriaPrima = { id: string; nome: string; unidade: string | null };
-type Linha = { chave: string; materiaPrimaId: string; quantidadePorUnidade: string };
-
-// TODO(review): gerarChave() está copiada igualzinha em ConfiguracaoProdutoForm.tsx
-// (mesma pasta) e em orcamento/CalculadoraForm.tsx — só serve pra gerar `key` de
-// linha em array editável no cliente, dava pra virar um helper em src/lib.
-function gerarChave() {
-  return typeof crypto !== "undefined" && crypto.randomUUID
-    ? crypto.randomUUID()
-    : Math.random().toString(36).slice(2);
-}
+type Variante = { id: string; rotulo: string };
+type MateriaPrima = { id: string; nome: string; unidade: string | null; variantes: Variante[] };
+type Linha = {
+  chave: string;
+  materiaPrimaId: string;
+  varianteId: string;
+  quantidadePorUnidade: string;
+};
 
 export function FichaTecnicaForm({
   itemGraficaId,
@@ -27,31 +25,58 @@ export function FichaTecnicaForm({
 }: {
   itemGraficaId: string;
   materiasPrimas: MateriaPrima[];
-  fichaAtual: { materiaPrimaId: string; quantidadePorUnidade: string }[];
+  fichaAtual: { materiaPrimaId: string; varianteId: string; quantidadePorUnidade: string }[];
 }) {
   const [linhas, setLinhas] = useState<Linha[]>(() =>
     fichaAtual.map((f) => ({ chave: gerarChave(), ...f }))
   );
   const [state, formAction, isPending] = useActionState(salvarFichaTecnica, null);
 
-  const idsUsados = new Set(linhas.map((l) => l.materiaPrimaId).filter(Boolean));
-  const disponiveis = materiasPrimas.filter((m) => !idsUsados.has(m.id));
+  // Matéria-prima SEM variantes só pode aparecer numa linha (uma "unidade" só
+  // de consumo). Com variantes, pode reaparecer contanto que use uma
+  // variante diferente da já escolhida em outra linha (ex: consome chapa de
+  // 2mm E de 5mm) — por isso só filtra pelas variantes já usadas, não pelo
+  // materiaPrimaId inteiro.
+  const variantesUsadas = new Set(linhas.map((l) => l.varianteId).filter(Boolean));
+  const idsSemVarianteUsados = new Set(
+    linhas.filter((l) => !l.varianteId).map((l) => l.materiaPrimaId)
+  );
+  const disponiveis = materiasPrimas.filter((m) => {
+    if (m.variantes.length > 0) {
+      return m.variantes.some((v) => !variantesUsadas.has(v.id));
+    }
+    return !idsSemVarianteUsados.has(m.id);
+  });
 
   const atualizar = (
     chave: string,
-    campo: "materiaPrimaId" | "quantidadePorUnidade",
+    campo: "materiaPrimaId" | "varianteId" | "quantidadePorUnidade",
     valor: string
   ) => {
-    setLinhas((atual) => atual.map((l) => (l.chave === chave ? { ...l, [campo]: valor } : l)));
+    setLinhas((atual) =>
+      atual.map((l) => {
+        if (l.chave !== chave) return l;
+        // Trocar de matéria-prima limpa a variante escolhida antes (senão
+        // fica um varianteId órfão apontando pra outra matéria-prima).
+        if (campo === "materiaPrimaId") return { ...l, materiaPrimaId: valor, varianteId: "" };
+        return { ...l, [campo]: valor };
+      })
+    );
   };
   const remover = (chave: string) =>
     setLinhas((atual) => atual.filter((l) => l.chave !== chave));
   const adicionar = () => {
     const primeira = disponiveis[0];
     if (!primeira) return;
+    const primeiraVarianteLivre = primeira.variantes.find((v) => !variantesUsadas.has(v.id));
     setLinhas((atual) => [
       ...atual,
-      { chave: gerarChave(), materiaPrimaId: primeira.id, quantidadePorUnidade: "" },
+      {
+        chave: gerarChave(),
+        materiaPrimaId: primeira.id,
+        varianteId: primeiraVarianteLivre?.id ?? "",
+        quantidadePorUnidade: "",
+      },
     ]);
   };
 
@@ -76,8 +101,9 @@ export function FichaTecnicaForm({
           value={JSON.stringify(
             linhas
               .filter((l) => l.materiaPrimaId)
-              .map(({ materiaPrimaId, quantidadePorUnidade }) => ({
+              .map(({ materiaPrimaId, varianteId, quantidadePorUnidade }) => ({
                 materiaPrimaId,
+                varianteId: varianteId || undefined,
                 quantidadePorUnidade,
               }))
           )}
@@ -98,9 +124,15 @@ export function FichaTecnicaForm({
             )}
             {linhas.map((linha) => {
               const materiaAtual = materiasPrimas.find((m) => m.id === linha.materiaPrimaId);
-              const opcoes = materiaAtual ? [materiaAtual, ...disponiveis] : disponiveis;
+              const opcoes = materiaAtual
+                ? [materiaAtual, ...disponiveis.filter((m) => m.id !== materiaAtual.id)]
+                : disponiveis;
+              const variantesDisponiveis =
+                materiaAtual?.variantes.filter(
+                  (v) => v.id === linha.varianteId || !variantesUsadas.has(v.id)
+                ) ?? [];
               return (
-                <div key={linha.chave} className="flex items-end gap-3">
+                <div key={linha.chave} className="flex flex-wrap items-end gap-3">
                   <div className="flex-1">
                     <Select
                       label="Matéria-prima"
@@ -114,6 +146,22 @@ export function FichaTecnicaForm({
                       ))}
                     </Select>
                   </div>
+                  {materiaAtual && materiaAtual.variantes.length > 0 && (
+                    <div className="w-32">
+                      <Select
+                        label="Variante"
+                        value={linha.varianteId}
+                        onChange={(e) => atualizar(linha.chave, "varianteId", e.target.value)}
+                      >
+                        <option value="">Selecione</option>
+                        {variantesDisponiveis.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.rotulo}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                  )}
                   <div className="w-44">
                     <label className="flex flex-col gap-1.5">
                       <span className="text-sm font-medium text-slate-700 dark:text-slate-200">

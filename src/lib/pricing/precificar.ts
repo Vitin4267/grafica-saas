@@ -10,6 +10,7 @@ import type {
   ContextoM2,
   ContextoOffset,
   ModeloCalculo,
+  ParametrosPrensa,
   ParametrosTenant,
   PedidoM2,
   PedidoOffset,
@@ -26,6 +27,8 @@ export type ContextoPrecificacao = {
   m2?: ContextoM2;
   offset?: ContextoOffset;
   parametros: ParametrosTenant;
+  parametrosPrensa?: ParametrosPrensa;
+  prensaUsada?: { id: string; nome: string };
   margemLucroOverride?: number;
   custoEmbalagem?: number;
   custoFreteEstimado?: number;
@@ -96,11 +99,17 @@ export function precificar(
       "Contexto OFFSET não fornecido para um item com modeloCalculo=OFFSET."
     );
   }
+  if (!contexto.parametrosPrensa) {
+    throw new ErroPrecificacao(
+      "PRENSA_NAO_CONFIGURADA",
+      "Parâmetros de prensa não fornecidos para um item com modeloCalculo=OFFSET."
+    );
+  }
 
   const resultado = calcularOffset(
     pedido.pedido,
     { ...contexto.offset, viraFolha: contexto.viraFolha },
-    contexto.parametros
+    contexto.parametrosPrensa
   );
 
   const ctxAcabamento: ContextoAcabamento = {
@@ -139,6 +148,7 @@ export function precificar(
       folhasTotais: resultado.folhasTotais,
       folhaEscolhida: resultado.folhaEscolhida,
       pesoTotalPedidoKg: resultado.pesoTotalPedidoKg.toNumber(),
+      prensaUsada: contexto.prensaUsada ?? null,
     },
   };
 }

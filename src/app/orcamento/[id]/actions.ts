@@ -3,16 +3,38 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { headers } from "next/headers";
 import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { calcularItemOrcamento } from "@/lib/orcamento-precificacao";
+import { resolverOrigemPublica } from "@/lib/url-publica";
 import {
   TRANSICOES_VALIDAS,
   ROTULOS_STATUS_ORCAMENTO,
   type StatusOrcamento,
 } from "@/lib/orcamento-status";
+import { verificarProntidaoFiscal } from "@/lib/nota-fiscal";
+import { emitirNfe, consultarNfe, ErroFocusNfe, type AmbienteFocusNfe } from "@/lib/focus-nfe";
+import { registrarAuditoria } from "@/lib/auditoria";
+import { formatoMoeda } from "@/lib/moeda";
+
+// Sinaliza, de dentro de uma transação Serializable, que o orçamento já está
+// no último item — usado só pra abortar a transação com uma mensagem amigável
+// (ver removerItemOrcamento). Não é um erro de banco de verdade.
+class ErroUltimoItemOrcamento extends Error {}
+
+const MENSAGEM_CONFLITO_CONCORRENTE =
+  "Outra pessoa alterou este orçamento ao mesmo tempo — tente de novo.";
+
+// Sob isolamento Serializable, duas transações concorrentes que leem/escrevem o
+// mesmo orçamento não conseguem as duas commitar: o Postgres aborta uma delas
+// com erro de conflito de serialização (P2034). Convertemos isso numa mensagem
+// pedindo pra tentar de novo, em vez de deixar subir como erro 500 genérico.
+function ehConflitoDeSerializacao(erro: unknown): boolean {
+  return erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2034";
+}
 
 export type AtualizarStatusResult = { ok: boolean; mensagem: string };
 
@@ -21,6 +43,9 @@ export async function atualizarStatusOrcamento(
   formData: FormData
 ): Promise<AtualizarStatusResult> {
   const usuario = await exigirUsuarioAutenticado();
+  if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
+  }
   const orcamentoId = String(formData.get("orcamentoId"));
   const novoStatus = String(formData.get("novoStatus")) as StatusOrcamento;
 
@@ -79,6 +104,9 @@ export async function editarOrcamento(
   formData: FormData
 ): Promise<EditarOrcamentoResult> {
   const usuario = await exigirUsuarioAutenticado();
+  if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
+  }
   const orcamentoId = String(formData.get("orcamentoId"));
   const orcamentoItemId = String(formData.get("orcamentoItemId"));
   const quantidade = Number(formData.get("quantidade"));
@@ -122,42 +150,46 @@ export async function editarOrcamento(
     return { ok: false, mensagem: resultado.mensagem };
   }
 
-  // TODO(review): `orcamento.itens` foi lido ANTES desta transação — duas edições
-  // concorrentes em itens diferentes do mesmo orçamento (duas abas, por exemplo)
-  // calculam `novoTotal` cada uma com a visão antiga do item alheio, e a
-  // transação que commitar por último sobrescreve o total da outra (lost
-  // update). Pra ser realmente seguro, `novoTotal` precisaria ser recalculado
-  // dentro da transação (SELECT ... FOR UPDATE, ou um agregado feito pelo
-  // próprio Postgres) em vez de somado em JS a partir de uma leitura solta.
-  // Mesmo padrão se repete em adicionarItemOrcamento e removerItemOrcamento
-  // logo abaixo.
-  const novoTotal = orcamento.itens.reduce(
-    (soma, i) =>
-      soma + (i.id === orcamentoItemId ? Number(resultado.precoTotal) : Number(i.precoTotal)),
-    0
-  );
-
-  await prisma.$transaction([
-    prisma.orcamentoItem.update({
-      where: { id: orcamentoItemId },
-      data: {
-        quantidade,
-        larguraCm,
-        alturaCm,
-        cores: cores || null,
-        acabamento: acabamento || null,
-        precoUnitario: resultado.precoUnitario,
-        precoTotal: resultado.precoTotal,
-        corFrente: resultado.corFrente,
-        corVerso: resultado.corVerso,
-        breakdown: resultado.breakdown ?? undefined,
+  // Isolamento Serializable + total recalculado por agregado DENTRO da
+  // transação (não somado em JS a partir da leitura de `orcamento.itens` feita
+  // acima, que já pode estar desatualizada) — evita tanto a corrida de duas
+  // edições concorrentes em itens diferentes do mesmo orçamento quanto a
+  // imprecisão de somar Decimal via Number() (o SUM roda no Postgres).
+  try {
+    await prisma.$transaction(
+      async (tx) => {
+        await tx.orcamentoItem.update({
+          where: { id: orcamentoItemId },
+          data: {
+            quantidade,
+            larguraCm,
+            alturaCm,
+            cores: cores || null,
+            acabamento: acabamento || null,
+            precoUnitario: resultado.precoUnitario,
+            precoTotal: resultado.precoTotal,
+            corFrente: resultado.corFrente,
+            corVerso: resultado.corVerso,
+            breakdown: resultado.breakdown ?? undefined,
+          },
+        });
+        const agregado = await tx.orcamentoItem.aggregate({
+          where: { orcamentoId },
+          _sum: { precoTotal: true },
+        });
+        await tx.orcamento.update({
+          where: { id: orcamentoId },
+          data: { total: agregado._sum.precoTotal ?? 0 },
+        });
       },
-    }),
-    prisma.orcamento.update({
-      where: { id: orcamentoId },
-      data: { total: novoTotal },
-    }),
-  ]);
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
+  } catch (erro) {
+    if (ehConflitoDeSerializacao(erro)) {
+      return { ok: false, mensagem: MENSAGEM_CONFLITO_CONCORRENTE };
+    }
+    throw erro;
+  }
 
   revalidatePath(`/orcamento/${orcamentoId}`);
   revalidatePath("/orcamento");
@@ -172,6 +204,9 @@ export async function alterarClienteOrcamento(
   formData: FormData
 ): Promise<AlterarClienteResult> {
   const usuario = await exigirUsuarioAutenticado();
+  if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
+  }
   const orcamentoId = String(formData.get("orcamentoId"));
   const clienteId = String(formData.get("clienteId"));
 
@@ -210,6 +245,9 @@ export async function adicionarItemOrcamento(
   formData: FormData
 ): Promise<AdicionarItemResult> {
   const usuario = await exigirUsuarioAutenticado();
+  if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
+  }
   const orcamentoId = String(formData.get("orcamentoId"));
   const itemGraficaId = String(formData.get("itemGraficaId"));
   const quantidade = Number(formData.get("quantidade"));
@@ -226,7 +264,6 @@ export async function adicionarItemOrcamento(
 
   const orcamento = await prisma.orcamento.findFirst({
     where: { id: orcamentoId, graficaId: usuario.graficaId },
-    include: { itens: true },
   });
   if (!orcamento) {
     return { ok: false, mensagem: "Orçamento não encontrado." };
@@ -258,33 +295,43 @@ export async function adicionarItemOrcamento(
     return { ok: false, mensagem: resultado.mensagem };
   }
 
-  const novoTotal =
-    orcamento.itens.reduce((soma, i) => soma + Number(i.precoTotal), 0) +
-    Number(resultado.precoTotal);
-
-  await prisma.$transaction([
-    prisma.orcamentoItem.create({
-      data: {
-        orcamentoId,
-        itemGraficaId: itemGrafica.id,
-        quantidade,
-        larguraCm,
-        alturaCm,
-        cores: cores || null,
-        acabamento: acabamento || null,
-        precoUnitario: resultado.precoUnitario,
-        precoTotal: resultado.precoTotal,
-        modeloCalculo: resultado.modeloCalculo,
-        corFrente: resultado.corFrente,
-        corVerso: resultado.corVerso,
-        breakdown: resultado.breakdown ?? undefined,
+  try {
+    await prisma.$transaction(
+      async (tx) => {
+        await tx.orcamentoItem.create({
+          data: {
+            orcamentoId,
+            itemGraficaId: itemGrafica.id,
+            quantidade,
+            larguraCm,
+            alturaCm,
+            cores: cores || null,
+            acabamento: acabamento || null,
+            precoUnitario: resultado.precoUnitario,
+            precoTotal: resultado.precoTotal,
+            modeloCalculo: resultado.modeloCalculo,
+            corFrente: resultado.corFrente,
+            corVerso: resultado.corVerso,
+            breakdown: resultado.breakdown ?? undefined,
+          },
+        });
+        const agregado = await tx.orcamentoItem.aggregate({
+          where: { orcamentoId },
+          _sum: { precoTotal: true },
+        });
+        await tx.orcamento.update({
+          where: { id: orcamentoId },
+          data: { total: agregado._sum.precoTotal ?? 0 },
+        });
       },
-    }),
-    prisma.orcamento.update({
-      where: { id: orcamentoId },
-      data: { total: novoTotal },
-    }),
-  ]);
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
+  } catch (erro) {
+    if (ehConflitoDeSerializacao(erro)) {
+      return { ok: false, mensagem: MENSAGEM_CONFLITO_CONCORRENTE };
+    }
+    throw erro;
+  }
 
   revalidatePath(`/orcamento/${orcamentoId}`);
   revalidatePath("/orcamento");
@@ -299,11 +346,14 @@ export async function removerItemOrcamento(
   formData: FormData
 ): Promise<RemoverItemResult> {
   const usuario = await exigirUsuarioAutenticado();
+  if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
+  }
   const orcamentoItemId = String(formData.get("orcamentoItemId"));
 
   const item = await prisma.orcamentoItem.findFirst({
     where: { id: orcamentoItemId, orcamento: { graficaId: usuario.graficaId } },
-    include: { orcamento: { include: { itens: true } } },
+    include: { orcamento: true },
   });
   if (!item) {
     return { ok: false, mensagem: "Item não encontrado." };
@@ -311,31 +361,47 @@ export async function removerItemOrcamento(
   if (item.orcamento.status !== "RASCUNHO") {
     return { ok: false, mensagem: "Só é possível remover itens de um orçamento em rascunho." };
   }
-  // TODO(review): checagem "precisa ter pelo menos 1 item" não é atômica com o
-  // delete abaixo (check-then-act sobre uma leitura solta) — duas remoções
-  // concorrentes no mesmo orçamento (duplo clique, duas abas) podem cada uma
-  // ver itens.length===2, passar aqui, e as duas transações completarem,
-  // zerando os itens do orçamento e violando essa invariante. Precisaria de um
-  // lock/checagem dentro da própria transação pra ser à prova de corrida.
-  if (item.orcamento.itens.length <= 1) {
-    return {
-      ok: false,
-      mensagem:
-        "O orçamento precisa ter pelo menos um item — cancele o orçamento se quiser removê-lo por completo.",
-    };
+
+  try {
+    await prisma.$transaction(
+      async (tx) => {
+        // Contagem refeita AQUI DENTRO (não a partir de uma leitura solta) —
+        // sob Serializable, duas remoções concorrentes no mesmo orçamento não
+        // conseguem as duas passar por essa checagem: uma é abortada com
+        // conflito de serialização (ver catch abaixo).
+        const quantidadeItens = await tx.orcamentoItem.count({
+          where: { orcamentoId: item.orcamentoId },
+        });
+        if (quantidadeItens <= 1) {
+          throw new ErroUltimoItemOrcamento();
+        }
+
+        await tx.orcamentoItem.delete({ where: { id: orcamentoItemId } });
+
+        const agregado = await tx.orcamentoItem.aggregate({
+          where: { orcamentoId: item.orcamentoId },
+          _sum: { precoTotal: true },
+        });
+        await tx.orcamento.update({
+          where: { id: item.orcamentoId },
+          data: { total: agregado._sum.precoTotal ?? 0 },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
+  } catch (erro) {
+    if (erro instanceof ErroUltimoItemOrcamento) {
+      return {
+        ok: false,
+        mensagem:
+          "O orçamento precisa ter pelo menos um item — cancele o orçamento se quiser removê-lo por completo.",
+      };
+    }
+    if (ehConflitoDeSerializacao(erro)) {
+      return { ok: false, mensagem: MENSAGEM_CONFLITO_CONCORRENTE };
+    }
+    throw erro;
   }
-
-  const novoTotal = item.orcamento.itens
-    .filter((i) => i.id !== orcamentoItemId)
-    .reduce((soma, i) => soma + Number(i.precoTotal), 0);
-
-  await prisma.$transaction([
-    prisma.orcamentoItem.delete({ where: { id: orcamentoItemId } }),
-    prisma.orcamento.update({
-      where: { id: item.orcamentoId },
-      data: { total: novoTotal },
-    }),
-  ]);
 
   revalidatePath(`/orcamento/${item.orcamentoId}`);
   revalidatePath("/orcamento");
@@ -350,6 +416,9 @@ export async function cancelarOrcamento(
   formData: FormData
 ): Promise<CancelarOrcamentoResult> {
   const usuario = await exigirUsuarioAutenticado();
+  if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
+  }
   const orcamentoId = String(formData.get("orcamentoId"));
 
   const orcamento = await prisma.orcamento.findFirst({
@@ -377,6 +446,9 @@ export async function gerarLinkPublico(
   formData: FormData
 ): Promise<GerarLinkResult> {
   const usuario = await exigirUsuarioAutenticado();
+  if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
+  }
   const orcamentoId = String(formData.get("orcamentoId"));
 
   const orcamento = await prisma.orcamento.findFirst({
@@ -395,18 +467,7 @@ export async function gerarLinkPublico(
     });
   }
 
-  // TODO(review): essa mesma lógica de resolver proto/host dos headers e montar
-  // `${proto}://${host}/o/${token}` está duplicada em
-  // src/app/orcamento/[id]/page.tsx (cálculo de `origem` pro linkExistente) —
-  // uma correção no fallback (ex: proxy que não seta x-forwarded-proto) precisa
-  // ser replicada nos dois lugares manualmente. Valeria um helper compartilhado
-  // tipo `resolverOrigemPublica()`.
-  const headerList = await headers();
-  const host = headerList.get("host");
-  const proto =
-    headerList.get("x-forwarded-proto") ??
-    (process.env.NODE_ENV === "production" ? "https" : "http");
-  const url = `${proto}://${host}/o/${token}`;
+  const url = `${await resolverOrigemPublica()}/o/${token}`;
 
   revalidatePath(`/orcamento/${orcamentoId}`);
   return { ok: true, mensagem: "Link gerado!", url };
@@ -432,6 +493,9 @@ export async function registrarPagamento(
   formData: FormData
 ): Promise<RegistrarPagamentoResult> {
   const usuario = await exigirUsuarioAutenticado();
+  if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
+  }
   const orcamentoId = String(formData.get("orcamentoId"));
   const valor = Number(formData.get("valor"));
   const formaParsed = formaPagamentoSchema.safeParse(formData.get("forma"));
@@ -457,8 +521,18 @@ export async function registrarPagamento(
     };
   }
 
-  await prisma.pagamento.create({
+  const pagamento = await prisma.pagamento.create({
     data: { orcamentoId, valor, forma: formaParsed.data, observacao },
+  });
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "pagamento.registrar",
+    entidade: "Pagamento",
+    entidadeId: pagamento.id,
+    descricao: `Pagamento de ${formatoMoeda.format(valor)} (${formaParsed.data}) registrado no orçamento #${orcamentoId.slice(-6)}`,
   });
 
   revalidatePath(`/orcamento/${orcamentoId}`);
@@ -467,11 +541,211 @@ export async function registrarPagamento(
   return { ok: true, mensagem: "Pagamento registrado com sucesso!" };
 }
 
+const UNIDADE_FISCAL: Record<string, string> = {
+  FOLHA: "FL",
+  METRO_QUADRADO: "M2",
+  METRO_LINEAR: "M",
+  UNIDADE: "UN",
+  LITRO: "LT",
+  KG: "KG",
+  ROLO: "RL",
+  PACOTE: "PCT",
+  CENTO: "CT",
+  HORA: "HR",
+};
+
+export type EmitirNotaFiscalResult = { ok: boolean; mensagem: string };
+
+// Emite a nota fiscal (NF-e) do orçamento via Focus NFe — cada gráfica usa a
+// PRÓPRIA conta/token (ver Configurações → Dados fiscais), nunca uma conta
+// nossa. Só chega até aqui depois do usuário clicar "Emitir nota fiscal" no
+// NotaFiscalCard — nada disso é pedido proativamente em /comecar ou /login.
+export async function emitirNotaFiscal(
+  _estadoAnterior: EmitirNotaFiscalResult | null,
+  formData: FormData
+): Promise<EmitirNotaFiscalResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
+  }
+  const orcamentoId = String(formData.get("orcamentoId"));
+
+  const orcamento = await prisma.orcamento.findFirst({
+    where: { id: orcamentoId, graficaId: usuario.graficaId },
+    include: {
+      cliente: true,
+      notaFiscal: true,
+      itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
+    },
+  });
+  if (!orcamento) {
+    return { ok: false, mensagem: "Orçamento não encontrado." };
+  }
+  if (orcamento.status !== "APROVADO") {
+    return { ok: false, mensagem: "Só é possível emitir nota fiscal de um orçamento aprovado." };
+  }
+  if (orcamento.notaFiscal) {
+    return { ok: false, mensagem: "Este orçamento já tem uma nota fiscal emitida." };
+  }
+
+  const dadosFiscais = await prisma.dadosFiscaisGrafica.findUnique({
+    where: { graficaId: usuario.graficaId },
+  });
+
+  const checagem = verificarProntidaoFiscal({
+    dadosFiscais,
+    cliente: orcamento.cliente,
+    itens: orcamento.itens.map((item) => ({
+      nome: item.itemGrafica.itemCatalogo.nome,
+      ncm: item.itemGrafica.itemCatalogo.ncm,
+    })),
+  });
+  if (!checagem.pronto || !dadosFiscais) {
+    return { ok: false, mensagem: checagem.pendencias.join(" ") };
+  }
+
+  try {
+    const resposta = await emitirNfe(
+      { token: dadosFiscais.focusNfeToken!, ambiente: dadosFiscais.ambiente as AmbienteFocusNfe },
+      {
+        referencia: orcamentoId,
+        naturezaOperacao: dadosFiscais.naturezaOperacaoPadrao,
+        emitente: {
+          cnpj: dadosFiscais.cnpj!,
+          nome: dadosFiscais.razaoSocial!,
+          nomeFantasia: dadosFiscais.nomeFantasia || dadosFiscais.razaoSocial!,
+          inscricaoEstadual: dadosFiscais.inscricaoEstadual ?? "",
+          logradouro: dadosFiscais.enderecoLogradouro!,
+          numero: dadosFiscais.enderecoNumero!,
+          bairro: dadosFiscais.enderecoBairro!,
+          municipio: dadosFiscais.enderecoMunicipio!,
+          uf: dadosFiscais.enderecoUf!,
+          cep: dadosFiscais.enderecoCep!,
+        },
+        destinatario: {
+          documento: orcamento.cliente.documento!,
+          nome: orcamento.cliente.nome,
+          logradouro: orcamento.cliente.enderecoLogradouro!,
+          numero: orcamento.cliente.enderecoNumero!,
+          bairro: orcamento.cliente.enderecoBairro!,
+          municipio: orcamento.cliente.enderecoMunicipio!,
+          uf: orcamento.cliente.enderecoUf!,
+          cep: orcamento.cliente.enderecoCep!,
+        },
+        itens: orcamento.itens.map((item, indice) => ({
+          numeroItem: indice + 1,
+          codigoProduto: item.itemGraficaId,
+          descricao: item.itemGrafica.itemCatalogo.nome,
+          ncm: item.itemGrafica.itemCatalogo.ncm!,
+          cfop: dadosFiscais.cfopPadrao,
+          unidade: UNIDADE_FISCAL[item.itemGrafica.itemCatalogo.unidade ?? "UNIDADE"] ?? "UN",
+          quantidade: item.quantidade,
+          valorUnitario: Number(item.precoUnitario),
+          valorBruto: Number(item.precoTotal),
+          icmsSituacaoTributaria: dadosFiscais.csosnPadrao,
+        })),
+        valorTotal: Number(orcamento.total),
+      }
+    );
+
+    await prisma.notaFiscal.create({
+      data: {
+        graficaId: usuario.graficaId,
+        orcamentoId,
+        referencia: orcamentoId,
+        status:
+          resposta.status === "autorizado"
+            ? "AUTORIZADA"
+            : resposta.status === "erro_autorizacao" || resposta.status === "denegado"
+              ? "REJEITADA"
+              : "PROCESSANDO",
+        numero: resposta.numero,
+        serie: resposta.serie,
+        chaveAcesso: resposta.chaveNfe,
+        xmlUrl: resposta.caminhoXml,
+        danfeUrl: resposta.caminhoDanfe,
+        mensagemErro: resposta.mensagemErro ?? resposta.mensagemSefaz,
+      },
+    });
+  } catch (erro) {
+    if (erro instanceof ErroFocusNfe) {
+      return { ok: false, mensagem: erro.message };
+    }
+    throw erro;
+  }
+
+  revalidatePath(`/orcamento/${orcamentoId}`);
+  return { ok: true, mensagem: "Nota fiscal enviada pra processamento!" };
+}
+
+export async function atualizarStatusNotaFiscal(
+  _estadoAnterior: EmitirNotaFiscalResult | null,
+  formData: FormData
+): Promise<EmitirNotaFiscalResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
+  }
+  const orcamentoId = String(formData.get("orcamentoId"));
+
+  const notaFiscal = await prisma.notaFiscal.findFirst({
+    where: { orcamentoId, graficaId: usuario.graficaId },
+  });
+  if (!notaFiscal) {
+    return { ok: false, mensagem: "Nota fiscal não encontrada." };
+  }
+
+  const dadosFiscais = await prisma.dadosFiscaisGrafica.findUnique({
+    where: { graficaId: usuario.graficaId },
+  });
+  if (!dadosFiscais?.focusNfeToken) {
+    return { ok: false, mensagem: "Token da Focus NFe não configurado." };
+  }
+
+  try {
+    const resposta = await consultarNfe(
+      { token: dadosFiscais.focusNfeToken, ambiente: dadosFiscais.ambiente as AmbienteFocusNfe },
+      notaFiscal.referencia
+    );
+
+    await prisma.notaFiscal.update({
+      where: { id: notaFiscal.id },
+      data: {
+        status:
+          resposta.status === "autorizado"
+            ? "AUTORIZADA"
+            : resposta.status === "cancelado"
+              ? "CANCELADA"
+              : resposta.status === "erro_autorizacao" || resposta.status === "denegado"
+                ? "REJEITADA"
+                : "PROCESSANDO",
+        numero: resposta.numero,
+        serie: resposta.serie,
+        chaveAcesso: resposta.chaveNfe,
+        xmlUrl: resposta.caminhoXml,
+        danfeUrl: resposta.caminhoDanfe,
+        mensagemErro: resposta.mensagemErro ?? resposta.mensagemSefaz,
+      },
+    });
+  } catch (erro) {
+    if (erro instanceof ErroFocusNfe) {
+      return { ok: false, mensagem: erro.message };
+    }
+    throw erro;
+  }
+
+  revalidatePath(`/orcamento/${orcamentoId}`);
+  return { ok: true, mensagem: "Status atualizado." };
+}
+
 export async function excluirPagamento(
   _estadoAnterior: RegistrarPagamentoResult | null,
   formData: FormData
 ): Promise<RegistrarPagamentoResult> {
   const usuario = await exigirUsuarioAutenticado();
+  if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
+  }
   const pagamentoId = String(formData.get("pagamentoId"));
 
   const pagamento = await prisma.pagamento.findFirst({
@@ -480,6 +754,16 @@ export async function excluirPagamento(
   if (!pagamento) {
     return { ok: false, mensagem: "Pagamento não encontrado." };
   }
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "pagamento.excluir",
+    entidade: "Pagamento",
+    entidadeId: pagamento.id,
+    descricao: `Pagamento de ${formatoMoeda.format(Number(pagamento.valor))} removido do orçamento #${pagamento.orcamentoId.slice(-6)}`,
+  });
 
   await prisma.pagamento.delete({ where: { id: pagamento.id } });
 

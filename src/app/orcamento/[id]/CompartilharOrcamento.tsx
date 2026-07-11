@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
@@ -57,9 +58,9 @@ export function CompartilharOrcamento({
         ) : (
           <p className="text-xs text-slate-500">
             Cadastre o telefone do cliente em{" "}
-            <a href="/clientes" className="underline">
+            <Link href="/clientes" className="underline">
               Clientes
-            </a>{" "}
+            </Link>{" "}
             pra habilitar o envio direto por WhatsApp.
           </p>
         )}

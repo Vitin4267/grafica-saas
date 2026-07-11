@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
@@ -17,7 +18,7 @@ export function ParametrosForm({ parametros }: { parametros: ParametrosTenant })
         <h2 className="text-base font-semibold text-slate-900 dark:text-white">
           Composição de preço
         </h2>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input
             label="Overhead (%)"
             name="overheadPercent"
@@ -79,84 +80,62 @@ export function ParametrosForm({ parametros }: { parametros: ParametrosTenant })
         </div>
       </Card>
 
-      <Card className="flex flex-col gap-4 p-6">
-        <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-          Prensa offset
-        </h2>
-        <div className="grid grid-cols-2 gap-4">
-          <Input
-            label="Custo por hora de máquina (R$)"
-            name="custoHoraMaq"
-            type="number"
-            step="0.01"
-            min="0"
-            defaultValue={parametros.custoHoraMaq}
-          />
-          <Input
-            label="Torres da prensa"
-            name="torres"
-            type="number"
-            step="1"
-            min="1"
-            defaultValue={parametros.torres}
-            hint="Quantas cores por passada de máquina"
-          />
-          <Input
-            label="Custo por chapa (R$)"
-            name="custoChapa"
-            type="number"
-            step="0.01"
-            min="0"
-            defaultValue={parametros.custoChapa}
-          />
-          <Input
-            label="Folhas de acerto"
-            name="folhasAcerto"
-            type="number"
-            step="1"
-            min="0"
-            defaultValue={parametros.folhasAcerto}
-          />
-          <Input
-            label="Tempo de acerto (horas)"
-            name="tempoAcertoH"
-            type="number"
-            step="0.01"
-            min="0"
-            defaultValue={parametros.tempoAcertoH}
-          />
-          <Input
-            label="Custo por milheiro de rodagem (R$)"
-            name="custoMilheiroRod"
-            type="number"
-            step="0.01"
-            min="0"
-            defaultValue={parametros.custoMilheiroRod}
-          />
-          <Input
-            label="Rodagem mínima (R$)"
-            name="rodagemMinima"
-            type="number"
-            step="0.01"
-            min="0"
-            defaultValue={parametros.rodagemMinima}
-          />
-          <Input
-            label="Perda padrão (%)"
-            name="perdaPercentPadrao"
-            type="number"
-            step="0.0001"
-            min="0"
-            defaultValue={parametros.perdaPercentPadrao}
-          />
+      <Card className="flex items-center justify-between gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Prensas offset
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Custo de máquina, torres, chapas e rodagem agora são configurados por
+            prensa — uma gráfica pode ter mais de uma.
+          </p>
         </div>
+        <Link href="/configuracoes/prensas">
+          <Button type="button" variant="outline">
+            Gerenciar prensas
+          </Button>
+        </Link>
+      </Card>
+
+      <Card className="flex items-center justify-between gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Dados fiscais
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            CNPJ, endereço e token da sua conta na Focus NFe — usados pra
+            emitir nota fiscal pros seus clientes.
+          </p>
+        </div>
+        <Link href="/configuracoes/fiscal">
+          <Button type="button" variant="outline">
+            Configurar dados fiscais
+          </Button>
+        </Link>
+      </Card>
+
+      <Card className="flex items-center justify-between gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Assistente de IA
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Guia de uso do site pros seus usuários, via um workflow n8n seu —
+            nunca envia dado de cliente, orçamento ou valor.
+          </p>
+        </div>
+        <Link href="/configuracoes/assistente">
+          <Button type="button" variant="outline">
+            Configurar assistente
+          </Button>
+        </Link>
       </Card>
 
       <Card className="flex flex-col gap-4 p-6">
         <h2 className="text-base font-semibold text-slate-900 dark:text-white">
           Nesting de bobina
         </h2>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input
             label="Margem de segurança padrão (%)"
             name="margemSegurancaPadrao"

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
-import { exigirPapel } from "@/lib/auth/permissoes";
+import { exigirPapel, MODULOS_PERMISSAO } from "@/lib/auth/permissoes";
 import { senhaSchema } from "@/lib/auth/validation";
 import { hashPassword } from "@/lib/auth/password";
 
@@ -96,4 +96,43 @@ export async function salvarAcessoMeuNegocio(
   revalidatePath("/meu-negocio");
 
   return { ok: true, mensagem: "Acesso atualizado com sucesso!" };
+}
+
+export type SalvarPermissoesResult = { ok: boolean; mensagem: string };
+
+// Só se aplica a usuário com papel OPERADOR — DONO e ADMIN têm acesso total
+// automático (ver podeVerModulo/podeEditarModulo), essa tela nem é acessível
+// pros dois. Upsert de uma linha por módulo: "podeVer" desmarcado também
+// desmarca "podeEditar" (não faz sentido editar o que não pode nem ver).
+export async function salvarPermissoes(
+  _estadoAnterior: SalvarPermissoesResult | null,
+  formData: FormData
+): Promise<SalvarPermissoesResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  exigirPapel(usuario, ["DONO"]);
+
+  const usuarioAlvoId = String(formData.get("usuarioId"));
+  const alvo = await prisma.usuario.findFirst({
+    where: { id: usuarioAlvoId, graficaId: usuario.graficaId, papel: "OPERADOR" },
+  });
+  if (!alvo) {
+    return { ok: false, mensagem: "Usuário não encontrado (ou não é Operador)." };
+  }
+
+  await prisma.$transaction(
+    MODULOS_PERMISSAO.map(({ valor }) => {
+      const podeVer = formData.get(`ver_${valor}`) === "on";
+      const podeEditar = podeVer && formData.get(`editar_${valor}`) === "on";
+      return prisma.permissaoUsuario.upsert({
+        where: { usuarioId_modulo: { usuarioId: usuarioAlvoId, modulo: valor } },
+        create: { usuarioId: usuarioAlvoId, modulo: valor, podeVer, podeEditar },
+        update: { podeVer, podeEditar },
+      });
+    })
+  );
+
+  revalidatePath(`/usuarios/${usuarioAlvoId}/permissoes`);
+  revalidatePath("/usuarios");
+
+  return { ok: true, mensagem: `Permissões de "${alvo.nome}" atualizadas com sucesso!` };
 }

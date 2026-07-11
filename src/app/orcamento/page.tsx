@@ -1,16 +1,25 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
-import { podeVerMeuNegocio } from "@/lib/auth/permissoes";
+import {
+  podeVerMeuNegocio,
+  exigirVerModulo,
+  podeEditarModulo,
+  obterModulosVisiveis,
+} from "@/lib/auth/permissoes";
+import { formatoMoeda } from "@/lib/moeda";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/Badge";
 import { ReceiptIcon, SlidersIcon } from "@/components/icons";
 import { CalculadoraForm } from "./CalculadoraForm";
+import { MarcarEnviadoButton } from "./MarcarEnviadoButton";
 
 export default async function OrcamentoPage() {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirVerModulo(usuario, "ORCAMENTO");
+  const podeEditar = await podeEditarModulo(usuario, "ORCAMENTO");
 
   const [itensVendaveis, clientes, orcamentosRecentes] = await Promise.all([
     prisma.itemGrafica.findMany({
@@ -37,11 +46,6 @@ export default async function OrcamentoPage() {
     }),
   ]);
 
-  const formatoMoeda = new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-
   return (
     <div className="flex flex-1 flex-col">
       <UserNav
@@ -50,19 +54,22 @@ export default async function OrcamentoPage() {
         papel={usuario.papel}
         paginaAtual="/orcamento"
         mostrarMeuNegocio={podeVerMeuNegocio(usuario)}
+        modulosVisiveis={await obterModulosVisiveis(usuario)}
       />
 
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-10">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-            Calculadora de orçamento
+            {podeEditar ? "Calculadora de orçamento" : "Orçamentos"}
           </h1>
           <p className="mt-1 text-slate-500">
-            Escolha o cliente e o produto para montar o orçamento em segundos.
+            {podeEditar
+              ? "Escolha o cliente e o produto para montar o orçamento em segundos."
+              : "Acompanhe os orçamentos da gráfica."}
           </p>
         </div>
 
-        {clientes.length === 0 || itensVendaveis.length === 0 ? (
+        {!podeEditar ? null : clientes.length === 0 || itensVendaveis.length === 0 ? (
           <Card className="flex flex-col items-center gap-3 p-10 text-center">
             <span className="flex h-12 w-12 items-center justify-center rounded-full bg-teal-50 text-teal-600 dark:bg-teal-950 dark:text-teal-400">
               <SlidersIcon className="h-6 w-6" />
@@ -110,31 +117,35 @@ export default async function OrcamentoPage() {
           ) : (
             <Card className="divide-y divide-slate-100 dark:divide-slate-800">
               {orcamentosRecentes.map((o) => (
-                <Link
+                <div
                   key={o.id}
-                  href={`/orcamento/${o.id}`}
-                  className="flex items-center justify-between gap-4 p-5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                  className="flex flex-col gap-3 p-5 transition-colors hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between dark:hover:bg-slate-800/50"
                 >
-                  <div className="flex items-center gap-3">
+                  <Link href={`/orcamento/${o.id}`} className="flex flex-1 items-center gap-3">
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-teal-50 text-teal-600 dark:bg-teal-950 dark:text-teal-400">
                       <ReceiptIcon className="h-5 w-5" />
                     </span>
-                    <div>
+                    <div className="min-w-0">
                       <p className="font-medium text-slate-900 dark:text-white">
                         {o.cliente.nome}
                       </p>
-                      <p className="text-sm text-slate-500">
+                      <p className="truncate text-sm text-slate-500">
                         {o.itens.map((i) => i.itemGrafica.itemCatalogo.nome).join(", ")}
                       </p>
                     </div>
+                  </Link>
+                  <div className="flex items-center justify-between gap-3 sm:justify-end sm:gap-4">
+                    {podeEditar && o.status === "RASCUNHO" && (
+                      <MarcarEnviadoButton orcamentoId={o.id} />
+                    )}
+                    <Link href={`/orcamento/${o.id}`} className="flex flex-col items-end gap-1.5">
+                      <p className="font-semibold text-slate-900 dark:text-white">
+                        {formatoMoeda.format(Number(o.total))}
+                      </p>
+                      <StatusBadge status={o.status} />
+                    </Link>
                   </div>
-                  <div className="flex flex-col items-end gap-1.5">
-                    <p className="font-semibold text-slate-900 dark:text-white">
-                      {formatoMoeda.format(Number(o.total))}
-                    </p>
-                    <StatusBadge status={o.status} />
-                  </div>
-                </Link>
+                </div>
               ))}
             </Card>
           )}

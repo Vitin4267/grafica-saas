@@ -1,7 +1,9 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
-import type { ContextoPrecificacao, ParametrosTenant } from "./index";
+import { ErroPrecificacao } from "./erros";
+import { resolverPrecoPapel } from "./papel";
+import type { ContextoPrecificacao, ParametrosPrensa, ParametrosTenant } from "./index";
 
 // Único arquivo do motor que toca Prisma. Cruza Decimal do Prisma → number sempre
 // aqui (via toString()/Number()), nunca dentro de src/lib/pricing/*.ts puro.
@@ -23,6 +25,23 @@ export async function carregarParametrosTenant(graficaId: string): Promise<Param
     pedidoMinimo: Number(registro.pedidoMinimo),
     incrementoArredondamento: Number(registro.incrementoArredondamento),
 
+    margemSegurancaPadrao: Number(registro.margemSegurancaPadrao),
+    gapPecasPadrao: Number(registro.gapPecasPadrao),
+  };
+}
+
+// Diferente de carregarParametrosTenant, não é self-healing — uma prensa só existe
+// se o usuário criou uma em Configurações > Prensas. Chamador (carregarContextoPrecificacao)
+// já garante que só chama isso com um prensaId real.
+export async function carregarParametrosPrensa(
+  prensaId: string,
+  graficaId: string
+): Promise<ParametrosPrensa> {
+  const registro = await prisma.prensa.findFirstOrThrow({
+    where: { id: prensaId, graficaId },
+  });
+
+  return {
     custoHoraMaq: Number(registro.custoHoraMaq),
     torres: registro.torres,
     custoChapa: Number(registro.custoChapa),
@@ -31,9 +50,6 @@ export async function carregarParametrosTenant(graficaId: string): Promise<Param
     custoMilheiroRod: Number(registro.custoMilheiroRod),
     rodagemMinima: Number(registro.rodagemMinima),
     perdaPercentPadrao: Number(registro.perdaPercentPadrao),
-
-    margemSegurancaPadrao: Number(registro.margemSegurancaPadrao),
-    gapPecasPadrao: Number(registro.gapPecasPadrao),
   };
 }
 
@@ -48,7 +64,12 @@ export async function carregarContextoPrecificacao(
 ): Promise<ContextoPrecificacao> {
   const item = await prisma.itemGrafica.findFirstOrThrow({
     where: { id: itemGraficaId, graficaId },
-    include: { bobinas: true, formatosFolha: true },
+    include: {
+      bobinas: true,
+      formatosFolha: true,
+      prensa: true,
+      papel: { include: { tabelaPrecoPapel: true } },
+    },
   });
 
   const parametros = await carregarParametrosTenant(graficaId);
@@ -72,6 +93,28 @@ export async function carregarContextoPrecificacao(
       areaMinimaFaturavel: Number(item.areaMinimaFaturavel ?? 0),
     };
   } else if (item.modeloCalculo === "OFFSET") {
+    if (!item.prensa) {
+      throw new ErroPrecificacao(
+        "PRENSA_NAO_CONFIGURADA",
+        "Este produto usa o modelo Offset mas não tem uma prensa selecionada — configure isso na tela do produto, no catálogo."
+      );
+    }
+    if (!item.papel) {
+      throw new ErroPrecificacao(
+        "PAPEL_NAO_CONFIGURADO",
+        "Este produto usa o modelo Offset mas não tem um papel selecionado — configure isso na tela do produto, no catálogo."
+      );
+    }
+
+    const gramaturaEscolhida = Number(item.gramaturaGm2 ?? 0);
+    const { precoKg } = resolverPrecoPapel(
+      item.papel.tabelaPrecoPapel.map((linha) => ({
+        gramatura: linha.gramatura,
+        precoKg: Number(linha.precoKg),
+      })),
+      gramaturaEscolhida
+    );
+
     contexto.offset = {
       folhas: item.formatosFolha.map((f) => ({
         id: f.id,
@@ -79,10 +122,12 @@ export async function carregarContextoPrecificacao(
         larguraFolha: Number(f.larguraFolha),
         alturaFolha: Number(f.alturaFolha),
       })),
-      gramaturaGm2: Number(item.gramaturaGm2 ?? 0),
-      precoPorKg: Number(item.precoPorKg ?? 0),
+      gramaturaGm2: gramaturaEscolhida,
+      precoPorKg: precoKg,
       viraFolha: item.viraFolha,
     };
+    contexto.parametrosPrensa = await carregarParametrosPrensa(item.prensa.id, graficaId);
+    contexto.prensaUsada = { id: item.prensa.id, nome: item.prensa.nome };
   }
 
   return contexto;

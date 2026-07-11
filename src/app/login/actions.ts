@@ -1,11 +1,11 @@
 "use server";
 
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { verifyPassword } from "@/lib/auth/password";
 import { criarSessao } from "@/lib/auth/session";
 import { verificarBloqueioLogin, registrarTentativaLogin } from "@/lib/auth/rate-limit";
+import { obterIpRequisicao } from "@/lib/auth/ip";
 import { loginSchema } from "@/lib/auth/validation";
 
 export type LoginResult = {
@@ -19,11 +19,6 @@ const MENSAGEM_GENERICA = "E-mail ou senha inválidos.";
 // não entregue (por timing) se a conta existe ou não.
 const HASH_FANTASMA =
   "$argon2id$v=19$m=65536,t=3,p=1$FXIa+pXDgzqhMkFjgSX8jw$U/+cr0epasX9h3LCznuMfijjbeEnfoCIbC/1DlACIAY";
-
-async function obterIp() {
-  const headerList = await headers();
-  return headerList.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "desconhecido";
-}
 
 export async function login(
   _estadoAnterior: LoginResult | null,
@@ -39,7 +34,7 @@ export async function login(
   }
 
   const { email, senha } = parsed.data;
-  const ip = await obterIp();
+  const ip = await obterIpRequisicao();
 
   const { bloqueado } = await verificarBloqueioLogin(email, ip);
   if (bloqueado) {

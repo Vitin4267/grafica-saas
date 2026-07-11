@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
-import { podeVerMeuNegocio } from "@/lib/auth/permissoes";
+import {
+  podeVerMeuNegocio,
+  exigirVerModulo,
+  podeEditarModulo,
+  obterModulosVisiveis,
+} from "@/lib/auth/permissoes";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/Badge";
@@ -10,6 +15,8 @@ import { AvancarPedidoButton } from "./AvancarPedidoButton";
 
 export default async function ProducaoPage() {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirVerModulo(usuario, "PRODUCAO");
+  const podeEditar = await podeEditarModulo(usuario, "PRODUCAO");
 
   const pedidos = await prisma.pedido.findMany({
     where: { graficaId: usuario.graficaId },
@@ -32,6 +39,7 @@ export default async function ProducaoPage() {
         papel={usuario.papel}
         paginaAtual="/producao"
         mostrarMeuNegocio={podeVerMeuNegocio(usuario)}
+        modulosVisiveis={await obterModulosVisiveis(usuario)}
       />
 
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-10">
@@ -85,7 +93,9 @@ export default async function ProducaoPage() {
                 </div>
                 <div className="flex items-center gap-3">
                   <StatusBadge status={pedido.status} tipo="pedido" />
-                  <AvancarPedidoButton pedidoId={pedido.id} status={pedido.status} />
+                  {podeEditar && (
+                    <AvancarPedidoButton pedidoId={pedido.id} status={pedido.status} />
+                  )}
                 </div>
               </div>
             ))}

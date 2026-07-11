@@ -94,6 +94,13 @@ export type ParametrosTenant = {
   pedidoMinimo: number;
   incrementoArredondamento: number;
 
+  margemSegurancaPadrao: number;
+  gapPecasPadrao: number;
+};
+
+// ---------- Parâmetros da prensa (custo de máquina, só OFFSET) ----------
+
+export type ParametrosPrensa = {
   custoHoraMaq: number;
   torres: number;
   custoChapa: number;
@@ -102,7 +109,4 @@ export type ParametrosTenant = {
   custoMilheiroRod: number;
   rodagemMinima: number;
   perdaPercentPadrao: number;
-
-  margemSegurancaPadrao: number;
-  gapPecasPadrao: number;
 };

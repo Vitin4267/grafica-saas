@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { podeEditarModulo } from "@/lib/auth/permissoes";
 
 export type SalvarParametrosResult = { ok: boolean; mensagem: string };
 
@@ -14,23 +15,20 @@ const CAMPOS_DECIMAL = [
   "taxaFinanceiraPercent",
   "pedidoMinimo",
   "incrementoArredondamento",
-  "custoHoraMaq",
-  "custoChapa",
-  "tempoAcertoH",
-  "custoMilheiroRod",
-  "rodagemMinima",
-  "perdaPercentPadrao",
   "margemSegurancaPadrao",
   "gapPecasPadrao",
 ] as const;
 
-const CAMPOS_INTEIRO = ["torres", "folhasAcerto"] as const;
+const CAMPOS_INTEIRO = [] as const;
 
 export async function salvarParametros(
   _estadoAnterior: SalvarParametrosResult | null,
   formData: FormData
 ): Promise<SalvarParametrosResult> {
   const usuario = await exigirUsuarioAutenticado();
+  if (!(await podeEditarModulo(usuario, "CONFIGURACOES"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar configurações." };
+  }
 
   const dados: Record<string, number> = {};
 

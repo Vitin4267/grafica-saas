@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { precificar, type PedidoPrecificacao, type ContextoPrecificacao } from "../precificar";
 import { ErroPrecificacao } from "../erros";
-import type { ParametrosTenant } from "../tipos";
+import type { ParametrosPrensa, ParametrosTenant } from "../tipos";
 
 // Fixture de parâmetros de tenant — números plausíveis, não "oficiais" de mercado.
 // O que importa nos testes é o COMPORTAMENTO relativo (qual bobina/folha vence,
@@ -15,6 +15,12 @@ const PARAMS: ParametrosTenant = {
   pedidoMinimo: 15,
   incrementoArredondamento: 0.1,
 
+  margemSegurancaPadrao: 0.02,
+  gapPecasPadrao: 0.008,
+};
+
+// Fixture de parâmetros de uma prensa offset — usada só nos cenários OFFSET.
+const PARAMS_PRENSA: ParametrosPrensa = {
   custoHoraMaq: 120,
   torres: 4,
   custoChapa: 25,
@@ -23,9 +29,6 @@ const PARAMS: ParametrosTenant = {
   custoMilheiroRod: 40,
   rodagemMinima: 30,
   perdaPercentPadrao: 0.03,
-
-  margemSegurancaPadrao: 0.02,
-  gapPecasPadrao: 0.008,
 };
 
 describe("golden #1 — banner 0,80×1,20m escolhe a bobina mais barata (nesting)", () => {
@@ -74,6 +77,7 @@ describe("golden #2 — cartão 9×5cm 4/4 com BOPP: preço por milheiro cai com
       modeloCalculo: "OFFSET",
       viraFolha: false,
       parametros: PARAMS,
+      parametrosPrensa: PARAMS_PRENSA,
       offset: {
         folhas: [{ id: "folha-66x96", nome: "Fechada 66x96", larguraFolha: 0.66, alturaFolha: 0.96 }],
         gramaturaGm2: 300,

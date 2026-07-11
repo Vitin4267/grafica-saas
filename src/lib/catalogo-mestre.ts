@@ -40,6 +40,9 @@ export const CATALOGO_MESTRE: ItemCatalogoSeed[] = [
   { tipo: "PRODUTO", categoria: "Papelaria e Impressos", nome: "Calendário de Mesa" },
   { tipo: "PRODUTO", categoria: "Papelaria e Impressos", nome: "Calendário de Parede" },
   { tipo: "PRODUTO", categoria: "Papelaria e Impressos", nome: "Agenda Personalizada" },
+  { tipo: "PRODUTO", categoria: "Papelaria e Impressos", nome: "Cordão para Crachá (Lanyard)" },
+  { tipo: "PRODUTO", categoria: "Papelaria e Impressos", nome: "Cartão de Visita Magnético" },
+  { tipo: "PRODUTO", categoria: "Papelaria e Impressos", nome: "Vale-Presente / Cupom Promocional" },
 
   // Comunicação Visual
   { tipo: "PRODUTO", categoria: "Comunicação Visual", nome: "Banner em Lona" },
@@ -79,6 +82,7 @@ export const CATALOGO_MESTRE: ItemCatalogoSeed[] = [
   { tipo: "PRODUTO", categoria: "Brindes e Personalizados", nome: "Caneta Personalizada" },
   { tipo: "PRODUTO", categoria: "Brindes e Personalizados", nome: "Copo Personalizado" },
   { tipo: "PRODUTO", categoria: "Brindes e Personalizados", nome: "Sacola Personalizada" },
+  { tipo: "PRODUTO", categoria: "Brindes e Personalizados", nome: "Guardanapo Personalizado" },
 
   // Adesivos e Etiquetas
   { tipo: "PRODUTO", categoria: "Adesivos e Etiquetas", nome: "Adesivo Recortado" },
@@ -86,23 +90,21 @@ export const CATALOGO_MESTRE: ItemCatalogoSeed[] = [
   { tipo: "PRODUTO", categoria: "Adesivos e Etiquetas", nome: "Etiqueta para Produto" },
   { tipo: "PRODUTO", categoria: "Adesivos e Etiquetas", nome: "Rótulo Personalizado" },
 
+  // Carimbos e Selos
+  { tipo: "PRODUTO", categoria: "Carimbos e Selos", nome: "Carimbo Automático" },
+
   // ---------- MATÉRIAS-PRIMAS ----------
-  // Papéis
-  { tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: "Papel Couché 90g", unidade: "FOLHA" },
-  { tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: "Papel Couché 115g", unidade: "FOLHA" },
-  { tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: "Papel Couché 150g", unidade: "FOLHA" },
-  { tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: "Papel Couché 170g", unidade: "FOLHA" },
-  { tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: "Papel Couché 250g", unidade: "FOLHA" },
-  { tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: "Papel Couché 300g", unidade: "FOLHA" },
-  { tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: "Papel Offset (Sulfite) 75g", unidade: "FOLHA" },
-  { tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: "Papel Offset (Sulfite) 90g", unidade: "FOLHA" },
-  { tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: "Papel Offset (Sulfite) 120g", unidade: "FOLHA" },
-  { tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: "Papel Reciclado 75g", unidade: "FOLHA" },
+  // Papéis — cada papel é 1 item só; a gramatura vira um subtópico dentro dele
+  // (tabela de preço por gramatura, configurada em /catalogo/[itemGraficaId]
+  // depois que a gráfica seleciona o item), não um item novo por gramatura.
+  { tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: "Papel Couché", unidade: "FOLHA" },
+  { tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: "Papel Offset (Sulfite)", unidade: "FOLHA" },
+  { tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: "Papel Reciclado", unidade: "FOLHA" },
   { tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: "Papel Kraft", unidade: "FOLHA" },
   { tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: "Papel Fotográfico", unidade: "FOLHA" },
   { tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: "Papel Vergê", unidade: "FOLHA" },
-  { tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: "Papel Cartão / Supremo 250g", unidade: "FOLHA" },
-  { tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: "Papel Cartão / Supremo 300g", unidade: "FOLHA" },
+  { tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: "Papel Cartão / Supremo", unidade: "FOLHA" },
+  { tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: "Papel Adesivo (Couché Adesivo)", unidade: "FOLHA" },
 
   // Lonas e Vinis
   { tipo: "MATERIA_PRIMA", categoria: "Lonas e Vinis", nome: "Lona 440g", unidade: "METRO_QUADRADO" },
@@ -111,11 +113,14 @@ export const CATALOGO_MESTRE: ItemCatalogoSeed[] = [
   { tipo: "MATERIA_PRIMA", categoria: "Lonas e Vinis", nome: "Vinil Adesivo Fosco", unidade: "METRO_QUADRADO" },
   { tipo: "MATERIA_PRIMA", categoria: "Lonas e Vinis", nome: "Vinil Perfurado (One Way)", unidade: "METRO_QUADRADO" },
   { tipo: "MATERIA_PRIMA", categoria: "Lonas e Vinis", nome: "Vinil para Envelopamento", unidade: "METRO_QUADRADO" },
+  { tipo: "MATERIA_PRIMA", categoria: "Lonas e Vinis", nome: "Tecido Oxford", unidade: "METRO_QUADRADO" },
 
-  // Placas e Chapas
-  { tipo: "MATERIA_PRIMA", categoria: "Placas e Chapas", nome: "Chapa de PVC 2mm", unidade: "UNIDADE" },
-  { tipo: "MATERIA_PRIMA", categoria: "Placas e Chapas", nome: "Chapa de PVC 3mm", unidade: "UNIDADE" },
-  { tipo: "MATERIA_PRIMA", categoria: "Placas e Chapas", nome: "Chapa de PVC 5mm", unidade: "UNIDADE" },
+  // Placas e Chapas — Chapa de PVC/Acrílico são 1 item só; a espessura vira
+  // variante (rótulo + preço + estoque próprios), configurada em
+  // /catalogo/[itemGraficaId] depois que a gráfica seleciona o item — mesmo
+  // princípio do papel, mas com estoque por variante (ver VarianteMateriaPrima).
+  { tipo: "MATERIA_PRIMA", categoria: "Placas e Chapas", nome: "Chapa de PVC", unidade: "UNIDADE" },
+  { tipo: "MATERIA_PRIMA", categoria: "Placas e Chapas", nome: "Chapa de Acrílico", unidade: "UNIDADE" },
   { tipo: "MATERIA_PRIMA", categoria: "Placas e Chapas", nome: "Chapa de ACM", unidade: "UNIDADE" },
   { tipo: "MATERIA_PRIMA", categoria: "Placas e Chapas", nome: "Chapa de MDF", unidade: "UNIDADE" },
   { tipo: "MATERIA_PRIMA", categoria: "Placas e Chapas", nome: "Papelão Paraná", unidade: "UNIDADE" },
@@ -136,6 +141,7 @@ export const CATALOGO_MESTRE: ItemCatalogoSeed[] = [
   { tipo: "MATERIA_PRIMA", categoria: "Laminação e Acabamento", nome: "Ilhós", unidade: "UNIDADE" },
   { tipo: "MATERIA_PRIMA", categoria: "Laminação e Acabamento", nome: "Cola Quente", unidade: "KG" },
   { tipo: "MATERIA_PRIMA", categoria: "Laminação e Acabamento", nome: "Fita Dupla Face", unidade: "ROLO" },
+  { tipo: "MATERIA_PRIMA", categoria: "Laminação e Acabamento", nome: "Cola Branca / Instantânea", unidade: "UNIDADE" },
 
   // Insumos para Sublimação e Vestuário
   { tipo: "MATERIA_PRIMA", categoria: "Sublimação e Vestuário", nome: "Camiseta Branca (Malha PV)", unidade: "UNIDADE" },

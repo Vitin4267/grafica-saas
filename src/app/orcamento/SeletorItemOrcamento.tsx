@@ -54,25 +54,35 @@ export function SeletorItemOrcamento({
   const usaModeloOffset = itemSelecionado?.modeloCalculo === "OFFSET";
   const usaMotorAvancado = usaModeloM2 || usaModeloOffset;
 
-  // TODO(review): trocar o produto (onChange do Select abaixo) só atualiza
-  // itemGraficaId — largura/altura/corFrente/corVerso do item anterior continuam
-  // em `valores` e são reaproveitadas pro novo item selecionado. Se o usuário
-  // configura um item M2/OFFSET (preenche largura/altura) e troca pra um SIMPLES
-  // sem clicar "Adicionar" antes, o SIMPLES herda as dimensões e é cotado por m²
-  // em vez de por unidade — preço errado sem nenhum aviso. Precisa resetar os
-  // campos dependentes do modeloCalculo quando `itemGraficaId` muda (aqui ou no
-  // `onChange` que os pais passam).
   const set =
     (campo: keyof CamposItemOrcamento) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
       onChange({ ...valores, [campo]: e.target.value });
+
+  // Trocar de produto reseta os campos que dependem do modeloCalculo dele
+  // (largura/altura/cores de frente-verso são específicos do item M2/OFFSET
+  // anterior) — sem isso, um item SIMPLES escolhido depois de um M2/OFFSET
+  // herdava as dimensões e era cotado por m² por engano. Mantém só a
+  // quantidade, que faz sentido continuar igual ao trocar de produto.
+  const trocarItem = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    onChange({
+      itemGraficaId: e.target.value,
+      quantidade: valores.quantidade,
+      larguraCm: "",
+      alturaCm: "",
+      corFrente: "4",
+      corVerso: "0",
+      cores: "",
+      acabamento: "",
+    });
+  };
 
   return (
     <div className="flex flex-col gap-5">
       <Select
         label="Produto ou serviço"
         value={valores.itemGraficaId}
-        onChange={set("itemGraficaId")}
+        onChange={trocarItem}
         hint={itemSelecionado?.categoria}
       >
         {itens.map((i) => (
@@ -90,7 +100,7 @@ export function SeletorItemOrcamento({
         onChange={set("quantidade")}
       />
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Input
           label="Largura (cm)"
           type="number"
@@ -110,7 +120,7 @@ export function SeletorItemOrcamento({
       </div>
 
       {usaModeloOffset && (
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input
             label="Cores de frente"
             type="number"

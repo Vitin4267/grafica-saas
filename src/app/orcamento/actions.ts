@@ -5,8 +5,10 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { calcularItemOrcamento } from "@/lib/orcamento-precificacao";
 import { parseJsonArray } from "@/lib/form-json";
+import { D } from "@/lib/pricing/decimal";
 import { revalidatePath } from "next/cache";
 
 // Item já digitado/computado no carrinho local (client) — o servidor NUNCA confia
@@ -95,6 +97,9 @@ export async function criarOrcamento(
   formData: FormData
 ): Promise<CriarOrcamentoResult> {
   const usuario = await exigirUsuarioAutenticado();
+  if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra criar orçamentos." };
+  }
 
   const clienteId = String(formData.get("clienteId"));
   const itensResult = parseJsonArray(formData.get("itensJson"), itemEntradaSchema);
@@ -114,13 +119,10 @@ export async function criarOrcamento(
     return { ok: false, mensagem: "Cliente não encontrado." };
   }
 
-  // TODO(review): total é somado com Number() (ponto flutuante binário) em vez
-  // de decimal.js/Prisma.Decimal antes de gravar numa coluna Decimal(12,2) —
-  // mesmo padrão em editarOrcamento/adicionarItemOrcamento/removerItemOrcamento
-  // (orcamento/[id]/actions.ts). O Postgres arredonda na gravação então o risco
-  // prático é baixo, mas é a ferramenta errada pra soma de dinheiro (o resto do
-  // motor de precificação usa decimal.js com cuidado — ver src/lib/pricing/).
-  let total = 0;
+  // Soma em decimal.js (mesma instância configurada usada pelo motor de
+  // precificação, src/lib/pricing/decimal.ts) — nunca em Number(), pra não
+  // arriscar imprecisão de ponto flutuante binário numa soma de dinheiro.
+  let total = new D(0);
   const itensParaCriar: {
     itemGraficaId: string;
     quantidade: number;
@@ -162,7 +164,7 @@ export async function criarOrcamento(
       return { ok: false, mensagem: `Item ${indice + 1}: ${resultado.mensagem}` };
     }
 
-    total += Number(resultado.precoTotal);
+    total = total.plus(resultado.precoTotal);
     itensParaCriar.push({
       itemGraficaId: itemGrafica.id,
       quantidade: entrada.quantidade,

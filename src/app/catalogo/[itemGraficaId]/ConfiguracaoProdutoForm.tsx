@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Select";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { gerarChave } from "@/lib/chave-local";
 import { salvarModeloProduto } from "./actions";
 
 type ModeloCalculo = "SIMPLES" | "M2" | "OFFSET";
@@ -17,12 +19,6 @@ type FormatoLinha = {
   larguraFolha: string;
   alturaFolha: string;
 };
-
-function gerarChave() {
-  return typeof crypto !== "undefined" && crypto.randomUUID
-    ? crypto.randomUUID()
-    : Math.random().toString(36).slice(2);
-}
 
 function CampoLinha({
   value,
@@ -184,7 +180,10 @@ export function ConfiguracaoProdutoForm({
   custoImpressaoM2: custoImpressaoM2Inicial,
   areaMinimaFaturavel: areaMinimaFaturavelInicial,
   gramaturaGm2: gramaturaGm2Inicial,
-  precoPorKg: precoPorKgInicial,
+  papelId: papelIdInicial,
+  papeis,
+  prensaId: prensaIdInicial,
+  prensas,
   bobinas: bobinasIniciais,
   formatosFolha: formatosIniciais,
 }: {
@@ -194,7 +193,10 @@ export function ConfiguracaoProdutoForm({
   custoImpressaoM2: string;
   areaMinimaFaturavel: string;
   gramaturaGm2: string;
-  precoPorKg: string;
+  papelId: string;
+  papeis: { id: string; nome: string; gramaturas: number[] }[];
+  prensaId: string;
+  prensas: { id: string; nome: string }[];
   bobinas: { larguraNominal: string; refile: string }[];
   formatosFolha: { nome: string; larguraFolha: string; alturaFolha: string }[];
 }) {
@@ -205,10 +207,13 @@ export function ConfiguracaoProdutoForm({
   const [formatos, setFormatos] = useState<FormatoLinha[]>(() =>
     formatosIniciais.map((f) => ({ chave: gerarChave(), ...f }))
   );
+  const [papelId, setPapelId] = useState(papelIdInicial);
   const [state, formAction, isPending] = useActionState(salvarModeloProduto, null);
   const [mostrarAvancadoM2, setMostrarAvancadoM2] = useState(
     Boolean(areaMinimaFaturavelInicial)
   );
+
+  const gramaturasDoPapel = papeis.find((p) => p.id === papelId)?.gramaturas ?? [];
 
   const temBobinasOrfas = modeloCalculo !== "M2" && bobinas.length > 0;
   const temFormatosOrfaos = modeloCalculo !== "OFFSET" && formatos.length > 0;
@@ -255,7 +260,7 @@ export function ConfiguracaoProdutoForm({
                 Adicione ao menos uma bobina para habilitar o cálculo M2.
               </Alert>
             )}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Input
                 label="Custo de impressão por m²"
                 name="custoImpressaoM2"
@@ -294,6 +299,29 @@ export function ConfiguracaoProdutoForm({
 
         {modeloCalculo === "OFFSET" && (
           <div className="flex flex-col gap-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+            {prensas.length === 0 ? (
+              <Alert variant="error">
+                Nenhuma prensa cadastrada ainda. Cadastre uma em{" "}
+                <Link href="/configuracoes/prensas" className="underline">
+                  Configurações → Prensas
+                </Link>{" "}
+                antes de usar o modelo Offset.
+              </Alert>
+            ) : (
+              <Select
+                label="Prensa"
+                name="prensaId"
+                defaultValue={prensaIdInicial}
+                hint="Define o custo de máquina, chapas e rodagem usados no cálculo deste produto."
+              >
+                <option value="">Selecione uma prensa</option>
+                {prensas.map((prensa) => (
+                  <option key={prensa.id} value={prensa.id}>
+                    {prensa.nome}
+                  </option>
+                ))}
+              </Select>
+            )}
             <label className="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -306,25 +334,54 @@ export function ConfiguracaoProdutoForm({
                 folha é par
               </span>
             </label>
-            <div className="grid grid-cols-2 gap-4">
-              <Input
-                label="Gramatura (g/m²)"
-                name="gramaturaGm2"
-                type="number"
-                step="1"
-                min="30"
-                max="500"
-                defaultValue={gramaturaGm2Inicial}
-              />
-              <Input
-                label="Preço por kg (R$)"
-                name="precoPorKg"
-                type="number"
-                step="0.01"
-                min="0"
-                defaultValue={precoPorKgInicial}
-              />
-            </div>
+            {papeis.length === 0 ? (
+              <Alert variant="error">
+                Nenhum papel cadastrado ainda. Cadastre uma matéria-prima do tipo papel em{" "}
+                <Link href="/catalogo" className="underline">
+                  Catálogo
+                </Link>{" "}
+                e defina suas gramaturas antes de usar o modelo Offset.
+              </Alert>
+            ) : (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Select
+                  label="Papel"
+                  name="papelId"
+                  value={papelId}
+                  onChange={(e) => setPapelId(e.target.value)}
+                  hint="O preço por kg vem da tabela de gramaturas deste papel — configure em Catálogo."
+                >
+                  <option value="">Selecione um papel</option>
+                  {papeis.map((papel) => (
+                    <option key={papel.id} value={papel.id}>
+                      {papel.nome}
+                    </option>
+                  ))}
+                </Select>
+                <div>
+                  <Input
+                    label="Gramatura (g/m²)"
+                    name="gramaturaGm2"
+                    type="number"
+                    step="1"
+                    min="30"
+                    max="500"
+                    list="gramaturas-do-papel"
+                    defaultValue={gramaturaGm2Inicial}
+                    hint={
+                      gramaturasDoPapel.length > 0
+                        ? "Se digitar uma gramatura fora da lista do papel, usamos o preço da mais próxima."
+                        : undefined
+                    }
+                  />
+                  <datalist id="gramaturas-do-papel">
+                    {gramaturasDoPapel.map((g) => (
+                      <option key={g} value={g} />
+                    ))}
+                  </datalist>
+                </div>
+              </div>
+            )}
             {formatos.length === 0 && (
               <Alert variant="error">
                 Adicione ao menos um formato de folha para habilitar o cálculo Offset.

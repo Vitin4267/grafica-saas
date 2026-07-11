@@ -1,11 +1,13 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Select";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
+import { formatoMoeda } from "@/lib/moeda";
 import { registrarPagamento, excluirPagamento } from "./actions";
 
 const ROTULO_FORMA: Record<string, string> = {
@@ -25,38 +27,52 @@ type Pagamento = {
   createdAt: string;
 };
 
-const formatoMoeda = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
-
 function LinhaPagamento({ pagamento }: { pagamento: Pagamento }) {
   const [state, formAction, isPending] = useActionState(excluirPagamento, null);
+  const [confirmando, setConfirmando] = useState(false);
+
+  useEffect(() => {
+    if (state && !state.ok) setConfirmando(false);
+  }, [state]);
 
   return (
-    <div className="flex items-center justify-between gap-3 p-4">
-      <div>
-        <p className="text-sm font-medium text-slate-800 dark:text-slate-100">
-          {formatoMoeda.format(Number(pagamento.valor))}
-          <span className="ml-2 text-xs font-normal text-slate-500">
-            {ROTULO_FORMA[pagamento.forma] ?? pagamento.forma}
-          </span>
-        </p>
-        <p className="text-xs text-slate-500">
-          {new Date(pagamento.createdAt).toLocaleDateString("pt-BR")}
-          {pagamento.observacao && ` · ${pagamento.observacao}`}
-        </p>
-        {state && !state.ok && (
-          <p className="mt-1 text-xs text-rose-600">{state.mensagem}</p>
+    <div className="flex flex-col gap-2 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-slate-800 dark:text-slate-100">
+            {formatoMoeda.format(Number(pagamento.valor))}
+            <span className="ml-2 text-xs font-normal text-slate-500">
+              {ROTULO_FORMA[pagamento.forma] ?? pagamento.forma}
+            </span>
+          </p>
+          <p className="text-xs text-slate-500">
+            {new Date(pagamento.createdAt).toLocaleDateString("pt-BR")}
+            {pagamento.observacao && ` · ${pagamento.observacao}`}
+          </p>
+          {state && !state.ok && (
+            <p className="mt-1 text-xs text-rose-600">{state.mensagem}</p>
+          )}
+        </div>
+        {!confirmando && (
+          <button
+            type="button"
+            onClick={() => setConfirmando(true)}
+            className="shrink-0 text-xs font-medium text-rose-600 hover:underline"
+          >
+            Remover
+          </button>
         )}
       </div>
-      <form action={formAction}>
-        <input type="hidden" name="pagamentoId" value={pagamento.id} />
-        <button
-          type="submit"
-          disabled={isPending}
-          className="text-xs font-medium text-rose-600 hover:underline disabled:opacity-50"
-        >
-          Remover
-        </button>
-      </form>
+      {confirmando && (
+        <ConfirmarExclusao
+          pergunta={`Remover o pagamento de ${formatoMoeda.format(Number(pagamento.valor))}? Essa ação não pode ser desfeita.`}
+          onCancelar={() => setConfirmando(false)}
+          formAction={formAction}
+          campos={{ pagamentoId: pagamento.id }}
+          rotuloBotao="Remover pagamento"
+          pendente={isPending}
+        />
+      )}
     </div>
   );
 }

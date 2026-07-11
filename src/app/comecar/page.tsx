@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { podeVerMeuNegocio, obterModulosVisiveis } from "@/lib/auth/permissoes";
 import { obterStatusOnboarding } from "@/lib/onboarding";
 import { UserNav } from "@/components/UserNav";
+import { TourAbas } from "@/components/TourAbas";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import {
@@ -13,20 +15,25 @@ import {
 } from "@/components/icons";
 import { ClienteForm } from "@/app/clientes/ClienteForm";
 
-export default async function ComecarPage() {
+export default async function ComecarPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tour?: string }>;
+}) {
   const usuario = await exigirUsuarioAutenticado();
   const status = await obterStatusOnboarding(usuario.graficaId);
+  const { tour } = await searchParams;
 
   return (
     <div className="flex flex-1 flex-col">
-      {/* TODO(review): falta mostrarMeuNegocio={podeVerMeuNegocio(usuario)} (e
-          paginaAtual) — sem isso o link "Meu Negócio" some do menu nesta página
-          pra quem tem acesso. Ver TODO em src/components/UserNav.tsx. */}
       <UserNav
         nome={usuario.nome}
         graficaNome={usuario.grafica.nome}
         papel={usuario.papel}
+        mostrarMeuNegocio={podeVerMeuNegocio(usuario)}
+        modulosVisiveis={await obterModulosVisiveis(usuario)}
       />
+      <TourAbas ativo={tour === "1"} />
 
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-10">
         <div className="mb-8">

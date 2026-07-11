@@ -1,7 +1,7 @@
 import { type Dec, paraDecimal, tetoInteiro, maiorDec } from "./decimal";
 import { ErroPrecificacao } from "./erros";
 import { validarPedidoOffset } from "./validar";
-import type { ContextoOffset, FormatoFolhaInput, ParametrosTenant, PedidoOffset } from "./tipos";
+import type { ContextoOffset, FormatoFolhaInput, ParametrosPrensa, PedidoOffset } from "./tipos";
 
 const DEFAULTS_OFFSET = {
   sangria: 0.003,
@@ -83,7 +83,7 @@ type Candidato = {
 export function calcularOffset(
   pedido: PedidoOffset,
   contexto: ContextoOffset,
-  params: ParametrosTenant
+  params: ParametrosPrensa
 ): ResultadoOffset {
   validarPedidoOffset(pedido, contexto);
 

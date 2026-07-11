@@ -75,7 +75,7 @@ export function ConfiguracaoAcabamentoForm({
           <option value="POS_REFILE">Depois do refile (peça final)</option>
         </Select>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input
             label="Custo de setup (R$)"
             name="custoSetup"

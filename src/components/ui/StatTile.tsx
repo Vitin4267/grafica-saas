@@ -2,15 +2,11 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { Card } from "./Card";
 
-// TODO(review): tone="alert" não tem nenhum consumidor hoje (grep em src/) — o
-// widget de estoque baixo em meu-negocio/page.tsx monta seu próprio ícone âmbar
-// na mão em vez de usar StatTile. Ou remove a variante, ou reaproveita ela ali.
-type Tone = "neutral" | "positive" | "alert";
+type Tone = "neutral" | "positive";
 
 const TONE_ICONE: Record<Tone, string> = {
   neutral: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",
   positive: "bg-teal-50 text-teal-600 dark:bg-teal-950 dark:text-teal-400",
-  alert: "bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-400",
 };
 
 export function StatTile({

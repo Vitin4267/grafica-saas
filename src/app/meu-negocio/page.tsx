@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
-import { podeVerMeuNegocio } from "@/lib/auth/permissoes";
+import { podeVerMeuNegocio, obterModulosVisiveis } from "@/lib/auth/permissoes";
 import { buscarVisaoGeralNegocio } from "@/lib/meu-negocio";
+import { formatoMoeda } from "@/lib/moeda";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { StatTile } from "@/components/ui/StatTile";
@@ -84,11 +85,6 @@ export default async function MeuNegocioPage() {
 
   const visaoGeral = await buscarVisaoGeralNegocio(usuario.graficaId);
 
-  const formatoMoeda = new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-
   const faixasOrcamento: FaixaProporcao[] = visaoGeral.funilOrcamentos.map((f) => ({
     chave: f.status,
     rotulo: f.rotulo,
@@ -111,6 +107,7 @@ export default async function MeuNegocioPage() {
         papel={usuario.papel}
         paginaAtual="/meu-negocio"
         mostrarMeuNegocio
+        modulosVisiveis={await obterModulosVisiveis(usuario)}
       />
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-10">
@@ -159,6 +156,27 @@ export default async function MeuNegocioPage() {
             icon={<ReceiptIcon className="h-4 w-4" />}
             href="/orcamento"
           />
+          <StatTile
+            label="Saldo real do mês"
+            value={formatoMoeda.format(visaoGeral.saldoReal)}
+            caption="Faturamento aprovado menos despesas já pagas"
+            tone={visaoGeral.saldoReal >= 0 ? "positive" : "neutral"}
+            icon={<TrendingUpIcon className="h-4 w-4" />}
+            href="/financeiro"
+          />
+          <StatTile
+            label="Despesas a pagar este mês"
+            value={formatoMoeda.format(visaoGeral.despesasPendentesMes.total)}
+            caption={
+              visaoGeral.despesasPendentesMes.quantidade > 0
+                ? `${visaoGeral.despesasPendentesMes.quantidade} despesa${
+                    visaoGeral.despesasPendentesMes.quantidade > 1 ? "s" : ""
+                  } pendente${visaoGeral.despesasPendentesMes.quantidade > 1 ? "s" : ""}`
+                : "Nenhuma despesa pendente este mês"
+            }
+            icon={<ReceiptIcon className="h-4 w-4" />}
+            href="/financeiro"
+          />
         </div>
 
         {/* Funil de orçamentos + pipeline de produção */}
@@ -199,10 +217,10 @@ export default async function MeuNegocioPage() {
         {/* Estoque baixo + top clientes */}
         <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div>
-            <SecaoHeader titulo="Estoque" href="/catalogo" />
-            {visaoGeral.itensBaixoEstoque.length > 0 ? (
+            <SecaoHeader titulo="Previsão de estoque" href="/catalogo/estoque" />
+            {visaoGeral.alertasEstoque.length > 0 ? (
               <Card className="divide-y divide-slate-100 p-0 dark:divide-slate-800">
-                {visaoGeral.itensBaixoEstoque.map((item) => (
+                {visaoGeral.alertasEstoque.map((item) => (
                   <div key={item.id} className="flex items-center justify-between gap-3 p-4">
                     <div className="flex items-center gap-3">
                       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-400">
@@ -213,7 +231,9 @@ export default async function MeuNegocioPage() {
                       </p>
                     </div>
                     <p className="text-sm font-medium text-rose-600 dark:text-rose-400">
-                      {item.estoqueAtual} de {item.estoqueMinimo} restantes
+                      {item.diasRestantes !== null
+                        ? `Acaba em ${Math.max(0, Math.round(item.diasRestantes))} dia${Math.round(item.diasRestantes) === 1 ? "" : "s"}`
+                        : `${item.estoqueAtual} de ${item.estoqueMinimo} restantes`}
                     </p>
                   </div>
                 ))}
@@ -225,8 +245,8 @@ export default async function MeuNegocioPage() {
                 </span>
                 <p className="text-sm text-slate-500">
                   {visaoGeral.temItensComEstoqueControlado
-                    ? "Estoque em dia — nenhum item abaixo do mínimo."
-                    : "Nenhum item com controle de estoque cadastrado ainda. Configure estoque atual e mínimo no Catálogo."}
+                    ? "Estoque em dia — nada abaixo do mínimo nem previsto pra acabar em breve."
+                    : "Nenhum item com controle de estoque cadastrado ainda. Configure estoque atual no Catálogo."}
                 </p>
               </Card>
             )}

@@ -14,6 +14,17 @@ export function RegistroForm() {
 
   return (
     <form action={formAction} className="flex flex-col gap-5">
+      {/* Honeypot anti-bot: invisível pra gente, mas formulários preenchidos
+          automaticamente por bots costumam preencher todo campo que encontram. */}
+      <input
+        type="text"
+        name="site"
+        tabIndex={-1}
+        autoComplete="off"
+        aria-hidden="true"
+        className="absolute left-[-9999px] h-0 w-0 opacity-0"
+      />
+
       <Input
         label="Nome da gráfica"
         name="graficaNome"
@@ -49,6 +60,26 @@ export function RegistroForm() {
         minLength={10}
         hint="Mínimo 10 caracteres, com letra maiúscula, minúscula e número."
       />
+
+      <label className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-400">
+        <input
+          type="checkbox"
+          name="aceiteTermos"
+          required
+          className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+        />
+        <span>
+          Li e concordo com os{" "}
+          <Link href="/termos" target="_blank" className="font-medium text-teal-700 hover:underline dark:text-teal-400">
+            Termos de Uso
+          </Link>{" "}
+          e a{" "}
+          <Link href="/privacidade" target="_blank" className="font-medium text-teal-700 hover:underline dark:text-teal-400">
+            Política de Privacidade
+          </Link>
+          .
+        </span>
+      </label>
 
       {state && !state.ok && <Alert>{state.mensagem}</Alert>}
 

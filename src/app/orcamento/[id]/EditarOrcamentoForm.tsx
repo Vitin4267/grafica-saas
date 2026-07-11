@@ -1,10 +1,11 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
 import { editarOrcamento, removerItemOrcamento } from "./actions";
 
 export function EditarOrcamentoForm({
@@ -38,6 +39,11 @@ export function EditarOrcamentoForm({
   const usaMotorAvancado = modeloCalculo === "M2" || modeloCalculo === "OFFSET";
   const [larguraCm, setLarguraCm] = useState(valoresIniciais.larguraCm);
   const [alturaCm, setAlturaCm] = useState(valoresIniciais.alturaCm);
+  const [confirmandoRemocao, setConfirmandoRemocao] = useState(false);
+
+  useEffect(() => {
+    if (estadoRemocao && !estadoRemocao.ok) setConfirmandoRemocao(false);
+  }, [estadoRemocao]);
 
   return (
     <Card className="mb-4 p-6">
@@ -47,19 +53,29 @@ export function EditarOrcamentoForm({
           <span className="font-medium text-slate-800 dark:text-slate-200">{itemNome}</span>{" "}
           <span className="text-xs">(não pode ser trocado — remova e adicione outro)</span>
         </p>
-        {podeRemover && (
-          <form action={acaoRemover}>
-            <input type="hidden" name="orcamentoItemId" value={orcamentoItemId} />
-            <button
-              type="submit"
-              disabled={removendoPending}
-              className="shrink-0 text-xs font-medium text-rose-600 hover:underline disabled:opacity-50"
-            >
-              Remover item
-            </button>
-          </form>
+        {podeRemover && !confirmandoRemocao && (
+          <button
+            type="button"
+            onClick={() => setConfirmandoRemocao(true)}
+            className="shrink-0 text-xs font-medium text-rose-600 hover:underline"
+          >
+            Remover item
+          </button>
         )}
       </div>
+
+      {confirmandoRemocao && (
+        <div className="mb-4">
+          <ConfirmarExclusao
+            pergunta={`Remover "${itemNome}" deste orçamento? Essa ação não pode ser desfeita.`}
+            onCancelar={() => setConfirmandoRemocao(false)}
+            formAction={acaoRemover}
+            campos={{ orcamentoItemId }}
+            rotuloBotao="Remover item"
+            pendente={removendoPending}
+          />
+        </div>
+      )}
 
       {estadoRemocao && !estadoRemocao.ok && (
         <div className="mb-4">
@@ -81,7 +97,7 @@ export function EditarOrcamentoForm({
         />
 
         {usaMotorAvancado && (
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Input
               label="Largura (cm)"
               name="larguraCm"
@@ -102,7 +118,7 @@ export function EditarOrcamentoForm({
         )}
 
         {modeloCalculo === "OFFSET" && (
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Input
               label="Cores de frente"
               name="corFrente"

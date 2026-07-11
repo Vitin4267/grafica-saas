@@ -2,12 +2,20 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import {
+  podeVerMeuNegocio,
+  exigirVerModulo,
+  obterModulosVisiveis,
+} from "@/lib/auth/permissoes";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { ArrowLeftIcon } from "@/components/icons";
 import { ConfiguracaoProdutoForm } from "./ConfiguracaoProdutoForm";
 import { ConfiguracaoAcabamentoForm } from "./ConfiguracaoAcabamentoForm";
 import { FichaTecnicaForm } from "./FichaTecnicaForm";
+import { TabelaGramaturaForm } from "./TabelaGramaturaForm";
+import { VariantesMateriaPrimaForm } from "./VariantesMateriaPrimaForm";
+import { NcmForm } from "./NcmForm";
 
 export default async function ConfiguracaoItemPage({
   params,
@@ -16,8 +24,9 @@ export default async function ConfiguracaoItemPage({
 }) {
   const { itemGraficaId } = await params;
   const usuario = await exigirUsuarioAutenticado();
+  await exigirVerModulo(usuario, "CATALOGO");
 
-  const [itemGrafica, materiasPrimas] = await Promise.all([
+  const [itemGrafica, materiasPrimas, prensas] = await Promise.all([
     prisma.itemGrafica.findFirst({
       where: { id: itemGraficaId, graficaId: usuario.graficaId },
       include: {
@@ -26,6 +35,8 @@ export default async function ConfiguracaoItemPage({
         formatosFolha: { orderBy: { nome: "asc" } },
         configuracaoAcabamento: true,
         fichaTecnica: true,
+        tabelaPrecoPapel: { orderBy: { gramatura: "asc" } },
+        variantes: { where: { ativo: true }, orderBy: { rotulo: "asc" } },
       },
     }),
     prisma.itemGrafica.findMany({
@@ -34,25 +45,32 @@ export default async function ConfiguracaoItemPage({
         ativo: true,
         itemCatalogo: { tipo: "MATERIA_PRIMA" },
       },
-      include: { itemCatalogo: true },
+      include: {
+        itemCatalogo: true,
+        tabelaPrecoPapel: true,
+        variantes: { where: { ativo: true }, orderBy: { rotulo: "asc" } },
+      },
       orderBy: { itemCatalogo: { nome: "asc" } },
+    }),
+    prisma.prensa.findMany({
+      where: { graficaId: usuario.graficaId, ativa: true },
+      orderBy: { nome: "asc" },
     }),
   ]);
 
-  if (!itemGrafica || itemGrafica.itemCatalogo.tipo === "MATERIA_PRIMA") {
+  if (!itemGrafica) {
     notFound();
   }
 
   return (
     <div className="flex flex-1 flex-col">
-      {/* TODO(review): falta mostrarMeuNegocio={podeVerMeuNegocio(usuario)} — sem
-          isso o link "Meu Negócio" some do menu nesta página pra quem tem acesso.
-          Ver TODO em src/components/UserNav.tsx. */}
       <UserNav
         nome={usuario.nome}
         graficaNome={usuario.grafica.nome}
         papel={usuario.papel}
         paginaAtual="/catalogo"
+        mostrarMeuNegocio={podeVerMeuNegocio(usuario)}
+        modulosVisiveis={await obterModulosVisiveis(usuario)}
       />
 
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-10">
@@ -102,6 +120,10 @@ export default async function ConfiguracaoItemPage({
 
         {itemGrafica.itemCatalogo.tipo === "PRODUTO" ? (
           <div className="flex flex-col gap-6">
+            <NcmForm
+              itemCatalogoId={itemGrafica.itemCatalogoId}
+              ncmAtual={itemGrafica.itemCatalogo.ncm ?? ""}
+            />
             <ConfiguracaoProdutoForm
               itemGraficaId={itemGrafica.id}
               modeloCalculo={itemGrafica.modeloCalculo}
@@ -109,7 +131,14 @@ export default async function ConfiguracaoItemPage({
               custoImpressaoM2={itemGrafica.custoImpressaoM2?.toString() ?? ""}
               areaMinimaFaturavel={itemGrafica.areaMinimaFaturavel?.toString() ?? ""}
               gramaturaGm2={itemGrafica.gramaturaGm2?.toString() ?? ""}
-              precoPorKg={itemGrafica.precoPorKg?.toString() ?? ""}
+              papelId={itemGrafica.papelId ?? ""}
+              papeis={materiasPrimas.map((m) => ({
+                id: m.id,
+                nome: m.itemCatalogo.nome,
+                gramaturas: m.tabelaPrecoPapel.map((l) => l.gramatura).sort((a, b) => a - b),
+              }))}
+              prensaId={itemGrafica.prensaId ?? ""}
+              prensas={prensas.map((p) => ({ id: p.id, nome: p.nome }))}
               bobinas={itemGrafica.bobinas.map((b) => ({
                 larguraNominal: b.larguraNominal.toString(),
                 refile: b.refile.toString(),
@@ -126,13 +155,36 @@ export default async function ConfiguracaoItemPage({
                 id: m.id,
                 nome: m.itemCatalogo.nome,
                 unidade: m.itemCatalogo.unidade,
+                variantes: m.variantes.map((v) => ({ id: v.id, rotulo: v.rotulo })),
               }))}
               fichaAtual={itemGrafica.fichaTecnica.map((f) => ({
                 materiaPrimaId: f.materiaPrimaId,
+                varianteId: f.varianteId ?? "",
                 quantidadePorUnidade: f.quantidadePorUnidade.toString(),
               }))}
             />
           </div>
+        ) : itemGrafica.itemCatalogo.tipo === "MATERIA_PRIMA" ? (
+          itemGrafica.itemCatalogo.categoria === "Papéis" ? (
+            <TabelaGramaturaForm
+              itemGraficaId={itemGrafica.id}
+              linhasIniciais={itemGrafica.tabelaPrecoPapel.map((l) => ({
+                gramatura: l.gramatura.toString(),
+                precoKg: l.precoKg.toString(),
+              }))}
+            />
+          ) : (
+            <VariantesMateriaPrimaForm
+              itemGraficaId={itemGrafica.id}
+              linhasIniciais={itemGrafica.variantes.map((v) => ({
+                id: v.id,
+                rotulo: v.rotulo,
+                precoCompra: v.precoCompra.toString(),
+                estoqueAtual: v.estoqueAtual?.toString() ?? "",
+                estoqueMinimo: v.estoqueMinimo?.toString() ?? "",
+              }))}
+            />
+          )
         ) : (
           <ConfiguracaoAcabamentoForm
             itemGraficaId={itemGrafica.id}

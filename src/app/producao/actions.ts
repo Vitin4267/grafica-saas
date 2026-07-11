@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { podeEditarModulo } from "@/lib/auth/permissoes";
 import type { Prisma } from "@/generated/prisma/client";
 
 export type AvancarPedidoResult = { ok: boolean; mensagem: string };
@@ -24,6 +25,9 @@ export async function avancarPedido(
   formData: FormData
 ): Promise<AvancarPedidoResult> {
   const usuario = await exigirUsuarioAutenticado();
+  if (!(await podeEditarModulo(usuario, "PRODUCAO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar a produção." };
+  }
   const pedidoId = String(formData.get("pedidoId"));
 
   const pedido = await prisma.pedido.findFirst({
@@ -33,14 +37,14 @@ export async function avancarPedido(
     return { ok: false, mensagem: "Pedido não encontrado." };
   }
 
-  // TODO(review): se pedido.status não estiver em SEQUENCIA por algum motivo
-  // (enum estendido sem atualizar essa lista, valor alterado direto no banco),
-  // indexOf retorna -1 e SEQUENCIA[-1+1] vira SEQUENCIA[0] ("FILA") silenciosamente
-  // — o pedido regride pra fila em vez de dar erro. Hoje improvável (status é
-  // enum do banco restrito aos 5 valores conhecidos), mas se acontecer, uma
-  // passagem futura por FILA→IMPRESSAO dispararia a baixa de estoque de novo
-  // (ver bloco abaixo). Valeria um `if (indiceAtual === -1) throw/return erro`.
   const indiceAtual = SEQUENCIA.indexOf(pedido.status as StatusPedido);
+  if (indiceAtual === -1) {
+    // Defensivo: hoje inalcançável (status é enum do banco restrito aos 5
+    // valores de SEQUENCIA), mas sem essa checagem um status fora da lista
+    // faria SEQUENCIA[-1+1] resolver silenciosamente pra SEQUENCIA[0]
+    // ("FILA") — regredindo o pedido em vez de dar erro.
+    return { ok: false, mensagem: "Status do pedido inválido." };
+  }
   if (indiceAtual === SEQUENCIA.length - 1) {
     return { ok: false, mensagem: "Este pedido já está no status final." };
   }
@@ -60,7 +64,7 @@ export async function avancarPedido(
           include: {
             itemGrafica: {
               include: {
-                fichaTecnica: { include: { materiaPrima: true } },
+                fichaTecnica: { include: { materiaPrima: true, variante: true } },
               },
             },
           },
@@ -74,16 +78,34 @@ export async function avancarPedido(
 
     for (const item of orcamentoComItens?.itens ?? []) {
       for (const ficha of item.itemGrafica.fichaTecnica) {
-        if (ficha.materiaPrima.estoqueAtual === null) continue; // sem controle de estoque
+        // Com variante (ex: espessura de chapa), o saldo de estoque é o da
+        // variante, não o do ItemGrafica "pai" — cada variante é fisicamente
+        // um estoque separado. Sem variante, comportamento de sempre.
+        const estoqueAtual = ficha.variante ? ficha.variante.estoqueAtual : ficha.materiaPrima.estoqueAtual;
+        if (estoqueAtual === null) continue; // sem controle de estoque
         const quantidadeConsumida = Number(ficha.quantidadePorUnidade) * item.quantidade;
+
+        if (ficha.varianteId) {
+          operacoes.push(
+            prisma.varianteMateriaPrima.update({
+              where: { id: ficha.varianteId },
+              data: { estoqueAtual: { decrement: quantidadeConsumida } },
+            })
+          );
+        } else {
+          operacoes.push(
+            prisma.itemGrafica.update({
+              where: { id: ficha.materiaPrimaId },
+              data: { estoqueAtual: { decrement: quantidadeConsumida } },
+            })
+          );
+        }
         operacoes.push(
-          prisma.itemGrafica.update({
-            where: { id: ficha.materiaPrimaId },
-            data: { estoqueAtual: { decrement: quantidadeConsumida } },
-          }),
           prisma.movimentacaoEstoque.create({
             data: {
               itemGraficaId: ficha.materiaPrimaId,
+              varianteId: ficha.varianteId,
+              pedidoId: pedido.id,
               tipo: "SAIDA",
               quantidade: quantidadeConsumida,
               motivo: `Produção do pedido ${pedido.id} (orçamento ${pedido.orcamentoId})`,

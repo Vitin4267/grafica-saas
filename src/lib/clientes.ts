@@ -7,4 +7,12 @@ export const clienteSchema = z.object({
   email: z.union([z.string().trim().toLowerCase().email("E-mail inválido"), z.literal("")]).optional(),
   telefone: opcional,
   documento: opcional,
+  enderecoCep: opcional,
+  enderecoLogradouro: opcional,
+  enderecoNumero: opcional,
+  enderecoComplemento: opcional,
+  enderecoBairro: opcional,
+  enderecoMunicipio: opcional,
+  enderecoCodigoIbge: opcional,
+  enderecoUf: opcional,
 });

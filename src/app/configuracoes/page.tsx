@@ -1,11 +1,16 @@
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
-import { podeVerMeuNegocio } from "@/lib/auth/permissoes";
+import {
+  podeVerMeuNegocio,
+  exigirVerModulo,
+  obterModulosVisiveis,
+} from "@/lib/auth/permissoes";
 import { carregarParametrosTenant } from "@/lib/pricing/carregar";
 import { UserNav } from "@/components/UserNav";
 import { ParametrosForm } from "./ParametrosForm";
 
 export default async function ConfiguracoesPage() {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirVerModulo(usuario, "CONFIGURACOES");
   const parametros = await carregarParametrosTenant(usuario.graficaId);
 
   return (
@@ -16,6 +21,7 @@ export default async function ConfiguracoesPage() {
         papel={usuario.papel}
         paginaAtual="/configuracoes"
         mostrarMeuNegocio={podeVerMeuNegocio(usuario)}
+        modulosVisiveis={await obterModulosVisiveis(usuario)}
       />
 
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-10">

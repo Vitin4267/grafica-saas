@@ -4,8 +4,12 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth/password";
 import { criarSessao } from "@/lib/auth/session";
+import { verificarBloqueioRegistro, registrarTentativaRegistro } from "@/lib/auth/rate-limit";
+import { obterIpRequisicao } from "@/lib/auth/ip";
 import { registroSchema } from "@/lib/auth/validation";
 import { slugify } from "@/lib/slug";
+
+const MENSAGEM_GENERICA = "Não foi possível concluir o cadastro. Tente novamente.";
 
 export type RegistroResult = {
   ok: boolean;
@@ -29,6 +33,31 @@ export async function registrar(
   _estadoAnterior: RegistroResult | null,
   formData: FormData
 ): Promise<RegistroResult> {
+  // Honeypot: campo escondido via CSS que só um preenchedor automático de
+  // formulário (bot) preenche — uma pessoa de verdade nunca vê nem toca nele.
+  // Rejeitado com a mesma mensagem genérica de erro, pra não entregar ao bot
+  // qual campo é a armadilha.
+  if (String(formData.get("site") || "").trim()) {
+    return { ok: false, mensagem: MENSAGEM_GENERICA };
+  }
+
+  const ip = await obterIpRequisicao();
+  const bloqueado = await verificarBloqueioRegistro(ip);
+  if (bloqueado) {
+    return {
+      ok: false,
+      mensagem: "Muitas tentativas de cadastro. Aguarde um pouco e tente novamente.",
+    };
+  }
+  await registrarTentativaRegistro(ip);
+
+  if (formData.get("aceiteTermos") !== "on") {
+    return {
+      ok: false,
+      mensagem: "É preciso concordar com os Termos de Uso e a Política de Privacidade.",
+    };
+  }
+
   const parsed = registroSchema.safeParse({
     graficaNome: formData.get("graficaNome"),
     nome: formData.get("nome"),
@@ -68,5 +97,5 @@ export async function registrar(
 
   await criarSessao(usuario.id);
 
-  redirect("/comecar");
+  redirect("/bem-vindo");
 }

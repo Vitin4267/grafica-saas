@@ -1,17 +1,13 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirPapel, podeVerMeuNegocio } from "@/lib/auth/permissoes";
+import { ROTULO_PAPEL } from "@/lib/papel-usuario";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { UsersIcon } from "@/components/icons";
 import { UsuarioForm } from "./UsuarioForm";
 import { AcessoMeuNegocioForm } from "./AcessoMeuNegocioForm";
-
-const ROTULO_PAPEL: Record<string, string> = {
-  DONO: "Dono",
-  ADMIN: "Administrador",
-  OPERADOR: "Operador",
-};
 
 export default async function UsuariosPage() {
   const usuario = await exigirUsuarioAutenticado();
@@ -62,9 +58,21 @@ export default async function UsuariosPage() {
                       <p className="text-sm text-slate-500">{u.email}</p>
                     </div>
                   </div>
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                    {ROTULO_PAPEL[u.papel] ?? u.papel}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                      {ROTULO_PAPEL[u.papel] ?? u.papel}
+                    </span>
+                    {u.papel === "OPERADOR" ? (
+                      <Link
+                        href={`/usuarios/${u.id}/permissoes`}
+                        className="text-sm font-medium text-teal-700 hover:underline dark:text-teal-400"
+                      >
+                        Permissões
+                      </Link>
+                    ) : u.papel === "ADMIN" ? (
+                      <span className="text-xs text-slate-400">Acesso total</span>
+                    ) : null}
+                  </div>
                 </div>
               ))}
             </Card>
