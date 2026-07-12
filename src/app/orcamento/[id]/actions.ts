@@ -21,6 +21,7 @@ import { emitirNfe, consultarNfe, ErroFocusNfe, type AmbienteFocusNfe } from "@/
 import { registrarAuditoria } from "@/lib/auditoria";
 import { formatoMoeda } from "@/lib/moeda";
 import { dataInputParaUTC } from "@/lib/data";
+import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
 
 // Sinaliza, de dentro de uma transação Serializable, que o orçamento já está
 // no último item — usado só pra abortar a transação com uma mensagem amigável
@@ -29,14 +30,6 @@ class ErroUltimoItemOrcamento extends Error {}
 
 const MENSAGEM_CONFLITO_CONCORRENTE =
   "Outra pessoa alterou este orçamento ao mesmo tempo — tente de novo.";
-
-// Sob isolamento Serializable, duas transações concorrentes que leem/escrevem o
-// mesmo orçamento não conseguem as duas commitar: o Postgres aborta uma delas
-// com erro de conflito de serialização (P2034). Convertemos isso numa mensagem
-// pedindo pra tentar de novo, em vez de deixar subir como erro 500 genérico.
-function ehConflitoDeSerializacao(erro: unknown): boolean {
-  return erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2034";
-}
 
 export type AtualizarStatusResult = { ok: boolean; mensagem: string };
 

@@ -5,6 +5,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { SESSION_COOKIE_NAME } from "./constants";
+import { obterIpRequisicao } from "./ip";
 
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 7; // 7 dias
 
@@ -26,8 +27,7 @@ export async function criarSessao(usuarioId: string) {
 
   const headerList = await headers();
   const userAgent = headerList.get("user-agent");
-  const ip =
-    headerList.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+  const ip = await obterIpRequisicao();
 
   await prisma.$transaction([
     // limpa sessões expiradas do usuário a cada novo login (housekeeping oportunista)

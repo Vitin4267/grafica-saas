@@ -4,13 +4,17 @@ import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { podeVerModulo } from "@/lib/auth/permissoes";
 import { formatoData } from "@/lib/data";
+import { D, type Dec } from "@/lib/pricing/decimal";
 
 function linhaCsv(campos: (string | number)[]): string {
   return campos.map((campo) => `"${String(campo).replace(/"/g, '""')}"`).join(";") + "\r\n";
 }
 
-function formatoValor(valor: number): string {
-  return valor.toFixed(2).replace(".", ",");
+// Mesma disciplina de decimal.js usada em orcamento/actions.ts — soma
+// acumulada em Number() perde centavos em somas longas por erro de ponto
+// flutuante, o que é inaceitável num extrato que o contador vai conferir.
+function formatoValor(valor: number | Dec): string {
+  return (valor instanceof D ? valor : new D(valor)).toFixed(2).replace(".", ",");
 }
 
 // Regime de caixa: receita = pagamento recebido no mês, despesa = despesa
@@ -63,9 +67,9 @@ export async function GET(request: NextRequest) {
 
   csv += linhaCsv(["RECEITAS (pagamentos recebidos)"]);
   csv += linhaCsv(["Data", "Cliente", "Forma de pagamento", "Valor (R$)"]);
-  let totalReceitas = 0;
+  let totalReceitas = new D(0);
   for (const pagamento of pagamentos) {
-    totalReceitas += Number(pagamento.valor);
+    totalReceitas = totalReceitas.plus(pagamento.valor.toString());
     csv += linhaCsv([
       new Date(pagamento.createdAt).toLocaleDateString("pt-BR"),
       pagamento.orcamento.cliente.nome,
@@ -77,9 +81,9 @@ export async function GET(request: NextRequest) {
 
   csv += linhaCsv(["DESPESAS PAGAS"]);
   csv += linhaCsv(["Data de pagamento", "Descrição", "Categoria", "Valor (R$)"]);
-  let totalDespesasPagas = 0;
+  let totalDespesasPagas = new D(0);
   for (const despesa of despesasPagas) {
-    totalDespesasPagas += Number(despesa.valor);
+    totalDespesasPagas = totalDespesasPagas.plus(despesa.valor.toString());
     csv += linhaCsv([
       despesa.pagoEm ? new Date(despesa.pagoEm).toLocaleDateString("pt-BR") : "",
       despesa.descricao,
@@ -91,9 +95,9 @@ export async function GET(request: NextRequest) {
 
   csv += linhaCsv(["DESPESAS PENDENTES (vencimento neste mês)"]);
   csv += linhaCsv(["Vencimento", "Descrição", "Categoria", "Valor (R$)"]);
-  let totalDespesasPendentes = 0;
+  let totalDespesasPendentes = new D(0);
   for (const despesa of despesasPendentes) {
-    totalDespesasPendentes += Number(despesa.valor);
+    totalDespesasPendentes = totalDespesasPendentes.plus(despesa.valor.toString());
     csv += linhaCsv([
       formatoData.format(despesa.vencimento),
       despesa.descricao,
@@ -106,7 +110,7 @@ export async function GET(request: NextRequest) {
   csv += linhaCsv(["RESUMO (regime de caixa)"]);
   csv += linhaCsv(["Total de receitas recebidas", formatoValor(totalReceitas)]);
   csv += linhaCsv(["Total de despesas pagas", formatoValor(totalDespesasPagas)]);
-  csv += linhaCsv(["Resultado do período", formatoValor(totalReceitas - totalDespesasPagas)]);
+  csv += linhaCsv(["Resultado do período", formatoValor(totalReceitas.minus(totalDespesasPagas))]);
   csv += linhaCsv(["Despesas pendentes vencendo no mês (não entram no resultado)", formatoValor(totalDespesasPendentes)]);
 
   return new Response(csv, {

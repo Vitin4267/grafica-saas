@@ -53,6 +53,9 @@ export async function precificarItem(input: {
 }): Promise<PrecificarItemResult> {
   const usuario = await exigirUsuarioAutenticado();
   await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
+  }
 
   if (!input.itemGraficaId || !input.quantidade || input.quantidade <= 0) {
     return { ok: false, mensagem: "Escolha um produto e uma quantidade válida." };

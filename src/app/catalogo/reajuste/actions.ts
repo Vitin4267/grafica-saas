@@ -33,6 +33,9 @@ export async function visualizarReajuste(
 ): Promise<VisualizarReajusteResult> {
   const usuario = await exigirUsuarioAutenticado();
   await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CATALOGO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar o catálogo." };
+  }
 
   const parsed = reajusteInputSchema.safeParse({
     percentual: formData.get("percentual"),

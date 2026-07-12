@@ -45,6 +45,38 @@ const TAMANHO_MAXIMO_RESPOSTA = 4000; // evita renderizar uma resposta absurdame
 // validação e IP privado na hora da chamada de verdade). Fechar essa brecha
 // de vez exigiria resolver DNS e fixar a chamada por IP, desproporcional
 // pro nível de confiança de um admin configurando o próprio webhook.
+function ipv4EhPrivadoOuReservado(ip: string): boolean {
+  const octetos = ip.split(".").map(Number);
+  const [a, b] = octetos;
+  if (a === 10) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 127) return true;
+  if (a === 169 && b === 254) return true; // inclui metadata de nuvem
+  if (a === 0) return true;
+  return false;
+}
+
+// Extrai o IPv4 de dentro de um endereço IPv4-mapeado em IPv6
+// (`::ffff:a.b.c.d` ou a forma hex comprimida `::ffff:7f00:1` que
+// `new URL(...).hostname` produz depois de normalizar) ou do formato
+// IPv4-compatível legado (`::a.b.c.d`). Sockets dual-stack (padrão na
+// maioria dos SOs) tratam esses endereços como o IPv4 real por baixo —
+// sem essa extração, `https://[::ffff:169.254.169.254]/` (ou qualquer
+// faixa privada mapeada) escapava do bloqueio de IPv4 abaixo.
+function extrairIpv4MapeadoEmIpv6(host: string): string | null {
+  const dotted = /^::(?:ffff:)?(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i.exec(host);
+  if (dotted) return dotted[1];
+
+  const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(host);
+  if (hex) {
+    const alto = parseInt(hex[1], 16);
+    const baixo = parseInt(hex[2], 16);
+    return [(alto >> 8) & 0xff, alto & 0xff, (baixo >> 8) & 0xff, baixo & 0xff].join(".");
+  }
+  return null;
+}
+
 function hostnameEhPrivadoOuReservado(hostname: string): boolean {
   // `new URL(...).hostname` mantém os colchetes em endereços IPv6 (ex:
   // "[::1]") — precisam ser removidos antes de comparar/checar com isIP,
@@ -56,20 +88,16 @@ function hostnameEhPrivadoOuReservado(hostname: string): boolean {
 
   const versaoIp = isIP(host);
   if (versaoIp === 4) {
-    const octetos = host.split(".").map(Number);
-    const [a, b] = octetos;
-    if (a === 10) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 192 && b === 168) return true;
-    if (a === 127) return true;
-    if (a === 169 && b === 254) return true; // inclui metadata de nuvem
-    if (a === 0) return true;
-    return false;
+    return ipv4EhPrivadoOuReservado(host);
   }
   if (versaoIp === 6) {
     if (host === "::1") return true;
     if (host.startsWith("fc") || host.startsWith("fd")) return true; // fc00::/7
     if (host.startsWith("fe80:")) return true; // link-local
+
+    const ipv4Mapeado = extrairIpv4MapeadoEmIpv6(host);
+    if (ipv4Mapeado && ipv4EhPrivadoOuReservado(ipv4Mapeado)) return true;
+
     return false;
   }
 

@@ -417,6 +417,11 @@ model Cliente {
   orcamentos Orcamento[]
 
   @@index([graficaId])
+  // NULL não colide com NULL em unique index do Postgres — várias gráficas
+  // podem ter clientes sem documento cadastrado sem problema. Escopado por
+  // graficaId (não global) porque CPF/CNPJ é único no mundo real, mas nada
+  // impede duas gráficas diferentes atenderem o mesmo cliente.
+  @@unique([graficaId, documento])
   @@map("clientes")
 }
 
@@ -719,7 +724,15 @@ model MovimentacaoEstoque {
   // um dia for desativada/apagada.
   varianteId String?
 
-  itemGrafica ItemGrafica           @relation(fields: [itemGraficaId], references: [id], onDelete: Cascade)
+  // Restrict (não Cascade) porque isso é o histórico de movimentação de
+  // estoque em si — apagar o ItemGrafica junto apagaria o próprio registro
+  // que a movimentação existe pra preservar. Não é SetNull (como pedido/
+  // variante abaixo) porque itemGraficaId não é opcional: uma movimentação
+  // sem "o que moveu" não faz sentido. Hoje não existe nenhum fluxo no app
+  // que apague um ItemGrafica, então isso é defensivo — mas se um dia
+  // existir, Restrict força uma decisão explícita em vez de apagar
+  // histórico financeiro/estoque silenciosamente.
+  itemGrafica ItemGrafica           @relation(fields: [itemGraficaId], references: [id], onDelete: Restrict)
   pedido      Pedido?               @relation(fields: [pedidoId], references: [id], onDelete: SetNull)
   variante    VarianteMateriaPrima? @relation(fields: [varianteId], references: [id], onDelete: SetNull)
 
@@ -829,6 +842,12 @@ model Despesa {
 
   grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
 
+  // Trava contra duplicata em `gerarDespesasRecorrentesPendentes`: duas
+  // requisições concorrentes (duas abas, dois usuários abrindo /financeiro
+  // ao mesmo tempo) podem ambas decidir gerar a ocorrência do mesmo mês
+  // pra mesma série — essa constraint faz a segunda tentativa falhar no
+  // banco em vez de criar uma despesa duplicada (ver catch de P2002 lá).
+  @@unique([serieRecorrenciaId, vencimento])
   @@index([graficaId])
   @@index([graficaId, status, vencimento])
   @@index([graficaId, serieRecorrenciaId])

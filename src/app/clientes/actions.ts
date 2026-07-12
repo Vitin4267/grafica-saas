@@ -55,23 +55,30 @@ export async function criarCliente(
     enderecoUf,
   } = parsed.data;
 
-  await prisma.cliente.create({
-    data: {
-      graficaId: usuario.graficaId,
-      nome,
-      email: email || null,
-      telefone: telefone || null,
-      documento: documento || null,
-      enderecoCep: enderecoCep || null,
-      enderecoLogradouro: enderecoLogradouro || null,
-      enderecoNumero: enderecoNumero || null,
-      enderecoComplemento: enderecoComplemento || null,
-      enderecoBairro: enderecoBairro || null,
-      enderecoMunicipio: enderecoMunicipio || null,
-      enderecoCodigoIbge: enderecoCodigoIbge || null,
-      enderecoUf: enderecoUf || null,
-    },
-  });
+  try {
+    await prisma.cliente.create({
+      data: {
+        graficaId: usuario.graficaId,
+        nome,
+        email: email || null,
+        telefone: telefone || null,
+        documento: documento || null,
+        enderecoCep: enderecoCep || null,
+        enderecoLogradouro: enderecoLogradouro || null,
+        enderecoNumero: enderecoNumero || null,
+        enderecoComplemento: enderecoComplemento || null,
+        enderecoBairro: enderecoBairro || null,
+        enderecoMunicipio: enderecoMunicipio || null,
+        enderecoCodigoIbge: enderecoCodigoIbge || null,
+        enderecoUf: enderecoUf || null,
+      },
+    });
+  } catch (erro) {
+    if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2002") {
+      return { ok: false, mensagem: "Já existe um cliente cadastrado com esse CPF/CNPJ." };
+    }
+    throw erro;
+  }
 
   revalidatePath("/clientes");
   revalidatePath("/orcamento");
@@ -134,23 +141,30 @@ export async function atualizarCliente(
     enderecoUf,
   } = parsed.data;
 
-  await prisma.cliente.update({
-    where: { id: clienteId },
-    data: {
-      nome,
-      email: email || null,
-      telefone: telefone || null,
-      documento: documento || null,
-      enderecoCep: enderecoCep || null,
-      enderecoLogradouro: enderecoLogradouro || null,
-      enderecoNumero: enderecoNumero || null,
-      enderecoComplemento: enderecoComplemento || null,
-      enderecoBairro: enderecoBairro || null,
-      enderecoMunicipio: enderecoMunicipio || null,
-      enderecoCodigoIbge: enderecoCodigoIbge || null,
-      enderecoUf: enderecoUf || null,
-    },
-  });
+  try {
+    await prisma.cliente.update({
+      where: { id: clienteId },
+      data: {
+        nome,
+        email: email || null,
+        telefone: telefone || null,
+        documento: documento || null,
+        enderecoCep: enderecoCep || null,
+        enderecoLogradouro: enderecoLogradouro || null,
+        enderecoNumero: enderecoNumero || null,
+        enderecoComplemento: enderecoComplemento || null,
+        enderecoBairro: enderecoBairro || null,
+        enderecoMunicipio: enderecoMunicipio || null,
+        enderecoCodigoIbge: enderecoCodigoIbge || null,
+        enderecoUf: enderecoUf || null,
+      },
+    });
+  } catch (erro) {
+    if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2002") {
+      return { ok: false, mensagem: "Já existe um cliente cadastrado com esse CPF/CNPJ." };
+    }
+    throw erro;
+  }
 
   revalidatePath("/clientes");
   revalidatePath(`/clientes/${clienteId}`);

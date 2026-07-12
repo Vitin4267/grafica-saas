@@ -36,7 +36,7 @@ export async function login(
   const { email, senha } = parsed.data;
   const ip = await obterIpRequisicao();
 
-  const { bloqueado } = await verificarBloqueioLogin(email, ip);
+  const bloqueado = await verificarBloqueioLogin(email, ip);
   if (bloqueado) {
     return {
       ok: false,

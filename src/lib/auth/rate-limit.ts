@@ -6,7 +6,7 @@ const JANELA_MS = 1000 * 60 * 15; // 15 minutos
 const LIMITE_POR_EMAIL = 5;
 const LIMITE_POR_IP = 20;
 
-export async function verificarBloqueioLogin(email: string, ip: string) {
+export async function verificarBloqueioLogin(email: string, ip: string): Promise<boolean> {
   const desde = new Date(Date.now() - JANELA_MS);
 
   const [falhasEmail, falhasIp] = await Promise.all([
@@ -18,8 +18,7 @@ export async function verificarBloqueioLogin(email: string, ip: string) {
     }),
   ]);
 
-  const bloqueado = falhasEmail >= LIMITE_POR_EMAIL || falhasIp >= LIMITE_POR_IP;
-  return { bloqueado };
+  return falhasEmail >= LIMITE_POR_EMAIL || falhasIp >= LIMITE_POR_IP;
 }
 
 export async function registrarTentativaLogin(

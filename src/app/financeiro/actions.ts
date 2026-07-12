@@ -40,19 +40,22 @@ export async function criarDespesa(
 
   const recorrente = formData.get("recorrente") === "on";
 
-  let despesa = await prisma.despesa.create({
-    data: { graficaId: usuario.graficaId, ...parsed.data, recorrente },
-  });
-
   // A primeira ocorrência de uma série usa o próprio id como
   // serieRecorrenciaId — precisa de um segundo update porque o id só existe
-  // depois do create.
-  if (recorrente) {
-    despesa = await prisma.despesa.update({
-      where: { id: despesa.id },
-      data: { serieRecorrenciaId: despesa.id },
+  // depois do create. Os dois ficam na mesma transação pra nunca deixar uma
+  // despesa "recorrente: true" mas sem serieRecorrenciaId visível pra quem
+  // ler entre o create e o update (ex: gerarDespesasRecorrentesPendentes
+  // rodando ao mesmo tempo).
+  const despesa = await prisma.$transaction(async (tx) => {
+    const criada = await tx.despesa.create({
+      data: { graficaId: usuario.graficaId, ...parsed.data, recorrente },
     });
-  }
+    if (!recorrente) return criada;
+    return tx.despesa.update({
+      where: { id: criada.id },
+      data: { serieRecorrenciaId: criada.id },
+    });
+  });
 
   await registrarAuditoria({
     graficaId: usuario.graficaId,

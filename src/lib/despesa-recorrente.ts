@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
+import { ehViolacaoDeUnicidade } from "@/lib/prisma-conflito";
 
 function proximoMes(data: Date): Date {
   const dia = data.getUTCDate();
@@ -49,17 +50,26 @@ export async function gerarDespesasRecorrentesPendentes(graficaId: string): Prom
 
     let seguranca = 0;
     while (!mesmoMesOuDepois(ultima.vencimento, inicioMesAtual) && seguranca < LIMITE_CATCH_UP) {
-      ultima = await prisma.despesa.create({
-        data: {
-          graficaId,
-          descricao: ultima.descricao,
-          categoria: ultima.categoria,
-          valor: ultima.valor,
-          vencimento: proximoMes(ultima.vencimento),
-          recorrente: true,
-          serieRecorrenciaId,
-        },
-      });
+      try {
+        ultima = await prisma.despesa.create({
+          data: {
+            graficaId,
+            descricao: ultima.descricao,
+            categoria: ultima.categoria,
+            valor: ultima.valor,
+            vencimento: proximoMes(ultima.vencimento),
+            recorrente: true,
+            serieRecorrenciaId,
+          },
+        });
+      } catch (erro) {
+        // @@unique([serieRecorrenciaId, vencimento]) barrou — outra requisição
+        // concorrente (duas abas abrindo /financeiro ao mesmo tempo) já criou
+        // essa ocorrência. Ela cuida do catch-up dessa série; não há nada pra
+        // essa chamada fazer além de parar por aqui.
+        if (ehViolacaoDeUnicidade(erro)) break;
+        throw erro;
+      }
       seguranca += 1;
     }
   }
