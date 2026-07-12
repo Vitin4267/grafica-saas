@@ -55,3 +55,25 @@ export async function verificarBloqueioRegistro(ip: string): Promise<boolean> {
 export async function registrarTentativaRegistro(ip: string) {
   await prisma.tentativaRegistro.create({ data: { ip } });
 }
+
+// Mesmo padrão de verificarBloqueioLogin (janela deslizante, conta por
+// e-mail E por IP) — evita spam de e-mail de reset pro mesmo destinatário
+// e limita um atacante disparando pedidos pra vários e-mails.
+const JANELA_RESET_MS = 1000 * 60 * 15; // 15 minutos
+const LIMITE_RESET_POR_EMAIL = 3;
+const LIMITE_RESET_POR_IP = 10;
+
+export async function verificarBloqueioResetSenha(email: string, ip: string): Promise<boolean> {
+  const desde = new Date(Date.now() - JANELA_RESET_MS);
+
+  const [tentativasEmail, tentativasIp] = await Promise.all([
+    prisma.tentativaResetSenha.count({ where: { email, createdAt: { gte: desde } } }),
+    prisma.tentativaResetSenha.count({ where: { ip, createdAt: { gte: desde } } }),
+  ]);
+
+  return tentativasEmail >= LIMITE_RESET_POR_EMAIL || tentativasIp >= LIMITE_RESET_POR_IP;
+}
+
+export async function registrarTentativaResetSenha(email: string, ip: string) {
+  await prisma.tentativaResetSenha.create({ data: { email, ip } });
+}

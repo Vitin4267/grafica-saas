@@ -31,6 +31,13 @@ export function LoginForm() {
         autoComplete="current-password"
       />
 
+      <Link
+        href="/esqueci-senha"
+        className="-mt-2 self-end text-sm font-medium text-teal-700 hover:underline dark:text-teal-400"
+      >
+        Esqueci minha senha
+      </Link>
+
       {state && !state.ok && <Alert>{state.mensagem}</Alert>}
 
       <Button type="submit" loading={isPending} className="w-full">

@@ -280,10 +280,11 @@ model Usuario {
   // Irrelevante pra DONO, que sempre tem acesso.
   acessoMeuNegocio Boolean @default(false)
 
-  grafica     Grafica            @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  orcamentos  Orcamento[]
-  sessoes     Sessao[]
-  permissoes  PermissaoUsuario[]
+  grafica          Grafica            @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamentos       Orcamento[]
+  sessoes          Sessao[]
+  permissoes       PermissaoUsuario[]
+  tokensResetSenha TokenResetSenha[]
 
   @@index([graficaId])
   @@map("usuarios")
@@ -333,6 +334,24 @@ model Sessao {
   @@map("sessoes")
 }
 
+// Mesma filosofia de Sessao: guarda só o HASH do token de reset, nunca o
+// valor bruto — vazamento do banco não vira link de redefinição de senha
+// utilizável. usadoEm torna o token de uso único mesmo dentro da janela
+// de validade (1h, ver src/lib/auth/token-reset.ts).
+model TokenResetSenha {
+  id        String    @id @default(cuid())
+  usuarioId String
+  tokenHash String    @unique
+  expiraEm  DateTime
+  usadoEm   DateTime?
+  createdAt DateTime  @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+  @@map("tokens_reset_senha")
+}
+
 // Registro de tentativas de login (sucesso e falha) para permitir bloqueio temporário
 // por e-mail e por IP contra ataques de força bruta, sobrevivendo a reinícios do servidor.
 model TentativaLogin {
@@ -357,6 +376,20 @@ model TentativaRegistro {
 
   @@index([ip, createdAt])
   @@map("tentativas_registro")
+}
+
+// Conta tentativas de pedido de reset de senha, por e-mail E por IP —
+// evita spam de e-mail pro mesmo destinatário e limita um atacante
+// disparando pedidos pra vários e-mails (mesmo padrão de TentativaLogin).
+model TentativaResetSenha {
+  id        String   @id @default(cuid())
+  email     String
+  ip        String
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt])
+  @@map("tentativas_reset_senha")
 }
 
 model Cliente {

@@ -8,11 +8,14 @@ import { SESSION_COOKIE_NAME } from "./constants";
 
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 7; // 7 dias
 
-function gerarTokenBruto(): string {
+// Exportados pra reaproveitar em outros tokens opacos do app (ex: reset de
+// senha, ver src/app/esqueci-senha/actions.ts) — mesmo esquema de token
+// aleatório + hash SHA-256 salvo no banco, nunca o valor bruto.
+export function gerarTokenBruto(): string {
   return randomBytes(32).toString("base64url");
 }
 
-function hashToken(tokenBruto: string): string {
+export function hashToken(tokenBruto: string): string {
   return createHash("sha256").update(tokenBruto).digest("hex");
 }
 
