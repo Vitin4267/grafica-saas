@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Logo } from "@/components/Logo";
 import { CheckCircleIcon } from "@/components/icons";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const DESTAQUES = [
   "Orçamentos calculados automaticamente",
@@ -45,7 +46,10 @@ export function AuthLayout({
         </p>
       </div>
 
-      <div className="flex flex-col justify-center px-6 py-12 sm:px-12 lg:px-20">
+      <div className="relative flex flex-col justify-center px-6 py-12 sm:px-12 lg:px-20">
+        <div className="absolute top-6 right-6">
+          <ThemeToggle />
+        </div>
         <div className="mx-auto w-full max-w-sm">
           <Link href="/" className="mb-8 inline-block md:hidden">
             <Logo />

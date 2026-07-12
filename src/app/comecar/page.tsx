@@ -1,10 +1,10 @@
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { podeVerMeuNegocio, obterModulosVisiveis } from "@/lib/auth/permissoes";
 import { obterStatusOnboarding } from "@/lib/onboarding";
 import { UserNav } from "@/components/UserNav";
-import { TourAbas } from "@/components/TourAbas";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import {
@@ -15,6 +15,11 @@ import {
   ArrowRightIcon,
 } from "@/components/icons";
 import { ClienteForm } from "@/app/clientes/ClienteForm";
+
+// Lazy: já é client-only por dentro (mede DOM em useEffect), então isolar
+// o chunk não muda o comportamento — só evita carregar o JS do tour pra
+// quem não veio com ?tour=1 (a maioria das visitas a /comecar).
+const TourAbas = dynamic(() => import("@/components/TourAbas").then((m) => m.TourAbas));
 
 export default async function ComecarPage({
   searchParams,

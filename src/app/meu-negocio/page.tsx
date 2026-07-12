@@ -8,6 +8,8 @@ import { formatoMoeda } from "@/lib/moeda";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { StatTile } from "@/components/ui/StatTile";
+import { ValorAnimado } from "@/components/ui/ValorAnimado";
+import { Sparkline } from "@/components/ui/Sparkline";
 import { ProportionBar, type FaixaProporcao } from "@/components/ui/ProportionBar";
 import {
   TrendingUpIcon,
@@ -127,7 +129,7 @@ export default async function MeuNegocioPage() {
           tone="positive"
           icon={<TrendingUpIcon className="h-5 w-5" />}
           label="Faturamento aprovado este mês"
-          value={formatoMoeda.format(visaoGeral.faturamentoMes.total)}
+          value={<ValorAnimado valor={visaoGeral.faturamentoMes.total} />}
           caption={
             visaoGeral.faturamentoMes.quantidadeAprovados > 0
               ? `de ${visaoGeral.faturamentoMes.quantidadeAprovados} orçamento${
@@ -137,6 +139,10 @@ export default async function MeuNegocioPage() {
           }
           href="/orcamento"
         />
+        <div className="mt-3 flex items-center justify-between gap-4 px-1">
+          <p className="text-xs text-slate-500">Faturamento das últimas 8 semanas</p>
+          <Sparkline dados={visaoGeral.serieFaturamentoSemanal.map((s) => s.total)} />
+        </div>
 
         {/* Tiras de contagem */}
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">

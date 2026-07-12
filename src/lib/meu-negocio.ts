@@ -4,6 +4,34 @@ import { prisma } from "@/lib/prisma";
 import { ROTULOS_STATUS_ORCAMENTO, type StatusOrcamento } from "@/lib/orcamento-status";
 import { calcularPrevisaoEstoque } from "@/lib/previsao-estoque-db";
 import { LIMITE_DIAS_ALERTA } from "@/lib/previsao-estoque";
+import { D } from "@/lib/pricing/decimal";
+
+const SEMANAS_SERIE_FATURAMENTO = 8;
+const MS_POR_SEMANA = 1000 * 60 * 60 * 24 * 7;
+
+// Bucket por "semana desde o início da série" (janela deslizante de 7 dias,
+// não alinhada ao calendário) — simples o bastante pra não precisar de SQL
+// bruto (groupBy do Prisma não bucketiza por data). Soma em Decimal, não
+// Number() += , mesma disciplina do resto do financeiro (ver
+// src/app/financeiro/exportar/route.ts).
+function bucketarFaturamentoPorSemana(
+  registros: { createdAt: Date; total: unknown }[],
+  inicioSerie: Date
+): { rotulo: string; total: number }[] {
+  const buckets = Array.from({ length: SEMANAS_SERIE_FATURAMENTO }, () => new D(0));
+  for (const r of registros) {
+    const diasDesdeInicio = (r.createdAt.getTime() - inicioSerie.getTime()) / (1000 * 60 * 60 * 24);
+    const indice = Math.min(
+      SEMANAS_SERIE_FATURAMENTO - 1,
+      Math.max(0, Math.floor(diasDesdeInicio / 7))
+    );
+    buckets[indice] = buckets[indice].plus(String(r.total));
+  }
+  return buckets.map((total, i) => ({
+    rotulo: `Semana ${i + 1}`,
+    total: total.toNumber(),
+  }));
+}
 
 const ORDEM_STATUS_ORCAMENTO: StatusOrcamento[] = [
   "RASCUNHO",
@@ -55,11 +83,19 @@ export type VisaoGeralNegocio = {
   despesasPendentesMes: { total: number; quantidade: number };
   despesasPagasMes: { total: number };
   saldoReal: number;
+  // Últimas 8 semanas de faturamento aprovado — alimenta o sparkline do
+  // hero StatTile em /meu-negocio (D1 do plano de UI/UX). Sempre 8 pontos,
+  // mesmo com semana vazia (fica 0), pra não distorcer a leitura visual da
+  // tendência.
+  serieFaturamentoSemanal: { rotulo: string; total: number }[];
 };
 
 export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoGeralNegocio> {
   const agora = new Date();
   const inicioDoMes = new Date(agora.getFullYear(), agora.getMonth(), 1);
+  const inicioSerieFaturamento = new Date(
+    agora.getTime() - SEMANAS_SERIE_FATURAMENTO * MS_POR_SEMANA
+  );
 
   const [
     faturamentoAgregado,
@@ -72,6 +108,7 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
     orcamentosDoMes,
     despesasPendentesAgregado,
     despesasPagasAgregado,
+    orcamentosParaSerie,
   ] = await Promise.all([
     prisma.orcamento.aggregate({
       where: { graficaId, status: "APROVADO", createdAt: { gte: inicioDoMes } },
@@ -107,6 +144,10 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
     prisma.despesa.aggregate({
       where: { graficaId, status: "PAGA", pagoEm: { gte: inicioDoMes } },
       _sum: { valor: true },
+    }),
+    prisma.orcamento.findMany({
+      where: { graficaId, status: "APROVADO", createdAt: { gte: inicioSerieFaturamento } },
+      select: { createdAt: true, total: true },
     }),
   ]);
 
@@ -187,5 +228,9 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
     },
     despesasPagasMes: { total: despesasPagasTotal },
     saldoReal: faturamentoTotal - despesasPagasTotal,
+    serieFaturamentoSemanal: bucketarFaturamentoPorSemana(
+      orcamentosParaSerie,
+      inicioSerieFaturamento
+    ),
   };
 }

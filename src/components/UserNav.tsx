@@ -1,13 +1,23 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { logout } from "@/app/logout/actions";
 import { obterResumoAssinatura } from "@/app/configuracoes/assinatura/actions";
 import { Logo } from "@/components/Logo";
 import { LogOutIcon, MenuIcon, XIcon } from "@/components/icons";
-import { ChatAssistente } from "@/components/ChatAssistente";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import type { PapelUsuario, ModuloPermissao } from "@/generated/prisma/enums";
+
+// Lazy: a maioria das gráficas não configura o assistente (o próprio
+// componente checa isso e renderiza null), mas sem dynamic() o JS dele
+// (ícones, Card, Button, a máquina de estado do chat) seria parseado em
+// toda página autenticada mesmo assim — ~40 rotas pagam esse custo à toa.
+const ChatAssistente = dynamic(
+  () => import("@/components/ChatAssistente").then((m) => m.ChatAssistente),
+  { ssr: false }
+);
 
 // Exportado pra ChatAssistente reaproveitar os mesmos rótulos em pt-BR na
 // hora de identificar em qual página o usuário está. `modulo` liga cada link
@@ -115,6 +125,9 @@ export function UserNav({
             </p>
             <p className="text-xs text-slate-500">{graficaNome}</p>
           </div>
+          <div className="hidden sm:block">
+            <ThemeToggle />
+          </div>
           <form action={logout} className="hidden sm:block">
             <button
               type="submit"
@@ -137,7 +150,7 @@ export function UserNav({
       </div>
 
       {diasRestantesTrial !== null && (
-        <div className="border-t border-amber-200 bg-amber-50 px-6 py-2 text-center text-xs font-medium text-amber-800 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300">
+        <div className="border-t border-warning-200 bg-warning-50 px-6 py-2 text-center text-xs font-medium text-warning-800 dark:border-warning-900 dark:bg-warning-950/50 dark:text-warning-300">
           {diasRestantesTrial > 0
             ? `Período de teste — ${diasRestantesTrial} dia${diasRestantesTrial === 1 ? "" : "s"} restante${diasRestantesTrial === 1 ? "" : "s"}.`
             : "Seu período de teste terminou."}{" "}
@@ -150,7 +163,7 @@ export function UserNav({
       )}
 
       {diasAteBloqueio !== null && (
-        <div className="border-t border-rose-200 bg-rose-50 px-6 py-2 text-center text-xs font-medium text-rose-800 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300">
+        <div className="border-t border-danger-200 bg-danger-50 px-6 py-2 text-center text-xs font-medium text-danger-800 dark:border-danger-900 dark:bg-danger-950/50 dark:text-danger-300">
           {diasAteBloqueio > 0
             ? `Você passou do limite do seu plano — ${diasAteBloqueio} dia${diasAteBloqueio === 1 ? "" : "s"} pra evitar o bloqueio.`
             : "Você passou do limite do seu plano — o acesso pode ser bloqueado a qualquer momento."}{" "}
@@ -185,15 +198,18 @@ export function UserNav({
               <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{nome}</p>
               <p className="text-xs text-slate-500">{graficaNome}</p>
             </div>
-            <form action={logout}>
-              <button
-                type="submit"
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800"
-              >
-                <LogOutIcon className="h-4 w-4" />
-                Sair
-              </button>
-            </form>
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              <form action={logout}>
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  <LogOutIcon className="h-4 w-4" />
+                  Sair
+                </button>
+              </form>
+            </div>
           </div>
         </nav>
       )}

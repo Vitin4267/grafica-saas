@@ -19,7 +19,7 @@ export function StatTile({
   size = "md",
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   caption?: string;
   icon?: ReactNode;
   href?: string;

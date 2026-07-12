@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useActionState, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -291,7 +291,13 @@ function VariantesInlineEditor({
   );
 }
 
-function ItemLinha({
+// memo() só ajuda de verdade porque onToggle/onMudarPreco são estáveis
+// (useCallback com deps vazias, ver componente pai) — sem isso, toda
+// digitação na busca recriaria as duas funções e invalidaria o memo de
+// qualquer forma. Item recebe o id e chama onMudarPreco(item.id, valor)
+// aqui dentro, em vez do pai currying uma closure nova por item a cada
+// render (isso sim quebraria o memo, mesmo com useCallback no pai).
+const ItemLinha = memo(function ItemLinha({
   item,
   selecionado,
   onToggle,
@@ -304,7 +310,7 @@ function ItemLinha({
   onToggle: (id: string) => void;
   selecaoInicial?: Selecao;
   valorPreco: string;
-  onMudarPreco: (valor: string) => void;
+  onMudarPreco: (id: string, valor: string) => void;
 }) {
   // Matéria-prima com variantes (ex: espessura de chapa) não usa mais preço/
   // estoque no nível do item — isso mora nas variantes, geridas numa tela
@@ -334,6 +340,8 @@ function ItemLinha({
     { chave: gerarChave(), rotulo: "", precoCompra: "", estoqueAtual: "", estoqueMinimo: "" },
   ]);
 
+  const mudarPreco = (valor: string) => onMudarPreco(item.id, valor);
+
   return (
     <div className="flex flex-col gap-3 border-b border-slate-100 py-3 last:border-0 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
       <label className="flex items-center gap-3">
@@ -361,7 +369,7 @@ function ItemLinha({
               name={`venda_${item.id}`}
               placeholder="Preço de venda"
               value={valorPreco}
-              onChange={onMudarPreco}
+              onChange={mudarPreco}
               prefixo="R$"
             />
           )}
@@ -388,7 +396,7 @@ function ItemLinha({
                   name={`compra_${item.id}`}
                   placeholder="Preço de compra"
                   value={valorPreco}
-                  onChange={onMudarPreco}
+                  onChange={mudarPreco}
                   prefixo="R$"
                 />
               )}
@@ -466,7 +474,7 @@ function ItemLinha({
       )}
     </div>
   );
-}
+});
 
 function NovoItemForm({
   tipo,
@@ -596,18 +604,22 @@ export function CatalogoForm({
   );
   const [state, formAction, isPending] = useActionState(salvarCatalogo, null);
 
-  const toggle = (id: string) => {
+  // useCallback (deps vazias) — as duas só usam a forma funcional do
+  // setState, então não fecham sobre nenhum valor que mude entre renders.
+  // Referência estável é o que permite o memo() de ItemLinha funcionar de
+  // verdade (ver comentário lá).
+  const toggle = useCallback((id: string) => {
     setSelecionados((atual) => {
       const novo = new Set(atual);
       if (novo.has(id)) novo.delete(id);
       else novo.add(id);
       return novo;
     });
-  };
+  }, []);
 
-  const definirPreco = (id: string, valor: string) => {
+  const definirPreco = useCallback((id: string, valor: string) => {
     setPrecosPrincipais((atual) => ({ ...atual, [id]: valor }));
-  };
+  }, []);
 
   // "Marcar todos" de uma categoria: se já está tudo marcado, desmarca tudo;
   // senão (nada ou só parte), marca tudo — mesmo comportamento de qualquer
@@ -654,7 +666,12 @@ export function CatalogoForm({
     });
   };
 
-  const buscaNormalizada = busca.trim().toLowerCase();
+  // O input em si fica preso em `busca` (digitação sempre instantânea);
+  // só o que depende do filtro (buscaNormalizada pra baixo — recalcula
+  // "corresponde" pra cada item do catálogo inteiro a cada tecla) usa o
+  // valor adiado, pra não travar a digitação num catálogo grande.
+  const buscaAdiada = useDeferredValue(busca);
+  const buscaNormalizada = buscaAdiada.trim().toLowerCase();
 
   const contagemPorAba = useMemo(() => {
     const contagem: Record<Tipo, number> = { PRODUTO: 0, MATERIA_PRIMA: 0, SERVICO: 0 };
@@ -841,7 +858,7 @@ export function CatalogoForm({
                           onToggle={toggle}
                           selecaoInicial={selecoes[item.id]}
                           valorPreco={precosPrincipais[item.id] ?? ""}
-                          onMudarPreco={(valor) => definirPreco(item.id, valor)}
+                          onMudarPreco={definirPreco}
                         />
                       </div>
                     ))}
