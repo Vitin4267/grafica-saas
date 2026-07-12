@@ -9,6 +9,7 @@ import { obterIpRequisicao } from "@/lib/auth/ip";
 import { registroSchema } from "@/lib/auth/validation";
 import { slugify } from "@/lib/slug";
 import { TRIAL_DIAS } from "@/lib/billing/planos";
+import { gerarEEnviarCodigoVerificacao } from "@/lib/email/verificacao-email";
 
 const MENSAGEM_GENERICA = "Não foi possível concluir o cadastro. Tente novamente.";
 
@@ -108,5 +109,9 @@ export async function registrar(
 
   await criarSessao(usuario.id);
 
-  redirect("/bem-vindo");
+  // Melhor esforço — nunca lança (ver dispararEventoEmail). Mesmo se o
+  // e-mail falhar, o usuário cai em /verificar-email e pode pedir reenvio.
+  await gerarEEnviarCodigoVerificacao(usuario);
+
+  redirect("/verificar-email");
 }

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
+import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import {
   podeVerMeuNegocio,
   podeEditarModulo,
@@ -16,6 +17,7 @@ import { ReajusteForm } from "./ReajusteForm";
 // preço, não tem nada útil pra mostrar em modo leitura.
 export default async function ReajusteEmLotePage() {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "CATALOGO"))) {
     redirect("/catalogo");

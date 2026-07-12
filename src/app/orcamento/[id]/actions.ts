@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
+import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { calcularItemOrcamento } from "@/lib/orcamento-precificacao";
 import { resolverOrigemPublica } from "@/lib/url-publica";
@@ -38,6 +39,7 @@ export async function atualizarStatusOrcamento(
   formData: FormData
 ): Promise<AtualizarStatusResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
@@ -108,6 +110,7 @@ export async function editarOrcamento(
   formData: FormData
 ): Promise<EditarOrcamentoResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
@@ -209,6 +212,7 @@ export async function alterarClienteOrcamento(
   formData: FormData
 ): Promise<AlterarClienteResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
@@ -251,6 +255,7 @@ export async function adicionarItemOrcamento(
   formData: FormData
 ): Promise<AdicionarItemResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
@@ -353,6 +358,7 @@ export async function removerItemOrcamento(
   formData: FormData
 ): Promise<RemoverItemResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
@@ -424,6 +430,7 @@ export async function cancelarOrcamento(
   formData: FormData
 ): Promise<CancelarOrcamentoResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
@@ -455,6 +462,7 @@ export async function gerarLinkPublico(
   formData: FormData
 ): Promise<GerarLinkResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
@@ -503,6 +511,7 @@ export async function registrarPagamento(
   formData: FormData
 ): Promise<RegistrarPagamentoResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
@@ -576,6 +585,7 @@ export async function emitirNotaFiscal(
   formData: FormData
 ): Promise<EmitirNotaFiscalResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
@@ -695,6 +705,7 @@ export async function atualizarStatusNotaFiscal(
   formData: FormData
 ): Promise<EmitirNotaFiscalResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
@@ -756,6 +767,7 @@ export async function excluirPagamento(
   formData: FormData
 ): Promise<RegistrarPagamentoResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };

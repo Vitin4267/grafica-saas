@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
+import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { exigirPapel, podeVerMeuNegocio } from "@/lib/auth/permissoes";
 import { UserNav } from "@/components/UserNav";
 import { ArrowLeftIcon } from "@/components/icons";
@@ -15,6 +16,7 @@ export default async function PermissoesUsuarioPage({
 }) {
   const { id } = await params;
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   exigirPapel(usuario, ["DONO"]);
 

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
+import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { Prisma } from "@/generated/prisma/client";
 import { buscarWebhookAutomacao, dispararEventoAutomacao } from "@/lib/webhook-automacao";
@@ -38,6 +39,7 @@ export async function avancarPedido(
   formData: FormData
 ): Promise<AvancarPedidoResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "PRODUCAO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar a produção." };

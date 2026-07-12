@@ -1,5 +1,6 @@
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
+import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import {
   podeVerMeuNegocio,
   exigirVerModulo,
@@ -11,6 +12,7 @@ import { ParametrosForm } from "./ParametrosForm";
 
 export default async function ConfiguracoesPage() {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   await exigirVerModulo(usuario, "CONFIGURACOES");
   const parametros = await carregarParametrosTenant(usuario.graficaId);

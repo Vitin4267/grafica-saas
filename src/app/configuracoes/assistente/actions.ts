@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
+import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { validarWebhookUrl } from "@/lib/webhook-assistente";
 
@@ -14,6 +15,7 @@ export async function salvarAssistente(
   formData: FormData
 ): Promise<SalvarAssistenteResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "CONFIGURACOES"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar configurações." };

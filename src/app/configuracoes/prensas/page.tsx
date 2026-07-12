@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
+import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import {
   podeVerMeuNegocio,
   exigirVerModulo,
@@ -15,6 +16,7 @@ import { NovaPrensaForm } from "./NovaPrensaForm";
 
 export default async function PrensasPage() {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   await exigirVerModulo(usuario, "CONFIGURACOES");
   const podeEditar = await podeEditarModulo(usuario, "CONFIGURACOES");

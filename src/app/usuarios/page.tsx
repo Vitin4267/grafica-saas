@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
+import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { exigirPapel, podeVerMeuNegocio } from "@/lib/auth/permissoes";
 import { ROTULO_PAPEL } from "@/lib/papel-usuario";
 import { UserNav } from "@/components/UserNav";
@@ -12,6 +13,7 @@ import { AcessoMeuNegocioForm } from "./AcessoMeuNegocioForm";
 
 export default async function UsuariosPage() {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   exigirPapel(usuario, ["DONO"]);
 

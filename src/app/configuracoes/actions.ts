@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
+import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 
 export type SalvarParametrosResult = { ok: boolean; mensagem: string };
@@ -27,6 +28,7 @@ export async function salvarParametros(
   formData: FormData
 ): Promise<SalvarParametrosResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "CONFIGURACOES"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar configurações." };

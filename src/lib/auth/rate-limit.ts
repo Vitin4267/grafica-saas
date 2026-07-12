@@ -76,3 +76,34 @@ export async function verificarBloqueioResetSenha(email: string, ip: string): Pr
 export async function registrarTentativaResetSenha(email: string, ip: string) {
   await prisma.tentativaResetSenha.create({ data: { email, ip } });
 }
+
+// Mesmo padrão de verificarBloqueioResetSenha, só que por usuarioId em vez
+// de email — nesse ponto do fluxo o usuário já está autenticado (ver
+// src/app/verificar-email/actions.ts), não precisa aceitar e-mail cru.
+// Limita quantos códigos NOVOS podem ser pedidos; quantos PALPITES cada
+// código aceita é uma trava separada (ver LIMITE_TENTATIVAS em
+// src/lib/auth/verificacao-email.ts).
+const JANELA_VERIFICACAO_EMAIL_MS = 1000 * 60 * 15; // 15 minutos
+const LIMITE_VERIFICACAO_EMAIL_POR_USUARIO = 3;
+const LIMITE_VERIFICACAO_EMAIL_POR_IP = 10;
+
+export async function verificarBloqueioVerificacaoEmail(
+  usuarioId: string,
+  ip: string
+): Promise<boolean> {
+  const desde = new Date(Date.now() - JANELA_VERIFICACAO_EMAIL_MS);
+
+  const [tentativasUsuario, tentativasIp] = await Promise.all([
+    prisma.tentativaVerificacaoEmail.count({ where: { usuarioId, createdAt: { gte: desde } } }),
+    prisma.tentativaVerificacaoEmail.count({ where: { ip, createdAt: { gte: desde } } }),
+  ]);
+
+  return (
+    tentativasUsuario >= LIMITE_VERIFICACAO_EMAIL_POR_USUARIO ||
+    tentativasIp >= LIMITE_VERIFICACAO_EMAIL_POR_IP
+  );
+}
+
+export async function registrarTentativaVerificacaoEmail(usuarioId: string, ip: string) {
+  await prisma.tentativaVerificacaoEmail.create({ data: { usuarioId, ip } });
+}

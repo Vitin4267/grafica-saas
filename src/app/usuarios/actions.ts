@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
+import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { exigirPapel, MODULOS_PERMISSAO } from "@/lib/auth/permissoes";
 import { senhaSchema } from "@/lib/auth/validation";
 import { hashPassword } from "@/lib/auth/password";
@@ -23,6 +24,7 @@ export async function criarUsuario(
   formData: FormData
 ): Promise<CriarUsuarioResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   exigirPapel(usuario, ["DONO"]);
 
@@ -54,6 +56,10 @@ export async function criarUsuario(
       email,
       senhaHash,
       papel,
+      // Convite de colega por um DONO já verificado — confiança transitiva,
+      // nunca fica pendente em /verificar-email (diferente do cadastro
+      // self-service em /registro).
+      emailVerificadoEm: new Date(),
     },
   });
 
@@ -72,6 +78,7 @@ export async function salvarAcessoMeuNegocio(
   formData: FormData
 ): Promise<SalvarAcessoMeuNegocioResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   exigirPapel(usuario, ["DONO"]);
 
@@ -112,6 +119,7 @@ export async function salvarPermissoes(
   formData: FormData
 ): Promise<SalvarPermissoesResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   exigirPapel(usuario, ["DONO"]);
 

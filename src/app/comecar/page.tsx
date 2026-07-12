@@ -2,6 +2,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
+import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeVerMeuNegocio, obterModulosVisiveis } from "@/lib/auth/permissoes";
 import { obterStatusOnboarding } from "@/lib/onboarding";
 import { UserNav } from "@/components/UserNav";
@@ -27,6 +28,7 @@ export default async function ComecarPage({
   searchParams: Promise<{ tour?: string }>;
 }) {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   const status = await obterStatusOnboarding(usuario.graficaId);
   const { tour } = await searchParams;

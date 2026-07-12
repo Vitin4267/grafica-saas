@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
+import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { parseJsonArray } from "@/lib/form-json";
 
@@ -67,6 +68,7 @@ export async function criarItemCatalogo(
   formData: FormData
 ): Promise<CriarItemCatalogoResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "CATALOGO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar o catálogo." };
@@ -145,6 +147,7 @@ export async function salvarCatalogo(
   formData: FormData
 ): Promise<SalvarCatalogoResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "CATALOGO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar o catálogo." };

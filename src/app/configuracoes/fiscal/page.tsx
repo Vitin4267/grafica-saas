@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
+import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import {
   podeVerMeuNegocio,
   exigirVerModulo,
@@ -13,6 +14,7 @@ import { DadosFiscaisForm } from "./DadosFiscaisForm";
 
 export default async function ConfiguracoesFiscaisPage() {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   await exigirVerModulo(usuario, "CONFIGURACOES");
 

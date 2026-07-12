@@ -280,11 +280,20 @@ model Usuario {
   // Irrelevante pra DONO, que sempre tem acesso.
   acessoMeuNegocio Boolean @default(false)
 
-  grafica          Grafica            @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  orcamentos       Orcamento[]
-  sessoes          Sessao[]
-  permissoes       PermissaoUsuario[]
-  tokensResetSenha TokenResetSenha[]
+  // null = ainda não confirmou o código de 6 dígitos enviado no cadastro
+  // (ver exigirEmailVerificado). Só se aplica a quem se cadastra sozinho
+  // via /registro — usuário convidado em /usuarios já nasce com isso
+  // preenchido (confiança transitiva: quem convida já provou a própria
+  // identidade). Contas anteriores a esta feature foram "perdoadas" na
+  // migração (emailVerificadoEm = createdAt).
+  emailVerificadoEm DateTime?
+
+  grafica                Grafica                  @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamentos             Orcamento[]
+  sessoes                Sessao[]
+  permissoes             PermissaoUsuario[]
+  tokensResetSenha       TokenResetSenha[]
+  tokensVerificacaoEmail TokenVerificacaoEmail[]
 
   @@index([graficaId])
   @@map("usuarios")
@@ -352,6 +361,28 @@ model TokenResetSenha {
   @@map("tokens_reset_senha")
 }
 
+// Mesma filosofia de TokenResetSenha: guarda só o HASH do código (nunca o
+// valor bruto de 6 dígitos), usadoEm torna de uso único. tentativas conta
+// palpites errados NESTE código especificamente — ao chegar no limite
+// (ver LIMITE_TENTATIVAS em src/lib/auth/verificacao-email.ts), o código
+// vira inválido mesmo dentro da janela de expiração, forçando reenvio.
+// Proteção extra necessária porque 6 dígitos é um espaço bem menor (1 em
+// 1.000.000) que o token de 256 bits do reset de senha.
+model TokenVerificacaoEmail {
+  id         String    @id @default(cuid())
+  usuarioId  String
+  codigoHash String
+  expiraEm   DateTime
+  usadoEm    DateTime?
+  tentativas Int       @default(0)
+  createdAt  DateTime  @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+  @@map("tokens_verificacao_email")
+}
+
 // Registro de tentativas de login (sucesso e falha) para permitir bloqueio temporário
 // por e-mail e por IP contra ataques de força bruta, sobrevivendo a reinícios do servidor.
 model TentativaLogin {
@@ -390,6 +421,23 @@ model TentativaResetSenha {
   @@index([email, createdAt])
   @@index([ip, createdAt])
   @@map("tentativas_reset_senha")
+}
+
+// Mesmo padrão de TentativaResetSenha, só que por usuarioId em vez de
+// email (usuário já está autenticado nesse ponto do fluxo, não precisa
+// aceitar e-mail cru) — limita quantos códigos NOVOS podem ser pedidos,
+// não quantos palpites (isso é TokenVerificacaoEmail.tentativas). As duas
+// defesas juntas: no máximo LIMITE_VERIFICACAO_EMAIL_POR_USUARIO códigos
+// por janela, cada um valendo só 5 palpites.
+model TentativaVerificacaoEmail {
+  id        String   @id @default(cuid())
+  usuarioId String
+  ip        String
+  createdAt DateTime @default(now())
+
+  @@index([usuarioId, createdAt])
+  @@index([ip, createdAt])
+  @@map("tentativas_verificacao_email")
 }
 
 model Cliente {

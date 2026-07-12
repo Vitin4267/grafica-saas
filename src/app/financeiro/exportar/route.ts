@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
+import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeVerModulo } from "@/lib/auth/permissoes";
 import { formatoData } from "@/lib/data";
 import { D, type Dec } from "@/lib/pricing/decimal";
@@ -22,6 +23,7 @@ function formatoValor(valor: number | Dec): string {
 // pra bater com o que o contador espera de um extrato pra DRE simples.
 export async function GET(request: NextRequest) {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   if (!(await podeVerModulo(usuario, "FINANCEIRO"))) {
     return new Response("Sem permissão pra exportar o financeiro.", { status: 403 });
