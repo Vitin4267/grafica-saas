@@ -28,6 +28,12 @@ export function ChatAssistente() {
   const [pergunta, setPergunta] = useState("");
   const [enviando, setEnviando] = useState(false);
   const fimDaListaRef = useRef<HTMLDivElement>(null);
+  // Um por montagem do widget (reseta ao recarregar a página) — dá memória
+  // de conversa pro workflow n8n sem precisar persistir nada no navegador.
+  // A gráfica é adicionada na frente disso no servidor, nunca aqui (ver
+  // ChatAssistente.actions.ts) — este valor sozinho não tem significado de
+  // tenant nenhum.
+  const [sessaoId] = useState(() => crypto.randomUUID());
 
   useEffect(() => {
     verificarAssistenteDisponivel().then(setDisponivel);
@@ -48,7 +54,7 @@ export function ChatAssistente() {
     setPergunta("");
     setEnviando(true);
 
-    const resultado = await enviarPerguntaAssistente(texto, rotularPagina(pathname ?? ""));
+    const resultado = await enviarPerguntaAssistente(texto, rotularPagina(pathname ?? ""), sessaoId);
 
     setMensagens((atual) => [
       ...atual,

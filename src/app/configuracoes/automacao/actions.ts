@@ -4,18 +4,16 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
-import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { validarWebhookUrl } from "@/lib/webhook-assistente";
 
-export type SalvarAssistenteResult = { ok: boolean; mensagem: string };
+export type SalvarAutomacaoResult = { ok: boolean; mensagem: string };
 
-export async function salvarAssistente(
-  _estadoAnterior: SalvarAssistenteResult | null,
+export async function salvarAutomacao(
+  _estadoAnterior: SalvarAutomacaoResult | null,
   formData: FormData
-): Promise<SalvarAssistenteResult> {
+): Promise<SalvarAutomacaoResult> {
   const usuario = await exigirUsuarioAutenticado();
-  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "CONFIGURACOES"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar configurações." };
@@ -30,13 +28,13 @@ export async function salvarAssistente(
       return { ok: false, mensagem: validacao.mensagem ?? "URL inválida." };
     }
 
-    await prisma.assistenteGrafica.upsert({
+    await prisma.automacaoGrafica.upsert({
       where: { graficaId: usuario.graficaId },
       update: { webhookUrl: novaUrl.trim() },
       create: { graficaId: usuario.graficaId, webhookUrl: novaUrl.trim() },
     });
   }
 
-  revalidatePath("/configuracoes/assistente");
-  return { ok: true, mensagem: "Assistente salvo com sucesso!" };
+  revalidatePath("/configuracoes/automacao");
+  return { ok: true, mensagem: "Automação salva com sucesso!" };
 }

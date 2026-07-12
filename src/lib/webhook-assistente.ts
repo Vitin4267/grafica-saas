@@ -19,6 +19,11 @@ export type PerguntaAssistente = {
   pergunta: string;
   pagina: string;
   graficaNome: string;
+  // Identifica a conversa pro workflow n8n poder dar memória ao assistente
+  // (ex: node "Postgres Chat Memory") — sempre prefixado com o graficaId no
+  // servidor (ver ChatAssistente.actions.ts), nunca aceito cru do cliente,
+  // pra duas gráficas nunca poderem colidir no mesmo histórico de conversa.
+  sessaoId: string;
 };
 
 export type RespostaAssistente = { resposta: string };
@@ -148,6 +153,7 @@ export async function perguntarAssistente(
       pergunta: input.pergunta,
       pagina: input.pagina,
       graficaNome: input.graficaNome,
+      sessaoId: input.sessaoId,
     })
   );
 

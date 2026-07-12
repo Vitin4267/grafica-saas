@@ -3,11 +3,11 @@ import { prisma } from "@/lib/prisma";
 import { validarWebhookUrl } from "@/lib/webhook-assistente";
 import { construirEnvelope } from "@/lib/webhook-envelope";
 
-// Eventos do hub de automação — disparados fire-and-forget pro mesmo webhook
-// n8n que a gráfica já configura em /configuracoes/assistente (mesmo campo
-// AssistenteGrafica.webhookUrl usado pelo chat). Cada payload é montado
-// campo a campo (nunca spread de objeto interno) — mesma disciplina de
-// webhook-assistente.ts, mesmo carregando dado de negócio agora.
+// Eventos do hub de automação — disparados fire-and-forget pro webhook n8n
+// (ou qualquer outro) que a PRÓPRIA gráfica configura em
+// /configuracoes/automacao (AutomacaoGrafica.webhookUrl). Cada payload é
+// montado campo a campo (nunca spread de objeto interno) — mesma disciplina
+// de webhook-assistente.ts, mesmo carregando dado de negócio agora.
 export type EventoAutomacao =
   | {
       tipo: "pedido_status_mudou";
@@ -39,8 +39,8 @@ export type EventoAutomacao =
 const TIMEOUT_MS = 5_000; // bem menor que o do chat (15s) — ninguém na UI está esperando resposta
 
 export async function buscarWebhookAutomacao(graficaId: string): Promise<string | null> {
-  const assistente = await prisma.assistenteGrafica.findUnique({ where: { graficaId } });
-  return assistente?.webhookUrl ?? null;
+  const automacao = await prisma.automacaoGrafica.findUnique({ where: { graficaId } });
+  return automacao?.webhookUrl ?? null;
 }
 
 // Nunca lança erro pra cima — uma automação falhando não pode derrubar a

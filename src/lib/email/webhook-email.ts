@@ -3,7 +3,7 @@ import { validarWebhookUrl } from "@/lib/webhook-assistente";
 import { construirEnvelope } from "@/lib/webhook-envelope";
 
 // Diferente do hub de automação (src/lib/webhook-automacao.ts, que dispara
-// pro webhook que CADA GRÁFICA configura em /configuracoes/assistente),
+// pro webhook que CADA GRÁFICA configura em /configuracoes/automacao),
 // este é um webhook único e fixo DA PLATAFORMA (EMAIL_WEBHOOK_URL, env var
 // configurada só uma vez, pelo dono do grafica-saas) — e-mail de sistema
 // (reset de senha, e futuramente boas-vindas/aviso de cobrança) não é um

@@ -34,7 +34,7 @@ model Grafica {
   prensas               Prensa[]
   dadosFiscais          DadosFiscaisGrafica?
   notasFiscais          NotaFiscal[]
-  assistente            AssistenteGrafica?
+  automacao             AutomacaoGrafica?
   despesas              Despesa[]
   logsAuditoria         LogAuditoria[]
   assinatura            AssinaturaGrafica?
@@ -176,21 +176,21 @@ model NotaFiscal {
   @@map("notas_fiscais")
 }
 
-// Configuração do assistente de IA de uso do site — 100% opt-in, nunca pedido
-// em /comecar ou /login. A IA de verdade não roda aqui: o grafica-saas só
-// encaminha a pergunta do usuário + em qual página ele está pro workflow n8n
-// que a PRÓPRIA gráfica configurou (nunca uma conta nossa, mesmo modelo de
-// DadosFiscaisGrafica). É estritamente um guia de uso do site — a aplicação
-// NUNCA inclui orçamento, cliente, valor, pagamento ou nota fiscal no payload
-// enviado (ver src/lib/webhook-assistente.ts).
-model AssistenteGrafica {
+// Webhook n8n (ou qualquer outro) que a PRÓPRIA gráfica configura pra
+// receber eventos do hub de automação (pedido_status_mudou, estoque_critico,
+// pedido_atrasado — ver src/lib/webhook-automacao.ts), mesmo padrão "bring
+// your own account" de DadosFiscaisGrafica. Diferente do assistente de IA
+// (ASSISTENTE_WEBHOOK_URL, env var única da plataforma) — automação é
+// legitimamente por tenant, cada gráfica quer notificação só dos próprios
+// pedidos.
+model AutomacaoGrafica {
   id        String @id @default(cuid())
   graficaId String @unique
 
   // URL do workflow n8n do PRÓPRIO tenant — o path costuma carregar um UUID
   // que funciona como token de capability (padrão de webhook do n8n), por
   // isso é tratada como segredo (nunca reexibida por completo, ver
-  // /configuracoes/assistente).
+  // /configuracoes/automacao).
   webhookUrl String?
 
   createdAt DateTime @default(now())
@@ -198,7 +198,7 @@ model AssistenteGrafica {
 
   grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
 
-  @@map("assistente_grafica")
+  @@map("automacao_grafica")
 }
 
 enum StatusAssinatura {
@@ -209,8 +209,8 @@ enum StatusAssinatura {
 }
 
 // Cobrança da PLATAFORMA sobre a gráfica (assinatura do SaaS) — diferente do
-// padrão "bring your own account" usado por DadosFiscaisGrafica/AssistenteGrafica
-// (onde a credencial é da própria gráfica): aqui a conta Stripe é NOSSA, do
+// padrão "bring your own account" usado por DadosFiscaisGrafica (onde a
+// credencial é da própria gráfica): aqui a conta Stripe é NOSSA, do
 // dono do grafica-saas. Guarda só o status derivado + IDs de referência — o
 // Stripe é a fonte de verdade do dinheiro, isto aqui é um cache local pro
 // gate de acesso (src/lib/auth/assinatura.ts) não precisar chamar a API do

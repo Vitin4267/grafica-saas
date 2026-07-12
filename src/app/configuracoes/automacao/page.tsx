@@ -2,7 +2,6 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
-import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import {
   podeVerMeuNegocio,
   exigirVerModulo,
@@ -10,7 +9,7 @@ import {
 } from "@/lib/auth/permissoes";
 import { UserNav } from "@/components/UserNav";
 import { ArrowLeftIcon } from "@/components/icons";
-import { AssistenteForm } from "./AssistenteForm";
+import { AutomacaoForm } from "./AutomacaoForm";
 
 function mascararWebhookUrl(url: string): string {
   try {
@@ -21,22 +20,21 @@ function mascararWebhookUrl(url: string): string {
   }
 }
 
-export default async function ConfiguracoesAssistentePage() {
+export default async function ConfiguracoesAutomacaoPage() {
   const usuario = await exigirUsuarioAutenticado();
-  await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   await exigirVerModulo(usuario, "CONFIGURACOES");
 
   // Self-healing, mesmo padrão de carregarParametrosTenant/dadosFiscais: cria
   // a linha vazia na primeira visita, sem forçar o usuário a nada.
-  const assistente = await prisma.assistenteGrafica.upsert({
+  const automacao = await prisma.automacaoGrafica.upsert({
     where: { graficaId: usuario.graficaId },
     update: {},
     create: { graficaId: usuario.graficaId },
   });
 
-  const webhookUrlMascarada = assistente.webhookUrl
-    ? mascararWebhookUrl(assistente.webhookUrl)
+  const webhookUrlMascarada = automacao.webhookUrl
+    ? mascararWebhookUrl(automacao.webhookUrl)
     : null;
 
   return (
@@ -61,20 +59,17 @@ export default async function ConfiguracoesAssistentePage() {
 
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-            Assistente de IA
+            Automação (n8n)
           </h1>
           <p className="mt-1 text-slate-500">
-            Um guia de uso do site pros seus usuários — explica onde fica cada
-            funcionalidade e como usar. A IA de verdade roda no seu próprio
-            workflow n8n; a gente só encaminha a pergunta.{" "}
-            <strong className="text-slate-700 dark:text-slate-300">
-              Nunca enviamos dado de cliente, orçamento, valor ou pagamento —
-              só o texto da pergunta e em qual página a pessoa está.
-            </strong>
+            Um webhook seu (n8n ou qualquer outro) recebe eventos da sua
+            gráfica em tempo real — pedido mudou de status, estoque crítico,
+            pedido atrasado — pra você automatizar avisos por WhatsApp,
+            e-mail, planilha, o que quiser do seu lado.
           </p>
         </div>
 
-        <AssistenteForm webhookUrlMascarada={webhookUrlMascarada} />
+        <AutomacaoForm webhookUrlMascarada={webhookUrlMascarada} />
       </main>
     </div>
   );

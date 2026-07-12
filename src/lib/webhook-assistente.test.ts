@@ -41,7 +41,12 @@ describe("perguntarAssistente", () => {
   });
 
   const config = { webhookUrl: "https://exemplo.app.n8n.cloud/webhook/abc" };
-  const input = { pergunta: "Como cadastro um cliente?", pagina: "Clientes", graficaNome: "Gráfica Teste" };
+  const input = {
+    pergunta: "Como cadastro um cliente?",
+    pagina: "Clientes",
+    graficaNome: "Gráfica Teste",
+    sessaoId: "grafica123:sessao-teste",
+  };
 
   it("envia envelopado, com tipo pergunta_assistente e sem campo extra em dados", async () => {
     let corpoCapturado: string | undefined;
@@ -64,7 +69,7 @@ describe("perguntarAssistente", () => {
     expect(corpo.idEvento).toMatch(/^evt_/);
     expect(corpo.tipo).toBe("pergunta_assistente");
     expect(corpo.versao).toBe(1);
-    expect(Object.keys(corpo.dados).sort()).toEqual(["graficaNome", "pagina", "pergunta"]);
+    expect(Object.keys(corpo.dados).sort()).toEqual(["graficaNome", "pagina", "pergunta", "sessaoId"]);
     expect(corpo.dados).not.toHaveProperty("orcamentoValor");
   });
 

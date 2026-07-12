@@ -1,23 +1,20 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
 import { obterUsuarioAtual } from "@/lib/auth/session";
 import { perguntarAssistente, ErroWebhookAssistente } from "@/lib/webhook-assistente";
 import { verificarLimiteAssistente, registrarPerguntaAssistente } from "@/lib/rate-limit-assistente";
 
-// Checagem passiva em segundo plano (chamada no mount do widget) — usa
-// obterUsuarioAtual() (nunca redireciona) em vez de exigirUsuarioAutenticado(),
-// e nunca lança: se algo der errado aqui, o botão flutuante simplesmente não
-// aparece, nunca derruba a página que o hospeda.
+// Webhook ÚNICO da plataforma (mesmo padrão de EMAIL_WEBHOOK_URL) — não pede
+// mais que cada gráfica monte o próprio n8n pra ter o assistente (era
+// inviável pra maioria dos clientes). Continua nunca recebendo dado de
+// negócio no payload (ver src/lib/webhook-assistente.ts), só muda quem
+// hospeda o workflow: antes era "bring your own account" por gráfica, agora
+// é uma conta só, da plataforma.
 export async function verificarAssistenteDisponivel(): Promise<boolean> {
   try {
     const usuario = await obterUsuarioAtual();
     if (!usuario) return false;
-
-    const assistente = await prisma.assistenteGrafica.findUnique({
-      where: { graficaId: usuario.graficaId },
-    });
-    return Boolean(assistente?.webhookUrl);
+    return Boolean(process.env.ASSISTENTE_WEBHOOK_URL);
   } catch {
     return false;
   }
@@ -31,7 +28,8 @@ const TAMANHO_MAXIMO_PERGUNTA = 500;
 
 export async function enviarPerguntaAssistente(
   pergunta: string,
-  pagina: string
+  pagina: string,
+  sessaoId: string
 ): Promise<EnviarPerguntaResult> {
   const usuario = await obterUsuarioAtual();
   if (!usuario) {
@@ -43,16 +41,14 @@ export async function enviarPerguntaAssistente(
     return { ok: false, mensagem: "Digite uma pergunta." };
   }
 
-  const assistente = await prisma.assistenteGrafica.findUnique({
-    where: { graficaId: usuario.graficaId },
-  });
-  if (!assistente?.webhookUrl) {
+  const webhookUrl = process.env.ASSISTENTE_WEBHOOK_URL;
+  if (!webhookUrl) {
     return { ok: false, mensagem: "Assistente não configurado." };
   }
 
-  // Rate limit ANTES de gastar a chamada de verdade — protege o token que a
-  // própria gráfica paga no n8n contra spam (de um usuário só ou da gráfica
-  // toda). Ver src/lib/rate-limit-assistente.ts.
+  // Rate limit ANTES de gastar a chamada de verdade — agora protege o custo
+  // de token da PLATAFORMA (compartilhado entre todas as gráficas), não só
+  // de uma conta própria. Ver src/lib/rate-limit-assistente.ts.
   const limite = await verificarLimiteAssistente(usuario.id, usuario.graficaId);
   if (limite.bloqueado) {
     return { ok: false, mensagem: limite.mensagem ?? "Limite de uso atingido." };
@@ -60,11 +56,18 @@ export async function enviarPerguntaAssistente(
   await registrarPerguntaAssistente(usuario.id, usuario.graficaId);
 
   try {
-    // Payload montado só com estes três campos, sempre — nunca dado de
-    // negócio (ver src/lib/webhook-assistente.ts).
+    // sessaoId sempre prefixado com o graficaId aqui, nunca aceito cru do
+    // cliente — o navegador só manda um UUID aleatório sem significado de
+    // tenant nenhum; é este prefixo que garante que duas gráficas nunca
+    // colidem no mesmo histórico de conversa da memória do n8n, mesmo se
+    // gerassem o mesmo UUID por coincidência.
+    const sessaoEscopada = `${usuario.graficaId}:${sessaoId}`;
+
+    // Payload montado só com estes campos, sempre — nunca dado de negócio
+    // (ver src/lib/webhook-assistente.ts).
     const resposta = await perguntarAssistente(
-      { webhookUrl: assistente.webhookUrl },
-      { pergunta: perguntaLimpa, pagina, graficaNome: usuario.grafica.nome }
+      { webhookUrl },
+      { pergunta: perguntaLimpa, pagina, graficaNome: usuario.grafica.nome, sessaoId: sessaoEscopada }
     );
     return { ok: true, resposta: resposta.resposta };
   } catch (erro) {

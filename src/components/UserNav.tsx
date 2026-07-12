@@ -10,7 +10,7 @@ import { LogOutIcon, MenuIcon, XIcon } from "@/components/icons";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import type { PapelUsuario, ModuloPermissao } from "@/generated/prisma/enums";
 
-// Lazy: a maioria das gráficas não configura o assistente (o próprio
+// Lazy: nem todo ambiente tem ASSISTENTE_WEBHOOK_URL configurado (o próprio
 // componente checa isso e renderiza null), mas sem dynamic() o JS dele
 // (ícones, Card, Button, a máquina de estado do chat) seria parseado em
 // toda página autenticada mesmo assim — ~40 rotas pagam esse custo à toa.

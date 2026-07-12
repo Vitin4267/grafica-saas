@@ -133,16 +133,16 @@ export function ParametrosForm({ parametros }: { parametros: ParametrosTenant })
       <Card className="flex items-center justify-between gap-4 p-6">
         <div>
           <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-            Assistente de IA
+            Automação (n8n)
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Guia de uso do site pros seus usuários, via um workflow n8n seu —
-            nunca envia dado de cliente, orçamento ou valor.
+            Receba eventos da sua gráfica (pedido atrasado, estoque crítico,
+            status de pedido) no seu próprio webhook n8n.
           </p>
         </div>
-        <Link href="/configuracoes/assistente">
+        <Link href="/configuracoes/automacao">
           <Button type="button" variant="outline">
-            Configurar assistente
+            Configurar automação
           </Button>
         </Link>
       </Card>

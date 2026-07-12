@@ -5,14 +5,14 @@ import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
-import { salvarAssistente } from "./actions";
+import { salvarAutomacao } from "./actions";
 
-export function AssistenteForm({
+export function AutomacaoForm({
   webhookUrlMascarada,
 }: {
   webhookUrlMascarada: string | null;
 }) {
-  const [state, formAction, isPending] = useActionState(salvarAssistente, null);
+  const [state, formAction, isPending] = useActionState(salvarAutomacao, null);
 
   return (
     <form action={formAction} className="flex flex-col gap-6">
@@ -53,31 +53,12 @@ export function AssistenteForm({
           <pre className="overflow-x-auto rounded-lg bg-slate-950 p-4 text-xs text-slate-100">
 {`{
   "idEvento": "evt_5b6f2e1a-...",
-  "tipo": "pergunta_assistente",
+  "tipo": "pedido_status_mudou",
   "timestamp": "2026-07-11T19:22:51.000Z",
   "versao": 1,
   "dados": { "...": "..." }
 }`}
           </pre>
-        </div>
-        <div>
-          <p className="mb-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
-            <code>tipo: &quot;pergunta_assistente&quot;</code> — pergunta feita no
-            chat de ajuda. <code>dados</code>:
-          </p>
-          <pre className="overflow-x-auto rounded-lg bg-slate-950 p-4 text-xs text-slate-100">
-{`{
-  "pergunta": "Como eu emito nota fiscal?",
-  "pagina": "Orçamento",
-  "graficaNome": "Gráfica Vitor Ltda"
-}`}
-          </pre>
-          <p className="mt-1.5 text-xs text-slate-500">
-            Seu workflow tem até 15 segundos pra responder com{" "}
-            <code>{`{ "resposta": "..." }`}</code> (ou texto puro, como
-            fallback) — depois disso mostramos um erro amigável pro usuário.
-            É o único tipo de evento que espera resposta.
-          </p>
         </div>
         <div>
           <p className="mb-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
@@ -132,17 +113,16 @@ export function AssistenteForm({
           </p>
         </div>
         <p className="text-xs text-slate-500">
-          <code>pedido_status_mudou</code>, <code>estoque_critico</code> e{" "}
-          <code>pedido_atrasado</code> não esperam resposta — disparamos e
-          seguimos em frente mesmo que seu workflow demore ou falhe, pra
-          nunca travar o uso do sistema.
+          Nenhum desses três eventos espera resposta — disparamos e seguimos
+          em frente mesmo que seu workflow demore ou falhe, pra nunca travar
+          o uso do sistema.
         </p>
       </Card>
 
       {state && <Alert variant={state.ok ? "success" : "error"}>{state.mensagem}</Alert>}
 
       <Button type="submit" loading={isPending} className="self-start">
-        {isPending ? "Salvando..." : "Salvar assistente"}
+        {isPending ? "Salvando..." : "Salvar automação"}
       </Button>
     </form>
   );
