@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -65,7 +66,13 @@ export function ChatAssistente() {
     setEnviando(false);
   }
 
-  return (
+  // Portal pro <body>: o widget é montado dentro de <header> (ver UserNav.tsx),
+  // e esse header tem backdrop-blur — que, junto com transform/filter, cria um
+  // novo "containing block" pra descendentes fixed, fazendo o "fixed bottom-4
+  // right-4" virar relativo ao header (bem pequeno, no topo da página) em vez
+  // da tela inteira. Portal evita depender de nenhum ancestral não ter essas
+  // propriedades, hoje ou no futuro.
+  return createPortal(
     <div className="fixed bottom-4 right-4 z-50">
       {aberto ? (
         <Card className="flex h-[28rem] w-80 max-w-[calc(100vw-2rem)] flex-col p-0">
@@ -140,6 +147,7 @@ export function ChatAssistente() {
           <SparklesIcon className="h-5 w-5" />
         </button>
       )}
-    </div>
+    </div>,
+    document.body
   );
 }
