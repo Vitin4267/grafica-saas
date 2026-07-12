@@ -7,7 +7,8 @@ import { verificarBloqueioResetSenha, registrarTentativaResetSenha } from "@/lib
 import { obterIpRequisicao } from "@/lib/auth/ip";
 import { loginSchema } from "@/lib/auth/validation";
 import { resolverOrigemPublica } from "@/lib/url-publica";
-import { enviarEmailResetSenha } from "@/lib/email/reset-senha";
+import { dispararEventoEmail } from "@/lib/email/webhook-email";
+import { templateResetSenha } from "@/lib/email/templates";
 
 export type SolicitarResetResult = { ok: boolean; mensagem: string };
 
@@ -53,15 +54,19 @@ export async function solicitarResetSenha(
 
     const origem = await resolverOrigemPublica();
     const link = `${origem}/redefinir-senha?token=${tokenBruto}`;
+    const { assunto, html, texto } = templateResetSenha(link);
 
-    // Nunca propaga erro pra cima — falha de envio (Resend fora do ar,
-    // etc.) não pode vazar diferença na resposta em relação ao caminho
-    // "e-mail não existe" (ver MENSAGEM_GENERICA).
-    try {
-      await enviarEmailResetSenha(email, link);
-    } catch {
-      // melhor esforço — usuário sempre vê a mesma mensagem genérica
-    }
+    // dispararEventoEmail já é melhor esforço por dentro (nunca lança) —
+    // reforça o mesmo princípio aqui: falha de envio não pode vazar
+    // diferença na resposta em relação ao caminho "e-mail não existe"
+    // (ver MENSAGEM_GENERICA).
+    await dispararEventoEmail({
+      tipo: "reset_senha_solicitado",
+      destinatario: email,
+      assunto,
+      html,
+      texto,
+    });
   }
 
   await registrarTentativaResetSenha(email, ip);
