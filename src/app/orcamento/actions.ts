@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { calcularItemOrcamento } from "@/lib/orcamento-precificacao";
 import { parseJsonArray } from "@/lib/form-json";
@@ -51,6 +52,7 @@ export async function precificarItem(input: {
   corVerso: number | null;
 }): Promise<PrecificarItemResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
 
   if (!input.itemGraficaId || !input.quantidade || input.quantidade <= 0) {
     return { ok: false, mensagem: "Escolha um produto e uma quantidade válida." };
@@ -97,6 +99,7 @@ export async function criarOrcamento(
   formData: FormData
 ): Promise<CriarOrcamentoResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra criar orçamentos." };
   }

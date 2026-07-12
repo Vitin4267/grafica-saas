@@ -34,8 +34,15 @@ export async function registrarTentativaLogin(
 // — sem isso, um bot cria gráficas/usuários sem limite, cada tentativa ainda
 // pagando o custo de CPU do hash argon2id (só é evitado quando o e-mail já
 // existe, ver src/app/registro/actions.ts).
-const JANELA_REGISTRO_MS = 1000 * 60 * 60; // 1 hora
-const LIMITE_REGISTRO_POR_IP = 5;
+//
+// Afrouxado de 5/hora pra 8/30min (2026-07-11) — o valor original travou o
+// próprio dono durante uma sessão de testes (várias tentativas automatizadas
+// bateram no mesmo IP de loopback do dev local). Ainda exige esperar meia
+// hora pra tentar de novo depois de esgotar a cota — continua caro pra um
+// bot sustentar cadastro em massa, só dá mais folga pra erro de digitação/
+// teste manual não travar por uma hora inteira.
+const JANELA_REGISTRO_MS = 1000 * 60 * 30; // 30 minutos
+const LIMITE_REGISTRO_POR_IP = 8;
 
 export async function verificarBloqueioRegistro(ip: string): Promise<boolean> {
   const desde = new Date(Date.now() - JANELA_REGISTRO_MS);

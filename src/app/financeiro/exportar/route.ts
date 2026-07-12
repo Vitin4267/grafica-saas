@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { podeVerModulo } from "@/lib/auth/permissoes";
 import { formatoData } from "@/lib/data";
 
@@ -17,6 +18,7 @@ function formatoValor(valor: number): string {
 // pra bater com o que o contador espera de um extrato pra DRE simples.
 export async function GET(request: NextRequest) {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeVerModulo(usuario, "FINANCEIRO"))) {
     return new Response("Sem permissão pra exportar o financeiro.", { status: 403 });
   }

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { carregarParametrosTenant } from "@/lib/pricing/carregar";
 import { D } from "@/lib/pricing/decimal";
@@ -31,6 +32,7 @@ export async function visualizarReajuste(
   formData: FormData
 ): Promise<VisualizarReajusteResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
 
   const parsed = reajusteInputSchema.safeParse({
     percentual: formData.get("percentual"),
@@ -80,6 +82,7 @@ export async function aplicarReajusteEmLote(
   formData: FormData
 ): Promise<AplicarReajusteResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "CATALOGO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar o catálogo." };
   }

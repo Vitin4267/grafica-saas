@@ -8,6 +8,7 @@ import { verificarBloqueioRegistro, registrarTentativaRegistro } from "@/lib/aut
 import { obterIpRequisicao } from "@/lib/auth/ip";
 import { registroSchema } from "@/lib/auth/validation";
 import { slugify } from "@/lib/slug";
+import { TRIAL_DIAS } from "@/lib/billing/planos";
 
 const MENSAGEM_GENERICA = "Não foi possível concluir o cadastro. Tente novamente.";
 
@@ -79,9 +80,19 @@ export async function registrar(
   const slug = await gerarSlugUnico(graficaNome);
   const senhaHash = await hashPassword(senha);
 
+  const trialExpiraEm = new Date();
+  trialExpiraEm.setUTCDate(trialExpiraEm.getUTCDate() + TRIAL_DIAS);
+
   const usuario = await prisma.$transaction(async (tx) => {
     const grafica = await tx.grafica.create({
       data: { nome: graficaNome, slug },
+    });
+
+    // O relógio do trial começa no cadastro, não na primeira vez que o DONO
+    // abre /configuracoes/assinatura — senão alguém que nunca visita essa
+    // tela ficaria com trial "infinito" por omissão.
+    await tx.assinaturaGrafica.create({
+      data: { graficaId: grafica.id, status: "TRIALING", trialExpiraEm },
     });
 
     return tx.usuario.create({

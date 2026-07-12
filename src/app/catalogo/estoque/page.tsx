@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import {
   podeVerMeuNegocio,
   exigirVerModulo,
@@ -48,6 +49,7 @@ function chipUrgencia(diasRestantes: number | null, abaixoDoMinimo: boolean) {
 
 export default async function PrevisaoEstoquePage() {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   await exigirVerModulo(usuario, "CATALOGO");
 
   const previsao = await calcularPrevisaoEstoque(usuario.graficaId);

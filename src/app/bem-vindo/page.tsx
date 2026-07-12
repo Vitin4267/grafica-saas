@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/Button";
 import { SparklesIcon, ArrowRightIcon } from "@/components/icons";
@@ -10,6 +11,7 @@ export const metadata = {
 
 export default async function BemVindoPage() {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   const primeiroNome = usuario.nome.trim().split(" ")[0];
 
   return (

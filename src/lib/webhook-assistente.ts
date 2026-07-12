@@ -1,5 +1,6 @@
 import "server-only";
 import { isIP } from "node:net";
+import { construirEnvelope } from "./webhook-envelope";
 
 // Cliente do assistente de IA "guia de uso" — NUNCA lida com dado de negócio
 // (orçamento, cliente, valor, pagamento, nota fiscal). O único payload que
@@ -8,6 +9,11 @@ import { isIP } from "node:net";
 // A IA de verdade roda fora do grafica-saas, num workflow n8n que a PRÓPRIA
 // gráfica configura (mesmo modelo de "traga sua própria conta" já usado na
 // emissão de Nota Fiscal via Focus NFe — ver src/lib/focus-nfe.ts).
+//
+// O corpo enviado sai envelopado (idEvento/tipo/timestamp/versao/dados, ver
+// webhook-envelope.ts) — é o mesmo formato de mensagem usado pelos eventos
+// de automação (webhook-automacao.ts), tudo passando pelo mesmo webhook
+// configurado pela gráfica ("hub único" de automação).
 
 export type PerguntaAssistente = {
   pergunta: string;
@@ -106,14 +112,16 @@ export async function perguntarAssistente(
     throw new ErroWebhookAssistente(validacao.mensagem ?? "URL do webhook inválida.");
   }
 
-  // Corpo montado campo a campo (nunca um spread de `input` ou de qualquer
+  // Dados montados campo a campo (nunca um spread de `input` ou de qualquer
   // outro objeto) — garante, mesmo que um chamador futuro passe algo a mais
   // por engano, que só estes três campos saem pro webhook do tenant.
-  const corpo = JSON.stringify({
-    pergunta: input.pergunta,
-    pagina: input.pagina,
-    graficaNome: input.graficaNome,
-  });
+  const corpo = JSON.stringify(
+    construirEnvelope("pergunta_assistente", {
+      pergunta: input.pergunta,
+      pagina: input.pagina,
+      graficaNome: input.graficaNome,
+    })
+  );
 
   let resposta: Response;
   try {

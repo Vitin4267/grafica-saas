@@ -3,8 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import type { Prisma } from "@/generated/prisma/client";
+import { buscarWebhookAutomacao, dispararEventoAutomacao } from "@/lib/webhook-automacao";
+import { normalizarTelefone } from "@/lib/telefone";
+import { cruzouLimiteMinimo } from "@/lib/estoque-critico";
 
 export type AvancarPedidoResult = { ok: boolean; mensagem: string };
 
@@ -25,6 +29,7 @@ export async function avancarPedido(
   formData: FormData
 ): Promise<AvancarPedidoResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "PRODUCAO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar a produção." };
   }
@@ -32,6 +37,7 @@ export async function avancarPedido(
 
   const pedido = await prisma.pedido.findFirst({
     where: { id: pedidoId, graficaId: usuario.graficaId },
+    include: { orcamento: { include: { cliente: true } } },
   });
   if (!pedido) {
     return { ok: false, mensagem: "Pedido não encontrado." };
@@ -50,6 +56,12 @@ export async function avancarPedido(
   }
 
   const proximoStatus = SEQUENCIA[indiceAtual + 1];
+  const statusAnterior = pedido.status;
+
+  // Buscado uma única vez e reaproveitado pros dois tipos de evento disparados
+  // abaixo (estoque_critico e pedido_status_mudou) — evita duas idas ao banco
+  // só pra ler a mesma URL.
+  const webhookUrl = await buscarWebhookAutomacao(usuario.graficaId);
 
   // Baixa automática de estoque: só na entrada em produção física (FILA→IMPRESSAO),
   // e só nessa transição específica — como o pedido só anda pra frente na SEQUENCIA
@@ -64,7 +76,12 @@ export async function avancarPedido(
           include: {
             itemGrafica: {
               include: {
-                fichaTecnica: { include: { materiaPrima: true, variante: true } },
+                fichaTecnica: {
+                  include: {
+                    materiaPrima: { include: { itemCatalogo: true } },
+                    variante: true,
+                  },
+                },
               },
             },
           },
@@ -76,6 +93,11 @@ export async function avancarPedido(
       prisma.pedido.update({ where: { id: pedidoId }, data: { status: proximoStatus } }),
     ];
 
+    // Coletado durante o loop e disparado só DEPOIS que a transação confirmar
+    // — evita mandar aviso de estoque crítico pra uma baixa que pode não ter
+    // sido de fato persistida.
+    const eventosEstoqueCritico: { itemNome: string; estoqueAtual: number; estoqueMinimo: number }[] = [];
+
     for (const item of orcamentoComItens?.itens ?? []) {
       for (const ficha of item.itemGrafica.fichaTecnica) {
         // Com variante (ex: espessura de chapa), o saldo de estoque é o da
@@ -84,6 +106,7 @@ export async function avancarPedido(
         const estoqueAtual = ficha.variante ? ficha.variante.estoqueAtual : ficha.materiaPrima.estoqueAtual;
         if (estoqueAtual === null) continue; // sem controle de estoque
         const quantidadeConsumida = Number(ficha.quantidadePorUnidade) * item.quantidade;
+        const estoqueDepois = Number(estoqueAtual) - quantidadeConsumida;
 
         if (ficha.varianteId) {
           operacoes.push(
@@ -112,14 +135,45 @@ export async function avancarPedido(
             },
           })
         );
+
+        const estoqueMinimo = ficha.variante ? ficha.variante.estoqueMinimo : ficha.materiaPrima.estoqueMinimo;
+        if (cruzouLimiteMinimo(Number(estoqueAtual), estoqueDepois, estoqueMinimo === null ? null : Number(estoqueMinimo))) {
+          eventosEstoqueCritico.push({
+            itemNome: ficha.materiaPrima.itemCatalogo.nome,
+            estoqueAtual: estoqueDepois,
+            estoqueMinimo: Number(estoqueMinimo),
+          });
+        }
       }
     }
 
     await prisma.$transaction(operacoes);
+
+    if (webhookUrl) {
+      for (const evento of eventosEstoqueCritico) {
+        void dispararEventoAutomacao(webhookUrl, {
+          tipo: "estoque_critico",
+          graficaNome: usuario.grafica.nome,
+          ...evento,
+        });
+      }
+    }
   } else {
     await prisma.pedido.update({
       where: { id: pedidoId },
       data: { status: proximoStatus },
+    });
+  }
+
+  if (webhookUrl) {
+    void dispararEventoAutomacao(webhookUrl, {
+      tipo: "pedido_status_mudou",
+      graficaNome: usuario.grafica.nome,
+      clienteNome: pedido.orcamento.cliente.nome,
+      clienteTelefone: normalizarTelefone(pedido.orcamento.cliente.telefone),
+      statusAnterior,
+      statusNovo: proximoStatus,
+      orcamentoId: pedido.orcamentoId,
     });
   }
 

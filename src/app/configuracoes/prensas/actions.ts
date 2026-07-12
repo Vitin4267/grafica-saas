@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 
 export type SalvarPrensaResult = { ok: boolean; mensagem: string };
@@ -25,6 +26,7 @@ export async function criarPrensa(
   formData: FormData
 ): Promise<SalvarPrensaResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "CONFIGURACOES"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar configurações." };
   }
@@ -55,6 +57,7 @@ export async function salvarPrensa(
   formData: FormData
 ): Promise<SalvarPrensaResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "CONFIGURACOES"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar configurações." };
   }
@@ -111,6 +114,7 @@ export async function excluirPrensa(
   formData: FormData
 ): Promise<SalvarPrensaResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "CONFIGURACOES"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar configurações." };
   }

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import {
   podeVerMeuNegocio,
   exigirVerModulo,
@@ -18,6 +19,7 @@ import { MarcarEnviadoButton } from "./MarcarEnviadoButton";
 
 export default async function OrcamentoPage() {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   await exigirVerModulo(usuario, "ORCAMENTO");
   const podeEditar = await podeEditarModulo(usuario, "ORCAMENTO");
 

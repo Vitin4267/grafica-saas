@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { formatoMoeda } from "@/lib/moeda";
@@ -22,6 +23,7 @@ export async function criarDespesa(
   formData: FormData
 ): Promise<DespesaResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "FINANCEIRO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar o financeiro." };
   }
@@ -71,6 +73,7 @@ export async function editarDespesa(
   formData: FormData
 ): Promise<DespesaResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "FINANCEIRO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar o financeiro." };
   }
@@ -127,6 +130,7 @@ export async function excluirDespesa(
   formData: FormData
 ): Promise<DespesaResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "FINANCEIRO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar o financeiro." };
   }
@@ -168,6 +172,7 @@ export async function marcarComoPaga(
   formData: FormData
 ): Promise<DespesaResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "FINANCEIRO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar o financeiro." };
   }
@@ -212,6 +217,7 @@ export async function marcarComoPendente(
   formData: FormData
 ): Promise<DespesaResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "FINANCEIRO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar o financeiro." };
   }

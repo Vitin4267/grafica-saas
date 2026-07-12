@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import {
   podeVerMeuNegocio,
   exigirVerModulo,
@@ -20,6 +21,7 @@ export default async function DespesaDetalhePage({
 }) {
   const { id } = await params;
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   await exigirVerModulo(usuario, "FINANCEIRO");
   const podeEditar = await podeEditarModulo(usuario, "FINANCEIRO");
 

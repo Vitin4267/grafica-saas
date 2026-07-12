@@ -37,6 +37,7 @@ model Grafica {
   assistente            AssistenteGrafica?
   despesas              Despesa[]
   logsAuditoria         LogAuditoria[]
+  assinatura            AssinaturaGrafica?
 
   @@map("graficas")
 }
@@ -198,6 +199,49 @@ model AssistenteGrafica {
   grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
 
   @@map("assistente_grafica")
+}
+
+enum StatusAssinatura {
+  TRIALING
+  ATIVA
+  INADIMPLENTE // past_due no Stripe: pagamento falhou mas a assinatura ainda não cancelou
+  CANCELADA
+}
+
+// Cobrança da PLATAFORMA sobre a gráfica (assinatura do SaaS) — diferente do
+// padrão "bring your own account" usado por DadosFiscaisGrafica/AssistenteGrafica
+// (onde a credencial é da própria gráfica): aqui a conta Stripe é NOSSA, do
+// dono do grafica-saas. Guarda só o status derivado + IDs de referência — o
+// Stripe é a fonte de verdade do dinheiro, isto aqui é um cache local pro
+// gate de acesso (src/lib/auth/assinatura.ts) não precisar chamar a API do
+// Stripe em toda página. A única escrita em `status` depois da criação vem
+// do webhook (src/app/api/webhooks/stripe/route.ts), nunca de uma Server
+// Action comum.
+model AssinaturaGrafica {
+  id        String @id @default(cuid())
+  graficaId String @unique
+
+  status StatusAssinatura @default(TRIALING)
+
+  stripeCustomerId     String? @unique
+  stripeSubscriptionId String? @unique
+  stripePriceId        String?
+
+  trialExpiraEm        DateTime?
+  periodoAtualExpiraEm DateTime? // current_period_end do Stripe, pra exibir "próxima cobrança em"
+  canceladaEm          DateTime?
+
+  // Início da janela de 15 dias de tolerância depois de ultrapassar o teto
+  // de uso do plano (orçamentos/mês ou usuários) — null = dentro do limite
+  // hoje. Ver src/lib/billing/limite-uso.ts.
+  limiteExcedidoDesde DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+
+  @@map("assinatura_grafica")
 }
 
 // Registro de cada pergunta enviada ao assistente — existe só pra rate limiting
@@ -841,6 +885,15 @@ model Pedido {
   status      StatusPedido @default(FILA)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
+
+  // Data pura (meia-noite UTC, mesmo padrão de Despesa.vencimento — ver
+  // src/lib/data.ts), definida na aprovação do orçamento. Opcional: nem todo
+  // pedido tem prazo prometido, e sem prazo nunca gera alerta de atraso.
+  prazoEntrega DateTime?
+  // Dedup do evento pedido_atrasado (webhook-automacao.ts): uma vez enviado
+  // o alerta pra este pedido, nunca reenviar — evita spam a cada
+  // carregamento de /producao enquanto o pedido continua atrasado.
+  alertaAtrasoEnviadoEm DateTime?
 
   grafica   Grafica   @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   orcamento Orcamento @relation(fields: [orcamentoId], references: [id])

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { logout } from "@/app/logout/actions";
+import { obterResumoAssinatura } from "@/app/configuracoes/assinatura/actions";
 import { Logo } from "@/components/Logo";
 import { LogOutIcon, MenuIcon, XIcon } from "@/components/icons";
 import { ChatAssistente } from "@/components/ChatAssistente";
@@ -48,12 +49,36 @@ export function UserNav({
   modulosVisiveis?: ModuloPermissao[] | null;
 }) {
   const [menuAberto, setMenuAberto] = useState(false);
+  const [diasRestantesTrial, setDiasRestantesTrial] = useState<number | null>(null);
+  const [diasAteBloqueio, setDiasAteBloqueio] = useState<number | null>(null);
+
+  // Busca só o resumo (status + dias de trial/limite) no mount — não é dado
+  // que as ~40 páginas que renderizam <UserNav> precisam calcular e passar
+  // na mão (mesmo cuidado documentado acima sobre mostrarMeuNegocio/
+  // modulosVisiveis: não queremos um prop novo a mais pra lembrar em todo
+  // lugar). Deixa claro em QUALQUER página, não só em
+  // /configuracoes/assinatura, que a conta está em teste ou passou do
+  // limite de uso do plano.
+  useEffect(() => {
+    obterResumoAssinatura().then((resumo) => {
+      if (resumo?.status === "TRIALING") {
+        setDiasRestantesTrial(resumo.diasRestantesTrial);
+      }
+      if (resumo?.limiteExcedidoDesde) {
+        setDiasAteBloqueio(resumo.diasAteBloqueio);
+      }
+    });
+  }, []);
 
   let links: { href: string; label: string; modulo: ModuloPermissao | null }[] = LINKS.filter(
     (l) => modulosVisiveis === null || modulosVisiveis.includes(l.modulo)
   );
   if (papel === "DONO") {
-    links = [...links, { href: "/usuarios", label: "Usuários", modulo: null }];
+    links = [
+      ...links,
+      { href: "/usuarios", label: "Usuários", modulo: null },
+      { href: "/configuracoes/assinatura", label: "Assinatura", modulo: null },
+    ];
   }
   if (mostrarMeuNegocio) {
     links = [{ href: "/meu-negocio", label: "Meu Negócio", modulo: null }, ...links];
@@ -110,6 +135,32 @@ export function UserNav({
           </button>
         </div>
       </div>
+
+      {diasRestantesTrial !== null && (
+        <div className="border-t border-amber-200 bg-amber-50 px-6 py-2 text-center text-xs font-medium text-amber-800 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300">
+          {diasRestantesTrial > 0
+            ? `Período de teste — ${diasRestantesTrial} dia${diasRestantesTrial === 1 ? "" : "s"} restante${diasRestantesTrial === 1 ? "" : "s"}.`
+            : "Seu período de teste terminou."}{" "}
+          {papel === "DONO" && (
+            <Link href="/configuracoes/assinatura" className="underline hover:no-underline">
+              Assinar agora
+            </Link>
+          )}
+        </div>
+      )}
+
+      {diasAteBloqueio !== null && (
+        <div className="border-t border-rose-200 bg-rose-50 px-6 py-2 text-center text-xs font-medium text-rose-800 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300">
+          {diasAteBloqueio > 0
+            ? `Você passou do limite do seu plano — ${diasAteBloqueio} dia${diasAteBloqueio === 1 ? "" : "s"} pra evitar o bloqueio.`
+            : "Você passou do limite do seu plano — o acesso pode ser bloqueado a qualquer momento."}{" "}
+          {papel === "DONO" && (
+            <Link href="/configuracoes/assinatura" className="underline hover:no-underline">
+              Fazer upgrade
+            </Link>
+          )}
+        </div>
+      )}
 
       {menuAberto && (
         <nav className="border-t border-slate-200 px-4 pb-4 sm:hidden dark:border-slate-800">

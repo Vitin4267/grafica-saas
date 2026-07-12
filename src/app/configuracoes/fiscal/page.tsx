@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import {
   podeVerMeuNegocio,
   exigirVerModulo,
@@ -12,6 +13,7 @@ import { DadosFiscaisForm } from "./DadosFiscaisForm";
 
 export default async function ConfiguracoesFiscaisPage() {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   await exigirVerModulo(usuario, "CONFIGURACOES");
 
   // Self-healing, mesmo padrão de carregarParametrosTenant: cria a linha com

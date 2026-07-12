@@ -1,5 +1,25 @@
 import { describe, it, expect } from "vitest";
-import { linkWhatsApp } from "./telefone";
+import { linkWhatsApp, normalizarTelefone } from "./telefone";
+
+describe("normalizarTelefone", () => {
+  it("retorna null quando telefone é null/undefined/vazio", () => {
+    expect(normalizarTelefone(null)).toBeNull();
+    expect(normalizarTelefone(undefined)).toBeNull();
+    expect(normalizarTelefone("")).toBeNull();
+  });
+
+  it("adiciona DDI 55 a um número de 11 dígitos, sem formatação", () => {
+    expect(normalizarTelefone("(41) 99123-4567")).toBe("5541991234567");
+  });
+
+  it("não duplica o DDI quando já vem com 55", () => {
+    expect(normalizarTelefone("55 41 99123-4567")).toBe("5541991234567");
+  });
+
+  it("retorna null pra número fora do range plausível", () => {
+    expect(normalizarTelefone("123")).toBeNull();
+  });
+});
 
 describe("linkWhatsApp", () => {
   it("retorna null quando telefone é null/undefined/vazio", () => {

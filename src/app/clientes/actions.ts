@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { clienteSchema } from "@/lib/clientes";
 
@@ -15,6 +16,7 @@ export async function criarCliente(
   formData: FormData
 ): Promise<CriarClienteResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "CLIENTES"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar clientes." };
   }
@@ -85,6 +87,7 @@ export async function atualizarCliente(
   formData: FormData
 ): Promise<AtualizarClienteResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "CLIENTES"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar clientes." };
   }
@@ -163,6 +166,7 @@ export async function excluirCliente(
   formData: FormData
 ): Promise<ExcluirClienteResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "CLIENTES"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar clientes." };
   }

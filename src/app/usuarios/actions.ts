@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirPapel, MODULOS_PERMISSAO } from "@/lib/auth/permissoes";
 import { senhaSchema } from "@/lib/auth/validation";
 import { hashPassword } from "@/lib/auth/password";
@@ -22,6 +23,7 @@ export async function criarUsuario(
   formData: FormData
 ): Promise<CriarUsuarioResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   exigirPapel(usuario, ["DONO"]);
 
   const parsed = criarUsuarioSchema.safeParse({
@@ -70,6 +72,7 @@ export async function salvarAcessoMeuNegocio(
   formData: FormData
 ): Promise<SalvarAcessoMeuNegocioResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   exigirPapel(usuario, ["DONO"]);
 
   const compartilhar = formData.get("compartilhar") === "on";
@@ -109,6 +112,7 @@ export async function salvarPermissoes(
   formData: FormData
 ): Promise<SalvarPermissoesResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   exigirPapel(usuario, ["DONO"]);
 
   const usuarioAlvoId = String(formData.get("usuarioId"));

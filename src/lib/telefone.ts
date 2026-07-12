@@ -1,11 +1,9 @@
-// Cliente.telefone é texto livre, sem máscara nem validação — monta um link
-// wa.me a partir do que o usuário digitou, assumindo DDI 55 (Brasil) quando o
-// número já não vier com ele. Retorna null quando não dá pra montar um número
-// plausível (vazio ou fora do range esperado de dígitos).
-export function linkWhatsApp(
-  telefone: string | null | undefined,
-  mensagem: string
-): string | null {
+// Cliente.telefone é texto livre, sem máscara nem validação — normaliza pra
+// dígitos + DDI (assume 55/Brasil quando o número já não vier com ele).
+// Retorna null quando não dá pra montar um número plausível (vazio ou fora
+// do range esperado de dígitos). Fonte única usada tanto pro link do
+// WhatsApp quanto pelo payload do webhook de automação (estoque-critico.ts).
+export function normalizarTelefone(telefone: string | null | undefined): string | null {
   if (!telefone) return null;
 
   const digitos = telefone.replace(/\D/g, "");
@@ -13,5 +11,15 @@ export function linkWhatsApp(
 
   if (comDDI.length !== 12 && comDDI.length !== 13) return null;
 
-  return `https://wa.me/${comDDI}?text=${encodeURIComponent(mensagem)}`;
+  return comDDI;
+}
+
+export function linkWhatsApp(
+  telefone: string | null | undefined,
+  mensagem: string
+): string | null {
+  const numero = normalizarTelefone(telefone);
+  if (!numero) return null;
+
+  return `https://wa.me/${numero}?text=${encodeURIComponent(mensagem)}`;
 }

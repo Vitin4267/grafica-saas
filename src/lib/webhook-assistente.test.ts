@@ -43,7 +43,7 @@ describe("perguntarAssistente", () => {
   const config = { webhookUrl: "https://exemplo.app.n8n.cloud/webhook/abc" };
   const input = { pergunta: "Como cadastro um cliente?", pagina: "Clientes", graficaNome: "Gráfica Teste" };
 
-  it("nunca envia mais do que pergunta/pagina/graficaNome no corpo", async () => {
+  it("envia envelopado, com tipo pergunta_assistente e sem campo extra em dados", async () => {
     let corpoCapturado: string | undefined;
     vi.stubGlobal(
       "fetch",
@@ -60,8 +60,12 @@ describe("perguntarAssistente", () => {
     });
 
     const corpo = JSON.parse(corpoCapturado!);
-    expect(Object.keys(corpo).sort()).toEqual(["graficaNome", "pagina", "pergunta"]);
-    expect(corpo).not.toHaveProperty("orcamentoValor");
+    expect(Object.keys(corpo).sort()).toEqual(["dados", "idEvento", "timestamp", "tipo", "versao"]);
+    expect(corpo.idEvento).toMatch(/^evt_/);
+    expect(corpo.tipo).toBe("pergunta_assistente");
+    expect(corpo.versao).toBe(1);
+    expect(Object.keys(corpo.dados).sort()).toEqual(["graficaNome", "pagina", "pergunta"]);
+    expect(corpo.dados).not.toHaveProperty("orcamentoValor");
   });
 
   it("caminho feliz: resposta JSON com campo resposta", async () => {

@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { Input } from "@/components/ui/Input";
 import { atualizarStatusOrcamento, cancelarOrcamento } from "./actions";
 
 export function OrcamentoAcoes({
@@ -80,10 +81,16 @@ export function OrcamentoAcoes({
       )}
 
       {status === "ENVIADO" && !confirmandoRejeicao && (
-        <div className="flex gap-3">
-          <form action={formAction}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <form action={formAction} className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <input type="hidden" name="orcamentoId" value={orcamentoId} />
             <input type="hidden" name="novoStatus" value="APROVADO" />
+            <Input
+              label="Prazo de entrega (opcional)"
+              name="prazoEntrega"
+              type="date"
+              hint="Se preenchido, um alerta de atraso pode ser disparado depois dessa data."
+            />
             <Button type="submit" loading={isPending}>
               Aprovar
             </Button>

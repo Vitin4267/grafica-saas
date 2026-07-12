@@ -7,6 +7,7 @@ import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { calcularItemOrcamento } from "@/lib/orcamento-precificacao";
 import { resolverOrigemPublica } from "@/lib/url-publica";
@@ -19,6 +20,7 @@ import { verificarProntidaoFiscal } from "@/lib/nota-fiscal";
 import { emitirNfe, consultarNfe, ErroFocusNfe, type AmbienteFocusNfe } from "@/lib/focus-nfe";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { formatoMoeda } from "@/lib/moeda";
+import { dataInputParaUTC } from "@/lib/data";
 
 // Sinaliza, de dentro de uma transação Serializable, que o orçamento já está
 // no último item — usado só pra abortar a transação com uma mensagem amigável
@@ -43,6 +45,7 @@ export async function atualizarStatusOrcamento(
   formData: FormData
 ): Promise<AtualizarStatusResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
   }
@@ -64,6 +67,14 @@ export async function atualizarStatusOrcamento(
   }
 
   if (novoStatus === "APROVADO") {
+    // Opcional: string vazia (campo em branco) vira undefined, pedido nasce
+    // sem prazo e nunca vai gerar alerta de atraso (ver src/lib/alerta-atraso.ts).
+    const prazoEntregaBruto = formData.get("prazoEntrega");
+    const prazoEntrega =
+      typeof prazoEntregaBruto === "string" && prazoEntregaBruto
+        ? dataInputParaUTC(prazoEntregaBruto)
+        : undefined;
+
     // upsert (não create): idempotente contra duplo submit/duplo clique,
     // já que orcamentoId é único em Pedido.
     await prisma.$transaction([
@@ -74,7 +85,7 @@ export async function atualizarStatusOrcamento(
       prisma.pedido.upsert({
         where: { orcamentoId },
         update: {},
-        create: { graficaId: usuario.graficaId, orcamentoId, status: "FILA" },
+        create: { graficaId: usuario.graficaId, orcamentoId, status: "FILA", prazoEntrega },
       }),
     ]);
   } else {
@@ -104,6 +115,7 @@ export async function editarOrcamento(
   formData: FormData
 ): Promise<EditarOrcamentoResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
   }
@@ -204,6 +216,7 @@ export async function alterarClienteOrcamento(
   formData: FormData
 ): Promise<AlterarClienteResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
   }
@@ -245,6 +258,7 @@ export async function adicionarItemOrcamento(
   formData: FormData
 ): Promise<AdicionarItemResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
   }
@@ -346,6 +360,7 @@ export async function removerItemOrcamento(
   formData: FormData
 ): Promise<RemoverItemResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
   }
@@ -416,6 +431,7 @@ export async function cancelarOrcamento(
   formData: FormData
 ): Promise<CancelarOrcamentoResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
   }
@@ -446,6 +462,7 @@ export async function gerarLinkPublico(
   formData: FormData
 ): Promise<GerarLinkResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
   }
@@ -493,6 +510,7 @@ export async function registrarPagamento(
   formData: FormData
 ): Promise<RegistrarPagamentoResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
   }
@@ -565,6 +583,7 @@ export async function emitirNotaFiscal(
   formData: FormData
 ): Promise<EmitirNotaFiscalResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
   }
@@ -683,6 +702,7 @@ export async function atualizarStatusNotaFiscal(
   formData: FormData
 ): Promise<EmitirNotaFiscalResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
   }
@@ -743,6 +763,7 @@ export async function excluirPagamento(
   formData: FormData
 ): Promise<RegistrarPagamentoResult> {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
   }

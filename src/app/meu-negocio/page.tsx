@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { podeVerMeuNegocio, obterModulosVisiveis } from "@/lib/auth/permissoes";
 import { buscarVisaoGeralNegocio } from "@/lib/meu-negocio";
 import { formatoMoeda } from "@/lib/moeda";
@@ -79,6 +80,7 @@ function CardVazio({ icone, texto, href, rotuloCta }: {
 
 export default async function MeuNegocioPage() {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   if (!podeVerMeuNegocio(usuario)) {
     redirect("/orcamento");
   }

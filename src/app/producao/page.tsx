@@ -1,22 +1,41 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import {
   podeVerMeuNegocio,
   exigirVerModulo,
   podeEditarModulo,
   obterModulosVisiveis,
 } from "@/lib/auth/permissoes";
+import { verificarEDispararAlertasAtraso } from "@/lib/alerta-atraso";
+import { dataEhPassado } from "@/lib/data";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/Badge";
 import { PrinterIcon } from "@/components/icons";
 import { AvancarPedidoButton } from "./AvancarPedidoButton";
 
+function chipAtraso(prazoEntrega: Date | null, status: string) {
+  if (!prazoEntrega || status === "ENTREGUE" || !dataEhPassado(prazoEntrega)) return null;
+
+  const hojeUTC = new Date();
+  hojeUTC.setUTCHours(0, 0, 0, 0);
+  const diasAtraso = Math.floor((hojeUTC.getTime() - prazoEntrega.getTime()) / 86_400_000);
+  return (
+    <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 dark:bg-rose-950/50 dark:text-rose-300">
+      Atrasado ({diasAtraso}d)
+    </span>
+  );
+}
+
 export default async function ProducaoPage() {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   await exigirVerModulo(usuario, "PRODUCAO");
   const podeEditar = await podeEditarModulo(usuario, "PRODUCAO");
+
+  await verificarEDispararAlertasAtraso(usuario.graficaId, usuario.grafica.nome);
 
   const pedidos = await prisma.pedido.findMany({
     where: { graficaId: usuario.graficaId },
@@ -92,6 +111,7 @@ export default async function ProducaoPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
+                  {chipAtraso(pedido.prazoEntrega, pedido.status)}
                   <StatusBadge status={pedido.status} tipo="pedido" />
                   {podeEditar && (
                     <AvancarPedidoButton pedidoId={pedido.id} status={pedido.status} />

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import {
   podeVerMeuNegocio,
   exigirVerModulo,
@@ -39,6 +40,7 @@ function statusPill(status: "PENDENTE" | "PAGA", vencimento: Date) {
 
 export default async function FinanceiroPage() {
   const usuario = await exigirUsuarioAutenticado();
+  await exigirAssinaturaAtiva(usuario);
   await exigirVerModulo(usuario, "FINANCEIRO");
   const podeEditar = await podeEditarModulo(usuario, "FINANCEIRO");
 

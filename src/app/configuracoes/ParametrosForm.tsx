@@ -117,6 +117,22 @@ export function ParametrosForm({ parametros }: { parametros: ParametrosTenant })
       <Card className="flex items-center justify-between gap-4 p-6">
         <div>
           <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Assinatura
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Status da cobrança do grafica-saas — trial, plano ativo, fatura.
+          </p>
+        </div>
+        <Link href="/configuracoes/assinatura">
+          <Button type="button" variant="outline">
+            Ver assinatura
+          </Button>
+        </Link>
+      </Card>
+
+      <Card className="flex items-center justify-between gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
             Assistente de IA
           </h2>
           <p className="mt-1 text-sm text-slate-500">
