@@ -128,6 +128,21 @@ export async function criarOrcamento(
     return { ok: false, mensagem: "Cliente não encontrado." };
   }
 
+  // Opcional — string vazia (gráfica sem filial cadastrada, campo nem
+  // aparece no form) vira undefined. Sempre revalidado contra graficaId,
+  // mesmo cuidado de cliente acima.
+  const filialIdBruto = String(formData.get("filialId") ?? "").trim();
+  let filialId: string | undefined;
+  if (filialIdBruto) {
+    const filial = await prisma.filial.findFirst({
+      where: { id: filialIdBruto, graficaId: usuario.graficaId },
+    });
+    if (!filial) {
+      return { ok: false, mensagem: "Filial não encontrada." };
+    }
+    filialId = filial.id;
+  }
+
   // Soma em decimal.js (mesma instância configurada usada pelo motor de
   // precificação, src/lib/pricing/decimal.ts) — nunca em Number(), pra não
   // arriscar imprecisão de ponto flutuante binário numa soma de dinheiro.
@@ -195,6 +210,7 @@ export async function criarOrcamento(
       graficaId: usuario.graficaId,
       clienteId: cliente.id,
       usuarioId: usuario.id,
+      filialId,
       total,
       itens: {
         create: itensParaCriar.map((item) => ({ ...item, breakdown: item.breakdown ?? undefined })),

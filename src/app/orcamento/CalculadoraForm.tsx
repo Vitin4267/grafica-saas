@@ -22,6 +22,11 @@ type Cliente = {
   nome: string;
 };
 
+type Filial = {
+  id: string;
+  nome: string;
+};
+
 type ItemCarrinho = {
   chave: string;
   itemGraficaId: string;
@@ -42,11 +47,14 @@ type ItemCarrinho = {
 export function CalculadoraForm({
   itens,
   clientes,
+  filiais,
 }: {
   itens: ItemVenda[];
   clientes: Cliente[];
+  filiais: Filial[];
 }) {
   const [clienteId, setClienteId] = useState("");
+  const [filialId, setFilialId] = useState("");
   const [campos, setCampos] = useState<CamposItemOrcamento>(() => camposIniciais(itens));
   const [itensCarrinho, setItensCarrinho] = useState<ItemCarrinho[]>([]);
   const [adicionando, setAdicionando] = useState(false);
@@ -164,6 +172,21 @@ export function CalculadoraForm({
             ))}
           </Select>
 
+          {filiais.length > 0 && (
+            <Select
+              label="Filial"
+              value={filialId}
+              onChange={(e) => setFilialId(e.target.value)}
+            >
+              <option value="">Sem filial específica</option>
+              {filiais.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.nome}
+                </option>
+              ))}
+            </Select>
+          )}
+
           <div className="border-t border-slate-100 pt-5 dark:border-slate-800">
             <SeletorItemOrcamento itens={itens} valores={campos} onChange={setCampos} />
 
@@ -231,6 +254,7 @@ export function CalculadoraForm({
 
           <form action={formAction} className="contents">
             <input type="hidden" name="clienteId" value={clienteId} />
+            <input type="hidden" name="filialId" value={filialId} />
             <input type="hidden" name="itensJson" value={itensJson} />
 
             {state && !state.ok && <Alert variant="error">{state.mensagem}</Alert>}

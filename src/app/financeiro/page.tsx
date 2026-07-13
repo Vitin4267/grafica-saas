@@ -94,9 +94,14 @@ export default async function FinanceiroPage() {
               Baixar CSV pro contador
             </Button>
           </form>
-          <Link href="/financeiro/auditoria" className="text-sm font-medium text-teal-700 hover:underline dark:text-teal-400">
-            Ver trilha de auditoria →
-          </Link>
+          <div className="flex flex-col gap-1 text-sm sm:items-end">
+            <Link href="/financeiro/comissoes" className="font-medium text-teal-700 hover:underline dark:text-teal-400">
+              Ver comissões →
+            </Link>
+            <Link href="/financeiro/auditoria" className="font-medium text-teal-700 hover:underline dark:text-teal-400">
+              Ver trilha de auditoria →
+            </Link>
+          </div>
         </Card>
 
         <div className="mb-8 flex flex-col gap-3">

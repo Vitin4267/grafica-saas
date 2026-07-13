@@ -1,3 +1,6 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
@@ -6,25 +9,28 @@ import {
   exigirVerModulo,
   obterModulosVisiveis,
 } from "@/lib/auth/permissoes";
-import { carregarParametrosTenant } from "@/lib/pricing/carregar";
-import { prisma } from "@/lib/prisma";
 import { UserNav } from "@/components/UserNav";
-import { ParametrosForm } from "./ParametrosForm";
+import { ArrowLeftIcon } from "@/components/icons";
+import { FilialForm } from "./FilialForm";
 
-export default async function ConfiguracoesPage() {
+export default async function FilialDetalhePage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
   const usuario = await exigirUsuarioAutenticado();
   await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
   await exigirVerModulo(usuario, "CONFIGURACOES");
-  const parametros = await carregarParametrosTenant(usuario.graficaId);
-  // Campo de comissão a vendedor não faz parte de ParametrosTenant (tipo
-  // estrito do motor de precificação, ver src/lib/pricing/carregar.ts) —
-  // carregarParametrosTenant já garante (via upsert) que a linha existe,
-  // então este findUnique nunca vem null.
-  const { comissaoVendedorBase } = await prisma.parametrosGrafica.findUniqueOrThrow({
-    where: { graficaId: usuario.graficaId },
-    select: { comissaoVendedorBase: true },
+
+  const filial = await prisma.filial.findFirst({
+    where: { id, graficaId: usuario.graficaId },
   });
+
+  if (!filial) {
+    notFound();
+  }
 
   return (
     <div className="flex flex-1 flex-col">
@@ -38,17 +44,28 @@ export default async function ConfiguracoesPage() {
       />
 
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-10">
+        <Link
+          href="/configuracoes/filiais"
+          className="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+        >
+          <ArrowLeftIcon className="h-4 w-4" />
+          Voltar às filiais
+        </Link>
+
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-            Configurações do motor de precificação
+            {filial.nome}
           </h1>
-          <p className="mt-1 text-slate-500">
-            Esses parâmetros valem para toda a gráfica e afetam todos os
-            orçamentos calculados com o modelo M2 ou Offset.
-          </p>
         </div>
 
-        <ParametrosForm parametros={parametros} comissaoVendedorBase={comissaoVendedorBase} />
+        <FilialForm
+          filialId={filial.id}
+          valoresIniciais={{
+            nome: filial.nome,
+            endereco: filial.endereco ?? "",
+            ativa: filial.ativa,
+          }}
+        />
       </main>
     </div>
   );

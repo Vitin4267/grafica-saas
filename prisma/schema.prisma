@@ -38,6 +38,8 @@ model Grafica {
   despesas              Despesa[]
   logsAuditoria         LogAuditoria[]
   assinatura            AssinaturaGrafica?
+  comissoes             Comissao[]
+  filiais               Filial[]
 
   @@map("graficas")
 }
@@ -62,12 +64,24 @@ model ParametrosGrafica {
   margemSegurancaPadrao Decimal @default(0.02) @db.Decimal(5, 4)
   gapPecasPadrao        Decimal @default(0.008) @db.Decimal(5, 4)
 
+  // Política de cálculo da comissão PAGA a vendedores (ver model Comissao)
+  // — NÃO CONFUNDIR com `comissaoPercent` acima, que é markup de
+  // precificação embutido no preço de venda (src/lib/pricing/compor.ts),
+  // nunca pago a ninguém. Esta aqui decide se o valor-base da comissão de
+  // cada vendedor é o total do orçamento ou o lucro (total - custo).
+  comissaoVendedorBase BaseComissao @default(VALOR)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
 
   @@map("parametros_grafica")
+}
+
+enum BaseComissao {
+  VALOR // % sobre o total do orçamento aprovado
+  LUCRO // % sobre valor - custo estimado dos itens
 }
 
 // Uma prensa offset física do tenant. Produtos com modeloCalculo=OFFSET escolhem
@@ -98,6 +112,29 @@ model Prensa {
   @@unique([graficaId, nome])
   @@index([graficaId])
   @@map("prensas")
+}
+
+// Uma filial/unidade física da gráfica. COMPARTILHA catálogo, estoque e
+// financeiro com a gráfica inteira (não é um tenant separado) — serve só
+// pra marcar em qual orçamento foi feito, pra fins de relatório (ver
+// Orcamento.filialId). endereco é texto livre de propósito, sem CEP
+// estruturado — é só referência, não alimenta nenhum cálculo.
+model Filial {
+  id        String  @id @default(cuid())
+  graficaId String
+  nome      String
+  endereco  String?
+  ativa     Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica    Grafica     @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamentos Orcamento[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("filiais")
 }
 
 // Dados fiscais da gráfica pra emitir nota fiscal via Focus NFe — 100% opt-in,
@@ -301,12 +338,18 @@ model Usuario {
   // por nenhuma tela — só setado direto no banco (bootstrap único).
   superAdmin Boolean @default(false)
 
+  // null = este usuário não recebe comissão (não é vendedor). Taxa pessoal,
+  // independente do papel — DONO/ADMIN/OPERADOR podem todos vender. Ver
+  // model Comissao e ParametrosGrafica.comissaoVendedorBase.
+  comissaoPercent Decimal? @db.Decimal(5, 4)
+
   grafica                Grafica                  @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   orcamentos             Orcamento[]
   sessoes                Sessao[]
   permissoes             PermissaoUsuario[]
   tokensResetSenha       TokenResetSenha[]
   tokensVerificacaoEmail TokenVerificacaoEmail[]
+  comissoes              Comissao[]
 
   @@index([graficaId])
   @@map("usuarios")
@@ -829,16 +872,25 @@ model Orcamento {
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
+  // Opcional de propósito — gráfica sem filial cadastrada nunca vê esse
+  // campo no formulário. Filiais COMPARTILHAM catálogo/estoque/financeiro
+  // da gráfica (ver model Filial): isto é só um rótulo de "onde esse
+  // orçamento foi feito", pra relatório, não um tenant separado.
+  filialId String?
+
   grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   cliente Cliente @relation(fields: [clienteId], references: [id])
   usuario Usuario @relation(fields: [usuarioId], references: [id])
+  filial  Filial? @relation(fields: [filialId], references: [id], onDelete: SetNull)
   itens   OrcamentoItem[]
   pedido  Pedido?
   notaFiscal NotaFiscal?
+  comissao   Comissao?
 
   pagamentos Pagamento[]
 
   @@index([graficaId])
+  @@index([filialId])
   @@map("orcamentos")
 }
 
@@ -911,6 +963,12 @@ model Despesa {
 
   grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
 
+  // Presente quando esta despesa foi gerada a partir de "marcar comissão
+  // como paga" (ver marcarComissaoPaga em src/app/financeiro/comissoes/actions.ts)
+  // — deixa o pagamento aparecer no relatório/exportação financeira normal
+  // sem duplicar os campos de Comissao aqui.
+  comissao Comissao?
+
   // Trava contra duplicata em `gerarDespesasRecorrentesPendentes`: duas
   // requisições concorrentes (duas abas, dois usuários abrindo /financeiro
   // ao mesmo tempo) podem ambas decidir gerar a ocorrência do mesmo mês
@@ -921,6 +979,43 @@ model Despesa {
   @@index([graficaId, status, vencimento])
   @@index([graficaId, serieRecorrenciaId])
   @@map("despesas")
+}
+
+enum StatusComissao {
+  PENDENTE
+  PAGA
+}
+
+// Comissão de um vendedor sobre um orçamento aprovado — registro histórico
+// (nunca recalculado): guarda SNAPSHOT da taxa do usuário e da política de
+// cálculo da gráfica no momento da aprovação, pra não mudar retroativamente
+// se o dono trocar a config depois. Ver src/lib/comissao.ts (cálculo puro) e
+// o gatilho em src/app/orcamento/[id]/actions.ts (atualizarStatusOrcamento).
+model Comissao {
+  id                 String         @id @default(cuid())
+  graficaId          String
+  orcamentoId        String         @unique // no máximo 1 comissão por orçamento
+  usuarioId          String // vendedor — snapshot de Orcamento.usuarioId
+  baseCalculo        BaseComissao // snapshot de ParametrosGrafica.comissaoVendedorBase
+  percentualAplicado Decimal        @db.Decimal(5, 4) // snapshot de Usuario.comissaoPercent
+  valorBase          Decimal        @db.Decimal(12, 2) // total ou lucro, conforme baseCalculo
+  valorComissao      Decimal        @db.Decimal(12, 2)
+  status             StatusComissao @default(PENDENTE)
+  pagoEm             DateTime?
+  createdAt          DateTime       @default(now())
+
+  // Despesa gerada quando marcada como paga (opcional — só existe depois do
+  // pagamento) — ver comentário em Despesa.comissao acima.
+  despesaId String? @unique
+
+  grafica   Grafica   @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamento Orcamento @relation(fields: [orcamentoId], references: [id])
+  usuario   Usuario   @relation(fields: [usuarioId], references: [id])
+  despesa   Despesa?  @relation(fields: [despesaId], references: [id], onDelete: SetNull)
+
+  @@index([graficaId, status])
+  @@index([usuarioId])
+  @@map("comissoes")
 }
 
 // Trilha de auditoria financeira: quem alterou o quê. usuarioNome é um

@@ -148,3 +148,50 @@ export async function salvarPermissoes(
 
   return { ok: true, mensagem: `Permissões de "${alvo.nome}" atualizadas com sucesso!` };
 }
+
+export type SalvarComissaoResult = { ok: boolean; mensagem: string };
+
+// Mesmo padrão de salvarAcessoMeuNegocio: um form só com todos os usuários,
+// um campo `percentual_${id}` cada, salva tudo de uma vez. Taxa individual,
+// independente de papel — DONO/ADMIN/OPERADOR podem todos vender. Campo
+// vazio = null = não é vendedor, nunca gera Comissao (ver
+// atualizarStatusOrcamento em src/app/orcamento/[id]/actions.ts).
+export async function salvarComissaoUsuarios(
+  _estadoAnterior: SalvarComissaoResult | null,
+  formData: FormData
+): Promise<SalvarComissaoResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  exigirPapel(usuario, ["DONO"]);
+
+  const usuarios = await prisma.usuario.findMany({
+    where: { graficaId: usuario.graficaId },
+    select: { id: true },
+  });
+
+  const atualizacoes: { id: string; comissaoPercent: number | null }[] = [];
+  for (const u of usuarios) {
+    const bruto = formData.get(`percentual_${u.id}`);
+    const texto = typeof bruto === "string" ? bruto.trim() : "";
+    if (!texto) {
+      atualizacoes.push({ id: u.id, comissaoPercent: null });
+      continue;
+    }
+    const valor = Number(texto);
+    if (!Number.isFinite(valor) || valor < 0 || valor > 1) {
+      return { ok: false, mensagem: "Percentual de comissão inválido — use um valor entre 0 e 1 (ex: 0.05 = 5%)." };
+    }
+    atualizacoes.push({ id: u.id, comissaoPercent: valor });
+  }
+
+  await prisma.$transaction(
+    atualizacoes.map((a) =>
+      prisma.usuario.update({ where: { id: a.id }, data: { comissaoPercent: a.comissaoPercent } })
+    )
+  );
+
+  revalidatePath("/usuarios");
+
+  return { ok: true, mensagem: "Comissão por vendedor atualizada com sucesso!" };
+}

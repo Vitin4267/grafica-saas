@@ -25,7 +25,7 @@ export default async function OrcamentoPage() {
   await exigirVerModulo(usuario, "ORCAMENTO");
   const podeEditar = await podeEditarModulo(usuario, "ORCAMENTO");
 
-  const [itensVendaveis, clientes, orcamentosRecentes] = await Promise.all([
+  const [itensVendaveis, clientes, filiais, orcamentosRecentes] = await Promise.all([
     prisma.itemGrafica.findMany({
       where: {
         graficaId: usuario.graficaId,
@@ -37,6 +37,13 @@ export default async function OrcamentoPage() {
     }),
     prisma.cliente.findMany({
       where: { graficaId: usuario.graficaId },
+      orderBy: { nome: "asc" },
+    }),
+    // Só usado pra decidir se o campo "Filial" aparece no formulário — sem
+    // nenhuma cadastrada, o campo nem existe (gráfica sem filial não vê nada
+    // diferente, ver CalculadoraForm.tsx).
+    prisma.filial.findMany({
+      where: { graficaId: usuario.graficaId, ativa: true },
       orderBy: { nome: "asc" },
     }),
     prisma.orcamento.findMany({
@@ -101,6 +108,7 @@ export default async function OrcamentoPage() {
               modeloCalculo: ig.modeloCalculo,
             }))}
             clientes={clientes}
+            filiais={filiais}
           />
         )}
 

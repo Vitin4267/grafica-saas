@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/Card";
 import { UsersIcon } from "@/components/icons";
 import { UsuarioForm } from "./UsuarioForm";
 import { AcessoMeuNegocioForm } from "./AcessoMeuNegocioForm";
+import { ComissaoUsuarioForm } from "./ComissaoUsuarioForm";
 
 export default async function UsuariosPage() {
   const usuario = await exigirUsuarioAutenticado();
@@ -102,6 +103,26 @@ export default async function UsuariosPage() {
                 papel: u.papel,
                 acesso: u.acessoMeuNegocio,
               }))}
+          />
+        </section>
+
+        <section className="mt-12">
+          <h2 className="mb-1 text-lg font-semibold text-slate-900 dark:text-white">
+            Comissão por vendedor
+          </h2>
+          <p className="mb-4 text-sm text-slate-500">
+            Defina a taxa de cada pessoa que vende — gera uma comissão
+            automática sempre que um orçamento dela é aprovado. A base de
+            cálculo (valor ou lucro) fica em Configurações.
+          </p>
+          <ComissaoUsuarioForm
+            usuarios={usuarios.map((u) => ({
+              id: u.id,
+              nome: u.nome,
+              email: u.email,
+              papel: u.papel,
+              comissaoPercent: u.comissaoPercent?.toString() ?? "",
+            }))}
           />
         </section>
       </main>

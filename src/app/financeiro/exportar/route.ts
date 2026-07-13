@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
         orcamento: { graficaId: usuario.graficaId },
         createdAt: { gte: inicio, lt: fim },
       },
-      include: { orcamento: { include: { cliente: true } } },
+      include: { orcamento: { include: { cliente: true, filial: true } } },
       orderBy: { createdAt: "asc" },
     }),
     prisma.despesa.findMany({
@@ -68,13 +68,14 @@ export async function GET(request: NextRequest) {
   csv += "\r\n";
 
   csv += linhaCsv(["RECEITAS (pagamentos recebidos)"]);
-  csv += linhaCsv(["Data", "Cliente", "Forma de pagamento", "Valor (R$)"]);
+  csv += linhaCsv(["Data", "Cliente", "Filial", "Forma de pagamento", "Valor (R$)"]);
   let totalReceitas = new D(0);
   for (const pagamento of pagamentos) {
     totalReceitas = totalReceitas.plus(pagamento.valor.toString());
     csv += linhaCsv([
       new Date(pagamento.createdAt).toLocaleDateString("pt-BR"),
       pagamento.orcamento.cliente.nome,
+      pagamento.orcamento.filial?.nome ?? "",
       pagamento.forma,
       formatoValor(Number(pagamento.valor)),
     ]);

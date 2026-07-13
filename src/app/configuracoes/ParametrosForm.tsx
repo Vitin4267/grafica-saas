@@ -8,8 +8,15 @@ import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { salvarParametros } from "./actions";
 import type { ParametrosTenant } from "@/lib/pricing";
+import type { BaseComissao } from "@/generated/prisma/enums";
 
-export function ParametrosForm({ parametros }: { parametros: ParametrosTenant }) {
+export function ParametrosForm({
+  parametros,
+  comissaoVendedorBase,
+}: {
+  parametros: ParametrosTenant;
+  comissaoVendedorBase: BaseComissao;
+}) {
   const [state, formAction, isPending] = useActionState(salvarParametros, null);
 
   return (
@@ -78,6 +85,49 @@ export function ParametrosForm({ parametros }: { parametros: ParametrosTenant })
             hint="Preço final sempre arredonda para cima nesse múltiplo"
           />
         </div>
+      </Card>
+
+      <Card className="flex flex-col gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Comissão por vendedor
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Como calcular a comissão de quem vende, quando um orçamento é
+            aprovado. Defina a taxa de cada pessoa em Usuários.
+          </p>
+        </div>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+            Base de cálculo
+          </span>
+          <select
+            name="comissaoVendedorBase"
+            defaultValue={comissaoVendedorBase}
+            className="w-full max-w-xs rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-slate-900 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/15 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          >
+            <option value="VALOR">% sobre o valor do orçamento</option>
+            <option value="LUCRO">% sobre o lucro (valor − custo estimado)</option>
+          </select>
+        </label>
+      </Card>
+
+      <Card className="flex items-center justify-between gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Filiais
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Se sua gráfica tem mais de uma unidade, cadastre aqui pra marcar
+            em qual filial cada orçamento foi feito. Catálogo e estoque
+            continuam únicos pra gráfica toda.
+          </p>
+        </div>
+        <Link href="/configuracoes/filiais">
+          <Button type="button" variant="outline">
+            Gerenciar filiais
+          </Button>
+        </Link>
       </Card>
 
       <Card className="flex items-center justify-between gap-4 p-6">

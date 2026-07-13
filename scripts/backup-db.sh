@@ -7,11 +7,14 @@
 # Uso:
 #   npm run db:backup
 #
-# Agendamento: isso NÃO roda sozinho — é um script manual (ou pra chamar via
-# cron/Task Scheduler quando o site estiver hospedado de verdade). Se no fim
-# você escolher um Postgres gerenciado (Neon/Supabase/RDS) pra produção, esse
-# script vira opcional pro banco local de dev: esses provedores já fazem
-# backup automático sozinhos.
+# Agendamento: isso NÃO roda sozinho — é um script manual, só pro banco
+# LOCAL de dev (docker compose). Em produção o banco é Neon gerenciado, mas
+# ATENÇÃO: o plano Free do Neon só dá 6 HORAS de restauração automática
+# (PITR) — pouco pra um negócio de verdade. Recomendado fazer upgrade pro
+# plano Launch (~$0.20/GB-mês, 7 dias de PITR baseado em WAL, muito mais
+# robusto que qualquer dump customizado). Como camada EXTRA (não substitui
+# o PITR), existe um backup diário automático via Vercel Cron + Blob Storage
+# — ver src/app/api/cron/backup/route.ts e vercel.json.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

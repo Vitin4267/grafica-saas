@@ -23,6 +23,7 @@ import { registrarAuditoria } from "@/lib/auditoria";
 import { formatoMoeda } from "@/lib/moeda";
 import { dataInputParaUTC } from "@/lib/data";
 import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
+import { calcularValorBase, calcularComissao } from "@/lib/comissao";
 
 // Sinaliza, de dentro de uma transação Serializable, que o orçamento já está
 // no último item — usado só pra abortar a transação com uma mensagem amigável
@@ -70,9 +71,28 @@ export async function atualizarStatusOrcamento(
         ? dataInputParaUTC(prazoEntregaBruto)
         : undefined;
 
+    // Leitura fora da transação de propósito (mesmo cuidado de avancarPedido
+    // em src/app/producao/actions.ts): ficha de custo/comissão não muda por
+    // causa de uma corrida de atualizarStatusOrcamento, então não precisa
+    // fazer parte da transação — mantém ela curta.
+    const [orcamentoComItens, usuarioVendedor, parametros] = await Promise.all([
+      prisma.orcamentoItem.findMany({
+        where: { orcamentoId },
+        include: { itemGrafica: { select: { precoCompra: true } } },
+      }),
+      prisma.usuario.findUnique({
+        where: { id: orcamento.usuarioId },
+        select: { comissaoPercent: true },
+      }),
+      prisma.parametrosGrafica.findUnique({
+        where: { graficaId: usuario.graficaId },
+        select: { comissaoVendedorBase: true },
+      }),
+    ]);
+
     // upsert (não create): idempotente contra duplo submit/duplo clique,
-    // já que orcamentoId é único em Pedido.
-    await prisma.$transaction([
+    // já que orcamentoId é único em Pedido (e em Comissao).
+    const operacoes: Prisma.PrismaPromise<unknown>[] = [
       prisma.orcamento.update({
         where: { id: orcamentoId },
         data: { status: "APROVADO" },
@@ -82,7 +102,49 @@ export async function atualizarStatusOrcamento(
         update: {},
         create: { graficaId: usuario.graficaId, orcamentoId, status: "FILA", prazoEntrega },
       }),
-    ]);
+    ];
+
+    const percentualVendedor = usuarioVendedor?.comissaoPercent
+      ? Number(usuarioVendedor.comissaoPercent)
+      : null;
+    if (percentualVendedor && percentualVendedor > 0) {
+      const baseCalculo = parametros?.comissaoVendedorBase ?? "VALOR";
+      // Custo real só existe no motor avançado (breakdown.custoTotal, ver
+      // src/lib/pricing/compor.ts) — item SIMPLES usa o preço de compra
+      // ATUAL do produto como estimativa (não é snapshot do momento da
+      // venda; pode ter mudado desde a criação do orçamento). Sem
+      // precoCompra cadastrado, custo 0 pra esse item (conta como lucro
+      // total em vez de travar o cálculo).
+      const itensComCusto = orcamentoComItens.map((item) => {
+        const breakdown = item.breakdown as { custoTotal?: string } | null;
+        const custoTotal = breakdown?.custoTotal
+          ? Number(breakdown.custoTotal)
+          : item.itemGrafica.precoCompra
+            ? Number(item.itemGrafica.precoCompra) * item.quantidade
+            : 0;
+        return { precoTotal: Number(item.precoTotal), custoTotal };
+      });
+      const valorBase = calcularValorBase(Number(orcamento.total), itensComCusto, baseCalculo);
+      const valorComissao = calcularComissao(valorBase, percentualVendedor);
+
+      operacoes.push(
+        prisma.comissao.upsert({
+          where: { orcamentoId },
+          update: {},
+          create: {
+            graficaId: usuario.graficaId,
+            orcamentoId,
+            usuarioId: orcamento.usuarioId,
+            baseCalculo,
+            percentualAplicado: percentualVendedor,
+            valorBase,
+            valorComissao,
+          },
+        })
+      );
+    }
+
+    await prisma.$transaction(operacoes);
   } else {
     await prisma.orcamento.update({
       where: { id: orcamentoId },
@@ -92,7 +154,10 @@ export async function atualizarStatusOrcamento(
 
   revalidatePath(`/orcamento/${orcamentoId}`);
   revalidatePath("/orcamento");
-  if (novoStatus === "APROVADO") revalidatePath("/producao");
+  if (novoStatus === "APROVADO") {
+    revalidatePath("/producao");
+    revalidatePath("/financeiro/comissoes");
+  }
 
   return {
     ok: true,

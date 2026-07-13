@@ -44,6 +44,11 @@ export async function salvarParametros(
     dados[campo] = valor;
   }
 
+  const comissaoVendedorBase = formData.get("comissaoVendedorBase");
+  if (comissaoVendedorBase !== "VALOR" && comissaoVendedorBase !== "LUCRO") {
+    return { ok: false, mensagem: "Base de cálculo de comissão inválida." };
+  }
+
   for (const campo of CAMPOS_INTEIRO) {
     const valor = Number(formData.get(campo));
     if (!Number.isInteger(valor) || valor < 1) {
@@ -71,7 +76,7 @@ export async function salvarParametros(
 
   await prisma.parametrosGrafica.update({
     where: { graficaId: usuario.graficaId },
-    data: dados,
+    data: { ...dados, comissaoVendedorBase },
   });
 
   revalidatePath("/configuracoes");
