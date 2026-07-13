@@ -115,6 +115,32 @@ body {
   }
 }
 
+/* ChatAssistente.tsx: brilho ambiente atrás do botão fechado (respira
+   lentamente) e entrada suave do painel ao abrir. Aplicadas só via
+   motion-safe: no componente — prefers-reduced-motion já cai pra estático. */
+@keyframes assistente-glow {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes assistente-pop {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

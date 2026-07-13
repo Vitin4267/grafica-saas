@@ -3,9 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
-import { Card } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
-import { SparklesIcon, XIcon } from "@/components/icons";
+import { SparklesIcon, XIcon, ArrowRightIcon } from "@/components/icons";
 import { LINKS } from "@/components/UserNav";
 import { verificarAssistenteDisponivel, enviarPerguntaAssistente } from "./ChatAssistente.actions";
 
@@ -73,56 +71,80 @@ export function ChatAssistente() {
   // da tela inteira. Portal evita depender de nenhum ancestral não ter essas
   // propriedades, hoje ou no futuro.
   return createPortal(
-    <div className="fixed bottom-4 right-4 z-50">
+    <div className="fixed bottom-5 right-5 z-50">
       {aberto ? (
-        <Card className="flex h-[28rem] w-80 max-w-[calc(100vw-2rem)] flex-col p-0">
-          <div className="flex items-center justify-between border-b border-slate-100 p-4 dark:border-slate-800">
-            <div className="flex items-center gap-2">
-              <SparklesIcon className="h-4 w-4 text-teal-600 dark:text-teal-400" />
-              <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                Assistente
-              </p>
+        <div
+          className="flex h-[38rem] w-[26rem] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-[28px] border border-white/60 bg-white/95 shadow-[0_25px_70px_-15px_rgba(13,148,136,0.4)] backdrop-blur-xl motion-safe:animate-[assistente-pop_0.25s_ease-out] dark:border-white/10 dark:bg-slate-900/95 dark:shadow-[0_25px_70px_-15px_rgba(0,0,0,0.7)]"
+        >
+          <div className="flex items-center justify-between bg-gradient-to-r from-teal-600 via-teal-600 to-emerald-600 px-5 py-4 dark:from-teal-500 dark:via-teal-600 dark:to-emerald-700">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 ring-1 ring-white/25 backdrop-blur">
+                <SparklesIcon className="h-4.5 w-4.5 text-white" />
+              </div>
+              <div>
+                <p className="text-[15px] font-semibold tracking-tight text-white">
+                  Assistente IA
+                </p>
+                <div className="flex items-center gap-1.5">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-300 motion-safe:animate-ping" />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-300" />
+                  </span>
+                  <p className="text-[10.5px] font-medium uppercase tracking-widest text-white/75">
+                    Online agora
+                  </p>
+                </div>
+              </div>
             </div>
             <button
               type="button"
               onClick={() => setAberto(false)}
               aria-label="Fechar assistente"
-              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              className="rounded-full p-1.5 text-white/70 transition-colors hover:bg-white/10 hover:text-white"
             >
               <XIcon className="h-4 w-4" />
             </button>
           </div>
 
-          <div className="flex-1 space-y-3 overflow-y-auto p-4">
+          <div className="flex-1 space-y-4 overflow-y-auto p-5">
             {mensagens.length === 0 && (
-              <p className="text-sm text-slate-500">
-                Pergunte como usar qualquer funcionalidade do site — não tenho
-                acesso a orçamentos, clientes ou valores, só ajudo a navegar.
-              </p>
+              <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-teal-200 bg-teal-50/50 px-4 py-6 text-center dark:border-teal-900 dark:bg-teal-950/20">
+                <SparklesIcon className="h-5 w-5 text-teal-500 dark:text-teal-400" />
+                <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                  Pergunte como usar qualquer funcionalidade do site — não
+                  tenho acesso a orçamentos, clientes ou valores, só ajudo a
+                  navegar.
+                </p>
+              </div>
             )}
             {mensagens.map((m, i) => (
               <div
                 key={i}
-                className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${
+                className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-sm ${
                   m.autor === "usuario"
-                    ? "ml-auto bg-teal-600 text-white"
+                    ? "ml-auto bg-gradient-to-br from-teal-500 to-emerald-600 text-white shadow-teal-600/25"
                     : m.erro
-                      ? "bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300"
-                      : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                      ? "border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300"
+                      : "border border-slate-200/70 bg-slate-50/80 text-slate-700 backdrop-blur dark:border-slate-700/60 dark:bg-slate-800/80 dark:text-slate-200"
                 }`}
               >
                 {m.texto}
               </div>
             ))}
             {enviando && (
-              <div className="max-w-[85%] rounded-xl bg-slate-100 px-3 py-2 text-sm text-slate-400 dark:bg-slate-800">
-                Digitando...
+              <div className="flex max-w-[85%] items-center gap-1.5 rounded-2xl border border-slate-200/70 bg-slate-50/80 px-4 py-3 dark:border-slate-700/60 dark:bg-slate-800/80">
+                <span className="h-1.5 w-1.5 rounded-full bg-teal-400 motion-safe:animate-bounce [animation-delay:-0.3s]" />
+                <span className="h-1.5 w-1.5 rounded-full bg-teal-400 motion-safe:animate-bounce [animation-delay:-0.15s]" />
+                <span className="h-1.5 w-1.5 rounded-full bg-teal-400 motion-safe:animate-bounce" />
               </div>
             )}
             <div ref={fimDaListaRef} />
           </div>
 
-          <form onSubmit={handleEnviar} className="flex gap-2 border-t border-slate-100 p-3 dark:border-slate-800">
+          <form
+            onSubmit={handleEnviar}
+            className="flex items-center gap-2 border-t border-slate-100 p-3.5 dark:border-slate-800"
+          >
             <input
               value={pergunta}
               onChange={(e) => setPergunta(e.target.value)}
@@ -130,21 +152,42 @@ export function ChatAssistente() {
               aria-label="Pergunta pro assistente"
               maxLength={500}
               disabled={enviando}
-              className="w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/15 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              className="w-full min-w-0 rounded-full border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/15 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-100 dark:focus:bg-slate-900"
             />
-            <Button type="submit" loading={enviando} className="!px-3 !py-2 text-xs">
-              Enviar
-            </Button>
+            <button
+              type="submit"
+              disabled={enviando}
+              aria-label="Enviar pergunta"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-teal-500 to-emerald-600 text-white shadow-md shadow-teal-600/30 transition-all hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {enviando ? (
+                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" />
+                  <path
+                    className="opacity-90"
+                    d="M21 12a9 9 0 0 0-9-9"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              ) : (
+                <ArrowRightIcon className="h-4.5 w-4.5" />
+              )}
+            </button>
           </form>
-        </Card>
+        </div>
       ) : (
         <button
           type="button"
           onClick={() => setAberto(true)}
           aria-label="Abrir assistente"
-          className="flex h-12 w-12 items-center justify-center rounded-full bg-teal-600 text-white shadow-lg shadow-teal-600/30 transition-colors hover:bg-teal-700"
+          className="group relative flex h-16 w-16 items-center justify-center"
         >
-          <SparklesIcon className="h-5 w-5" />
+          <span className="absolute inset-0 rounded-full bg-gradient-to-br from-teal-400 to-emerald-500 opacity-60 blur-lg motion-safe:animate-[assistente-glow_3s_ease-in-out_infinite]" />
+          <span className="relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-teal-400 via-teal-500 to-emerald-600 text-white shadow-[0_10px_35px_-8px_rgba(13,148,136,0.65)] ring-1 ring-white/40 transition-transform duration-200 group-hover:scale-105 group-active:scale-95">
+            <SparklesIcon className="h-7 w-7" />
+          </span>
         </button>
       )}
     </div>,
