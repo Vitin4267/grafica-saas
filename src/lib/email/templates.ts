@@ -19,6 +19,45 @@ export function templateResetSenha(link: string): { assunto: string; html: strin
   };
 }
 
+export type ItemEstoqueBaixo = {
+  nome: string;
+  estoqueAtual: number;
+  estoqueMinimo: number;
+  unidade: string;
+};
+
+export function templateEstoqueBaixo(
+  graficaNome: string,
+  itens: ItemEstoqueBaixo[]
+): { assunto: string; html: string; texto: string } {
+  const assunto =
+    itens.length === 1
+      ? `Estoque baixo: ${itens[0].nome} — ${graficaNome}`
+      : `${itens.length} itens com estoque baixo — ${graficaNome}`;
+
+  const linhaTexto = (i: ItemEstoqueBaixo) =>
+    `- ${i.nome}: ${i.estoqueAtual} ${i.unidade} (mínimo: ${i.estoqueMinimo} ${i.unidade})`;
+  const linhaHtml = (i: ItemEstoqueBaixo) => `
+        <li style="margin-bottom: 8px;">
+          <strong>${i.nome}</strong> — ${i.estoqueAtual} ${i.unidade}
+          <span style="color: #64748b;">(mínimo: ${i.estoqueMinimo} ${i.unidade})</span>
+        </li>`;
+
+  return {
+    assunto,
+    texto: `Itens com estoque no limite ou abaixo do mínimo cadastrado:\n\n${itens.map(linhaTexto).join("\n")}\n\nVeja e reponha em: /catalogo/estoque`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2 style="color: #0f172a;">Estoque baixo</h2>
+        <p style="color: #334155;">Estes itens estão no limite ou abaixo do estoque mínimo cadastrado:</p>
+        <ul style="color: #0f172a; padding-left: 20px;">${itens.map(linhaHtml).join("")}
+        </ul>
+        <p style="color: #64748b; font-size: 14px;">Confira e reponha na tela de Catálogo → Previsão de estoque.</p>
+      </div>
+    `,
+  };
+}
+
 export function templateVerificacaoEmail(codigo: string): {
   assunto: string;
   html: string;

@@ -562,6 +562,11 @@ model ItemGrafica {
   precoVenda     Decimal? @db.Decimal(12, 2)
   estoqueAtual   Decimal? @db.Decimal(12, 4)
   estoqueMinimo  Decimal? @db.Decimal(12, 4)
+  // Dedup do alerta de estoque baixo por e-mail (ver src/lib/alerta-estoque.ts)
+  // — preenchido quando o e-mail/aviso é disparado, limpo de volta pra null
+  // assim que o estoque volta a ficar acima do mínimo (self-healing: cai nunca
+  // avisado → avisa; sobe → limpa; cai de novo → avisa de novo).
+  alertaEstoqueEnviadoEm DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -688,6 +693,9 @@ model VarianteMateriaPrima {
   precoCompra   Decimal  @db.Decimal(12, 4)
   estoqueAtual  Decimal? @db.Decimal(12, 4)
   estoqueMinimo Decimal? @db.Decimal(12, 4)
+  // Mesmo dedup self-healing de ItemGrafica.alertaEstoqueEnviadoEm, só que por
+  // variante (cada uma tem saldo próprio).
+  alertaEstoqueEnviadoEm DateTime?
   createdAt     DateTime @default(now())
 
   itemGrafica ItemGrafica @relation("VariantesDaMateriaPrima", fields: [itemGraficaId], references: [id], onDelete: Cascade)

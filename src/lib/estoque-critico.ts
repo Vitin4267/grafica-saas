@@ -10,3 +10,14 @@ export function cruzouLimiteMinimo(
   if (estoqueMinimo === null) return false;
   return estoqueAntes > estoqueMinimo && estoqueDepois <= estoqueMinimo;
 }
+
+// Snapshot (não transição): estoque no limite ou abaixo dele agora, seja
+// qual for a causa (baixa de produção, edição manual, estorno incompleto).
+// Usado por verificarEDispararAlertaEstoque (src/lib/alerta-estoque.ts), que
+// roda sob demanda comparando esse snapshot contra o dedup já registrado —
+// diferente de cruzouLimiteMinimo, que precisa do antes/depois de uma
+// operação específica.
+export function estoqueEstaCritico(estoqueAtual: number | null, estoqueMinimo: number | null): boolean {
+  if (estoqueAtual === null || estoqueMinimo === null) return false;
+  return estoqueAtual <= estoqueMinimo;
+}

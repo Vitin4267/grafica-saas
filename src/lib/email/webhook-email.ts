@@ -14,7 +14,7 @@ import { construirEnvelope } from "@/lib/webhook-envelope";
 // mapeando dados.destinatario/assunto/html/texto direto pros campos do nó
 // — o corpo do e-mail já vem pronto daqui, não precisa remontar no n8n.
 export type EventoEmail = {
-  tipo: "reset_senha_solicitado" | "verificacao_email_codigo";
+  tipo: "reset_senha_solicitado" | "verificacao_email_codigo" | "estoque_baixo";
   destinatario: string;
   assunto: string;
   html: string;

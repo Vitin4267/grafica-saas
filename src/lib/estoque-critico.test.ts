@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cruzouLimiteMinimo } from "./estoque-critico";
+import { cruzouLimiteMinimo, estoqueEstaCritico } from "./estoque-critico";
 
 describe("cruzouLimiteMinimo", () => {
   it("detecta a transição de OK pra crítico", () => {
@@ -24,5 +24,27 @@ describe("cruzouLimiteMinimo", () => {
 
   it("não dispara se já estava exatamente no mínimo antes (não é transição)", () => {
     expect(cruzouLimiteMinimo(10, 5, 10)).toBe(false);
+  });
+});
+
+describe("estoqueEstaCritico", () => {
+  it("crítico quando abaixo do mínimo", () => {
+    expect(estoqueEstaCritico(5, 10)).toBe(true);
+  });
+
+  it("crítico quando exatamente no mínimo", () => {
+    expect(estoqueEstaCritico(10, 10)).toBe(true);
+  });
+
+  it("não crítico quando acima do mínimo", () => {
+    expect(estoqueEstaCritico(15, 10)).toBe(false);
+  });
+
+  it("não crítico quando não há mínimo cadastrado", () => {
+    expect(estoqueEstaCritico(0, null)).toBe(false);
+  });
+
+  it("não crítico quando não há controle de estoque (estoqueAtual null)", () => {
+    expect(estoqueEstaCritico(null, 10)).toBe(false);
   });
 });

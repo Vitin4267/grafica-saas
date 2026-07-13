@@ -1,0 +1,103 @@
+import "server-only";
+import { prisma } from "@/lib/prisma";
+import { dispararEventoEmail } from "@/lib/email/webhook-email";
+import { templateEstoqueBaixo, type ItemEstoqueBaixo } from "@/lib/email/templates";
+import { estoqueEstaCritico } from "@/lib/estoque-critico";
+
+// Roda sob demanda (não é cron) a cada carregamento de /catalogo — mesma
+// filosofia de verificarEDispararAlertasAtraso (src/lib/alerta-atraso.ts).
+// Self-healing: ao contrário do webhook estoque_critico (que dispara só na
+// TRANSIÇÃO de uma baixa de produção específica, ver avancarPedido), este
+// compara um snapshot do estoque agora contra o dedup já registrado — cobre
+// qualquer causa (produção, edição manual em /catalogo, estorno incompleto)
+// e volta a alertar se o estoque subir acima do mínimo e cair de novo depois.
+//
+// Retorna quantos itens estão críticos AGORA (não só os novos) — a página
+// usa esse número pro aviso visual, sem precisar de uma segunda consulta.
+export async function verificarEDispararAlertaEstoque(
+  graficaId: string,
+  graficaNome: string
+): Promise<number> {
+  const [itens, variantes] = await Promise.all([
+    prisma.itemGrafica.findMany({
+      where: { graficaId, ativo: true, estoqueMinimo: { not: null } },
+      include: { itemCatalogo: true },
+    }),
+    prisma.varianteMateriaPrima.findMany({
+      where: {
+        ativo: true,
+        estoqueMinimo: { not: null },
+        itemGrafica: { graficaId, ativo: true },
+      },
+      include: { itemGrafica: { include: { itemCatalogo: true } } },
+    }),
+  ]);
+
+  const novosCriticos: ItemEstoqueBaixo[] = [];
+  let totalCriticos = 0;
+
+  for (const item of itens) {
+    const estoqueAtual = item.estoqueAtual === null ? null : Number(item.estoqueAtual);
+    const estoqueMinimo = item.estoqueMinimo === null ? null : Number(item.estoqueMinimo);
+    const critico = estoqueEstaCritico(estoqueAtual, estoqueMinimo);
+
+    if (critico) totalCriticos += 1;
+
+    if (critico && !item.alertaEstoqueEnviadoEm) {
+      novosCriticos.push({
+        nome: item.itemCatalogo.nome,
+        estoqueAtual: estoqueAtual!,
+        estoqueMinimo: estoqueMinimo!,
+        unidade: item.itemCatalogo.unidade ?? "",
+      });
+      await prisma.itemGrafica.update({
+        where: { id: item.id },
+        data: { alertaEstoqueEnviadoEm: new Date() },
+      });
+    } else if (!critico && item.alertaEstoqueEnviadoEm) {
+      await prisma.itemGrafica.update({
+        where: { id: item.id },
+        data: { alertaEstoqueEnviadoEm: null },
+      });
+    }
+  }
+
+  for (const variante of variantes) {
+    const estoqueAtual = variante.estoqueAtual === null ? null : Number(variante.estoqueAtual);
+    const estoqueMinimo = variante.estoqueMinimo === null ? null : Number(variante.estoqueMinimo);
+    const critico = estoqueEstaCritico(estoqueAtual, estoqueMinimo);
+
+    if (critico) totalCriticos += 1;
+
+    if (critico && !variante.alertaEstoqueEnviadoEm) {
+      novosCriticos.push({
+        nome: `${variante.itemGrafica.itemCatalogo.nome} — ${variante.rotulo}`,
+        estoqueAtual: estoqueAtual!,
+        estoqueMinimo: estoqueMinimo!,
+        unidade: variante.itemGrafica.itemCatalogo.unidade ?? "",
+      });
+      await prisma.varianteMateriaPrima.update({
+        where: { id: variante.id },
+        data: { alertaEstoqueEnviadoEm: new Date() },
+      });
+    } else if (!critico && variante.alertaEstoqueEnviadoEm) {
+      await prisma.varianteMateriaPrima.update({
+        where: { id: variante.id },
+        data: { alertaEstoqueEnviadoEm: null },
+      });
+    }
+  }
+
+  if (novosCriticos.length > 0) {
+    const donos = await prisma.usuario.findMany({
+      where: { graficaId, papel: "DONO" },
+      select: { email: true },
+    });
+    const { assunto, html, texto } = templateEstoqueBaixo(graficaNome, novosCriticos);
+    for (const dono of donos) {
+      void dispararEventoEmail({ tipo: "estoque_baixo", destinatario: dono.email, assunto, html, texto });
+    }
+  }
+
+  return totalCriticos;
+}

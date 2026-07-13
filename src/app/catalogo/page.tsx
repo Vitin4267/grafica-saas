@@ -12,6 +12,8 @@ import {
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { AlertTriangleIcon } from "@/components/icons";
+import { verificarEDispararAlertaEstoque } from "@/lib/alerta-estoque";
 import { CatalogoForm } from "./CatalogoForm";
 
 export default async function CatalogoPage() {
@@ -20,6 +22,8 @@ export default async function CatalogoPage() {
   await exigirAssinaturaAtiva(usuario);
   await exigirVerModulo(usuario, "CATALOGO");
   const podeEditar = await podeEditarModulo(usuario, "CATALOGO");
+
+  const totalCriticos = await verificarEDispararAlertaEstoque(usuario.graficaId, usuario.grafica.nome);
 
   const [itensCatalogo, itensGrafica] = await Promise.all([
     prisma.itemCatalogo.findMany({
@@ -71,18 +75,34 @@ export default async function CatalogoPage() {
           </p>
         </div>
 
-        <Card className="mb-6 flex items-center justify-between gap-4 p-6">
-          <div>
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-              Previsão de estoque
-            </h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Veja quais matérias-primas estão previstas pra acabar em breve, calculado a
-              partir do consumo real.
-            </p>
+        <Card
+          className={`mb-6 flex items-center justify-between gap-4 p-6 ${
+            totalCriticos > 0
+              ? "border-rose-200 bg-rose-50/60 dark:border-rose-900 dark:bg-rose-950/20"
+              : ""
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            {totalCriticos > 0 && (
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
+                <AlertTriangleIcon className="h-5 w-5" />
+              </span>
+            )}
+            <div>
+              <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+                {totalCriticos > 0
+                  ? `${totalCriticos} ${totalCriticos === 1 ? "item" : "itens"} com estoque baixo`
+                  : "Previsão de estoque"}
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                {totalCriticos > 0
+                  ? "No limite ou abaixo do mínimo cadastrado — os DONOs já foram avisados por e-mail."
+                  : "Veja quais matérias-primas estão previstas pra acabar em breve, calculado a partir do consumo real."}
+              </p>
+            </div>
           </div>
           <Link href="/catalogo/estoque">
-            <Button type="button" variant="outline">
+            <Button type="button" variant={totalCriticos > 0 ? "primary" : "outline"}>
               Ver previsão
             </Button>
           </Link>
