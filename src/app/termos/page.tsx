@@ -24,14 +24,14 @@ export default function TermosPage() {
 
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12 text-slate-700 dark:text-slate-300">
         <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Termos de Uso</h1>
-        <p className="mt-1 text-sm text-slate-400">Última atualização: 10 de julho de 2026.</p>
+        <p className="mt-1 text-sm text-slate-400">Última atualização: 13 de julho de 2026.</p>
 
         <div className="mt-8 flex flex-col gap-6 text-sm leading-relaxed [&_h2]:mt-6 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:text-slate-900 dark:[&_h2]:text-white [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:flex [&_ol]:flex-col [&_ol]:gap-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:flex [&_ul]:flex-col [&_ul]:gap-2">
           <p>
             Estes Termos de Uso regulam a utilização do Gráfica+, um sistema (SaaS) de
             orçamento, catálogo, estoque, financeiro e gestão para gráficas, oferecido por{" "}
-            <strong>[RAZÃO SOCIAL DA EMPRESA — PREENCHER]</strong>, inscrita no CNPJ{" "}
-            <strong>[CNPJ — PREENCHER]</strong>, doravante &ldquo;Gráfica+&rdquo;. Ao criar uma
+            <strong>[NOME COMPLETO — PREENCHER]</strong>, pessoa física inscrita no CPF{" "}
+            <strong>[CPF — PREENCHER]</strong>, doravante &ldquo;Gráfica+&rdquo;. Ao criar uma
             conta, você concorda integralmente com estes termos.
           </p>
 
@@ -93,18 +93,32 @@ export default function TermosPage() {
             <p>
               O Gráfica+ pode se conectar, a critério e configuração de cada gráfica, a
               serviços de terceiros: emissão de nota fiscal (Focus NFe), consulta de endereço
-              por CEP (ViaCEP) e um assistente de IA via webhook configurado pela própria
-              gráfica (n8n ou similar). Essas integrações são opcionais e cada gráfica é
-              responsável por suas próprias credenciais junto a esses serviços.
+              por CEP (ViaCEP) e um webhook de automação (n8n ou similar) configurado pela
+              própria gráfica para receber eventos como pedido atrasado ou estoque crítico.
+              O assistente de IA (chat de ajuda) é um recurso da própria plataforma, disponível
+              a qualquer usuário sem configuração — não depende de credencial da gráfica.
+              Processamento de pagamento é feito pelo Stripe. Essas integrações opcionais
+              (Focus NFe, webhook de automação) usam credenciais de responsabilidade de cada
+              gráfica.
             </p>
           </div>
 
           <div>
             <h2>6. Planos e cobrança</h2>
             <p>
-              As condições comerciais (planos, valores e forma de cobrança) vigentes no
-              momento da contratação são as que se aplicam à conta. <strong>[DETALHAR QUANDO
-              A COBRANÇA FOR IMPLEMENTADA — PREENCHER]</strong>.
+              Novas contas começam com um período de teste gratuito de 7 dias, sem necessidade
+              de cartão de crédito. Após o período de teste, o uso continuado do sistema requer
+              a contratação de um dos planos pagos disponíveis em Configurações → Assinatura,
+              cobrados mensalmente e de forma recorrente via Stripe, nosso processador de
+              pagamentos. Os valores e limites de uso (quantidade de orçamentos por mês e de
+              usuários) de cada plano são os exibidos na tela de assinatura no momento da
+              contratação. Ultrapassar o limite de uso do plano contratado não bloqueia o
+              acesso imediatamente: há uma janela de tolerância de 15 dias para regularizar
+              (fazer upgrade de plano ou reduzir o uso) antes de qualquer bloqueio. O
+              cancelamento pode ser feito a qualquer momento pelo portal do cliente Stripe,
+              acessível pela tela de Assinatura; não há reembolso de período já pago. Em casos
+              excepcionais, a critério do responsável pela plataforma, uma gráfica pode receber
+              acesso cortesia (sem cobrança).
             </p>
           </div>
 

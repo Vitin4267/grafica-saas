@@ -26,15 +26,15 @@ export default function PrivacidadePage() {
         <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
           Política de Privacidade
         </h1>
-        <p className="mt-1 text-sm text-slate-400">Última atualização: 10 de julho de 2026.</p>
+        <p className="mt-1 text-sm text-slate-400">Última atualização: 13 de julho de 2026.</p>
 
         <div className="mt-8 flex flex-col gap-6 text-sm leading-relaxed [&_h2]:mt-6 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:text-slate-900 dark:[&_h2]:text-white [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:flex [&_ul]:flex-col [&_ul]:gap-2 [&_table]:w-full [&_table]:text-left [&_table]:border-collapse [&_th]:border-b [&_th]:border-slate-200 dark:[&_th]:border-slate-800 [&_th]:pb-2 [&_th]:font-semibold [&_th]:text-slate-900 dark:[&_th]:text-white [&_td]:border-b [&_td]:border-slate-100 dark:[&_td]:border-slate-800/60 [&_td]:py-2 [&_td]:align-top">
           <p>
             Esta política explica quais dados o Gráfica+ coleta, para quê, com quem
             compartilha e quais direitos você tem sobre eles, em conformidade com a Lei Geral
             de Proteção de Dados (LGPD — Lei nº 13.709/2018). O responsável por esta plataforma
-            é <strong>[RAZÃO SOCIAL DA EMPRESA — PREENCHER]</strong>, CNPJ{" "}
-            <strong>[CNPJ — PREENCHER]</strong>, contato{" "}
+            é <strong>[NOME COMPLETO — PREENCHER]</strong>, pessoa física, CPF{" "}
+            <strong>[CPF — PREENCHER]</strong>, contato{" "}
             <strong>[E-MAIL DE CONTATO / ENCARREGADO — PREENCHER]</strong>.
           </p>
 
@@ -86,8 +86,13 @@ export default function PrivacidadePage() {
                 </tr>
                 <tr>
                   <td className="pr-4">Credenciais de integrações</td>
-                  <td className="pr-4">Token da Focus NFe, URL de webhook do assistente</td>
+                  <td className="pr-4">Token da Focus NFe, URL de webhook de automação</td>
                   <td>Conectar, a pedido da gráfica, com serviços de terceiros escolhidos por ela — armazenados como segredo, nunca exibidos de volta na tela</td>
+                </tr>
+                <tr>
+                  <td className="pr-4">Cobrança da assinatura</td>
+                  <td className="pr-4">Nome, e-mail e dados de pagamento (processados diretamente pelo Stripe — nunca vemos nem armazenamos número de cartão)</td>
+                  <td>Cobrar a assinatura do plano contratado e gerenciar o período de teste gratuito</td>
                 </tr>
                 <tr>
                   <td className="pr-4">Monitoramento técnico</td>
@@ -119,9 +124,19 @@ export default function PrivacidadePage() {
                 envio de dados pessoais além do próprio CEP.
               </li>
               <li>
-                <strong>Webhook de IA da própria gráfica</strong> — apenas a pergunta digitada
-                no chat de ajuda, para a URL que a própria gráfica configurou; nunca dado de
-                negócio.
+                <strong>Webhook do assistente de IA</strong> — apenas a pergunta digitada no
+                chat de ajuda, enviada para um workflow de automação mantido por nós (não pela
+                gráfica); nunca dado de negócio.
+              </li>
+              <li>
+                <strong>Webhook de automação da própria gráfica</strong> — quando configurado,
+                eventos como pedido atrasado ou estoque crítico são enviados para a URL que a
+                própria gráfica escolheu.
+              </li>
+              <li>
+                <strong>Stripe</strong> — processador de pagamentos responsável pela cobrança
+                das assinaturas; recebe os dados necessários para processar o pagamento
+                (nome, e-mail, dados do cartão), nunca acessados ou armazenados por nós.
               </li>
               <li>Não vendemos nem alugamos dados pessoais para terceiros.</li>
             </ul>
