@@ -223,6 +223,13 @@ model AssinaturaGrafica {
 
   status StatusAssinatura @default(TRIALING)
 
+  // true = acesso concedido via /admin/graficas (super admin), não uma
+  // assinatura Stripe real. status continua "ATIVA" (mesmo campo que já
+  // libera acesso, ver assinaturaEstaLiberada) — este campo só diferencia
+  // "grátis de propósito" de "pagante de verdade" em relatórios/UI, nunca
+  // influencia o gate de acesso em si.
+  cortesia Boolean @default(false)
+
   stripeCustomerId     String? @unique
   stripeSubscriptionId String? @unique
   stripePriceId        String?
@@ -287,6 +294,12 @@ model Usuario {
   // identidade). Contas anteriores a esta feature foram "perdoadas" na
   // migração (emailVerificadoEm = createdAt).
   emailVerificadoEm DateTime?
+
+  // Acesso cross-tenant a /admin/graficas (conceder/revogar cortesia) — não
+  // tem relação com `papel` (DONO/ADMIN/OPERADOR), que é sempre escopado à
+  // própria gráfica. Só true pro dono da plataforma. Nunca exposto/editável
+  // por nenhuma tela — só setado direto no banco (bootstrap único).
+  superAdmin Boolean @default(false)
 
   grafica                Grafica                  @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   orcamentos             Orcamento[]

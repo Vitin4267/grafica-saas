@@ -29,6 +29,10 @@ async function sincronizarSubscription(subscription: Stripe.Subscription): Promi
     where: { graficaId },
     update: {
       status: mapearStatusStripe(subscription.status),
+      // Qualquer sincronização real do Stripe significa que não é mais
+      // cortesia (ver /admin/graficas) — mesmo que a gráfica tivesse sido
+      // marcada cortesia antes, um checkout de verdade agora sobrepõe isso.
+      cortesia: false,
       stripeCustomerId: customerId,
       stripeSubscriptionId: subscription.id,
       stripePriceId: priceId,
@@ -38,6 +42,7 @@ async function sincronizarSubscription(subscription: Stripe.Subscription): Promi
     create: {
       graficaId,
       status: mapearStatusStripe(subscription.status),
+      cortesia: false,
       stripeCustomerId: customerId,
       stripeSubscriptionId: subscription.id,
       stripePriceId: priceId,

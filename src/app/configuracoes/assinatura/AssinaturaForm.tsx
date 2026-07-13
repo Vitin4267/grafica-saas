@@ -113,6 +113,7 @@ function CardPlano({ plano }: { plano: PlanoComPreco }) {
 
 export function AssinaturaForm({
   status,
+  cortesia,
   diasRestantesTrial,
   temStripeCustomer,
   papel,
@@ -122,6 +123,7 @@ export function AssinaturaForm({
   diasAteBloqueio,
 }: {
   status: StatusAssinatura;
+  cortesia: boolean;
   diasRestantesTrial: number | null;
   temStripeCustomer: boolean;
   papel: PapelUsuario;
@@ -136,8 +138,14 @@ export function AssinaturaForm({
     <div className="flex flex-col gap-8">
       <Card className="flex flex-col gap-4 p-6">
         <div className="flex flex-wrap items-center gap-3">
-          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${COR_STATUS[status]}`}>
-            {ROTULO_STATUS[status]}
+          <span
+            className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+              cortesia
+                ? "bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300"
+                : COR_STATUS[status]
+            }`}
+          >
+            {cortesia ? "Cortesia" : ROTULO_STATUS[status]}
           </span>
           {status === "TRIALING" && diasRestantesTrial !== null && (
             <span className="text-sm text-slate-500">
