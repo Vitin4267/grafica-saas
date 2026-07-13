@@ -20,7 +20,7 @@ export function AvancarPedidoButton({
 }) {
   const [state, formAction, isPending] = useActionState(avancarPedido, null);
 
-  if (status === "ENTREGUE") {
+  if (status === "ENTREGUE" || status === "CANCELADO") {
     return null;
   }
 

@@ -1,0 +1,102 @@
+"use client";
+
+import Link from "next/link";
+import type { ReactNode } from "react";
+import { useActionState, useEffect, useState } from "react";
+import { StatusBadge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
+import { PrinterIcon } from "@/components/icons";
+import { AvancarPedidoButton } from "./AvancarPedidoButton";
+import { cancelarPedido } from "./actions";
+
+// Linha inteira é um client component (não só o botão de cancelar) pra poder
+// colocar o ConfirmarExclusao como bloco abaixo da linha inteira quando
+// confirmando — mesmo padrão de PagamentosCard.tsx, em vez de espremer a
+// confirmação dentro do grupinho de botões à direita.
+export function PedidoLinha({
+  pedidoId,
+  orcamentoId,
+  clienteNome,
+  itensResumo,
+  status,
+  podeEditar,
+  chipAtraso,
+}: {
+  pedidoId: string;
+  orcamentoId: string;
+  clienteNome: string;
+  itensResumo: string;
+  status: string;
+  podeEditar: boolean;
+  chipAtraso: ReactNode;
+}) {
+  const [state, formAction, isPending] = useActionState(cancelarPedido, null);
+  const [confirmando, setConfirmando] = useState(false);
+  const podeCancelar = status !== "ENTREGUE" && status !== "CANCELADO";
+
+  // Ao contrário de PagamentosCard (onde sucesso remove a linha da lista e o
+  // componente desmonta sozinho), aqui o pedido continua na lista com um
+  // status novo — sem isso, a caixa de confirmação ficava presa aberta pra
+  // sempre depois de cancelar com sucesso (bug encontrado testando na mão).
+  useEffect(() => {
+    if (state) setConfirmando(false);
+  }, [state]);
+
+  return (
+    <div className="flex flex-col gap-3 p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-teal-50 text-teal-600 dark:bg-teal-950 dark:text-teal-400">
+            <PrinterIcon className="h-5 w-5" />
+          </span>
+          <div>
+            <p className="font-medium text-slate-900 dark:text-white">{clienteNome}</p>
+            <p className="text-sm text-slate-500">{itensResumo}</p>
+            <Link
+              href={`/orcamento/${orcamentoId}`}
+              className="text-xs text-teal-700 hover:underline dark:text-teal-400"
+            >
+              Ver orçamento
+            </Link>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          {chipAtraso}
+          <StatusBadge status={status} tipo="pedido" />
+          {podeEditar && (
+            <>
+              <AvancarPedidoButton pedidoId={pedidoId} status={status} />
+              {podeCancelar && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="!text-rose-600 hover:!bg-rose-50 dark:!text-rose-400 dark:hover:!bg-rose-950/50"
+                  onClick={() => setConfirmando(true)}
+                >
+                  Cancelar
+                </Button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {confirmando && (
+        <ConfirmarExclusao
+          pergunta={
+            status === "FILA"
+              ? "Cancelar este pedido? Nenhuma matéria-prima foi baixada ainda."
+              : "Cancelar este pedido? A matéria-prima já baixada pra produção volta pro estoque automaticamente."
+          }
+          onCancelar={() => setConfirmando(false)}
+          formAction={formAction}
+          campos={{ pedidoId }}
+          rotuloBotao="Cancelar pedido"
+          pendente={isPending}
+        />
+      )}
+      {state && !state.ok && <p className="text-xs text-rose-600">{state.mensagem}</p>}
+    </div>
+  );
+}

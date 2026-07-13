@@ -975,6 +975,12 @@ enum StatusPedido {
   ACABAMENTO
   PRONTO
   ENTREGUE
+  // Terminal, assim como ENTREGUE — mas ao contrário dela, cancelar um
+  // pedido que já passou por FILA→IMPRESSAO estorna automaticamente a
+  // matéria-prima baixada (ver cancelarPedido em src/app/producao/actions.ts).
+  // Só alcançável a partir de FILA/IMPRESSAO/ACABAMENTO/PRONTO — nunca de
+  // ENTREGUE (produto já saiu, cancelar não desfaz uma entrega física).
+  CANCELADO
 }
 
 // Pedido nasce quando um Orcamento é aprovado: acompanha a produção física.

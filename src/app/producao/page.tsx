@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
@@ -13,12 +12,18 @@ import { verificarEDispararAlertasAtraso } from "@/lib/alerta-atraso";
 import { dataEhPassado } from "@/lib/data";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
-import { StatusBadge } from "@/components/ui/Badge";
 import { PrinterIcon } from "@/components/icons";
-import { AvancarPedidoButton } from "./AvancarPedidoButton";
+import { PedidoLinha } from "./PedidoLinha";
 
 function chipAtraso(prazoEntrega: Date | null, status: string) {
-  if (!prazoEntrega || status === "ENTREGUE" || !dataEhPassado(prazoEntrega)) return null;
+  if (
+    !prazoEntrega ||
+    status === "ENTREGUE" ||
+    status === "CANCELADO" ||
+    !dataEhPassado(prazoEntrega)
+  ) {
+    return null;
+  }
 
   const hojeUTC = new Date();
   hojeUTC.setUTCHours(0, 0, 0, 0);
@@ -87,39 +92,18 @@ export default async function ProducaoPage() {
         ) : (
           <Card className="divide-y divide-slate-100 dark:divide-slate-800">
             {pedidos.map((pedido) => (
-              <div
+              <PedidoLinha
                 key={pedido.id}
-                className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-teal-50 text-teal-600 dark:bg-teal-950 dark:text-teal-400">
-                    <PrinterIcon className="h-5 w-5" />
-                  </span>
-                  <div>
-                    <p className="font-medium text-slate-900 dark:text-white">
-                      {pedido.orcamento.cliente.nome}
-                    </p>
-                    <p className="text-sm text-slate-500">
-                      {pedido.orcamento.itens
-                        .map((i) => i.itemGrafica.itemCatalogo.nome)
-                        .join(", ")}
-                    </p>
-                    <Link
-                      href={`/orcamento/${pedido.orcamentoId}`}
-                      className="text-xs text-teal-700 hover:underline dark:text-teal-400"
-                    >
-                      Ver orçamento
-                    </Link>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  {chipAtraso(pedido.prazoEntrega, pedido.status)}
-                  <StatusBadge status={pedido.status} tipo="pedido" />
-                  {podeEditar && (
-                    <AvancarPedidoButton pedidoId={pedido.id} status={pedido.status} />
-                  )}
-                </div>
-              </div>
+                pedidoId={pedido.id}
+                orcamentoId={pedido.orcamentoId}
+                clienteNome={pedido.orcamento.cliente.nome}
+                itensResumo={pedido.orcamento.itens
+                  .map((i) => i.itemGrafica.itemCatalogo.nome)
+                  .join(", ")}
+                status={pedido.status}
+                podeEditar={podeEditar}
+                chipAtraso={chipAtraso(pedido.prazoEntrega, pedido.status)}
+              />
             ))}
           </Card>
         )}

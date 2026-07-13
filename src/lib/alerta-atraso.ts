@@ -24,7 +24,7 @@ export async function verificarEDispararAlertasAtraso(
   const pedidosAtrasados = await prisma.pedido.findMany({
     where: {
       graficaId,
-      status: { not: "ENTREGUE" },
+      status: { notIn: ["ENTREGUE", "CANCELADO"] },
       prazoEntrega: { lt: hojeUTC },
       alertaAtrasoEnviadoEm: null,
     },

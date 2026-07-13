@@ -14,7 +14,7 @@ import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
 
 export type AvancarPedidoResult = { ok: boolean; mensagem: string };
 
-type StatusPedido = "FILA" | "IMPRESSAO" | "ACABAMENTO" | "PRONTO" | "ENTREGUE";
+type StatusPedido = "FILA" | "IMPRESSAO" | "ACABAMENTO" | "PRONTO" | "ENTREGUE" | "CANCELADO";
 
 const SEQUENCIA: StatusPedido[] = ["FILA", "IMPRESSAO", "ACABAMENTO", "PRONTO", "ENTREGUE"];
 
@@ -24,6 +24,7 @@ const ROTULOS: Record<StatusPedido, string> = {
   ACABAMENTO: "Acabamento",
   PRONTO: "Pronto",
   ENTREGUE: "Entregue",
+  CANCELADO: "Cancelado",
 };
 
 const MENSAGEM_CONFLITO_CONCORRENTE =
@@ -220,4 +221,140 @@ export async function avancarPedido(
   revalidatePath("/meu-negocio");
 
   return { ok: true, mensagem: `Avançado para ${ROTULOS[proximoStatus]}.` };
+}
+
+export type CancelarPedidoResult = { ok: boolean; mensagem: string };
+
+const MENSAGEM_CONFLITO_CANCELAMENTO =
+  "Outra pessoa já alterou este pedido — recarregue a página e confira o status atual.";
+
+// Reaproveita a mesma ideia de ErroPedidoJaAvancado (sinalizar de dentro da
+// transação que o status já não é mais o esperado), só com nome próprio pra
+// não confundir os dois catch acima/abaixo.
+class ErroPedidoJaAlterado extends Error {}
+
+// Cancela um pedido em qualquer estágio ANTES de ENTREGUE (produto já saiu,
+// cancelar não desfaz uma entrega física — ver comentário no enum
+// StatusPedido) e, se ele já tinha passado por FILA→IMPRESSAO (baixa
+// automática de estoque, ver avancarPedido acima), ESTORNA automaticamente
+// a matéria-prima decrementada. Essa era a lacuna crítica documentada no
+// comentário de avancarPedido: sem isso, cancelar um pedido em produção
+// deixava o estoque permanentemente "faltando" material que na prática
+// nunca foi usado.
+export async function cancelarPedido(
+  _estadoAnterior: CancelarPedidoResult | null,
+  formData: FormData
+): Promise<CancelarPedidoResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "PRODUCAO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar a produção." };
+  }
+  const pedidoId = String(formData.get("pedidoId"));
+
+  const pedido = await prisma.pedido.findFirst({
+    where: { id: pedidoId, graficaId: usuario.graficaId },
+    include: { orcamento: { include: { cliente: true } } },
+  });
+  if (!pedido) {
+    return { ok: false, mensagem: "Pedido não encontrado." };
+  }
+  if (pedido.status === "ENTREGUE") {
+    return { ok: false, mensagem: "Um pedido já entregue não pode ser cancelado." };
+  }
+  if (pedido.status === "CANCELADO") {
+    return { ok: false, mensagem: "Este pedido já está cancelado." };
+  }
+
+  const statusAnterior = pedido.status;
+  const webhookUrl = await buscarWebhookAutomacao(usuario.graficaId);
+  let itensEstornados = 0;
+
+  try {
+    await prisma.$transaction(
+      async (tx) => {
+        // Mesmo guard otimista de avancarPedido: updateMany com o status
+        // ANTERIOR no where, não update por id — se outra requisição já
+        // mudou o status entre a leitura acima e aqui (duplo clique, duas
+        // abas), count vem 0 e abortamos em vez de cancelar/estornar em
+        // cima de um estado que já não é mais o que a gente leu.
+        const resultado = await tx.pedido.updateMany({
+          where: { id: pedidoId, status: statusAnterior },
+          data: { status: "CANCELADO" },
+        });
+        if (resultado.count === 0) {
+          throw new ErroPedidoJaAlterado();
+        }
+
+        // Estorna pelo HISTÓRICO real de saídas (MovimentacaoEstoque), não
+        // recalculando pela ficha técnica de novo — a ficha pode ter mudado
+        // desde a baixa original, e o histórico é sempre a fonte da verdade
+        // do que de fato foi decrementado. Se o pedido nunca saiu de FILA,
+        // não existe nenhuma SAIDA pra este pedidoId e o loop não faz nada.
+        const saidas = await tx.movimentacaoEstoque.findMany({
+          where: { pedidoId, tipo: "SAIDA" },
+        });
+        itensEstornados = saidas.length;
+
+        for (const saida of saidas) {
+          if (saida.varianteId) {
+            await tx.varianteMateriaPrima.update({
+              where: { id: saida.varianteId },
+              data: { estoqueAtual: { increment: saida.quantidade } },
+            });
+          } else {
+            await tx.itemGrafica.update({
+              where: { id: saida.itemGraficaId },
+              data: { estoqueAtual: { increment: saida.quantidade } },
+            });
+          }
+          await tx.movimentacaoEstoque.create({
+            data: {
+              itemGraficaId: saida.itemGraficaId,
+              varianteId: saida.varianteId,
+              pedidoId: pedido.id,
+              tipo: "ENTRADA",
+              quantidade: saida.quantidade,
+              motivo: `Estorno por cancelamento do pedido ${pedido.id} (orçamento ${pedido.orcamentoId})`,
+            },
+          });
+        }
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
+  } catch (erro) {
+    if (erro instanceof ErroPedidoJaAlterado) {
+      return { ok: false, mensagem: MENSAGEM_CONFLITO_CANCELAMENTO };
+    }
+    if (ehConflitoDeSerializacao(erro)) {
+      return { ok: false, mensagem: MENSAGEM_CONFLITO_CANCELAMENTO };
+    }
+    throw erro;
+  }
+
+  if (webhookUrl) {
+    void dispararEventoAutomacao(webhookUrl, {
+      tipo: "pedido_status_mudou",
+      graficaNome: usuario.grafica.nome,
+      clienteNome: pedido.orcamento.cliente.nome,
+      clienteTelefone: normalizarTelefone(pedido.orcamento.cliente.telefone),
+      statusAnterior,
+      statusNovo: "CANCELADO",
+      orcamentoId: pedido.orcamentoId,
+    });
+  }
+
+  revalidatePath("/producao");
+  revalidatePath(`/orcamento/${pedido.orcamentoId}`);
+  revalidatePath("/catalogo");
+  revalidatePath("/meu-negocio");
+
+  return {
+    ok: true,
+    mensagem:
+      itensEstornados > 0
+        ? "Pedido cancelado e estoque estornado."
+        : "Pedido cancelado.",
+  };
 }
