@@ -33,9 +33,9 @@ export default function PrivacidadePage() {
             Esta política explica quais dados o Gráfica+ coleta, para quê, com quem
             compartilha e quais direitos você tem sobre eles, em conformidade com a Lei Geral
             de Proteção de Dados (LGPD — Lei nº 13.709/2018). O responsável por esta plataforma
-            é <strong>[NOME COMPLETO — PREENCHER]</strong>, pessoa física, CPF{" "}
-            <strong>[CPF — PREENCHER]</strong>, contato{" "}
-            <strong>[E-MAIL DE CONTATO / ENCARREGADO — PREENCHER]</strong>.
+            é <strong>Victor Ferrareto Dias</strong>, pessoa física, CPF{" "}
+            <strong>542.664.238-96</strong>, contato{" "}
+            <strong>victorferrareto515@gmail.com</strong>.
           </p>
 
           <div>
@@ -163,7 +163,7 @@ export default function PrivacidadePage() {
             </ul>
             <p>
               Para exercer qualquer um desses direitos, escreva para{" "}
-              <strong>[E-MAIL DE CONTATO — PREENCHER]</strong>.
+              <strong>victorferrareto515@gmail.com</strong>.
             </p>
           </div>
 

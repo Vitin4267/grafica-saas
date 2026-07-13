@@ -30,8 +30,8 @@ export default function TermosPage() {
           <p>
             Estes Termos de Uso regulam a utilização do Gráfica+, um sistema (SaaS) de
             orçamento, catálogo, estoque, financeiro e gestão para gráficas, oferecido por{" "}
-            <strong>[NOME COMPLETO — PREENCHER]</strong>, pessoa física inscrita no CPF{" "}
-            <strong>[CPF — PREENCHER]</strong>, doravante &ldquo;Gráfica+&rdquo;. Ao criar uma
+            <strong>Victor Ferrareto Dias</strong>, pessoa física inscrita no CPF{" "}
+            <strong>542.664.238-96</strong>, doravante &ldquo;Gráfica+&rdquo;. Ao criar uma
             conta, você concorda integralmente com estes termos.
           </p>
 
@@ -161,7 +161,7 @@ export default function TermosPage() {
           <div>
             <h2>11. Contato</h2>
             <p>
-              Dúvidas sobre estes termos: <strong>[E-MAIL DE CONTATO — PREENCHER]</strong>.
+              Dúvidas sobre estes termos: <strong>victorferrareto515@gmail.com</strong>.
             </p>
           </div>
         </div>
