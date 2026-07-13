@@ -90,5 +90,8 @@ export async function reenviarCodigo(
   await gerarEEnviarCodigoVerificacao(usuario);
   await registrarTentativaVerificacaoEmail(usuario.id, ip);
 
-  return { ok: true, mensagem: "Enviamos um novo código pro seu e-mail." };
+  return {
+    ok: true,
+    mensagem: "Enviamos um novo código pro seu e-mail. Confira também o spam/lixo eletrônico.",
+  };
 }

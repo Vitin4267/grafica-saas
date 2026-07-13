@@ -18,6 +18,10 @@ export default async function VerificarEmailPage() {
       subtitulo={`Mandamos um código de 6 dígitos pra ${usuario.email}. Digite ele abaixo pra liberar seu acesso.`}
     >
       <VerificarEmailForm />
+      <p className="mt-4 text-center text-xs text-slate-500">
+        Não recebeu? Confira também a caixa de spam/lixo eletrônico — às
+        vezes o e-mail cai lá.
+      </p>
     </AuthLayout>
   );
 }

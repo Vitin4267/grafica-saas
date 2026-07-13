@@ -20,7 +20,7 @@ const TOKEN_DURACAO_MS = 1000 * 60 * 60; // 1 hora
 // falhe — mesmo princípio anti-enumeração já usado no login (HASH_FANTASMA):
 // nunca revelar se uma conta existe através da resposta.
 const MENSAGEM_GENERICA =
-  "Se esse e-mail existir na nossa base, você vai receber um link de redefinição em instantes.";
+  "Se esse e-mail existir na nossa base, você vai receber um link de redefinição em instantes. Confira também a caixa de spam/lixo eletrônico.";
 
 export async function solicitarResetSenha(
   _estadoAnterior: SolicitarResetResult | null,
