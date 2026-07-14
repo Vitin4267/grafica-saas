@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cache } from "react";
 import { randomBytes, createHash } from "node:crypto";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -49,7 +50,12 @@ export async function criarSessao(usuarioId: string) {
   });
 }
 
-export async function obterUsuarioAtual() {
+// cache() dedup por request: evita reconsultar sessão+assinatura se mais de
+// um ponto do mesmo request chamar isto (ex: Server Action seguida da
+// re-renderização da página). Também traz a assinatura junto (grafica.
+// assinatura) na mesma query, pra exigirAssinaturaAtiva não precisar de um
+// round-trip próprio — ver src/lib/auth/assinatura.ts.
+export const obterUsuarioAtual = cache(async () => {
   const cookieStore = await cookies();
   const tokenBruto = cookieStore.get(SESSION_COOKIE_NAME)?.value;
   if (!tokenBruto) return null;
@@ -57,7 +63,7 @@ export async function obterUsuarioAtual() {
   const tokenHash = hashToken(tokenBruto);
   const sessao = await prisma.sessao.findUnique({
     where: { tokenHash },
-    include: { usuario: { include: { grafica: true } } },
+    include: { usuario: { include: { grafica: { include: { assinatura: true } } } } },
   });
 
   if (!sessao || sessao.expiraEm < new Date()) {
@@ -65,7 +71,7 @@ export async function obterUsuarioAtual() {
   }
 
   return sessao.usuario;
-}
+});
 
 export async function exigirUsuarioAutenticado() {
   const usuario = await obterUsuarioAtual();

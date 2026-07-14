@@ -11,7 +11,7 @@ import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { calcularItemOrcamento } from "@/lib/orcamento-precificacao";
 import { parseJsonArray } from "@/lib/form-json";
 import { D } from "@/lib/pricing/decimal";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 
 // Item já digitado/computado no carrinho local (client) — o servidor NUNCA confia
 // nos preços vindos daqui, só nos dados de entrada; recalcula tudo de novo com
@@ -218,6 +218,7 @@ export async function criarOrcamento(
     },
   });
 
+  updateTag(`uso-${usuario.graficaId}`); // orçamento novo muda a contagem do mês (ver src/lib/billing/uso.ts)
   revalidatePath("/orcamento");
   redirect(`/orcamento/${orcamento.id}`);
 }

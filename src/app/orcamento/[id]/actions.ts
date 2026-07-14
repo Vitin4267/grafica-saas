@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
@@ -516,6 +516,7 @@ export async function cancelarOrcamento(
   // necessidade de manter um registro "cancelado" — cascade cuida do OrcamentoItem.
   await prisma.orcamento.delete({ where: { id: orcamentoId } });
 
+  updateTag(`uso-${usuario.graficaId}`); // orçamento removido muda a contagem do mês (ver src/lib/billing/uso.ts)
   revalidatePath("/orcamento");
   redirect("/orcamento");
 }
