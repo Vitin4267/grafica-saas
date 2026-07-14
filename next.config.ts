@@ -7,13 +7,18 @@ import type { NextConfig } from "next";
 // Next.js precisa disso sem nonce (não há HTML gerado a partir de entrada do
 // usuário em lugar nenhum do código — sem dangerouslySetInnerHTML no projeto).
 const isDev = process.env.NODE_ENV === "development";
+// challenges.cloudflare.com: widget do Turnstile na tela de login (opcional,
+// só carrega se NEXT_PUBLIC_TURNSTILE_SITE_KEY estiver configurada — ver
+// src/components/Turnstile.tsx). Precisa de script (carrega o widget),
+// frame (o desafio roda num iframe) e connect (o widget confirma via XHR).
 const cspHeader = `
   default-src 'self';
-  script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""};
+  script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com${isDev ? " 'unsafe-eval'" : ""};
   style-src 'self' 'unsafe-inline';
   img-src 'self' blob: data:;
   font-src 'self';
-  connect-src 'self';
+  connect-src 'self' https://challenges.cloudflare.com;
+  frame-src https://challenges.cloudflare.com;
   object-src 'none';
   base-uri 'self';
   form-action 'self';

@@ -7,6 +7,7 @@ import { criarSessao } from "@/lib/auth/session";
 import { verificarBloqueioLogin, registrarTentativaLogin } from "@/lib/auth/rate-limit";
 import { obterIpRequisicao } from "@/lib/auth/ip";
 import { loginSchema } from "@/lib/auth/validation";
+import { verificarTurnstile } from "@/lib/turnstile";
 
 export type LoginResult = {
   ok: boolean;
@@ -35,6 +36,12 @@ export async function login(
 
   const { email, senha } = parsed.data;
   const ip = await obterIpRequisicao();
+
+  const tokenTurnstile = String(formData.get("cf-turnstile-response") || "");
+  const turnstileOk = await verificarTurnstile(tokenTurnstile || null, ip);
+  if (!turnstileOk) {
+    return { ok: false, mensagem: "Não foi possível confirmar que você não é um robô. Atualize a página e tente de novo." };
+  }
 
   const bloqueado = await verificarBloqueioLogin(email, ip);
   if (bloqueado) {

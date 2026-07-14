@@ -6,8 +6,11 @@ import { Input } from "@/components/ui/Input";
 import { PasswordInput } from "@/components/ui/PasswordInput";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { Turnstile } from "@/components/Turnstile";
 import { MailIcon } from "@/components/icons";
 import { login } from "./actions";
+
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
 export function LoginForm() {
   const [state, formAction, isPending] = useActionState(login, null);
@@ -37,6 +40,12 @@ export function LoginForm() {
       >
         Esqueci minha senha
       </Link>
+
+      {TURNSTILE_SITE_KEY && (
+        <div className="self-center">
+          <Turnstile siteKey={TURNSTILE_SITE_KEY} />
+        </div>
+      )}
 
       {state && !state.ok && <Alert>{state.mensagem}</Alert>}
 

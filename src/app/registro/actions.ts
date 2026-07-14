@@ -73,7 +73,26 @@ export async function registrar(
 
   const { graficaNome, nome, email, senha } = parsed.data;
 
-  const emailExistente = await prisma.usuario.findUnique({ where: { email } });
+  let emailExistente = await prisma.usuario.findUnique({ where: { email } });
+
+  // Conta nunca verificada (ninguém confirmou o código de 6 dígitos) e
+  // parada há mais de 24h: trata como abandonada e libera o e-mail. Sem
+  // isso, alguém podia "reservar" o e-mail de outra pessoa e travar o
+  // cadastro dela pra sempre. Convidado (usuarios/actions.ts) sempre nasce
+  // com emailVerificadoEm preenchido, então nunca cai aqui; e um DONO não
+  // verificado não consegue convidar ninguém (exigirEmailVerificado bloqueia
+  // isso), então a Grafica dele nunca tem outro usuário — apagar em cascata
+  // é seguro.
+  if (emailExistente && !emailExistente.emailVerificadoEm) {
+    const VINTE_QUATRO_HORAS_MS = 1000 * 60 * 60 * 24;
+    const contaAbandonada =
+      Date.now() - emailExistente.createdAt.getTime() > VINTE_QUATRO_HORAS_MS;
+    if (contaAbandonada) {
+      await prisma.grafica.delete({ where: { id: emailExistente.graficaId } });
+      emailExistente = null;
+    }
+  }
+
   if (emailExistente) {
     return { ok: false, mensagem: "Este e-mail já está cadastrado." };
   }
