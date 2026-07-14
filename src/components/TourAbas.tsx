@@ -51,6 +51,11 @@ const PASSOS = [
     titulo: "Usuários",
     texto: "Convide sua equipe e escolha o que cada pessoa pode ver e editar.",
   },
+  {
+    href: "/configuracoes/assinatura",
+    titulo: "Assinatura",
+    texto: "Veja seu plano atual, uso do mês e gerencie a cobrança da sua gráfica.",
+  },
 ] as const;
 
 type Retangulo = { top: number; left: number; width: number; height: number };

@@ -12,6 +12,7 @@ import { verificarEDispararAlertasAtraso } from "@/lib/alerta-atraso";
 import { dataEhPassado } from "@/lib/data";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { PrinterIcon } from "@/components/icons";
 import { PedidoLinha } from "./PedidoLinha";
 
@@ -80,15 +81,12 @@ export default async function ProducaoPage() {
         </div>
 
         {pedidos.length === 0 ? (
-          <Card className="flex flex-col items-center gap-3 p-10 text-center">
-            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400 dark:bg-slate-800">
-              <PrinterIcon className="h-6 w-6" />
-            </span>
-            <p className="text-sm text-slate-500">
-              Nenhum pedido em produção ainda. Aprove um orçamento para gerar
-              o primeiro.
-            </p>
-          </Card>
+          <EmptyState
+            icone={<PrinterIcon className="h-6 w-6" />}
+            texto="Nenhum pedido em produção ainda. Pedidos aparecem aqui automaticamente quando um orçamento é aprovado."
+            href="/orcamento"
+            rotuloCta="Ir para Orçamento"
+          />
         ) : (
           <Card className="divide-y divide-slate-100 dark:divide-slate-800">
             {pedidos.map((pedido) => (

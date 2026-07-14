@@ -8,6 +8,7 @@ import { buscarVisaoGeralNegocio } from "@/lib/meu-negocio";
 import { formatoMoeda } from "@/lib/moeda";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { StatTile } from "@/components/ui/StatTile";
 import { ValorAnimado } from "@/components/ui/ValorAnimado";
 import { Sparkline } from "@/components/ui/Sparkline";
@@ -56,28 +57,6 @@ function SecaoHeader({
         <ArrowRightIcon className="h-3.5 w-3.5" />
       </Link>
     </div>
-  );
-}
-
-function CardVazio({ icone, texto, href, rotuloCta }: {
-  icone: React.ReactNode;
-  texto: string;
-  href: string;
-  rotuloCta: string;
-}) {
-  return (
-    <Card className="flex flex-col items-center gap-3 p-8 text-center">
-      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-400 dark:bg-slate-800">
-        {icone}
-      </span>
-      <p className="max-w-xs text-sm text-slate-500">{texto}</p>
-      <Link
-        href={href}
-        className="text-xs font-medium text-teal-700 hover:underline dark:text-teal-400"
-      >
-        {rotuloCta}
-      </Link>
-    </Card>
   );
 }
 
@@ -194,7 +173,7 @@ export default async function MeuNegocioPage() {
           <div>
             <SecaoHeader titulo="Funil de orçamentos" href="/orcamento" />
             {visaoGeral.totalOrcamentos === 0 ? (
-              <CardVazio
+              <EmptyState
                 icone={<ReceiptIcon className="h-5 w-5" />}
                 texto="Nenhum orçamento criado ainda. Assim que você salvar o primeiro, ele aparece aqui."
                 href="/orcamento"
@@ -210,7 +189,7 @@ export default async function MeuNegocioPage() {
           <div>
             <SecaoHeader titulo="Pipeline de produção" href="/producao" />
             {visaoGeral.totalPedidos === 0 ? (
-              <CardVazio
+              <EmptyState
                 icone={<PrinterIcon className="h-5 w-5" />}
                 texto="Nenhum pedido em produção. Pedidos aparecem aqui automaticamente quando um orçamento é aprovado."
                 href="/producao"
@@ -265,7 +244,7 @@ export default async function MeuNegocioPage() {
           <div>
             <SecaoHeader titulo="Clientes com maior faturamento" href="/clientes" />
             {visaoGeral.topClientes.length === 0 ? (
-              <CardVazio
+              <EmptyState
                 icone={<UsersIcon className="h-5 w-5" />}
                 texto="Nenhum orçamento aprovado ainda — seus melhores clientes vão aparecer aqui."
                 href="/clientes"
