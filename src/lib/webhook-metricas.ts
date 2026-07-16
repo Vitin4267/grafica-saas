@@ -27,9 +27,19 @@ export async function dispararMetrica(evento: EventoMetrica): Promise<void> {
 
     const corpo = JSON.stringify(construirEnvelope(evento.tipo, evento.dados));
 
+    // Segredo opcional (METRICAS_WEBHOOK_SECRET): sem essa env var, o header
+    // some do request e o n8n simplesmente não confere nada (mesmo espírito
+    // "melhor esforço" — não obriga configuração extra). Com ela, fecha a
+    // brecha de alguém descobrir a URL do webhook (path previsível) e mandar
+    // POST fake pra gerar e-mail de métricas falso.
+    const segredo = process.env.METRICAS_WEBHOOK_SECRET;
+
     await fetch(webhookUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(segredo ? { "X-Metrics-Secret": segredo } : {}),
+      },
       body: corpo,
       signal: AbortSignal.timeout(TIMEOUT_MS),
       redirect: "error", // não segue redirect — mesma cautela de perguntarAssistente
