@@ -106,7 +106,7 @@ export default function TermosPage() {
           <div>
             <h2>6. Planos e cobrança</h2>
             <p>
-              Novas contas começam com um período de teste gratuito de 7 dias, sem necessidade
+              Novas contas começam com um período de teste gratuito de 14 dias, sem necessidade
               de cartão de crédito. Após o período de teste, o uso continuado do sistema requer
               a contratação de um dos planos pagos disponíveis em Configurações → Assinatura,
               cobrados mensalmente e de forma recorrente via Stripe, nosso processador de

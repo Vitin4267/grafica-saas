@@ -220,5 +220,17 @@ export async function criarOrcamento(
 
   updateTag(`uso-${usuario.graficaId}`); // orçamento novo muda a contagem do mês (ver src/lib/billing/uso.ts)
   revalidatePath("/orcamento");
-  redirect(`/orcamento/${orcamento.id}`);
+
+  // "É o primeiro orçamento da gráfica?" decidido por CONTAGEM pós-criação
+  // (não por um flag em outro lugar do onboarding) — se o total agora é 1,
+  // este create acabou de ser o primeiro. Independe de src/lib/onboarding.ts
+  // de propósito. Sinalizado só via query string pra página de detalhe
+  // mostrar a comemoração — redirect() já corta qualquer valor de retorno
+  // desta action, então não dá pra devolver um flag no estado do form.
+  const totalOrcamentosDaGrafica = await prisma.orcamento.count({
+    where: { graficaId: usuario.graficaId },
+  });
+  const ehPrimeiroOrcamento = totalOrcamentosDaGrafica === 1;
+
+  redirect(`/orcamento/${orcamento.id}${ehPrimeiroOrcamento ? "?primeiro=1" : ""}`);
 }

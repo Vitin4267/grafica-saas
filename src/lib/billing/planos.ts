@@ -15,7 +15,7 @@ export type Plano = {
   limiteUsuarios: number | null; // null = ilimitado
 };
 
-export const TRIAL_DIAS = 7;
+export const TRIAL_DIAS = 14;
 
 // Valores placeholder (o usuário ajusta preço/limites depois no dashboard
 // do Stripe e aqui) — a estrutura em lista já está pronta pra crescer sem

@@ -58,6 +58,43 @@ export function templateEstoqueBaixo(
   };
 }
 
+// Disparado pelo cron diário (src/app/api/cron/lifecycle/route.ts) 2 dias
+// antes do trial expirar. `orcamentosGerados` é a contagem TOTAL de
+// orçamentos da gráfica desde o cadastro (não só do mês corrente) — o
+// objetivo aqui é reforçar valor já recebido pra persuadir a assinar, não
+// medir uso pra limite de plano (isso já é papel de calcularUsoAtual em
+// src/lib/billing/uso.ts, que é mensal e serve a outro propósito).
+export function templateTrialExpirando(
+  orcamentosGerados: number,
+  linkAssinatura: string
+): { assunto: string; html: string; texto: string } {
+  const orcamentosTexto =
+    orcamentosGerados === 1 ? "1 orçamento" : `${orcamentosGerados} orçamentos`;
+
+  return {
+    assunto: "Seu teste grátis termina em 2 dias — não perca o acesso",
+    texto: `Seu período de testes está quase no fim!\n\nVocê já gerou ${orcamentosTexto} no Gráfica+ — imagina quanto tempo isso já economizou do seu cálculo manual.\n\nPra não perder o acesso ao seu painel e ao histórico dos seus clientes, escolha um plano a partir de R$ 110,00:\n${linkAssinatura}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2 style="color: #0f172a;">Seu teste grátis está quase no fim</h2>
+        <p style="color: #334155;">
+          Faltam só 2 dias! Você já gerou <strong>${orcamentosTexto}</strong> no Gráfica+ —
+          imagina quanto tempo isso já economizou do seu cálculo manual.
+        </p>
+        <p style="color: #334155;">
+          Pra não perder o acesso ao seu painel e ao histórico dos seus clientes, escolha um plano:
+        </p>
+        <p>
+          <a href="${linkAssinatura}" style="display: inline-block; background: #0d9488; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600;">
+            Escolher plano a partir de R$ 110,00
+          </a>
+        </p>
+        <p style="color: #64748b; font-size: 14px;">Se preferir, acesse ${linkAssinatura} diretamente no navegador.</p>
+      </div>
+    `,
+  };
+}
+
 export function templateVerificacaoEmail(codigo: string): {
   assunto: string;
   html: string;

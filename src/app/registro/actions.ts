@@ -10,6 +10,7 @@ import { registroSchema } from "@/lib/auth/validation";
 import { slugify } from "@/lib/slug";
 import { TRIAL_DIAS } from "@/lib/billing/planos";
 import { gerarEEnviarCodigoVerificacao } from "@/lib/email/verificacao-email";
+import { dispararMetrica } from "@/lib/webhook-metricas";
 
 const MENSAGEM_GENERICA = "Não foi possível concluir o cadastro. Tente novamente.";
 
@@ -142,6 +143,13 @@ export async function registrar(
   // Melhor esforço — nunca lança (ver dispararEventoEmail). Mesmo se o
   // e-mail falhar, o usuário cai em /verificar-email e pode pedir reenvio.
   await gerarEEnviarCodigoVerificacao(usuario);
+
+  // Melhor esforço — nunca lança (ver dispararMetrica). Métrica pro n8n
+  // acompanhar novos registros; uma falha aqui nunca pode travar o cadastro.
+  await dispararMetrica({
+    tipo: "novo_registro",
+    dados: { graficaId: usuario.graficaId, graficaNome, criadoEm: new Date().toISOString() },
+  });
 
   redirect("/verificar-email");
 }

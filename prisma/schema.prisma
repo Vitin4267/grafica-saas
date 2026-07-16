@@ -280,6 +280,13 @@ model AssinaturaGrafica {
   // hoje. Ver src/lib/billing/limite-uso.ts.
   limiteExcedidoDesde DateTime?
 
+  // Quando o e-mail de "seu trial está quase acabando" foi disparado (ver
+  // src/app/api/cron/lifecycle/route.ts, cron diário) — idempotência pra
+  // não mandar o aviso duas vezes. null = ainda não enviado. Fica null pra
+  // sempre em gráficas que nunca chegam a 2 dias do fim do trial (ex:
+  // assinam antes) ou que não estão em TRIALING.
+  avisoTrialEnviadoEm DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

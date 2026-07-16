@@ -61,9 +61,9 @@ export async function concederCortesia(
   return { ok: true, mensagem: "Acesso cortesia concedido." + avisoStripe };
 }
 
-// Revoga a cortesia devolvendo a gráfica pra um trial novo de 7 dias (mesma
-// janela do cadastro normal, ver TRIAL_DIAS em src/lib/billing/planos.ts) —
-// mais gentil que bloquear na hora, dá tempo da gráfica decidir se assina.
+// Revoga a cortesia devolvendo a gráfica pra um trial novo (mesma janela do
+// cadastro normal, TRIAL_DIAS em src/lib/billing/planos.ts) — mais gentil que
+// bloquear na hora, dá tempo da gráfica decidir se assina.
 export async function revogarCortesia(
   _estadoAnterior: AdminGraficaResult | null,
   formData: FormData
@@ -79,5 +79,5 @@ export async function revogarCortesia(
   });
 
   revalidatePath("/admin/graficas");
-  return { ok: true, mensagem: "Cortesia revogada — 7 dias de trial concedidos." };
+  return { ok: true, mensagem: `Cortesia revogada — ${TRIAL_DIAS} dias de trial concedidos.` };
 }

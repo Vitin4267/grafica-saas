@@ -33,7 +33,15 @@ class ErroUltimoItemOrcamento extends Error {}
 const MENSAGEM_CONFLITO_CONCORRENTE =
   "Outra pessoa alterou este orçamento ao mesmo tempo — tente de novo.";
 
-export type AtualizarStatusResult = { ok: boolean; mensagem: string };
+// novoStatus é só informativo (preenchido nas respostas de sucesso) — deixa o
+// client (OrcamentoAcoes.tsx) saber QUAL transição aconteceu sem precisar
+// inferir do status anterior, pra decidir se mostra a micro-animação de
+// aprovação. Não participa da lógica de compare-and-swap abaixo.
+export type AtualizarStatusResult = {
+  ok: boolean;
+  mensagem: string;
+  novoStatus?: StatusOrcamento;
+};
 
 export async function atualizarStatusOrcamento(
   _estadoAnterior: AtualizarStatusResult | null,
@@ -177,6 +185,7 @@ export async function atualizarStatusOrcamento(
   return {
     ok: true,
     mensagem: `Orçamento atualizado para ${ROTULOS_STATUS_ORCAMENTO[novoStatus]}.`,
+    novoStatus,
   };
 }
 

@@ -25,13 +25,24 @@ import { CompartilharOrcamento } from "./CompartilharOrcamento";
 import { PagamentosCard } from "./PagamentosCard";
 import { CustoProducaoCard } from "./CustoProducaoCard";
 import { NotaFiscalCard } from "./NotaFiscalCard";
+import { PrimeiroOrcamentoCelebracao } from "./PrimeiroOrcamentoCelebracao";
 
 export default async function OrcamentoDetalhePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { id } = await params;
+  // `?primeiro=1` só aparece no redirect logo após criarOrcamento quando a
+  // contagem de orçamentos da gráfica acabou de virar 1 (ver
+  // src/app/orcamento/actions.ts) — dispara a comemoração uma única vez,
+  // nesse load. Um refresh da mesma URL continua mostrando (a query string
+  // persiste), mas isso é aceitável: não é um estado sensível, só um convite
+  // a mais pra copiar o link.
+  const { primeiro } = await searchParams;
+  const ehPrimeiroOrcamento = primeiro === "1";
   const usuario = await exigirUsuarioAutenticado();
   await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
@@ -102,6 +113,15 @@ export default async function OrcamentoDetalhePage({
           <ArrowLeftIcon className="h-4 w-4" />
           Voltar aos orçamentos
         </Link>
+
+        {ehPrimeiroOrcamento && (
+          <PrimeiroOrcamentoCelebracao
+            orcamentoId={orcamento.id}
+            linkExistente={
+              orcamento.linkPublicoToken ? `${origem}/o/${orcamento.linkPublicoToken}` : null
+            }
+          />
+        )}
 
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
