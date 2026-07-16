@@ -30,10 +30,17 @@ export function mapearStatusStripe(status: Stripe.Subscription.Status): StatusAs
 // TRIALING só libera enquanto trialExpiraEm não passou — depois disso, sem
 // uma assinatura paga de verdade, trava igual a qualquer outro status ruim.
 export function assinaturaEstaLiberada(
-  assinatura: { status: StatusAssinatura; trialExpiraEm: Date | null } | null,
+  assinatura: { status: StatusAssinatura; trialExpiraEm: Date | null; cortesia?: boolean } | null,
   agora: Date = new Date()
 ): boolean {
   if (!assinatura) return false;
+
+  // Cortesia é override manual soberano (/admin/graficas): sempre liberado,
+  // independente de status — nenhum evento do Stripe pode bloquear quem
+  // recebeu acesso gratuito (a cobrança real também é cancelada ao conceder,
+  // ver concederCortesia). Rede de segurança extra além das guardas de
+  // cortesia no webhook (src/lib/billing/sincronizar.ts).
+  if (assinatura.cortesia) return true;
 
   if (assinatura.status === "ATIVA") return true;
 

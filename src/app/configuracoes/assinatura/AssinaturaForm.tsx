@@ -116,6 +116,7 @@ export function AssinaturaForm({
   cortesia,
   diasRestantesTrial,
   temStripeCustomer,
+  mostrarPlanos,
   papel,
   planos,
   planoAtual,
@@ -126,6 +127,7 @@ export function AssinaturaForm({
   cortesia: boolean;
   diasRestantesTrial: number | null;
   temStripeCustomer: boolean;
+  mostrarPlanos: boolean;
   papel: PapelUsuario;
   planos: PlanoComPreco[];
   planoAtual: Plano | null;
@@ -212,7 +214,7 @@ export function AssinaturaForm({
         )}
       </Card>
 
-      {papel === "DONO" && !temStripeCustomer && (
+      {mostrarPlanos && (
         <div className="grid grid-cols-1 gap-6 pt-2 sm:grid-cols-3">
           {planos.map((plano) => (
             <CardPlano key={plano.id} plano={plano} />

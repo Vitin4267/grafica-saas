@@ -45,10 +45,17 @@ export default async function ConfiguracoesAssinaturaPage({
       Math.floor((Date.now() - assinatura.limiteExcedidoDesde.getTime()) / 86_400_000)
     : null;
 
-  // Só busca preço no Stripe quando os cards de plano de fato vão aparecer
-  // (ver mesma condição em AssinaturaForm.tsx) — evita 3 chamadas de API
-  // à toa pra quem já tem assinatura ou não é DONO.
-  const mostrarCardsDePlano = usuario.papel === "DONO" && !assinatura.stripeCustomerId;
+  // Mostra os cards de plano pra quem PODE (re)assinar: DONO, sem cortesia, e
+  // sem assinatura paga viva (TRIALING = ainda não assinou; CANCELADA = já foi
+  // cliente mas cancelou — precisa poder voltar a assinar pelo site, não só
+  // pelo Portal). ATIVA/INADIMPLENTE têm assinatura viva no Stripe: gerenciam
+  // pelo Customer Portal (evita criar uma segunda assinatura/cobrança). Antes
+  // dependia de !stripeCustomerId, o que travava pra sempre quem já tinha sido
+  // cliente uma vez. Só busca preço no Stripe quando os cards vão aparecer.
+  const mostrarCardsDePlano =
+    usuario.papel === "DONO" &&
+    !assinatura.cortesia &&
+    (assinatura.status === "TRIALING" || assinatura.status === "CANCELADA");
   const planos = mostrarCardsDePlano ? await anexarPrecos(obterPlanos()) : [];
 
   return (
@@ -93,6 +100,7 @@ export default async function ConfiguracoesAssinaturaPage({
           cortesia={assinatura.cortesia}
           diasRestantesTrial={diasRestantesTrial}
           temStripeCustomer={Boolean(assinatura.stripeCustomerId)}
+          mostrarPlanos={mostrarCardsDePlano}
           papel={usuario.papel}
           planos={planos}
           planoAtual={planoAtual}

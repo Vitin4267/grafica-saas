@@ -18,6 +18,18 @@ async function sincronizarSubscription(subscription: Stripe.Subscription): Promi
   const graficaId = extrairGraficaId(subscription);
   if (!graficaId) return; // assinatura sem o metadata que a gente sempre seta — não é nossa, ignora
 
+  // Cortesia é soberana: nenhum evento do Stripe pode revogá-la nem rebaixar o
+  // status de uma gráfica cortesia. Ao conceder cortesia a assinatura Stripe é
+  // cancelada (ver concederCortesia), mas eventos atrasados/já em voo (a
+  // própria confirmação do cancelamento, uma renovação que cruzou no caminho)
+  // ainda chegam aqui — ignoramos pra não voltar a bloquear/cobrar quem devia
+  // estar livre.
+  const existente = await prisma.assinaturaGrafica.findUnique({
+    where: { graficaId },
+    select: { cortesia: true },
+  });
+  if (existente?.cortesia) return;
+
   const customerId =
     typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
   const priceId = subscription.items.data[0]?.price.id ?? null;
@@ -78,6 +90,14 @@ export async function processarEventoStripe(evento: Stripe.Event): Promise<void>
       const subscription = evento.data.object;
       const graficaId = extrairGraficaId(subscription);
       if (!graficaId) return;
+      // Não bloqueia cortesia: cancelar a assinatura Stripe é exatamente o que
+      // concederCortesia faz, e a confirmação desse cancelamento chega aqui
+      // logo depois — não pode marcar CANCELADA quem acabou de virar cortesia.
+      const existente = await prisma.assinaturaGrafica.findUnique({
+        where: { graficaId },
+        select: { cortesia: true },
+      });
+      if (existente?.cortesia) return;
       await prisma.assinaturaGrafica.updateMany({
         where: { graficaId },
         data: { status: "CANCELADA", canceladaEm: new Date() },

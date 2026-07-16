@@ -48,4 +48,22 @@ describe("assinaturaEstaLiberada", () => {
   it("bloqueia CANCELADA", () => {
     expect(assinaturaEstaLiberada({ status: "CANCELADA", trialExpiraEm: null }, agora)).toBe(false);
   });
+
+  it("libera cortesia mesmo com status que normalmente bloqueia (CANCELADA)", () => {
+    expect(
+      assinaturaEstaLiberada({ status: "CANCELADA", trialExpiraEm: null, cortesia: true }, agora)
+    ).toBe(true);
+  });
+
+  it("libera cortesia mesmo com status INADIMPLENTE", () => {
+    expect(
+      assinaturaEstaLiberada({ status: "INADIMPLENTE", trialExpiraEm: null, cortesia: true }, agora)
+    ).toBe(true);
+  });
+
+  it("cortesia false não muda o comportamento normal", () => {
+    expect(
+      assinaturaEstaLiberada({ status: "CANCELADA", trialExpiraEm: null, cortesia: false }, agora)
+    ).toBe(false);
+  });
 });

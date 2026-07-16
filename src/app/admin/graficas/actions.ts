@@ -5,15 +5,16 @@ import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirSuperAdmin } from "@/lib/auth/superadmin";
 import { TRIAL_DIAS } from "@/lib/billing/planos";
+import { obterStripe } from "@/lib/billing/stripe-client";
 
 export type AdminGraficaResult = { ok: boolean; mensagem: string };
 
-// Concede acesso liberado permanente a uma gráfica sem passar pelo Stripe —
-// zera qualquer vínculo Stripe anterior de propósito (ver comentário do
-// campo `cortesia` no schema): evita o estado ambíguo de uma gráfica parecer
-// "grátis" localmente enquanto ainda tem uma assinatura Stripe real rodando
-// por trás. Se a gráfica já pagava de verdade, cancelar a assinatura no
-// lado do Stripe é responsabilidade de quem concede, feito manualmente.
+// Concede acesso liberado permanente a uma gráfica sem passar pelo Stripe.
+// Se a gráfica já pagava de verdade, CANCELA a assinatura real no Stripe
+// automaticamente (senão o cartão continuaria sendo cobrado todo mês por trás,
+// mesmo com a gráfica "grátis" no app) e zera o vínculo Stripe local. As
+// guardas de cortesia no webhook (src/lib/billing/sincronizar.ts) garantem que
+// os eventos de cancelamento que chegam depois não revoguem a cortesia.
 export async function concederCortesia(
   _estadoAnterior: AdminGraficaResult | null,
   formData: FormData
@@ -22,6 +23,25 @@ export async function concederCortesia(
   exigirSuperAdmin(usuario);
 
   const graficaId = String(formData.get("graficaId"));
+
+  // Lê o vínculo Stripe ANTES de zerar, pra poder cancelar a cobrança real.
+  const atual = await prisma.assinaturaGrafica.findUnique({
+    where: { graficaId },
+    select: { stripeSubscriptionId: true },
+  });
+
+  let avisoStripe = "";
+  if (atual?.stripeSubscriptionId) {
+    try {
+      await obterStripe().subscriptions.cancel(atual.stripeSubscriptionId);
+    } catch {
+      // Não trava a concessão da cortesia se o cancelamento no Stripe falhar —
+      // mas avisa, pra ninguém continuar sendo cobrado sem perceber.
+      avisoStripe =
+        " Atenção: não consegui cancelar a assinatura no Stripe automaticamente — cancele manualmente no painel do Stripe pra parar a cobrança.";
+    }
+  }
+
   await prisma.assinaturaGrafica.upsert({
     where: { graficaId },
     update: {
@@ -38,7 +58,7 @@ export async function concederCortesia(
   });
 
   revalidatePath("/admin/graficas");
-  return { ok: true, mensagem: "Acesso cortesia concedido." };
+  return { ok: true, mensagem: "Acesso cortesia concedido." + avisoStripe };
 }
 
 // Revoga a cortesia devolvendo a gráfica pra um trial novo de 7 dias (mesma
