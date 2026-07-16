@@ -25,10 +25,16 @@ async function sincronizarSubscription(subscription: Stripe.Subscription): Promi
     ? new Date(subscription.items.data[0].current_period_end * 1000)
     : null;
 
+  // Deriva pelo status JÁ MAPEADO, não pela string bruta do Stripe: além de
+  // "canceled", o status "incomplete_expired" também mapeia pra CANCELADA (ver
+  // mapearStatusStripe) — sem isso, um checkout que expira no 3D Secure virava
+  // CANCELADA com canceladaEm nulo (registro inconsistente).
+  const status = mapearStatusStripe(subscription.status);
+
   await prisma.assinaturaGrafica.upsert({
     where: { graficaId },
     update: {
-      status: mapearStatusStripe(subscription.status),
+      status,
       // Qualquer sincronização real do Stripe significa que não é mais
       // cortesia (ver /admin/graficas) — mesmo que a gráfica tivesse sido
       // marcada cortesia antes, um checkout de verdade agora sobrepõe isso.
@@ -37,11 +43,11 @@ async function sincronizarSubscription(subscription: Stripe.Subscription): Promi
       stripeSubscriptionId: subscription.id,
       stripePriceId: priceId,
       periodoAtualExpiraEm,
-      canceladaEm: subscription.status === "canceled" ? new Date() : null,
+      canceladaEm: status === "CANCELADA" ? new Date() : null,
     },
     create: {
       graficaId,
-      status: mapearStatusStripe(subscription.status),
+      status,
       cortesia: false,
       stripeCustomerId: customerId,
       stripeSubscriptionId: subscription.id,

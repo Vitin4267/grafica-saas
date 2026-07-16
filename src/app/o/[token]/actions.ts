@@ -35,20 +35,37 @@ export async function responderOrcamentoPublico(
     return { ok: false, mensagem: "Este orçamento não pode mais ser respondido." };
   }
 
+  // Compare-and-swap: o updateMany só transiciona se o status AINDA for o que
+  // acabamos de validar. Sem isso, o cliente aprovando pelo link público e um
+  // funcionário rejeitando no painel ao mesmo tempo poderiam ambos passar na
+  // checagem de transição e o último a gravar venceria — deixando, por
+  // exemplo, um Pedido criado mas o orçamento marcado como REJEITADO (mesmo
+  // padrão de guarda que producao/actions.ts já usa em avancarPedido).
   if (decisao === "APROVADO") {
-    await prisma.$transaction([
-      prisma.orcamento.update({ where: { id: orcamento.id }, data: { status: "APROVADO" } }),
-      prisma.pedido.upsert({
+    const resultado = await prisma.$transaction(async (tx) => {
+      const cas = await tx.orcamento.updateMany({
+        where: { id: orcamento.id, status: orcamento.status },
+        data: { status: "APROVADO" },
+      });
+      if (cas.count === 0) return false;
+      await tx.pedido.upsert({
         where: { orcamentoId: orcamento.id },
         update: {},
         create: { graficaId: orcamento.graficaId, orcamentoId: orcamento.id, status: "FILA" },
-      }),
-    ]);
+      });
+      return true;
+    });
+    if (!resultado) {
+      return { ok: false, mensagem: "Este orçamento não pode mais ser respondido." };
+    }
   } else {
-    await prisma.orcamento.update({
-      where: { id: orcamento.id },
+    const cas = await prisma.orcamento.updateMany({
+      where: { id: orcamento.id, status: orcamento.status },
       data: { status: "REJEITADO" },
     });
+    if (cas.count === 0) {
+      return { ok: false, mensagem: "Este orçamento não pode mais ser respondido." };
+    }
   }
 
   revalidatePath(`/o/${token}`);

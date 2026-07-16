@@ -88,8 +88,19 @@ export async function registrar(
     const contaAbandonada =
       Date.now() - emailExistente.createdAt.getTime() > VINTE_QUATRO_HORAS_MS;
     if (contaAbandonada) {
-      await prisma.grafica.delete({ where: { id: emailExistente.graficaId } });
-      emailExistente = null;
+      // deleteMany (não delete): não lança se outra requisição concorrente do
+      // mesmo e-mail já apagou a gráfica (dois cadastros simultâneos), e a
+      // condição `usuarios.every.emailVerificadoEm = null` garante que a
+      // gráfica não seja apagada se o dono legítimo acabou de verificar o
+      // e-mail na janela de corrida. Reconsulto depois pra refletir o estado
+      // real: se ainda existir (ninguém apagou / virou verificada), bloqueia.
+      await prisma.grafica.deleteMany({
+        where: {
+          id: emailExistente.graficaId,
+          usuarios: { every: { emailVerificadoEm: null } },
+        },
+      });
+      emailExistente = await prisma.usuario.findUnique({ where: { email } });
     }
   }
 

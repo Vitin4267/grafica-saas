@@ -141,10 +141,13 @@ export function calcularOffset(
   );
 
   let nChapas = F + V;
-  // work-and-turn: só reduz chapas quando nUp é par. A spec deixa detecção de
-  // simetria fora do escopo v1 — se viraFolha=true mas nUp é ímpar, ignora
-  // silenciosamente (não é erro, só não aplica a otimização).
-  if (contexto.viraFolha && escolhido.imposicao.nUp % 2 === 0) {
+  // work-and-turn: usa o MESMO jogo de chapas nos dois lados, então só faz
+  // sentido (e só resulta em nº inteiro de chapas) quando frente e verso têm o
+  // mesmo nº de cores — F === V. Antes reduzia pela metade sempre que nUp era
+  // par, ignorando a simetria: com F≠V (ex: 4x1) e nUp par dava (4+1)/2 = 2,5
+  // chapas, um valor fisicamente impossível que subestimava o custo. Com F≠V
+  // não aplica a otimização (não é erro, só cobra as chapas cheias).
+  if (contexto.viraFolha && F === V && escolhido.imposicao.nUp % 2 === 0) {
     nChapas = nChapas / 2;
   }
   const custoChapas = paraDecimal(nChapas).times(params.custoChapa);

@@ -77,6 +77,21 @@ export async function iniciarCheckout(
     where: { graficaId: usuario.graficaId },
   });
 
+  // Já tem assinatura paga viva no Stripe? Não abre um segundo checkout — isso
+  // criaria uma subscription/cobrança duplicada e órfã (o webhook faz upsert
+  // por graficaId, então a segunda sobrescreve a primeira no banco, mas a
+  // primeira continua ativa e cobrando no Stripe, invisível pro app). Troca de
+  // plano é pelo Customer Portal ("Gerenciar assinatura").
+  if (
+    assinatura?.stripeSubscriptionId &&
+    (assinatura.status === "ATIVA" || assinatura.status === "INADIMPLENTE")
+  ) {
+    return {
+      ok: false,
+      mensagem: 'Você já tem uma assinatura ativa. Use "Gerenciar assinatura" pra trocar de plano.',
+    };
+  }
+
   let session: Awaited<ReturnType<typeof stripe.checkout.sessions.create>>;
   try {
     session = await stripe.checkout.sessions.create({

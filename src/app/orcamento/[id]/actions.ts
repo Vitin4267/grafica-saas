@@ -90,66 +90,81 @@ export async function atualizarStatusOrcamento(
       }),
     ]);
 
-    // upsert (não create): idempotente contra duplo submit/duplo clique,
-    // já que orcamentoId é único em Pedido (e em Comissao).
-    const operacoes: Prisma.PrismaPromise<unknown>[] = [
-      prisma.orcamento.update({
-        where: { id: orcamentoId },
-        data: { status: "APROVADO" },
-      }),
-      prisma.pedido.upsert({
-        where: { orcamentoId },
-        update: {},
-        create: { graficaId: usuario.graficaId, orcamentoId, status: "FILA", prazoEntrega },
-      }),
-    ];
-
     const percentualVendedor = usuarioVendedor?.comissaoPercent
       ? Number(usuarioVendedor.comissaoPercent)
       : null;
-    if (percentualVendedor && percentualVendedor > 0) {
-      const baseCalculo = parametros?.comissaoVendedorBase ?? "VALOR";
-      // Custo real só existe no motor avançado (breakdown.custoTotal, ver
-      // src/lib/pricing/compor.ts) — item SIMPLES usa o preço de compra
-      // ATUAL do produto como estimativa (não é snapshot do momento da
-      // venda; pode ter mudado desde a criação do orçamento). Sem
-      // precoCompra cadastrado, custo 0 pra esse item (conta como lucro
-      // total em vez de travar o cálculo).
-      const itensComCusto = orcamentoComItens.map((item) => {
-        const breakdown = item.breakdown as { custoTotal?: string } | null;
-        const custoTotal = breakdown?.custoTotal
-          ? Number(breakdown.custoTotal)
-          : item.itemGrafica.precoCompra
-            ? Number(item.itemGrafica.precoCompra) * item.quantidade
-            : 0;
-        return { precoTotal: Number(item.precoTotal), custoTotal };
-      });
-      const valorBase = calcularValorBase(Number(orcamento.total), itensComCusto, baseCalculo);
-      const valorComissao = calcularComissao(valorBase, percentualVendedor);
+    const dadosComissao =
+      percentualVendedor && percentualVendedor > 0
+        ? (() => {
+            const baseCalculo = parametros?.comissaoVendedorBase ?? "VALOR";
+            // Custo real só existe no motor avançado (breakdown.custoTotal, ver
+            // src/lib/pricing/compor.ts) — item SIMPLES usa o preço de compra
+            // ATUAL do produto como estimativa (não é snapshot do momento da
+            // venda; pode ter mudado desde a criação do orçamento). Sem
+            // precoCompra cadastrado, custo 0 pra esse item (conta como lucro
+            // total em vez de travar o cálculo).
+            const itensComCusto = orcamentoComItens.map((item) => {
+              const breakdown = item.breakdown as { custoTotal?: string } | null;
+              const custoTotal = breakdown?.custoTotal
+                ? Number(breakdown.custoTotal)
+                : item.itemGrafica.precoCompra
+                  ? Number(item.itemGrafica.precoCompra) * item.quantidade
+                  : 0;
+              return { precoTotal: Number(item.precoTotal), custoTotal };
+            });
+            const valorBase = calcularValorBase(Number(orcamento.total), itensComCusto, baseCalculo);
+            const valorComissao = calcularComissao(valorBase, percentualVendedor);
+            return { baseCalculo, valorBase, valorComissao };
+          })()
+        : null;
 
-      operacoes.push(
-        prisma.comissao.upsert({
+    // Compare-and-swap: só transiciona (e cria pedido/comissão) se o status
+    // AINDA for o que validamos — senão duas transições concorrentes (ex: link
+    // público aprovando enquanto o painel rejeita) poderiam ambas passar e a
+    // última venceria, deixando um Pedido órfão. upsert continua idempotente
+    // contra duplo clique (orcamentoId único em Pedido e Comissao).
+    const aprovado = await prisma.$transaction(async (tx) => {
+      const cas = await tx.orcamento.updateMany({
+        where: { id: orcamentoId, status: orcamento.status },
+        data: { status: "APROVADO" },
+      });
+      if (cas.count === 0) return false;
+
+      await tx.pedido.upsert({
+        where: { orcamentoId },
+        update: {},
+        create: { graficaId: usuario.graficaId, orcamentoId, status: "FILA", prazoEntrega },
+      });
+
+      if (dadosComissao) {
+        await tx.comissao.upsert({
           where: { orcamentoId },
           update: {},
           create: {
             graficaId: usuario.graficaId,
             orcamentoId,
             usuarioId: orcamento.usuarioId,
-            baseCalculo,
-            percentualAplicado: percentualVendedor,
-            valorBase,
-            valorComissao,
+            baseCalculo: dadosComissao.baseCalculo,
+            percentualAplicado: percentualVendedor!,
+            valorBase: dadosComissao.valorBase,
+            valorComissao: dadosComissao.valorComissao,
           },
-        })
-      );
-    }
+        });
+      }
+      return true;
+    });
 
-    await prisma.$transaction(operacoes);
+    if (!aprovado) {
+      return { ok: false, mensagem: "Este orçamento já teve o status alterado. Atualize a página." };
+    }
   } else {
-    await prisma.orcamento.update({
-      where: { id: orcamentoId },
+    const cas = await prisma.orcamento.updateMany({
+      where: { id: orcamentoId, status: orcamento.status },
       data: { status: novoStatus },
     });
+    if (cas.count === 0) {
+      return { ok: false, mensagem: "Este orçamento já teve o status alterado. Atualize a página." };
+    }
   }
 
   revalidatePath(`/orcamento/${orcamentoId}`);

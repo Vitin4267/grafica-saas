@@ -9,7 +9,7 @@ import {
   registrarTentativaVerificacaoEmail,
 } from "@/lib/auth/rate-limit";
 import { obterIpRequisicao } from "@/lib/auth/ip";
-import { codigoVerificacaoValido } from "@/lib/auth/verificacao-email";
+import { codigoVerificacaoValido, LIMITE_TENTATIVAS } from "@/lib/auth/verificacao-email";
 import { gerarEEnviarCodigoVerificacao } from "@/lib/email/verificacao-email";
 
 export type VerificarCodigoResult = { ok: boolean; mensagem: string };
@@ -46,12 +46,29 @@ export async function verificarCodigo(
     return { ok: false, mensagem: MENSAGEM_INVALIDO };
   }
 
+  // Reserva um palpite de forma ATÔMICA antes de comparar o código: o
+  // updateMany só afeta a linha se ela ainda estiver válida E abaixo do
+  // limite, e o WHERE+increment num único statement serializa palpites
+  // concorrentes no banco. Sem isso, N requisições paralelas liam
+  // "tentativas < 5" ao mesmo tempo, todas passavam, e o limite de 5 palpites
+  // (única defesa contra força bruta do código de 6 dígitos) era furado
+  // disparando lotes em paralelo. count === 0 = limite estourado / expirou /
+  // foi usado nesse meio-tempo.
+  const reserva = await prisma.tokenVerificacaoEmail.updateMany({
+    where: {
+      id: token.id,
+      usadoEm: null,
+      expiraEm: { gt: new Date() },
+      tentativas: { lt: LIMITE_TENTATIVAS },
+    },
+    data: { tentativas: { increment: 1 } },
+  });
+  if (reserva.count === 0) {
+    return { ok: false, mensagem: MENSAGEM_INVALIDO };
+  }
+
   const codigoHash = hashToken(parsed.data.codigo);
   if (codigoHash !== token.codigoHash) {
-    await prisma.tokenVerificacaoEmail.update({
-      where: { id: token.id },
-      data: { tentativas: { increment: 1 } },
-    });
     return { ok: false, mensagem: MENSAGEM_INVALIDO };
   }
 

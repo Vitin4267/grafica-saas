@@ -39,6 +39,16 @@ export async function calcularItemOrcamento(
 ): Promise<ResultadoItemOrcamento> {
   const { quantidade, larguraCm, alturaCm, corFrente, corVerso } = dados;
 
+  // Dimensões, quando informadas, precisam ser positivas. O motor avançado
+  // (M2/OFFSET) já rejeita isso adiante em validar.ts, mas o cálculo SIMPLES
+  // (calcularPreco) não valida nada — largura positiva com altura negativa
+  // gera área e preço negativos. adicionarItem/editarOrcamento leem esses
+  // campos direto do form (sem zod), então a guarda precisa morar aqui, no
+  // ponto único por onde todo item passa.
+  if ((larguraCm !== null && larguraCm <= 0) || (alturaCm !== null && alturaCm <= 0)) {
+    return { ok: false, mensagem: "Largura e altura precisam ser maiores que zero." };
+  }
+
   if (itemGrafica.modeloCalculo === "SIMPLES") {
     const { precoUnitario, precoTotal } = calcularPreco({
       precoBase: Number(itemGrafica.precoVenda),
