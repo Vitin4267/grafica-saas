@@ -9,21 +9,15 @@ import { obterStripe } from "@/lib/billing/stripe-client";
 
 export type AdminGraficaResult = { ok: boolean; mensagem: string };
 
-// Concede acesso liberado permanente a uma gráfica sem passar pelo Stripe.
+// Núcleo de "conceder cortesia" — reaproveitado tanto pelo botão por gráfica
+// (concederCortesia) quanto pelo atalho "presentear por e-mail"
+// (presentearPorEmail), pra nunca divergir a lógica entre os dois caminhos.
 // Se a gráfica já pagava de verdade, CANCELA a assinatura real no Stripe
 // automaticamente (senão o cartão continuaria sendo cobrado todo mês por trás,
 // mesmo com a gráfica "grátis" no app) e zera o vínculo Stripe local. As
 // guardas de cortesia no webhook (src/lib/billing/sincronizar.ts) garantem que
 // os eventos de cancelamento que chegam depois não revoguem a cortesia.
-export async function concederCortesia(
-  _estadoAnterior: AdminGraficaResult | null,
-  formData: FormData
-): Promise<AdminGraficaResult> {
-  const usuario = await exigirUsuarioAutenticado();
-  exigirSuperAdmin(usuario);
-
-  const graficaId = String(formData.get("graficaId"));
-
+async function concederCortesiaGrafica(graficaId: string): Promise<string> {
   // Lê o vínculo Stripe ANTES de zerar, pra poder cancelar a cobrança real.
   const atual = await prisma.assinaturaGrafica.findUnique({
     where: { graficaId },
@@ -57,8 +51,53 @@ export async function concederCortesia(
     create: { graficaId, status: "ATIVA", cortesia: true },
   });
 
+  return avisoStripe;
+}
+
+export async function concederCortesia(
+  _estadoAnterior: AdminGraficaResult | null,
+  formData: FormData
+): Promise<AdminGraficaResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  exigirSuperAdmin(usuario);
+
+  const graficaId = String(formData.get("graficaId"));
+  const avisoStripe = await concederCortesiaGrafica(graficaId);
+
   revalidatePath("/admin/graficas");
   return { ok: true, mensagem: "Acesso cortesia concedido." + avisoStripe };
+}
+
+// "Presentear" por e-mail: mesmo efeito de concederCortesia, mas achando a
+// gráfica pelo e-mail do DONO em vez de precisar buscar/rolar a lista —
+// atalho pedido explicitamente pelo dono da plataforma.
+export async function presentearPorEmail(
+  _estadoAnterior: AdminGraficaResult | null,
+  formData: FormData
+): Promise<AdminGraficaResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  exigirSuperAdmin(usuario);
+
+  const email = String(formData.get("email") || "").trim().toLowerCase();
+  if (!email) {
+    return { ok: false, mensagem: "Digite um e-mail." };
+  }
+
+  const presenteado = await prisma.usuario.findUnique({
+    where: { email },
+    select: { graficaId: true, grafica: { select: { nome: true } } },
+  });
+  if (!presenteado) {
+    return { ok: false, mensagem: `Nenhuma conta encontrada com o e-mail ${email}.` };
+  }
+
+  const avisoStripe = await concederCortesiaGrafica(presenteado.graficaId);
+
+  revalidatePath("/admin/graficas");
+  return {
+    ok: true,
+    mensagem: `Assinatura vitalícia concedida pra "${presenteado.grafica.nome}" (${email}).` + avisoStripe,
+  };
 }
 
 // Revoga a cortesia devolvendo a gráfica pra um trial novo (mesma janela do

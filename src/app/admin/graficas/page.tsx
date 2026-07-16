@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { AcaoCortesia } from "./AcaoCortesia";
+import { PresentearPorEmail } from "./PresentearPorEmail";
 
 const ROTULO_STATUS: Record<string, string> = {
   TRIALING: "Em teste gratuito",
@@ -80,6 +81,8 @@ export default async function AdminGraficasPage({
             qualquer gráfica cadastrada na plataforma.
           </p>
         </div>
+
+        <PresentearPorEmail />
 
         <form className="mb-6 flex items-end gap-3">
           <div className="flex-1">

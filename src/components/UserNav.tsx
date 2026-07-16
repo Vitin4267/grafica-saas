@@ -150,12 +150,17 @@ export function UserNav({
       </div>
 
       {diasRestantesTrial !== null && (
-        <div className="border-t border-warning-200 bg-warning-50 px-6 py-2 text-center text-xs font-medium text-warning-800 dark:border-warning-900 dark:bg-warning-950/50 dark:text-warning-300">
-          {diasRestantesTrial > 0
-            ? `Período de teste — ${diasRestantesTrial} dia${diasRestantesTrial === 1 ? "" : "s"} restante${diasRestantesTrial === 1 ? "" : "s"}.`
-            : "Seu período de teste terminou."}{" "}
+        <div className="flex flex-wrap items-center justify-center gap-2 border-t border-warning-200 bg-warning-50 px-6 py-2 text-center text-xs font-medium text-warning-800 dark:border-warning-900 dark:bg-warning-950/50 dark:text-warning-300">
+          <span>
+            {diasRestantesTrial > 0
+              ? `Período de teste — ${diasRestantesTrial} dia${diasRestantesTrial === 1 ? "" : "s"} restante${diasRestantesTrial === 1 ? "" : "s"}.`
+              : "Seu período de teste terminou."}
+          </span>
           {papel === "DONO" && (
-            <Link href="/configuracoes/assinatura" className="underline hover:no-underline">
+            <Link
+              href="/configuracoes/assinatura"
+              className="inline-flex items-center rounded-lg bg-teal-600 px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-teal-700"
+            >
               Assinar agora
             </Link>
           )}
@@ -163,12 +168,17 @@ export function UserNav({
       )}
 
       {diasAteBloqueio !== null && (
-        <div className="border-t border-danger-200 bg-danger-50 px-6 py-2 text-center text-xs font-medium text-danger-800 dark:border-danger-900 dark:bg-danger-950/50 dark:text-danger-300">
-          {diasAteBloqueio > 0
-            ? `Você passou do limite do seu plano — ${diasAteBloqueio} dia${diasAteBloqueio === 1 ? "" : "s"} pra evitar o bloqueio.`
-            : "Você passou do limite do seu plano — o acesso pode ser bloqueado a qualquer momento."}{" "}
+        <div className="flex flex-wrap items-center justify-center gap-2 border-t border-danger-200 bg-danger-50 px-6 py-2 text-center text-xs font-medium text-danger-800 dark:border-danger-900 dark:bg-danger-950/50 dark:text-danger-300">
+          <span>
+            {diasAteBloqueio > 0
+              ? `Você passou do limite do seu plano — ${diasAteBloqueio} dia${diasAteBloqueio === 1 ? "" : "s"} pra evitar o bloqueio.`
+              : "Você passou do limite do seu plano — o acesso pode ser bloqueado a qualquer momento."}
+          </span>
           {papel === "DONO" && (
-            <Link href="/configuracoes/assinatura" className="underline hover:no-underline">
+            <Link
+              href="/configuracoes/assinatura"
+              className="inline-flex items-center rounded-lg bg-teal-600 px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-teal-700"
+            >
               Fazer upgrade
             </Link>
           )}

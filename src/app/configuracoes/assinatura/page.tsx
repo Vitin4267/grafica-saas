@@ -98,6 +98,7 @@ export default async function ConfiguracoesAssinaturaPage({
         <AssinaturaForm
           status={assinatura.status}
           cortesia={assinatura.cortesia}
+          souSuperAdmin={usuario.superAdmin}
           diasRestantesTrial={diasRestantesTrial}
           temStripeCustomer={Boolean(assinatura.stripeCustomerId)}
           mostrarPlanos={mostrarCardsDePlano}

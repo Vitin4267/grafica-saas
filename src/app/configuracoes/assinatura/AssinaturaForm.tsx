@@ -114,6 +114,7 @@ function CardPlano({ plano }: { plano: PlanoComPreco }) {
 export function AssinaturaForm({
   status,
   cortesia,
+  souSuperAdmin,
   diasRestantesTrial,
   temStripeCustomer,
   mostrarPlanos,
@@ -125,6 +126,7 @@ export function AssinaturaForm({
 }: {
   status: StatusAssinatura;
   cortesia: boolean;
+  souSuperAdmin: boolean;
   diasRestantesTrial: number | null;
   temStripeCustomer: boolean;
   mostrarPlanos: boolean;
@@ -136,6 +138,10 @@ export function AssinaturaForm({
 }) {
   const [estadoPortal, acaoPortal, portalPending] = useActionState(abrirPortalCliente, null);
 
+  // "ADMIN", não "Cortesia" — é o dono da plataforma, faz sentido a etiqueta
+  // deixar isso claro em vez de soar como um desconto/favor concedido.
+  const rotuloCortesia = souSuperAdmin ? "ADMIN" : "Cortesia";
+
   return (
     <div className="flex flex-col gap-8">
       <Card className="flex flex-col gap-4 p-6">
@@ -143,11 +149,13 @@ export function AssinaturaForm({
           <span
             className={`rounded-full px-2.5 py-1 text-xs font-medium ${
               cortesia
-                ? "bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300"
+                ? souSuperAdmin
+                  ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
+                  : "bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300"
                 : COR_STATUS[status]
             }`}
           >
-            {cortesia ? "Cortesia" : ROTULO_STATUS[status]}
+            {cortesia ? rotuloCortesia : ROTULO_STATUS[status]}
           </span>
           {status === "TRIALING" && diasRestantesTrial !== null && (
             <span className="text-sm text-slate-500">
