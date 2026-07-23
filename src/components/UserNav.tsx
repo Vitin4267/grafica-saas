@@ -61,6 +61,7 @@ export function UserNav({
   const [menuAberto, setMenuAberto] = useState(false);
   const [diasRestantesTrial, setDiasRestantesTrial] = useState<number | null>(null);
   const [diasAteBloqueio, setDiasAteBloqueio] = useState<number | null>(null);
+  const [souSuperAdmin, setSouSuperAdmin] = useState(false);
 
   // Busca só o resumo (status + dias de trial/limite) no mount — não é dado
   // que as ~40 páginas que renderizam <UserNav> precisam calcular e passar
@@ -77,6 +78,9 @@ export function UserNav({
       if (resumo?.limiteExcedidoDesde) {
         setDiasAteBloqueio(resumo.diasAteBloqueio);
       }
+      if (resumo?.souSuperAdmin) {
+        setSouSuperAdmin(true);
+      }
     });
   }, []);
 
@@ -92,6 +96,9 @@ export function UserNav({
   }
   if (mostrarMeuNegocio) {
     links = [{ href: "/meu-negocio", label: "Meu Negócio", modulo: null }, ...links];
+  }
+  if (souSuperAdmin) {
+    links = [...links, { href: "/admin/graficas", label: "Admin", modulo: null }];
   }
 
   return (

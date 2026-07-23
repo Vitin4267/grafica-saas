@@ -18,6 +18,7 @@ export type ResumoAssinatura = {
   diasRestantesTrial: number | null;
   limiteExcedidoDesde: string | null;
   diasAteBloqueio: number | null;
+  souSuperAdmin: boolean;
 };
 
 // Usado pelo banner global (UserNav.tsx) pra deixar claro, em QUALQUER
@@ -26,6 +27,11 @@ export type ResumoAssinatura = {
 // tela /configuracoes/assinatura. Nunca chama exigirAssinaturaAtiva (senão
 // o banner nunca apareceria pra quem já está bloqueado) nem exigirPapel
 // (qualquer usuário autenticado, não só DONO, deve ver o aviso).
+//
+// Também devolve `souSuperAdmin` pro UserNav decidir se mostra o link
+// "Admin" (/admin/graficas) — reaproveita esta mesma chamada em vez de mais
+// uma Server Action só pra isso; a checagem de acesso de verdade continua
+// em exigirSuperAdmin() dentro de admin/graficas, este flag aqui é só pra UI.
 export async function obterResumoAssinatura(): Promise<ResumoAssinatura | null> {
   const usuario = await exigirUsuarioAutenticado();
   const assinatura = await prisma.assinaturaGrafica.findUnique({
@@ -47,6 +53,7 @@ export async function obterResumoAssinatura(): Promise<ResumoAssinatura | null> 
     diasRestantesTrial,
     limiteExcedidoDesde: assinatura.limiteExcedidoDesde?.toISOString() ?? null,
     diasAteBloqueio,
+    souSuperAdmin: usuario.superAdmin,
   };
 }
 
