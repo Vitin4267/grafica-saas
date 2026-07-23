@@ -4,11 +4,9 @@ import { z } from "zod";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado, hashToken } from "@/lib/auth/session";
-import {
-  verificarBloqueioVerificacaoEmail,
-  registrarTentativaVerificacaoEmail,
-} from "@/lib/auth/rate-limit";
+import { tentarRegistrarVerificacaoEmail } from "@/lib/auth/rate-limit";
 import { obterIpRequisicao } from "@/lib/auth/ip";
+import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
 import { codigoVerificacaoValido, LIMITE_TENTATIVAS } from "@/lib/auth/verificacao-email";
 import { gerarEEnviarCodigoVerificacao } from "@/lib/email/verificacao-email";
 
@@ -96,16 +94,21 @@ export async function reenviarCodigo(
   }
 
   const ip = await obterIpRequisicao();
-  const bloqueado = await verificarBloqueioVerificacaoEmail(usuario.id, ip);
+  const MENSAGEM_BLOQUEIO = "Muitos pedidos de código. Aguarde alguns minutos e tente novamente.";
+  let bloqueado: boolean;
+  try {
+    bloqueado = await tentarRegistrarVerificacaoEmail(usuario.id, ip);
+  } catch (erro) {
+    if (ehConflitoDeSerializacao(erro)) {
+      return { ok: false, mensagem: MENSAGEM_BLOQUEIO };
+    }
+    throw erro;
+  }
   if (bloqueado) {
-    return {
-      ok: false,
-      mensagem: "Muitos pedidos de código. Aguarde alguns minutos e tente novamente.",
-    };
+    return { ok: false, mensagem: MENSAGEM_BLOQUEIO };
   }
 
   await gerarEEnviarCodigoVerificacao(usuario);
-  await registrarTentativaVerificacaoEmail(usuario.id, ip);
 
   return {
     ok: true,

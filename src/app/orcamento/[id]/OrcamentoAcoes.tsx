@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { Input } from "@/components/ui/Input";
 import { CheckCircleIcon } from "@/components/icons";
+import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { atualizarStatusOrcamento, cancelarOrcamento } from "./actions";
 
 // Ícone de "aprovado" com um pop de escala rápido e sutil ao aparecer — puro
@@ -55,11 +56,11 @@ export function OrcamentoAcoes({
   // terminal abaixo também sabe que foi "recém aprovado" nesta visita.
   const [aprovacaoAcabouDeAcontecer, setAprovacaoAcabouDeAcontecer] = useState(false);
 
-  useEffect(() => {
+  useAoMudar(state, (state) => {
     if (state?.ok && state.novoStatus === "APROVADO") {
       setAprovacaoAcabouDeAcontecer(true);
     }
-  }, [state]);
+  });
 
   if (status === "APROVADO" || status === "REJEITADO") {
     if (status === "REJEITADO") {

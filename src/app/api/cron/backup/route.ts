@@ -105,9 +105,15 @@ export async function GET(request: NextRequest) {
   const dados = await exportarDados();
   const nomeArquivo = `backups/backup-${new Date().toISOString().slice(0, 10)}.json`;
 
+  // access: "private" — este dump inclui Usuario.senhaHash (hash argon2id de
+  // todo usuário de toda gráfica) e DadosFiscaisGrafica.focusNfeToken (token
+  // de API de terceiro em texto claro). Blob público + nome de arquivo
+  // previsível == esses dados baixáveis por qualquer um que descubra a URL do
+  // blob store, sem autenticação nenhuma. Restaurar exige usar `get()` de
+  // @vercel/blob (autenticado pelo token do servidor), nunca a URL direta.
   const blob = await put(nomeArquivo, JSON.stringify(dados), {
-    access: "public",
-    addRandomSuffix: false,
+    access: "private",
+    addRandomSuffix: true,
     contentType: "application/json",
   });
 

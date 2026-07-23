@@ -1,39 +1,63 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
+
+// Toda função "reservar*"/"tentar*" abaixo faz o CHECK (count das tentativas
+// na janela) e o REGISTRO da nova tentativa dentro da MESMA transação
+// Serializable — não duas chamadas Prisma separadas. Sem isso, era um
+// clássico read-then-write: N requisições paralelas liam "4 tentativas" (1
+// abaixo do limite) ANTES de qualquer uma delas gravar a sua, e todas
+// passavam — furando o limite por concorrência. Sob Serializable, o Postgres
+// detecta esse padrão (leitura de um range + escrita nesse mesmo range por
+// transações concorrentes) e aborta uma delas com erro de serialização
+// (ver ehConflitoDeSerializacao em src/lib/prisma-conflito.ts) — quem chama
+// deve tratar esse erro como "bloqueado, tente de novo".
 
 const JANELA_MS = 1000 * 60 * 15; // 15 minutos
 const LIMITE_POR_EMAIL = 5;
 const LIMITE_POR_IP = 20;
 
-export async function verificarBloqueioLogin(email: string, ip: string): Promise<boolean> {
-  const desde = new Date(Date.now() - JANELA_MS);
-
-  const [falhasEmail, falhasIp] = await Promise.all([
-    prisma.tentativaLogin.count({
-      where: { email, sucesso: false, createdAt: { gte: desde } },
-    }),
-    prisma.tentativaLogin.count({
-      where: { ip, sucesso: false, createdAt: { gte: desde } },
-    }),
-  ]);
-
-  return falhasEmail >= LIMITE_POR_EMAIL || falhasIp >= LIMITE_POR_IP;
-}
-
-export async function registrarTentativaLogin(
+// Login precisa saber se a tentativa deu certo, e isso só se sabe DEPOIS do
+// hash argon2id (50-150ms) — verificar senha dentro da transação seguraria
+// a conexão aberta por esse tempo todo. Por isso o registro de login é em
+// duas fases: reserva um registro sucesso:false ANTES de verificar a senha
+// (fechando a race de contagem), e confirma pra sucesso:true depois, fora da
+// transação, só se a senha bater.
+export async function reservarTentativaLogin(
   email: string,
-  ip: string,
-  sucesso: boolean
-) {
-  await prisma.tentativaLogin.create({ data: { email, ip, sucesso } });
+  ip: string
+): Promise<{ id: string } | null> {
+  const desde = new Date(Date.now() - JANELA_MS);
+  return prisma.$transaction(
+    async (tx) => {
+      const [falhasEmail, falhasIp] = await Promise.all([
+        tx.tentativaLogin.count({
+          where: { email, sucesso: false, createdAt: { gte: desde } },
+        }),
+        tx.tentativaLogin.count({
+          where: { ip, sucesso: false, createdAt: { gte: desde } },
+        }),
+      ]);
+      if (falhasEmail >= LIMITE_POR_EMAIL || falhasIp >= LIMITE_POR_IP) {
+        return null;
+      }
+      return tx.tentativaLogin.create({
+        data: { email, ip, sucesso: false },
+        select: { id: true },
+      });
+    },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+  );
 }
 
-// Mesma lógica de janela deslizante do login, aplicada ao cadastro (/registro)
-// — sem isso, um bot cria gráficas/usuários sem limite, cada tentativa ainda
-// pagando o custo de CPU do hash argon2id (só é evitado quando o e-mail já
-// existe, ver src/app/registro/actions.ts).
-//
+export async function confirmarTentativaLoginBemSucedida(tentativaId: string) {
+  await prisma.tentativaLogin.update({
+    where: { id: tentativaId },
+    data: { sucesso: true },
+  });
+}
+
 // Afrouxado de 5/hora pra 8/30min (2026-07-11) — o valor original travou o
 // próprio dono durante uma sessão de testes (várias tentativas automatizadas
 // bateram no mesmo IP de loopback do dev local). Ainda exige esperar meia
@@ -43,42 +67,52 @@ export async function registrarTentativaLogin(
 const JANELA_REGISTRO_MS = 1000 * 60 * 30; // 30 minutos
 const LIMITE_REGISTRO_POR_IP = 8;
 
-export async function verificarBloqueioRegistro(ip: string): Promise<boolean> {
+// Sem operação cara entre o check e o registro (diferente do login) — check
+// e create cabem juntos na mesma transação, sem precisar de reserva em duas
+// fases. Retorna true = BLOQUEADO (nada foi registrado), false = passou (já
+// registrado).
+export async function tentarRegistrarCadastro(ip: string): Promise<boolean> {
   const desde = new Date(Date.now() - JANELA_REGISTRO_MS);
-  const tentativas = await prisma.tentativaRegistro.count({
-    where: { ip, createdAt: { gte: desde } },
-  });
-  return tentativas >= LIMITE_REGISTRO_POR_IP;
+  return prisma.$transaction(
+    async (tx) => {
+      const tentativas = await tx.tentativaRegistro.count({
+        where: { ip, createdAt: { gte: desde } },
+      });
+      if (tentativas >= LIMITE_REGISTRO_POR_IP) return true;
+      await tx.tentativaRegistro.create({ data: { ip } });
+      return false;
+    },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+  );
 }
 
-export async function registrarTentativaRegistro(ip: string) {
-  await prisma.tentativaRegistro.create({ data: { ip } });
-}
-
-// Mesmo padrão de verificarBloqueioLogin (janela deslizante, conta por
+// Mesmo padrão de tentarRegistrarCadastro (janela deslizante, conta por
 // e-mail E por IP) — evita spam de e-mail de reset pro mesmo destinatário
 // e limita um atacante disparando pedidos pra vários e-mails.
 const JANELA_RESET_MS = 1000 * 60 * 15; // 15 minutos
 const LIMITE_RESET_POR_EMAIL = 3;
 const LIMITE_RESET_POR_IP = 10;
 
-export async function verificarBloqueioResetSenha(email: string, ip: string): Promise<boolean> {
+export async function tentarRegistrarResetSenha(email: string, ip: string): Promise<boolean> {
   const desde = new Date(Date.now() - JANELA_RESET_MS);
-
-  const [tentativasEmail, tentativasIp] = await Promise.all([
-    prisma.tentativaResetSenha.count({ where: { email, createdAt: { gte: desde } } }),
-    prisma.tentativaResetSenha.count({ where: { ip, createdAt: { gte: desde } } }),
-  ]);
-
-  return tentativasEmail >= LIMITE_RESET_POR_EMAIL || tentativasIp >= LIMITE_RESET_POR_IP;
+  return prisma.$transaction(
+    async (tx) => {
+      const [tentativasEmail, tentativasIp] = await Promise.all([
+        tx.tentativaResetSenha.count({ where: { email, createdAt: { gte: desde } } }),
+        tx.tentativaResetSenha.count({ where: { ip, createdAt: { gte: desde } } }),
+      ]);
+      if (tentativasEmail >= LIMITE_RESET_POR_EMAIL || tentativasIp >= LIMITE_RESET_POR_IP) {
+        return true;
+      }
+      await tx.tentativaResetSenha.create({ data: { email, ip } });
+      return false;
+    },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+  );
 }
 
-export async function registrarTentativaResetSenha(email: string, ip: string) {
-  await prisma.tentativaResetSenha.create({ data: { email, ip } });
-}
-
-// Mesmo padrão de verificarBloqueioResetSenha, só que por usuarioId em vez
-// de email — nesse ponto do fluxo o usuário já está autenticado (ver
+// Mesmo padrão de tentarRegistrarResetSenha, só que por usuarioId em vez de
+// email — nesse ponto do fluxo o usuário já está autenticado (ver
 // src/app/verificar-email/actions.ts), não precisa aceitar e-mail cru.
 // Limita quantos códigos NOVOS podem ser pedidos; quantos PALPITES cada
 // código aceita é uma trava separada (ver LIMITE_TENTATIVAS em
@@ -87,23 +121,26 @@ const JANELA_VERIFICACAO_EMAIL_MS = 1000 * 60 * 15; // 15 minutos
 const LIMITE_VERIFICACAO_EMAIL_POR_USUARIO = 3;
 const LIMITE_VERIFICACAO_EMAIL_POR_IP = 10;
 
-export async function verificarBloqueioVerificacaoEmail(
+export async function tentarRegistrarVerificacaoEmail(
   usuarioId: string,
   ip: string
 ): Promise<boolean> {
   const desde = new Date(Date.now() - JANELA_VERIFICACAO_EMAIL_MS);
-
-  const [tentativasUsuario, tentativasIp] = await Promise.all([
-    prisma.tentativaVerificacaoEmail.count({ where: { usuarioId, createdAt: { gte: desde } } }),
-    prisma.tentativaVerificacaoEmail.count({ where: { ip, createdAt: { gte: desde } } }),
-  ]);
-
-  return (
-    tentativasUsuario >= LIMITE_VERIFICACAO_EMAIL_POR_USUARIO ||
-    tentativasIp >= LIMITE_VERIFICACAO_EMAIL_POR_IP
+  return prisma.$transaction(
+    async (tx) => {
+      const [tentativasUsuario, tentativasIp] = await Promise.all([
+        tx.tentativaVerificacaoEmail.count({ where: { usuarioId, createdAt: { gte: desde } } }),
+        tx.tentativaVerificacaoEmail.count({ where: { ip, createdAt: { gte: desde } } }),
+      ]);
+      if (
+        tentativasUsuario >= LIMITE_VERIFICACAO_EMAIL_POR_USUARIO ||
+        tentativasIp >= LIMITE_VERIFICACAO_EMAIL_POR_IP
+      ) {
+        return true;
+      }
+      await tx.tentativaVerificacaoEmail.create({ data: { usuarioId, ip } });
+      return false;
+    },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
   );
-}
-
-export async function registrarTentativaVerificacaoEmail(usuarioId: string, ip: string) {
-  await prisma.tentativaVerificacaoEmail.create({ data: { usuarioId, ip } });
 }

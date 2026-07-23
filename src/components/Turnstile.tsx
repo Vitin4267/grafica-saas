@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import Script from "next/script";
+import { useMontado } from "@/lib/hooks/useMontado";
 
 // Widget do Cloudflare Turnstile — só existe se NEXT_PUBLIC_TURNSTILE_SITE_KEY
 // estiver configurada (ver LoginForm.tsx), senão nem este componente é
@@ -10,11 +10,7 @@ import Script from "next/script";
 // ThemeToggle) pra não desenhar o widget com o tema errado por um instante.
 export function Turnstile({ siteKey }: { siteKey: string }) {
   const { resolvedTheme } = useTheme();
-  const [montado, setMontado] = useState(false);
-
-  useEffect(() => {
-    setMontado(true);
-  }, []);
+  const montado = useMontado();
 
   if (!montado) {
     return <div className="h-[65px]" aria-hidden />;

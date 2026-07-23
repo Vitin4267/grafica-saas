@@ -39,13 +39,28 @@ export async function calcularItemOrcamento(
 ): Promise<ResultadoItemOrcamento> {
   const { quantidade, larguraCm, alturaCm, corFrente, corVerso } = dados;
 
-  // Dimensões, quando informadas, precisam ser positivas. O motor avançado
-  // (M2/OFFSET) já rejeita isso adiante em validar.ts, mas o cálculo SIMPLES
-  // (calcularPreco) não valida nada — largura positiva com altura negativa
-  // gera área e preço negativos. adicionarItem/editarOrcamento leem esses
-  // campos direto do form (sem zod), então a guarda precisa morar aqui, no
-  // ponto único por onde todo item passa.
-  if ((larguraCm !== null && larguraCm <= 0) || (alturaCm !== null && alturaCm <= 0)) {
+  // Quantidade precisa ser um inteiro positivo finito. O motor avançado
+  // (M2/OFFSET) valida isso de novo em validar.ts, mas o cálculo SIMPLES
+  // (calcularPreco) não valida nada — sem essa guarda aqui, editarOrcamento/
+  // adicionarItemOrcamento (que leem quantidade direto do form, sem zod,
+  // diferente de criarOrcamento) deixavam passar quantidade fracionária ou
+  // "Infinity"/"1e400" (Number() converte pra Infinity, que não é falsy nem
+  // <= 0). Ponto único por onde todo item passa, mesma razão da guarda de
+  // largura/altura abaixo.
+  if (!Number.isInteger(quantidade) || quantidade <= 0) {
+    return { ok: false, mensagem: "Informe uma quantidade válida (número inteiro maior que zero)." };
+  }
+
+  // Dimensões, quando informadas, precisam ser positivas e finitas. O motor
+  // avançado (M2/OFFSET) já rejeita isso adiante em validar.ts, mas o cálculo
+  // SIMPLES (calcularPreco) não valida nada — largura positiva com altura
+  // negativa gera área e preço negativos. adicionarItem/editarOrcamento leem
+  // esses campos direto do form (sem zod), então a guarda precisa morar
+  // aqui, no ponto único por onde todo item passa.
+  if (
+    (larguraCm !== null && (!Number.isFinite(larguraCm) || larguraCm <= 0)) ||
+    (alturaCm !== null && (!Number.isFinite(alturaCm) || alturaCm <= 0))
+  ) {
     return { ok: false, mensagem: "Largura e altura precisam ser maiores que zero." };
   }
 

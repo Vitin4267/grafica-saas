@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { SunIcon, MoonIcon } from "@/components/icons";
+import { useMontado } from "@/lib/hooks/useMontado";
 
 // next-themes não sabe o tema resolvido durante SSR (só o cliente sabe a
 // preferência do SO/localStorage) — renderizar antes de montar mostraria
@@ -10,11 +10,7 @@ import { SunIcon, MoonIcon } from "@/components/icons";
 // que o componente montou no cliente.
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
-  const [montado, setMontado] = useState(false);
-
-  useEffect(() => {
-    setMontado(true);
-  }, []);
+  const montado = useMontado();
 
   const escuro = montado && resolvedTheme === "dark";
 

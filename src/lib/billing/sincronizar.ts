@@ -2,6 +2,7 @@ import "server-only";
 import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { mapearStatusStripe } from "@/lib/billing/status";
+import { obterStripe } from "@/lib/billing/stripe-client";
 
 // Resolve o tenant SEMPRE por subscription.metadata.graficaId (setado na
 // criação da Checkout Session, ver actions.ts) — nunca por
@@ -14,9 +15,19 @@ function extrairGraficaId(subscription: Stripe.Subscription): string | null {
   return subscription.metadata.graficaId ?? null;
 }
 
-async function sincronizarSubscription(subscription: Stripe.Subscription): Promise<void> {
-  const graficaId = extrairGraficaId(subscription);
+async function sincronizarSubscription(subscriptionDoEvento: Stripe.Subscription): Promise<void> {
+  const graficaId = extrairGraficaId(subscriptionDoEvento);
   if (!graficaId) return; // assinatura sem o metadata que a gente sempre seta — não é nossa, ignora
+
+  // O Stripe não garante ordem de entrega entre eventos (reentrega após
+  // timeout pode fazer um evento ANTIGO chegar depois de um mais novo já
+  // processado) — confiar no snapshot embutido no evento podia reabrir
+  // acesso já revogado (ex: "past_due" mais recente sobrescrito de volta
+  // pra "active" por uma reentrega atrasada do evento anterior). Buscando a
+  // subscription fresca direto na API do Stripe, sempre pegamos o estado
+  // VERDADEIRO atual, não importa qual evento disparou esta chamada — o
+  // evento é só o gatilho pra ressincronizar, nunca a fonte do dado.
+  const subscription = await obterStripe().subscriptions.retrieve(subscriptionDoEvento.id);
 
   // Cortesia é soberana: nenhum evento do Stripe pode revogá-la nem rebaixar o
   // status de uma gráfica cortesia. Ao conceder cortesia a assinatura Stripe é
@@ -56,6 +67,10 @@ async function sincronizarSubscription(subscription: Stripe.Subscription): Promi
       stripePriceId: priceId,
       periodoAtualExpiraEm,
       canceladaEm: status === "CANCELADA" ? new Date() : null,
+      // Sincronização real chegou: a reserva de checkout (ver iniciarCheckout
+      // em configuracoes/assinatura/actions.ts) já cumpriu seu papel, não
+      // precisa mais segurar novos checkouts por ela.
+      checkoutIniciadoEm: null,
     },
     create: {
       graficaId,

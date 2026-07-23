@@ -29,6 +29,11 @@ const cspHeader = `
   .trim();
 
 const nextConfig: NextConfig = {
+  // Achado do scan ZAP de 2026-07-23: por padrão o Next.js manda
+  // "X-Powered-By: Next.js" em toda resposta — não é uma vulnerabilidade em
+  // si, mas facilita fingerprinting do stack pra quem for atacar. Sem custo
+  // nenhum desligar.
+  poweredByHeader: false,
   async headers() {
     return [
       {

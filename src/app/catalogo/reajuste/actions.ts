@@ -115,8 +115,8 @@ export async function aplicarReajusteEmLote(
   const operacoes = itens.map((item) => {
     const precoAtual = new D(item.precoVenda!.toString());
     const precoNovo = calcularNovoPreco(precoAtual, percentual, incremento);
-    return prisma.itemGrafica.update({
-      where: { id: item.id },
+    return prisma.itemGrafica.updateMany({
+      where: { id: item.id, graficaId: usuario.graficaId },
       data: { precoVenda: precoNovo.toNumber() },
     });
   });

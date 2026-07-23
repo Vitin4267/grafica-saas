@@ -4,8 +4,9 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth/password";
 import { criarSessao } from "@/lib/auth/session";
-import { verificarBloqueioRegistro, registrarTentativaRegistro } from "@/lib/auth/rate-limit";
+import { tentarRegistrarCadastro } from "@/lib/auth/rate-limit";
 import { obterIpRequisicao } from "@/lib/auth/ip";
+import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
 import { registroSchema } from "@/lib/auth/validation";
 import { slugify } from "@/lib/slug";
 import { TRIAL_DIAS } from "@/lib/billing/planos";
@@ -45,14 +46,19 @@ export async function registrar(
   }
 
   const ip = await obterIpRequisicao();
-  const bloqueado = await verificarBloqueioRegistro(ip);
-  if (bloqueado) {
-    return {
-      ok: false,
-      mensagem: "Muitas tentativas de cadastro. Aguarde um pouco e tente novamente.",
-    };
+  const MENSAGEM_BLOQUEIO = "Muitas tentativas de cadastro. Aguarde um pouco e tente novamente.";
+  let bloqueado: boolean;
+  try {
+    bloqueado = await tentarRegistrarCadastro(ip);
+  } catch (erro) {
+    if (ehConflitoDeSerializacao(erro)) {
+      return { ok: false, mensagem: MENSAGEM_BLOQUEIO };
+    }
+    throw erro;
   }
-  await registrarTentativaRegistro(ip);
+  if (bloqueado) {
+    return { ok: false, mensagem: MENSAGEM_BLOQUEIO };
+  }
 
   if (formData.get("aceiteTermos") !== "on") {
     return {

@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useState } from "react";
+import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { Card } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Select";
 import { Input } from "@/components/ui/Input";
@@ -31,9 +32,9 @@ function LinhaPagamento({ pagamento }: { pagamento: Pagamento }) {
   const [state, formAction, isPending] = useActionState(excluirPagamento, null);
   const [confirmando, setConfirmando] = useState(false);
 
-  useEffect(() => {
+  useAoMudar(state, (state) => {
     if (state && !state.ok) setConfirmando(false);
-  }, [state]);
+  });
 
   return (
     <div className="flex flex-col gap-2 p-4">

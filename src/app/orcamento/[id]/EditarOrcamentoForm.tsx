@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useState } from "react";
+import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -41,9 +42,9 @@ export function EditarOrcamentoForm({
   const [alturaCm, setAlturaCm] = useState(valoresIniciais.alturaCm);
   const [confirmandoRemocao, setConfirmandoRemocao] = useState(false);
 
-  useEffect(() => {
+  useAoMudar(estadoRemocao, (estadoRemocao) => {
     if (estadoRemocao && !estadoRemocao.ok) setConfirmandoRemocao(false);
-  }, [estadoRemocao]);
+  });
 
   return (
     <Card className="mb-4 p-6">

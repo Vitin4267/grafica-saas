@@ -287,6 +287,14 @@ model AssinaturaGrafica {
   // assinam antes) ou que não estão em TRIALING.
   avisoTrialEnviadoEm DateTime?
 
+  // Reserva atômica contra checkout duplicado: iniciarCheckout só cria uma
+  // Stripe Checkout Session se conseguir gravar este timestamp via updateMany
+  // condicionado (nenhuma reserva viva no momento) — duas requisições
+  // concorrentes (duas abas, duplo clique) nunca passam as duas, porque a
+  // segunda vê o timestamp que a primeira acabou de gravar e falha a
+  // condição. null = sem checkout em andamento. Ver src/app/configuracoes/assinatura/actions.ts.
+  checkoutIniciadoEm DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

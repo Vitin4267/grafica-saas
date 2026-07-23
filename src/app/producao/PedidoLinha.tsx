@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useState } from "react";
+import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { StatusBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
@@ -39,9 +40,9 @@ export function PedidoLinha({
   // componente desmonta sozinho), aqui o pedido continua na lista com um
   // status novo — sem isso, a caixa de confirmação ficava presa aberta pra
   // sempre depois de cancelar com sucesso (bug encontrado testando na mão).
-  useEffect(() => {
+  useAoMudar(state, (state) => {
     if (state) setConfirmando(false);
-  }, [state]);
+  });
 
   return (
     <div className="flex flex-col gap-3 p-5">

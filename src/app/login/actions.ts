@@ -4,10 +4,13 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { verifyPassword } from "@/lib/auth/password";
 import { criarSessao } from "@/lib/auth/session";
-import { verificarBloqueioLogin, registrarTentativaLogin } from "@/lib/auth/rate-limit";
+import { reservarTentativaLogin, confirmarTentativaLoginBemSucedida } from "@/lib/auth/rate-limit";
 import { obterIpRequisicao } from "@/lib/auth/ip";
 import { loginSchema } from "@/lib/auth/validation";
 import { verificarTurnstile } from "@/lib/turnstile";
+import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
+
+const MENSAGEM_BLOQUEIO = "Muitas tentativas de login. Aguarde alguns minutos e tente novamente.";
 
 export type LoginResult = {
   ok: boolean;
@@ -43,12 +46,17 @@ export async function login(
     return { ok: false, mensagem: "Não foi possível confirmar que você não é um robô. Atualize a página e tente de novo." };
   }
 
-  const bloqueado = await verificarBloqueioLogin(email, ip);
-  if (bloqueado) {
-    return {
-      ok: false,
-      mensagem: "Muitas tentativas de login. Aguarde alguns minutos e tente novamente.",
-    };
+  let tentativa;
+  try {
+    tentativa = await reservarTentativaLogin(email, ip);
+  } catch (erro) {
+    if (ehConflitoDeSerializacao(erro)) {
+      return { ok: false, mensagem: MENSAGEM_BLOQUEIO };
+    }
+    throw erro;
+  }
+  if (!tentativa) {
+    return { ok: false, mensagem: MENSAGEM_BLOQUEIO };
   }
 
   const usuario = await prisma.usuario.findUnique({ where: { email } });
@@ -59,11 +67,10 @@ export async function login(
   ).catch(() => false);
 
   if (!usuario || !senhaValida) {
-    await registrarTentativaLogin(email, ip, false);
     return { ok: false, mensagem: MENSAGEM_GENERICA };
   }
 
-  await registrarTentativaLogin(email, ip, true);
+  await confirmarTentativaLoginBemSucedida(tentativa.id);
   await criarSessao(usuario.id);
 
   redirect("/orcamento");

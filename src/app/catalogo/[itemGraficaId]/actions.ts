@@ -8,6 +8,7 @@ import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { parseJsonArray } from "@/lib/form-json";
+import { resolverItemParaNcm } from "@/lib/catalogo-ncm";
 
 export type SalvarConfigResult = { ok: boolean; mensagem: string };
 
@@ -206,16 +207,15 @@ export async function salvarNcm(
   }
   const itemCatalogoId = String(formData.get("itemCatalogoId"));
 
-  // itemCatalogoId pode ser um item mestre (graficaId=null, compartilhado
-  // entre todas as gráficas) ou privado dessa gráfica — em ambos os casos,
-  // só é acessível daqui se a gráfica atual realmente tem um ItemGrafica
-  // apontando pra ele (evita editar NCM de item de outro tenant por id
-  // forjado, mesmo sabendo que itens mestre já são compartilhados por design).
-  const itemGrafica = await prisma.itemGrafica.findFirst({
-    where: { itemCatalogoId, graficaId: usuario.graficaId },
-  });
-  if (!itemGrafica) {
-    return { ok: false, mensagem: "Item não encontrado." };
+  const resolvido = await resolverItemParaNcm(itemCatalogoId, usuario.graficaId);
+  if (!resolvido.ok) {
+    return {
+      ok: false,
+      mensagem:
+        resolvido.motivo === "item_mestre"
+          ? "Este item é do catálogo compartilhado e não pode ter o NCM editado por aqui."
+          : "Item não encontrado.",
+    };
   }
 
   const ncm = String(formData.get("ncm") ?? "").trim();
@@ -225,7 +225,7 @@ export async function salvarNcm(
     data: { ncm: ncm || null },
   });
 
-  revalidatePath(`/catalogo/${itemGrafica.id}`);
+  revalidatePath(`/catalogo/${resolvido.itemGraficaId}`);
   revalidatePath("/catalogo");
   return { ok: true, mensagem: "NCM salvo com sucesso!" };
 }
@@ -468,7 +468,12 @@ export async function salvarVariantesMateriaPrima(
 
   await prisma.$transaction([
     ...(idsParaDesativar.length > 0
-      ? [prisma.varianteMateriaPrima.updateMany({ where: { id: { in: idsParaDesativar } }, data: { ativo: false } })]
+      ? [
+          prisma.varianteMateriaPrima.updateMany({
+            where: { id: { in: idsParaDesativar }, itemGraficaId },
+            data: { ativo: false },
+          }),
+        ]
       : []),
     ...parsedResult.data.map((linha) => {
       const dados = {
@@ -478,7 +483,10 @@ export async function salvarVariantesMateriaPrima(
         estoqueMinimo: linha.estoqueMinimo ?? null,
       };
       if (linha.id) {
-        return prisma.varianteMateriaPrima.update({ where: { id: linha.id }, data: dados });
+        return prisma.varianteMateriaPrima.updateMany({
+          where: { id: linha.id, itemGraficaId },
+          data: dados,
+        });
       }
       return prisma.varianteMateriaPrima.create({ data: { itemGraficaId, ativo: true, ...dados } });
     }),

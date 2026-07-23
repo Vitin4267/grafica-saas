@@ -6,10 +6,7 @@ import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeVerModulo } from "@/lib/auth/permissoes";
 import { formatoData } from "@/lib/data";
 import { D, type Dec } from "@/lib/pricing/decimal";
-
-function linhaCsv(campos: (string | number)[]): string {
-  return campos.map((campo) => `"${String(campo).replace(/"/g, '""')}"`).join(";") + "\r\n";
-}
+import { linhaCsv } from "@/lib/csv";
 
 // Mesma disciplina de decimal.js usada em orcamento/actions.ts — soma
 // acumulada em Number() perde centavos em somas longas por erro de ponto

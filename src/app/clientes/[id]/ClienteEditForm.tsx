@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useState } from "react";
+import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -38,9 +39,9 @@ export function ClienteEditForm({
   const [estadoExclusao, excluirAction, excluindo] = useActionState(excluirCliente, null);
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
 
-  useEffect(() => {
+  useAoMudar(estadoExclusao, (estadoExclusao) => {
     if (estadoExclusao && !estadoExclusao.ok) setConfirmandoExclusao(false);
-  }, [estadoExclusao]);
+  });
 
   if (!podeEditar) {
     return (

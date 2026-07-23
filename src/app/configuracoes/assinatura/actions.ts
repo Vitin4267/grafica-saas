@@ -8,6 +8,7 @@ import { resolverOrigemPublica } from "@/lib/url-publica";
 import { obterStripe } from "@/lib/billing/stripe-client";
 import { obterPlano, type PlanoId } from "@/lib/billing/planos";
 import { DIAS_TOLERANCIA_LIMITE } from "@/lib/billing/limite-uso";
+import { reservarCheckout, liberarReservaCheckout } from "@/lib/billing/checkout-reserva";
 import type { StatusAssinatura } from "@/generated/prisma/enums";
 
 export type AssinaturaActionResult = { ok: boolean; mensagem: string };
@@ -73,24 +74,20 @@ export async function iniciarCheckout(
   const origem = await resolverOrigemPublica();
   const stripe = obterStripe();
 
+  const reserva = await reservarCheckout(usuario.graficaId);
+  if (!reserva.reservado) {
+    return {
+      ok: false,
+      mensagem:
+        reserva.motivo === "assinatura_ativa"
+          ? 'Você já tem uma assinatura ativa. Use "Gerenciar assinatura" pra trocar de plano.'
+          : "Um checkout já foi iniciado há pouco. Aguarde um instante e tente de novo.",
+    };
+  }
+
   const assinatura = await prisma.assinaturaGrafica.findUnique({
     where: { graficaId: usuario.graficaId },
   });
-
-  // Já tem assinatura paga viva no Stripe? Não abre um segundo checkout — isso
-  // criaria uma subscription/cobrança duplicada e órfã (o webhook faz upsert
-  // por graficaId, então a segunda sobrescreve a primeira no banco, mas a
-  // primeira continua ativa e cobrando no Stripe, invisível pro app). Troca de
-  // plano é pelo Customer Portal ("Gerenciar assinatura").
-  if (
-    assinatura?.stripeSubscriptionId &&
-    (assinatura.status === "ATIVA" || assinatura.status === "INADIMPLENTE")
-  ) {
-    return {
-      ok: false,
-      mensagem: 'Você já tem uma assinatura ativa. Use "Gerenciar assinatura" pra trocar de plano.',
-    };
-  }
 
   let session: Awaited<ReturnType<typeof stripe.checkout.sessions.create>>;
   try {
@@ -105,6 +102,7 @@ export async function iniciarCheckout(
       subscription_data: { metadata: { graficaId: usuario.graficaId } },
     });
   } catch {
+    await liberarReservaCheckout(usuario.graficaId, reserva.agora);
     return { ok: false, mensagem: "Não consegui iniciar o checkout no Stripe. Tente novamente." };
   }
 

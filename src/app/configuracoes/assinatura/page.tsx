@@ -33,8 +33,17 @@ export default async function ConfiguracoesAssinaturaPage({
     create: { graficaId: usuario.graficaId, status: "TRIALING", trialExpiraEm: trialExpiraEmPadrao },
   });
 
+  // react-hooks/purity (regra nova do eslint-config-next 16.2.11, pensada
+  // pra Client Component/React Compiler) marca Date.now() como "impuro
+  // durante a renderização" — mas isto aqui é um Server Component: roda uma
+  // vez por request no servidor, não há re-render concorrente pra esse
+  // valor divergir. Uma leitura de relógio por request é exatamente o
+  // comportamento desejado (calcular "dias restantes" no momento em que a
+  // página é gerada).
+  // eslint-disable-next-line react-hooks/purity
+  const agora = Date.now();
   const diasRestantesTrial = assinatura.trialExpiraEm
-    ? Math.ceil((assinatura.trialExpiraEm.getTime() - Date.now()) / 86_400_000)
+    ? Math.ceil((assinatura.trialExpiraEm.getTime() - agora) / 86_400_000)
     : null;
 
   const planoAtual = obterPlanoPorPriceId(assinatura.stripePriceId);
@@ -42,7 +51,7 @@ export default async function ConfiguracoesAssinaturaPage({
 
   const diasAteBloqueio = assinatura.limiteExcedidoDesde
     ? DIAS_TOLERANCIA_LIMITE -
-      Math.floor((Date.now() - assinatura.limiteExcedidoDesde.getTime()) / 86_400_000)
+      Math.floor((agora - assinatura.limiteExcedidoDesde.getTime()) / 86_400_000)
     : null;
 
   // Mostra os cards de plano pra quem PODE (re)assinar: DONO, sem cortesia, e

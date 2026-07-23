@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useState } from "react";
+import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -46,9 +47,9 @@ export function DespesaForm({
   const [estadoExclusao, excluirAction, excluindo] = useActionState(excluirDespesa, null);
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
 
-  useEffect(() => {
+  useAoMudar(estadoExclusao, (estadoExclusao) => {
     if (estadoExclusao && !estadoExclusao.ok) setConfirmandoExclusao(false);
-  }, [estadoExclusao]);
+  });
   const [estadoPaga, pagaAction, marcandoPaga] = useActionState(marcarComoPaga, null);
   const [estadoPendente, pendenteAction, marcandoPendente] = useActionState(marcarComoPendente, null);
 

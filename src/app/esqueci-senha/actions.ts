@@ -3,8 +3,9 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { gerarTokenBruto, hashToken } from "@/lib/auth/session";
-import { verificarBloqueioResetSenha, registrarTentativaResetSenha } from "@/lib/auth/rate-limit";
+import { tentarRegistrarResetSenha } from "@/lib/auth/rate-limit";
 import { obterIpRequisicao } from "@/lib/auth/ip";
+import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
 import { loginSchema } from "@/lib/auth/validation";
 import { resolverOrigemPublica } from "@/lib/url-publica";
 import { dispararEventoEmail } from "@/lib/email/webhook-email";
@@ -33,12 +34,18 @@ export async function solicitarResetSenha(
   const { email } = parsed.data;
   const ip = await obterIpRequisicao();
 
-  const bloqueado = await verificarBloqueioResetSenha(email, ip);
+  const MENSAGEM_BLOQUEIO = "Muitos pedidos de redefinição. Aguarde alguns minutos e tente novamente.";
+  let bloqueado: boolean;
+  try {
+    bloqueado = await tentarRegistrarResetSenha(email, ip);
+  } catch (erro) {
+    if (ehConflitoDeSerializacao(erro)) {
+      return { ok: false, mensagem: MENSAGEM_BLOQUEIO };
+    }
+    throw erro;
+  }
   if (bloqueado) {
-    return {
-      ok: false,
-      mensagem: "Muitos pedidos de redefinição. Aguarde alguns minutos e tente novamente.",
-    };
+    return { ok: false, mensagem: MENSAGEM_BLOQUEIO };
   }
 
   const usuario = await prisma.usuario.findUnique({ where: { email } });
@@ -68,8 +75,6 @@ export async function solicitarResetSenha(
       texto,
     });
   }
-
-  await registrarTentativaResetSenha(email, ip);
 
   return { ok: true, mensagem: MENSAGEM_GENERICA };
 }

@@ -1,5 +1,18 @@
 // Templates montados como string direto (sem lib nova) — não vale a pena
 // um sistema de template pra só 2 e-mails.
+
+// Só usado onde o HTML interpola texto livre de usuário (nome de item de
+// catálogo) — os outros templates só interpolam link/código gerados pelo
+// servidor, sem precisar escapar. Sem isso, um nome de item tipo
+// "<img src=x onerror=...>" iria cru pro HTML do e-mail.
+export function escapeHtml(texto: string): string {
+  return texto
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 export function templateResetSenha(link: string): { assunto: string; html: string; texto: string } {
   return {
     assunto: "Redefinir sua senha — Gráfica+",
@@ -39,7 +52,7 @@ export function templateEstoqueBaixo(
     `- ${i.nome}: ${i.estoqueAtual} ${i.unidade} (mínimo: ${i.estoqueMinimo} ${i.unidade})`;
   const linhaHtml = (i: ItemEstoqueBaixo) => `
         <li style="margin-bottom: 8px;">
-          <strong>${i.nome}</strong> — ${i.estoqueAtual} ${i.unidade}
+          <strong>${escapeHtml(i.nome)}</strong> — ${i.estoqueAtual} ${i.unidade}
           <span style="color: #64748b;">(mínimo: ${i.estoqueMinimo} ${i.unidade})</span>
         </li>`;
 

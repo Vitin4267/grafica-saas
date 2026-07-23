@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { limiteExcedido, deveBloquearPorLimite } from "./limite-uso";
+import { limiteExcedido, deveBloquearPorLimite, deveResetarJanelaExcedente } from "./limite-uso";
 
 describe("limiteExcedido", () => {
   it("dentro do limite não excede", () => {
@@ -49,5 +49,32 @@ describe("deveBloquearPorLimite", () => {
   it("bloqueia bem depois dos 15 dias", () => {
     const desde = new Date("2026-06-01T12:00:00Z");
     expect(deveBloquearPorLimite(desde, agora)).toBe(true);
+  });
+});
+
+// Achado da auditoria de 2026-07-23: sem essa espera mínima, criar e apagar
+// um orçamento (ex: rascunho) pra "piscar" abaixo do limite resetava a
+// janela de tolerância de 15 dias instantaneamente e de forma repetível.
+describe("deveResetarJanelaExcedente", () => {
+  const agora = new Date("2026-07-23T12:00:00Z");
+
+  it("não reseta se o excesso foi detectado há poucos minutos", () => {
+    const desde = new Date("2026-07-23T11:55:00Z");
+    expect(deveResetarJanelaExcedente(desde, agora)).toBe(false);
+  });
+
+  it("não reseta pouco antes de completar 1 dia", () => {
+    const desde = new Date("2026-07-22T12:00:01Z");
+    expect(deveResetarJanelaExcedente(desde, agora)).toBe(false);
+  });
+
+  it("reseta assim que completa 1 dia", () => {
+    const desde = new Date("2026-07-22T12:00:00Z");
+    expect(deveResetarJanelaExcedente(desde, agora)).toBe(true);
+  });
+
+  it("reseta bem depois de 1 dia", () => {
+    const desde = new Date("2026-07-01T12:00:00Z");
+    expect(deveResetarJanelaExcedente(desde, agora)).toBe(true);
   });
 });

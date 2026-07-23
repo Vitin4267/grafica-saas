@@ -23,8 +23,8 @@ A print shop signs up, configures its catalog (simple products, offset printing,
 - **Custom pricing engine** — three calculation models (simple unit, m², offset with sheet/plate/run imposition), each independently validated and tested.
 - **Audited multi-tenant isolation** — every authenticated query is scoped by `graficaId`; a dedicated code audit confirmed no mutation escapes that pattern.
 - **Resilient billing** — subscription state synced via idempotent Stripe webhooks, guarded against concurrent double-subscription, plus a manual courtesy override that no billing event can overwrite.
-- **Layered security** — per-IP/email rate limiting across the entire auth flow, argon2id hashing, constant-time comparison against user enumeration, CSP, and a real concurrency fix in a brute-force attempt counter (a genuine race condition, fixed with an atomic `updateMany`).
-- **173 automated tests** covering pure business logic (pricing, permissions, validation, status).
+- **Layered security** — per-IP/email rate limiting across the entire auth flow, argon2id hashing, constant-time comparison against user enumeration, CSP/HSTS, and Origin-checked Server Actions (CSRF). A full whitebox security audit (Jul 2026) covering multi-tenant isolation, auth, authorization, billing, and injection surfaces found and fixed several real issues — including a genuine concurrency gap in the brute-force counter that an earlier fix had only partially closed — each one verified with real concurrency tests against the database and a passive OWASP ZAP scan, not just code review.
+- **213 automated tests**: pure business logic (pricing, permissions, validation, status) plus targeted integration tests against a real database for the concurrency-sensitive paths (rate limiting, checkout deduplication, tenant isolation).
 
 ## Running locally
 

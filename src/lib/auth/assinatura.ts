@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import type { AssinaturaGrafica } from "@/generated/prisma/client";
 import { assinaturaEstaLiberada } from "@/lib/billing/status";
 import { obterPlanoPorPriceId } from "@/lib/billing/planos";
-import { limiteExcedido, deveBloquearPorLimite } from "@/lib/billing/limite-uso";
+import { limiteExcedido, deveBloquearPorLimite, deveResetarJanelaExcedente } from "@/lib/billing/limite-uso";
 import { calcularUsoAtual } from "@/lib/billing/uso";
 
 // Chamado logo depois de exigirUsuarioAutenticado() em toda página/Server
@@ -49,7 +49,11 @@ export async function exigirAssinaturaAtiva(usuario: {
       where: { graficaId: usuario.graficaId },
       data: { limiteExcedidoDesde: new Date() },
     });
-  } else if (!excede && assinaturaAtiva.limiteExcedidoDesde) {
+  } else if (
+    !excede &&
+    assinaturaAtiva.limiteExcedidoDesde &&
+    deveResetarJanelaExcedente(assinaturaAtiva.limiteExcedidoDesde)
+  ) {
     await prisma.assinaturaGrafica.update({
       where: { graficaId: usuario.graficaId },
       data: { limiteExcedidoDesde: null },
