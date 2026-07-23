@@ -3,12 +3,29 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { resolverOrigemPublica } from "@/lib/url-publica";
-import { dispararEventoEmail } from "@/lib/email/webhook-email";
-import { templateArteAlteracaoSolicitada } from "@/lib/email/templates";
+import { dispararEventoEmail, type EventoEmail } from "@/lib/email/webhook-email";
+import { templateArteAlteracaoSolicitada, templateArteAprovada } from "@/lib/email/templates";
 
 export type ResponderArteResult = { ok: boolean; mensagem: string };
 
 const COMENTARIO_MAX = 2000;
+
+// Compartilhado pelos dois avisos que este arquivo dispara (aprovação e
+// pedido de alteração) — mesmo destinatário (DONO(s) da gráfica) nos dois
+// casos, só muda o template/tipo.
+async function notificarDonos(
+  graficaId: string,
+  tipo: EventoEmail["tipo"],
+  template: { assunto: string; html: string; texto: string }
+) {
+  const donos = await prisma.usuario.findMany({
+    where: { graficaId, papel: "DONO" },
+    select: { email: true },
+  });
+  for (const dono of donos) {
+    void dispararEventoEmail({ tipo, destinatario: dono.email, ...template });
+  }
+}
 
 // Sem autenticação: o próprio token é o "credencial", mesmo princípio de
 // src/app/o/[token]/actions.ts:9 — dá acesso de leitura/decisão só sobre
@@ -26,7 +43,15 @@ export async function responderArtePublica(
 
   const pedido = await prisma.pedido.findUnique({
     where: { arteLinkToken: token },
-    include: { orcamento: { include: { cliente: true, grafica: true } } },
+    include: {
+      orcamento: {
+        include: {
+          cliente: true,
+          grafica: true,
+          itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
+        },
+      },
+    },
   });
   if (!pedido) {
     return { ok: false, mensagem: "Arte não encontrada." };
@@ -46,6 +71,18 @@ export async function responderArtePublica(
     if (resultado.count === 0) {
       return { ok: false, mensagem: "Esta arte já foi respondida." };
     }
+
+    const origem = await resolverOrigemPublica();
+    const template = templateArteAprovada(
+      pedido.orcamento.grafica.nome,
+      pedido.orcamento.cliente.nome,
+      pedido.orcamento.itens.map((item) => ({
+        nome: item.itemGrafica.itemCatalogo.nome,
+        quantidade: item.quantidade,
+      })),
+      `${origem}/producao`
+    );
+    await notificarDonos(pedido.graficaId, "arte_aprovada", template);
   } else {
     const comentario = String(formData.get("comentario") ?? "").trim();
     if (!comentario) {
@@ -63,28 +100,14 @@ export async function responderArtePublica(
       return { ok: false, mensagem: "Esta arte já foi respondida." };
     }
 
-    const donos = await prisma.usuario.findMany({
-      where: { graficaId: pedido.graficaId, papel: "DONO" },
-      select: { email: true },
-    });
-    if (donos.length > 0) {
-      const origem = await resolverOrigemPublica();
-      const { assunto, html, texto } = templateArteAlteracaoSolicitada(
-        pedido.orcamento.grafica.nome,
-        pedido.orcamento.cliente.nome,
-        comentario,
-        `${origem}/producao`
-      );
-      for (const dono of donos) {
-        void dispararEventoEmail({
-          tipo: "arte_alteracao_solicitada",
-          destinatario: dono.email,
-          assunto,
-          html,
-          texto,
-        });
-      }
-    }
+    const origem = await resolverOrigemPublica();
+    const template = templateArteAlteracaoSolicitada(
+      pedido.orcamento.grafica.nome,
+      pedido.orcamento.cliente.nome,
+      comentario,
+      `${origem}/producao`
+    );
+    await notificarDonos(pedido.graficaId, "arte_alteracao_solicitada", template);
   }
 
   revalidatePath(`/a/${token}`);

@@ -140,6 +140,43 @@ export function templateArteAlteracaoSolicitada(
   };
 }
 
+export type ItemPedidoResumo = { nome: string; quantidade: number };
+
+// Disparado por responderArtePublica quando o cliente APROVA a arte — mesmo
+// destinatário (DONO(s) da gráfica) de templateArteAlteracaoSolicitada,
+// avisando que o pedido já pode seguir pra impressão. clienteNome escapado
+// pelo mesmo motivo: vem de um cadastro de Cliente, texto livre.
+export function templateArteAprovada(
+  graficaNome: string,
+  clienteNome: string,
+  itens: ItemPedidoResumo[],
+  linkProducao: string
+): { assunto: string; html: string; texto: string } {
+  const linhaTexto = (i: ItemPedidoResumo) => `- ${i.nome} (qtd: ${i.quantidade})`;
+  const linhaHtml = (i: ItemPedidoResumo) => `
+        <li style="margin-bottom: 4px;">
+          ${escapeHtml(i.nome)} <span style="color: #64748b;">(qtd: ${i.quantidade})</span>
+        </li>`;
+
+  return {
+    assunto: `Arte aprovada — pedido de ${clienteNome} — ${graficaNome}`,
+    texto: `${clienteNome} aprovou a arte do pedido — já pode seguir pra impressão.\n\nItens:\n${itens.map(linhaTexto).join("\n")}\n\nVeja o pedido em: ${linkProducao}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2 style="color: #0f172a;">Arte aprovada</h2>
+        <p style="color: #334155;"><strong>${escapeHtml(clienteNome)}</strong> aprovou a arte do pedido — já pode seguir pra impressão.</p>
+        <ul style="color: #0f172a; padding-left: 20px;">${itens.map(linhaHtml).join("")}
+        </ul>
+        <p>
+          <a href="${linkProducao}" style="display: inline-block; background: #0d9488; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px;">
+            Ver pedido
+          </a>
+        </p>
+      </div>
+    `,
+  };
+}
+
 export function templateVerificacaoEmail(codigo: string): {
   assunto: string;
   html: string;

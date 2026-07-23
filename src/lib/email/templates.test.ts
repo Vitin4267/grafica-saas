@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { escapeHtml, templateEstoqueBaixo, templateArteAlteracaoSolicitada } from "./templates";
+import {
+  escapeHtml,
+  templateEstoqueBaixo,
+  templateArteAlteracaoSolicitada,
+  templateArteAprovada,
+} from "./templates";
 
 describe("escapeHtml", () => {
   it("escapa os 5 caracteres especiais de HTML", () => {
@@ -67,6 +72,42 @@ describe("templateArteAlteracaoSolicitada", () => {
       "https://app.exemplo/producao"
     );
     expect(texto).toContain("muda a cor pra azul");
+    expect(texto).toContain("https://app.exemplo/producao");
+  });
+});
+
+describe("templateArteAprovada", () => {
+  it("escapa o nome do cliente no corpo HTML", () => {
+    const { html } = templateArteAprovada(
+      "Gráfica Teste",
+      "<script>alert(1)</script>",
+      [{ nome: "Cartão de visita", quantidade: 100 }],
+      "https://app.exemplo/producao"
+    );
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+  });
+
+  it("escapa o nome de item malicioso no corpo HTML", () => {
+    const { html } = templateArteAprovada(
+      "Gráfica Teste",
+      "Cliente Normal",
+      [{ nome: "<img src=x onerror=alert(1)>", quantidade: 1 }],
+      "https://app.exemplo/producao"
+    );
+    expect(html).not.toContain("<img src=x onerror=alert(1)>");
+    expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+  });
+
+  it("inclui itens, quantidade e link de produção no texto puro", () => {
+    const { texto } = templateArteAprovada(
+      "Gráfica Teste",
+      "Cliente Normal",
+      [{ nome: "Cartão de visita", quantidade: 100 }],
+      "https://app.exemplo/producao"
+    );
+    expect(texto).toContain("Cartão de visita");
+    expect(texto).toContain("100");
     expect(texto).toContain("https://app.exemplo/producao");
   });
 });

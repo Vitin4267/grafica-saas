@@ -19,7 +19,8 @@ export type EventoEmail = {
     | "verificacao_email_codigo"
     | "estoque_baixo"
     | "trial_expirando"
-    | "arte_alteracao_solicitada";
+    | "arte_alteracao_solicitada"
+    | "arte_aprovada";
   destinatario: string;
   assunto: string;
   html: string;
