@@ -1,4 +1,4 @@
-import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
+import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
 
 // Mesmo recorte de informação do link público (/o/[token]) — nunca inclui
 // breakdown (custo/margem), que é dado comercial sensível da gráfica.
@@ -14,6 +14,7 @@ export type ItemPdfOrcamento = {
 
 export type DadosPdfOrcamento = {
   graficaNome: string;
+  logoUrl: string | null;
   clienteNome: string;
   status: "RASCUNHO" | "ENVIADO" | "APROVADO" | "REJEITADO";
   criadoEm: Date;
@@ -39,9 +40,9 @@ const estilos = StyleSheet.create({
     borderBottomColor: "#0d9488",
     paddingBottom: 12,
   },
-  logo: { fontSize: 16, fontWeight: "bold", color: "#0f172a" },
-  logoAcento: { color: "#0d9488" },
-  graficaNome: { fontSize: 9, color: "#64748b", marginTop: 2 },
+  logoImagem: { height: 40, maxWidth: 160, objectFit: "contain", marginBottom: 4 },
+  graficaNomeComLogo: { fontSize: 9, color: "#64748b" },
+  graficaNomeSemLogo: { fontSize: 16, fontWeight: "bold", color: "#0f172a" },
   statusBadge: {
     fontSize: 9,
     paddingVertical: 4,
@@ -105,10 +106,15 @@ export function OrcamentoDocumento({ dados }: { dados: DadosPdfOrcamento }) {
       <Page size="A4" style={estilos.pagina}>
         <View style={estilos.cabecalho}>
           <View>
-            <Text style={estilos.logo}>
-              Gráfica<Text style={estilos.logoAcento}>+</Text>
-            </Text>
-            <Text style={estilos.graficaNome}>{dados.graficaNome}</Text>
+            {dados.logoUrl ? (
+              <>
+                {/* eslint-disable-next-line jsx-a11y/alt-text -- Image do @react-pdf/renderer (PDF), não <img> do DOM — esse componente nem tem prop alt */}
+                <Image src={dados.logoUrl} style={estilos.logoImagem} />
+                <Text style={estilos.graficaNomeComLogo}>{dados.graficaNome}</Text>
+              </>
+            ) : (
+              <Text style={estilos.graficaNomeSemLogo}>{dados.graficaNome}</Text>
+            )}
           </View>
           <Text style={estilos.statusBadge}>
             {ROTULO_STATUS[dados.status] ?? dados.status}

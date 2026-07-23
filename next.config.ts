@@ -11,11 +11,15 @@ const isDev = process.env.NODE_ENV === "development";
 // só carrega se NEXT_PUBLIC_TURNSTILE_SITE_KEY estiver configurada — ver
 // src/components/Turnstile.tsx). Precisa de script (carrega o widget),
 // frame (o desafio roda num iframe) e connect (o widget confirma via XHR).
+// *.public.blob.vercel-storage.com: arte de pedido (/a/[token]) e logo da
+// gráfica (/configuracoes/identidade) são servidos direto da URL pública do
+// Vercel Blob, não proxiados pelo próprio domínio — sem isso o navegador
+// bloqueia o <img> por CSP mesmo com o arquivo carregando normalmente.
 const cspHeader = `
   default-src 'self';
   script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com${isDev ? " 'unsafe-eval'" : ""};
   style-src 'self' 'unsafe-inline';
-  img-src 'self' blob: data:;
+  img-src 'self' blob: data: https://*.public.blob.vercel-storage.com;
   font-src 'self';
   connect-src 'self' https://challenges.cloudflare.com;
   frame-src https://challenges.cloudflare.com;

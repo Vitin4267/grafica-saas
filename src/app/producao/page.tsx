@@ -10,6 +10,7 @@ import {
 } from "@/lib/auth/permissoes";
 import { verificarEDispararAlertasAtraso } from "@/lib/alerta-atraso";
 import { dataEhPassado } from "@/lib/data";
+import { resolverOrigemPublica } from "@/lib/url-publica";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -44,6 +45,7 @@ export default async function ProducaoPage() {
   const podeEditar = await podeEditarModulo(usuario, "PRODUCAO");
 
   await verificarEDispararAlertasAtraso(usuario.graficaId, usuario.grafica.nome);
+  const origem = await resolverOrigemPublica();
 
   const pedidos = await prisma.pedido.findMany({
     where: { graficaId: usuario.graficaId },
@@ -101,6 +103,10 @@ export default async function ProducaoPage() {
                 status={pedido.status}
                 podeEditar={podeEditar}
                 chipAtraso={chipAtraso(pedido.prazoEntrega, pedido.status)}
+                arteUrl={pedido.arteUrl}
+                arteAprovadaEm={pedido.arteAprovadaEm}
+                arteComentarioCliente={pedido.arteComentarioCliente}
+                linkArtePublico={pedido.arteLinkToken ? `${origem}/a/${pedido.arteLinkToken}` : null}
               />
             ))}
           </Card>

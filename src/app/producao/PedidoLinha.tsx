@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
 import { PrinterIcon } from "@/components/icons";
 import { AvancarPedidoButton } from "./AvancarPedidoButton";
+import { EnviarArteForm } from "./EnviarArteForm";
 import { cancelarPedido } from "./actions";
 
 // Linha inteira é um client component (não só o botão de cancelar) pra poder
@@ -23,6 +24,10 @@ export function PedidoLinha({
   status,
   podeEditar,
   chipAtraso,
+  arteUrl,
+  arteAprovadaEm,
+  arteComentarioCliente,
+  linkArtePublico,
 }: {
   pedidoId: string;
   orcamentoId: string;
@@ -31,6 +36,10 @@ export function PedidoLinha({
   status: string;
   podeEditar: boolean;
   chipAtraso: ReactNode;
+  arteUrl: string | null;
+  arteAprovadaEm: Date | null;
+  arteComentarioCliente: string | null;
+  linkArtePublico: string | null;
 }) {
   const [state, formAction, isPending] = useActionState(cancelarPedido, null);
   const [confirmando, setConfirmando] = useState(false);
@@ -82,6 +91,16 @@ export function PedidoLinha({
           )}
         </div>
       </div>
+
+      {podeEditar && status === "FILA" && (
+        <EnviarArteForm
+          pedidoId={pedidoId}
+          arteUrl={arteUrl}
+          arteAprovadaEm={arteAprovadaEm}
+          arteComentarioCliente={arteComentarioCliente}
+          linkArtePublico={linkArtePublico}
+        />
+      )}
 
       {confirmando && (
         <ConfirmarExclusao

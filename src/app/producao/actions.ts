@@ -1,6 +1,8 @@
 "use server";
 
+import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { put } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
@@ -11,6 +13,7 @@ import { buscarWebhookAutomacao, dispararEventoAutomacao } from "@/lib/webhook-a
 import { normalizarTelefone } from "@/lib/telefone";
 import { cruzouLimiteMinimo } from "@/lib/estoque-critico";
 import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
+import { validarArquivoArte, extensaoArte } from "@/lib/upload-validacao";
 
 export type AvancarPedidoResult = { ok: boolean; mensagem: string };
 
@@ -53,6 +56,17 @@ export async function avancarPedido(
   });
   if (!pedido) {
     return { ok: false, mensagem: "Pedido não encontrado." };
+  }
+
+  // Gate opt-in: só bloqueia se ESTA gráfica enviou uma arte pra este
+  // pedido (arteUrl preenchido) — pedidos sem arte enviada avançam
+  // normalmente, sem exigir nada novo. Uma vez enviada, exige aprovação do
+  // cliente (ver /a/[token]) antes de sair de FILA.
+  if (pedido.status === "FILA" && pedido.arteUrl && !pedido.arteAprovadaEm) {
+    return {
+      ok: false,
+      mensagem: "A arte precisa ser aprovada pelo cliente antes de iniciar a impressão.",
+    };
   }
 
   const indiceAtual = SEQUENCIA.indexOf(pedido.status as StatusPedido);
@@ -357,4 +371,66 @@ export async function cancelarPedido(
         ? "Pedido cancelado e estoque estornado."
         : "Pedido cancelado.",
   };
+}
+
+export type EnviarArteResult = { ok: boolean; mensagem: string };
+
+// Sobe o arquivo de arte de um pedido pro Blob (access "public" — a arte é
+// vista pelo cliente final através do link com token de qualquer forma, e
+// não carrega segredo nenhum, ao contrário do dump de backup em
+// src/app/api/cron/backup/route.ts). Reenvio (pedido já tinha uma arte)
+// zera arteAprovadaEm/arteComentarioCliente — a aprovação/comentário
+// anterior era sobre o arquivo antigo, não faz sentido continuar valendo
+// pro novo. arteLinkToken é reaproveitado entre reenvios: o link que a
+// gráfica já mandou pro cliente continua o mesmo.
+export async function enviarArte(
+  _estadoAnterior: EnviarArteResult | null,
+  formData: FormData
+): Promise<EnviarArteResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "PRODUCAO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar a produção." };
+  }
+
+  const pedidoId = String(formData.get("pedidoId"));
+  const arquivo = formData.get("arquivo");
+  if (!(arquivo instanceof File)) {
+    return { ok: false, mensagem: "Selecione um arquivo." };
+  }
+  const validacao = validarArquivoArte(arquivo);
+  if (!validacao.ok) {
+    return { ok: false, mensagem: validacao.mensagem };
+  }
+
+  const pedido = await prisma.pedido.findFirst({
+    where: { id: pedidoId, graficaId: usuario.graficaId },
+  });
+  if (!pedido) {
+    return { ok: false, mensagem: "Pedido não encontrado." };
+  }
+
+  const extensao = extensaoArte(arquivo.type);
+  const blob = await put(`pedidos-arte/${pedidoId}-${Date.now()}.${extensao}`, arquivo, {
+    access: "public",
+    addRandomSuffix: true,
+    contentType: arquivo.type,
+  });
+
+  const arteLinkToken = pedido.arteLinkToken ?? randomBytes(20).toString("base64url");
+
+  await prisma.pedido.update({
+    where: { id: pedidoId },
+    data: {
+      arteUrl: blob.url,
+      arteLinkToken,
+      arteAprovadaEm: null,
+      arteComentarioCliente: null,
+    },
+  });
+
+  revalidatePath("/producao");
+
+  return { ok: true, mensagem: "Arte enviada! Copie o link abaixo e envie pro cliente aprovar." };
 }

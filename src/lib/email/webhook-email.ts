@@ -18,7 +18,8 @@ export type EventoEmail = {
     | "reset_senha_solicitado"
     | "verificacao_email_codigo"
     | "estoque_baixo"
-    | "trial_expirando";
+    | "trial_expirando"
+    | "arte_alteracao_solicitada";
   destinatario: string;
   assunto: string;
   html: string;

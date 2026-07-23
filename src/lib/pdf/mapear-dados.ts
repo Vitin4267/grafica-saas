@@ -11,7 +11,7 @@ export type OrcamentoParaPdf = {
   createdAt: Date;
   total: Prisma.Decimal;
   cliente: { nome: string };
-  grafica: { nome: string };
+  grafica: { nome: string; logoUrl: string | null };
   itens: {
     quantidade: number;
     larguraCm: Prisma.Decimal | null;
@@ -27,6 +27,7 @@ export type OrcamentoParaPdf = {
 export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
   return {
     graficaNome: orcamento.grafica.nome,
+    logoUrl: orcamento.grafica.logoUrl,
     clienteNome: orcamento.cliente.nome,
     status: orcamento.status,
     criadoEm: orcamento.createdAt,

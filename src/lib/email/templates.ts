@@ -108,6 +108,38 @@ export function templateTrialExpirando(
   };
 }
 
+// Disparado por responderArtePublica (src/app/a/[token]/actions.ts) quando o
+// cliente final pede alteração numa arte — vai pro(s) DONO(s) da gráfica,
+// mesmo padrão de destinatário de templateEstoqueBaixo/alerta-estoque.ts.
+// comentario é texto livre vindo de um formulário público sem autenticação —
+// escapeHtml é obrigatório aqui, mesmo motivo do nome de item em
+// templateEstoqueBaixo.
+export function templateArteAlteracaoSolicitada(
+  graficaNome: string,
+  clienteNome: string,
+  comentario: string,
+  linkProducao: string
+): { assunto: string; html: string; texto: string } {
+  return {
+    assunto: `${clienteNome} pediu alteração na arte — ${graficaNome}`,
+    texto: `${clienteNome} pediu uma alteração na arte de um pedido.\n\nComentário do cliente:\n"${comentario}"\n\nVeja o pedido em: ${linkProducao}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2 style="color: #0f172a;">Alteração de arte solicitada</h2>
+        <p style="color: #334155;"><strong>${escapeHtml(clienteNome)}</strong> pediu uma alteração na arte de um pedido.</p>
+        <blockquote style="margin: 0; padding: 12px 16px; border-left: 3px solid #0d9488; background: #f0fdfa; color: #0f172a;">
+          ${escapeHtml(comentario)}
+        </blockquote>
+        <p>
+          <a href="${linkProducao}" style="display: inline-block; background: #0d9488; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px;">
+            Ver pedido
+          </a>
+        </p>
+      </div>
+    `,
+  };
+}
+
 export function templateVerificacaoEmail(codigo: string): {
   assunto: string;
   html: string;

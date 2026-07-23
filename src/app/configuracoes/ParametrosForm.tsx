@@ -167,6 +167,22 @@ export function ParametrosForm({
       <Card className="flex items-center justify-between gap-4 p-6">
         <div>
           <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Identidade visual
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Sua logo, exibida no PDF de orçamento enviado pros seus clientes.
+          </p>
+        </div>
+        <Link href="/configuracoes/identidade">
+          <Button type="button" variant="outline">
+            Configurar logo
+          </Button>
+        </Link>
+      </Card>
+
+      <Card className="flex items-center justify-between gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
             Assinatura
           </h2>
           <p className="mt-1 text-sm text-slate-500">

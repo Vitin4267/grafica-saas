@@ -1,0 +1,91 @@
+"use client";
+
+import { useActionState, useState } from "react";
+import { useAoMudar } from "@/lib/hooks/useAoMudar";
+import { Input } from "@/components/ui/Input";
+import { Button } from "@/components/ui/Button";
+import { Alert } from "@/components/ui/Alert";
+import { CopiarLinkButton } from "@/app/orcamento/[id]/CopiarLinkButton";
+import { enviarArte } from "./actions";
+
+// Só aparece com o pedido em FILA (ver PedidoLinha) — gate de negócio real
+// fica em avancarPedido (producao/actions.ts): aqui é só a UI de enviar o
+// arquivo e compartilhar o link de aprovação, nunca o que decide se a
+// impressão pode começar.
+export function EnviarArteForm({
+  pedidoId,
+  arteUrl,
+  arteAprovadaEm,
+  arteComentarioCliente,
+  linkArtePublico,
+}: {
+  pedidoId: string;
+  arteUrl: string | null;
+  arteAprovadaEm: Date | null;
+  arteComentarioCliente: string | null;
+  linkArtePublico: string | null;
+}) {
+  const [state, formAction, isPending] = useActionState(enviarArte, null);
+  const [mostrarUpload, setMostrarUpload] = useState(!arteUrl);
+
+  // Depois de um envio/reenvio bem-sucedido, volta pra visão "aguardando
+  // aprovação" — mesmo cuidado de useAoMudar já usado em PedidoLinha pro
+  // cancelamento (sem isso o formulário de upload ficaria aberto pra
+  // sempre depois de um envio com sucesso).
+  useAoMudar(state, (state) => {
+    if (state?.ok) setMostrarUpload(false);
+  });
+
+  if (arteAprovadaEm) {
+    return (
+      <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+        Arte aprovada
+      </span>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {arteComentarioCliente && (
+        <Alert variant="warning">
+          <strong>Cliente pediu alteração:</strong> {arteComentarioCliente}
+        </Alert>
+      )}
+
+      {arteUrl && !mostrarUpload ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+            Aguardando aprovação do cliente
+          </span>
+          {linkArtePublico && (
+            <CopiarLinkButton valor={linkArtePublico} label="Copiar link da arte" />
+          )}
+          <Button type="button" variant="ghost" onClick={() => setMostrarUpload(true)}>
+            Reenviar arte
+          </Button>
+        </div>
+      ) : (
+        <form action={formAction} className="flex flex-wrap items-end gap-2">
+          <input type="hidden" name="pedidoId" value={pedidoId} />
+          <Input
+            label="Arquivo de arte (PDF, JPG ou PNG)"
+            name="arquivo"
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png"
+            required
+            className="max-w-xs"
+          />
+          <Button type="submit" variant="outline" loading={isPending}>
+            Enviar arte
+          </Button>
+          {arteUrl && (
+            <Button type="button" variant="ghost" onClick={() => setMostrarUpload(false)}>
+              Cancelar
+            </Button>
+          )}
+        </form>
+      )}
+      {state && !state.ok && <p className="text-xs text-rose-600">{state.mensagem}</p>}
+    </div>
+  );
+}

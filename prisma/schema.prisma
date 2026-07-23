@@ -24,6 +24,12 @@ model Grafica {
   // precisam ser verdadeiros pra um funcionário enxergar a aba (ver podeVerMeuNegocio).
   compartilharMeuNegocio Boolean @default(false)
 
+  // Logo da PRÓPRIA gráfica (não confundir com a marca do grafica-saas) —
+  // usada no cabeçalho do PDF de orçamento (src/lib/pdf/OrcamentoDocumento.tsx)
+  // no lugar da marca da plataforma. Opcional: sem logo, o PDF mostra só o
+  // nome da gráfica em texto, nunca a marca "Gráfica+".
+  logoUrl String?
+
   usuarios              Usuario[]
   clientes              Cliente[]
   itensGrafica          ItemGrafica[]
@@ -1131,6 +1137,19 @@ model Pedido {
   // o alerta pra este pedido, nunca reenviar — evita spam a cada
   // carregamento de /producao enquanto o pedido continua atrasado.
   alertaAtrasoEnviadoEm DateTime?
+
+  // Aprovação de arte: opt-in por pedido — se a gráfica nunca envia uma
+  // arte (arteUrl null), o pedido avança normalmente sem nenhum gate. Uma
+  // vez enviada, avancarPedido bloqueia a saída de FILA até arteAprovadaEm
+  // ser preenchido (ver src/app/producao/actions.ts). arteLinkToken é
+  // gerado sob demanda (mesmo padrão de Orcamento.linkPublicoToken) e
+  // reaproveitado entre reenvios do mesmo pedido — só o token muda de
+  // "significado" (aprovado/pendente), nunca de valor, então o link que a
+  // gráfica já mandou pro cliente continua válido após um reenvio.
+  arteUrl               String?
+  arteAprovadaEm        DateTime?
+  arteComentarioCliente String?
+  arteLinkToken         String?   @unique
 
   grafica   Grafica   @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   orcamento Orcamento @relation(fields: [orcamentoId], references: [id])
