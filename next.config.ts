@@ -38,6 +38,18 @@ const nextConfig: NextConfig = {
   // si, mas facilita fingerprinting do stack pra quem for atacar. Sem custo
   // nenhum desligar.
   poweredByHeader: false,
+  experimental: {
+    serverActions: {
+      // Default do Next é 1MB — abaixo até do limite de logo (3MB), quanto
+      // mais do de arte (20MB, ver validarArquivoArte em
+      // src/lib/upload-validacao.ts). Sem isso, qualquer arquivo de verdade
+      // (não só arte grande) estourava o parser do próprio Next ANTES de
+      // enviarArte/salvarLogo rodar — e como esse erro acontece fora do
+      // corpo da action, cai direto na error boundary genérica, sem
+      // mensagem amigável nenhuma (bug real encontrado em produção).
+      bodySizeLimit: "25mb",
+    },
+  },
   async headers() {
     return [
       {
