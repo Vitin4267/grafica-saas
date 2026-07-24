@@ -1,11 +1,12 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, type ChangeEvent } from "react";
 import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { CopiarLinkButton } from "@/app/orcamento/[id]/CopiarLinkButton";
+import { validarArquivoArte } from "@/lib/upload-validacao";
 import { enviarArte } from "./actions";
 
 // Só aparece com o pedido em FILA (ver PedidoLinha) — gate de negócio real
@@ -27,6 +28,21 @@ export function EnviarArteForm({
 }) {
   const [state, formAction, isPending] = useActionState(enviarArte, null);
   const [mostrarUpload, setMostrarUpload] = useState(!arteUrl);
+  const [erroArquivo, setErroArquivo] = useState<string | null>(null);
+
+  // Valida tipo/tamanho já na escolha do arquivo, antes de submeter — sem
+  // isso, um arquivo grande demais só falhava no servidor (Next rejeita o
+  // corpo da Server Action antes até de enviarArte rodar, sem mensagem
+  // amigável nenhuma; ver next.config.ts serverActions.bodySizeLimit).
+  function handleArquivoChange(evento: ChangeEvent<HTMLInputElement>) {
+    const arquivo = evento.target.files?.[0];
+    if (!arquivo) {
+      setErroArquivo(null);
+      return;
+    }
+    const validacao = validarArquivoArte(arquivo);
+    setErroArquivo(validacao.ok ? null : validacao.mensagem);
+  }
 
   // Depois de um envio/reenvio bem-sucedido, volta pra visão "aguardando
   // aprovação" — mesmo cuidado de useAoMudar já usado em PedidoLinha pro
@@ -65,24 +81,28 @@ export function EnviarArteForm({
           </Button>
         </div>
       ) : (
-        <form action={formAction} className="flex flex-wrap items-end gap-2">
+        <form action={formAction} className="flex flex-col gap-2">
           <input type="hidden" name="pedidoId" value={pedidoId} />
-          <Input
-            label="Arquivo de arte (PDF, JPG ou PNG)"
-            name="arquivo"
-            type="file"
-            accept=".pdf,.jpg,.jpeg,.png"
-            required
-            className="max-w-xs"
-          />
-          <Button type="submit" variant="outline" loading={isPending}>
-            Enviar arte
-          </Button>
-          {arteUrl && (
-            <Button type="button" variant="ghost" onClick={() => setMostrarUpload(false)}>
-              Cancelar
+          <div className="flex flex-wrap items-end gap-2">
+            <Input
+              label="Arquivo de arte (PDF, JPG ou PNG, até 20MB)"
+              name="arquivo"
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png"
+              required
+              onChange={handleArquivoChange}
+              className="max-w-xs"
+            />
+            <Button type="submit" variant="outline" loading={isPending} disabled={!!erroArquivo}>
+              Enviar arte
             </Button>
-          )}
+            {arteUrl && (
+              <Button type="button" variant="ghost" onClick={() => setMostrarUpload(false)}>
+                Cancelar
+              </Button>
+            )}
+          </div>
+          {erroArquivo && <p className="text-xs text-rose-600">{erroArquivo}</p>}
         </form>
       )}
       {state && !state.ok && <p className="text-xs text-rose-600">{state.mensagem}</p>}
