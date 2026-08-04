@@ -4,6 +4,8 @@ Multi-tenant quoting and management SaaS for Brazilian print shops (gráficas) �
 
 **🔗 Live:** [grafica-saas-peach.vercel.app](https://grafica-saas-peach.vercel.app/)
 
+[![Tests](https://github.com/Vitin4267/grafica-saas/actions/workflows/test.yml/badge.svg)](https://github.com/Vitin4267/grafica-saas/actions/workflows/test.yml)
+
 ## What the product does
 
 A print shop signs up, configures its catalog (simple products, offset printing, raw-material pricing tables by weight), and builds quotes with automatically calculated pricing. An approved quote becomes a production order, with inventory control, salesperson commission, invoice issuance, and recurring billing via Stripe. True multi-tenancy: each shop only ever sees its own data, with multiple users and granular per-module permissions.
