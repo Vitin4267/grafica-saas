@@ -113,8 +113,15 @@ export async function processarEventoStripe(evento: Stripe.Event): Promise<void>
         select: { cortesia: true },
       });
       if (existente?.cortesia) return;
+      // stripeSubscriptionId no where (não só graficaId): o Stripe retenta
+      // webhook falho por até 3 dias, então o "deleted" da assinatura ANTIGA
+      // pode chegar DEPOIS de a gráfica já ter reassinado. Sem esse filtro,
+      // esse evento atrasado cancelava a assinatura NOVA e derrubava o acesso
+      // de um cliente pagante, sem nada no app indicando o porquê. Mesma
+      // disciplina de "não confiar na ordem de entrega" que sincronizarSubscription
+      // já aplicava re-buscando a subscription fresca.
       await prisma.assinaturaGrafica.updateMany({
-        where: { graficaId },
+        where: { graficaId, stripeSubscriptionId: subscription.id },
         data: { status: "CANCELADA", canceladaEm: new Date() },
       });
       return;

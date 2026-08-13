@@ -2,7 +2,9 @@
 
 import { obterUsuarioAtual } from "@/lib/auth/session";
 import { perguntarAssistente, ErroWebhookAssistente } from "@/lib/webhook-assistente";
-import { verificarLimiteAssistente, registrarPerguntaAssistente } from "@/lib/rate-limit-assistente";
+import { tentarRegistrarPerguntaAssistente } from "@/lib/rate-limit-assistente";
+import { assinaturaEstaLiberada } from "@/lib/billing/status";
+import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
 
 // Webhook ÚNICO da plataforma (mesmo padrão de EMAIL_WEBHOOK_URL) — não pede
 // mais que cada gráfica monte o próprio n8n pra ter o assistente (era
@@ -36,6 +38,21 @@ export async function enviarPerguntaAssistente(
     return { ok: false, mensagem: "Sessão expirada — atualize a página." };
   }
 
+  // Gates que faltavam até 2026-07-26: esta era praticamente a única Server
+  // Action do app que só exigia sessão. Sem eles, quem criasse conta em
+  // /registro e NUNCA confirmasse o e-mail já podia gastar token da
+  // plataforma, e gráficas com trial vencido/inadimplentes — bloqueadas em
+  // todo o resto do produto — continuavam com o assistente liberado.
+  // Checados direto (em vez de exigirEmailVerificado/exigirAssinaturaAtiva)
+  // porque aquelas usam redirect(), que não serve numa action que devolve
+  // objeto pro chat renderizar a mensagem.
+  if (!usuario.emailVerificadoEm) {
+    return { ok: false, mensagem: "Confirme seu e-mail pra usar o assistente." };
+  }
+  if (!assinaturaEstaLiberada(usuario.grafica.assinatura)) {
+    return { ok: false, mensagem: "Sua assinatura precisa estar ativa pra usar o assistente." };
+  }
+
   const perguntaLimpa = pergunta.trim().slice(0, TAMANHO_MAXIMO_PERGUNTA);
   if (!perguntaLimpa) {
     return { ok: false, mensagem: "Digite uma pergunta." };
@@ -48,12 +65,22 @@ export async function enviarPerguntaAssistente(
 
   // Rate limit ANTES de gastar a chamada de verdade — agora protege o custo
   // de token da PLATAFORMA (compartilhado entre todas as gráficas), não só
-  // de uma conta própria. Ver src/lib/rate-limit-assistente.ts.
-  const limite = await verificarLimiteAssistente(usuario.id, usuario.graficaId);
+  // de uma conta própria. Check e registro na mesma transação Serializable
+  // (ver src/lib/rate-limit-assistente.ts); conflito de serialização =
+  // requisições concorrentes disputando o limite, tratado como bloqueio,
+  // mesmo padrão dos call sites de src/lib/auth/rate-limit.ts.
+  let limite;
+  try {
+    limite = await tentarRegistrarPerguntaAssistente(usuario.id, usuario.graficaId);
+  } catch (erro) {
+    if (ehConflitoDeSerializacao(erro)) {
+      return { ok: false, mensagem: "Muitas perguntas ao mesmo tempo. Tente de novo em instantes." };
+    }
+    throw erro;
+  }
   if (limite.bloqueado) {
     return { ok: false, mensagem: limite.mensagem ?? "Limite de uso atingido." };
   }
-  await registrarPerguntaAssistente(usuario.id, usuario.graficaId);
 
   try {
     // sessaoId sempre prefixado com o graficaId aqui, nunca aceito cru do

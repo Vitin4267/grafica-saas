@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { randomBytes } from "node:crypto";
+import { del } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
@@ -21,9 +22,22 @@ import { verificarProntidaoFiscal } from "@/lib/nota-fiscal";
 import { emitirNfe, consultarNfe, ErroFocusNfe, type AmbienteFocusNfe } from "@/lib/focus-nfe";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { formatoMoeda } from "@/lib/moeda";
-import { dataInputParaUTC } from "@/lib/data";
+import { dataInputParaUTC, dataHoraInputParaUTC } from "@/lib/data";
+import {
+  ETAPAS_ORCAMENTO,
+  nomeCampoEtapaEm,
+  nomeCampoEtapaResponsavel,
+  type ChaveEtapaOrcamento,
+} from "@/lib/orcamento-etapas";
+import {
+  validarContagemCor,
+  normalizarRebobinamento,
+  validarMaterialSubstratoOutro,
+} from "@/lib/orcamento-etiqueta";
+import { parseJsonArray } from "@/lib/form-json";
 import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
 import { calcularValorBase, calcularComissao } from "@/lib/comissao";
+import { removerArquivo } from "@/lib/billing/armazenamento";
 
 // Sinaliza, de dentro de uma transação Serializable, que o orçamento já está
 // no último item — usado só pra abortar a transação com uma mensagem amigável
@@ -209,8 +223,13 @@ export async function editarOrcamento(
   const quantidade = Number(formData.get("quantidade"));
   const larguraCm = formData.get("larguraCm") ? Number(formData.get("larguraCm")) : null;
   const alturaCm = formData.get("alturaCm") ? Number(formData.get("alturaCm")) : null;
-  const cores = String(formData.get("cores") || "");
-  const acabamento = String(formData.get("acabamento") || "");
+  // Limites iguais aos de itemEntradaSchema (orcamento/actions.ts), que
+  // criarOrcamento já aplica — editarOrcamento/adicionarItemOrcamento não
+  // usavam zod aqui e aceitavam string de qualquer tamanho. Com
+  // serverActions.bodySizeLimit em 25mb (por causa do upload de arte), isso
+  // permitia gravar dezenas de MB de texto numa única linha de orçamento.
+  const cores = String(formData.get("cores") || "").slice(0, 60);
+  const acabamento = String(formData.get("acabamento") || "").slice(0, 200);
   const corFrente = formData.get("corFrente") ? Number(formData.get("corFrente")) : null;
   const corVerso = formData.get("corVerso") ? Number(formData.get("corVerso")) : null;
 
@@ -247,6 +266,17 @@ export async function editarOrcamento(
     return { ok: false, mensagem: resultado.mensagem };
   }
 
+  // Produto não muda em editarOrcamento (só quantidade/medida/cores), então
+  // modeloCalculo vem do item já existente, não de `resultado`.
+  let etiqueta: EtiquetaParaGravar | null = null;
+  if (item.modeloCalculo === "M2") {
+    const etiquetaResult = lerEtiquetaDoFormData(formData);
+    if (!etiquetaResult.ok) {
+      return { ok: false, mensagem: etiquetaResult.mensagem };
+    }
+    etiqueta = etiquetaResult.etiqueta;
+  }
+
   // Isolamento Serializable + total recalculado por agregado DENTRO da
   // transação (não somado em JS a partir da leitura de `orcamento.itens` feita
   // acima, que já pode estar desatualizada) — evita tanto a corrida de duas
@@ -270,6 +300,57 @@ export async function editarOrcamento(
             breakdown: resultado.breakdown ?? undefined,
           },
         });
+
+        // upsert (não create) porque um item M2 criado antes desta feature
+        // pode ainda não ter linha de etiqueta.
+        if (item.modeloCalculo === "M2" && etiqueta) {
+          const dadosEtiqueta = {
+            materialSubstrato: etiqueta.materialSubstrato,
+            materialSubstratoOutro: etiqueta.materialSubstratoOutro,
+            tipoAdesivo: etiqueta.tipoAdesivo,
+            superficieAplicacao: etiqueta.superficieAplicacao,
+            formatoEtiqueta: etiqueta.formatoEtiqueta,
+            coresRotulo: etiqueta.coresRotulo,
+            coresContraRotulo: etiqueta.coresContraRotulo,
+            embalagemQtdPorRolo: etiqueta.embalagemQtdPorRolo,
+            tubeteMedida: etiqueta.tubeteMedida,
+            rotulagem: etiqueta.rotulagem,
+            serrilha: etiqueta.serrilha,
+            vernizRotuloTotal: etiqueta.vernizRotuloTotal,
+            vernizRotuloReserva: etiqueta.vernizRotuloReserva,
+            vernizRotuloTipo: etiqueta.vernizRotuloTipo,
+            vernizContraRotuloTotal: etiqueta.vernizContraRotuloTotal,
+            vernizContraRotuloReserva: etiqueta.vernizContraRotuloReserva,
+            vernizContraRotuloTipo: etiqueta.vernizContraRotuloTipo,
+            laminacaoRotulo: etiqueta.laminacaoRotulo,
+            laminacaoContraRotulo: etiqueta.laminacaoContraRotulo,
+            rebobinamento: etiqueta.rebobinamento,
+          };
+          const etiquetaRow = await tx.orcamentoItemEtiqueta.upsert({
+            where: { orcamentoItemId },
+            create: { orcamentoItemId, ...dadosEtiqueta },
+            update: dadosEtiqueta,
+          });
+
+          // Lista pequena, sem histórico a preservar (diferente de
+          // VarianteMateriaPrima) — mais simples apagar tudo e recriar do
+          // zero a partir do array enviado do que diffar item a item.
+          await tx.orcamentoItemHotStamping.deleteMany({
+            where: { orcamentoItemEtiquetaId: etiquetaRow.id },
+          });
+          if (etiqueta.hotStampings.length > 0) {
+            await tx.orcamentoItemHotStamping.createMany({
+              data: etiqueta.hotStampings.map((h) => ({
+                orcamentoItemEtiquetaId: etiquetaRow.id,
+                lado: h.lado,
+                tipo: h.tipo,
+                medida: h.medida,
+                cor: h.cor,
+              })),
+            });
+          }
+        }
+
         const agregado = await tx.orcamentoItem.aggregate({
           where: { orcamentoId },
           _sum: { precoTotal: true },
@@ -337,6 +418,291 @@ export async function alterarClienteOrcamento(
   return { ok: true, mensagem: "Cliente atualizado." };
 }
 
+const tipoPedidoSchema = z.enum([
+  "MODELO_NOVO",
+  "REPETICAO_SEM_ALTERACAO",
+  "REPETICAO_COM_ALTERACAO",
+]);
+const freteSchema = z.enum(["EMITENTE", "DESTINATARIO"]);
+
+export type EditarDadosGeraisResult = { ok: boolean; mensagem: string };
+
+// Campos gerais do pedido (vendedor, tipo de pedido, contato específico
+// deste orçamento, condições de pagamento, frete, transportadora, local de
+// entrega, observações internas) — editáveis a QUALQUER status, diferente do
+// resto do orçamento (que trava em RASCUNHO): nenhum desses campos mexe no
+// total nem no preço que o cliente já viu, e frete/transportadora
+// normalmente só são definidos depois que o cliente aprova.
+export async function editarDadosGeraisOrcamento(
+  _estadoAnterior: EditarDadosGeraisResult | null,
+  formData: FormData
+): Promise<EditarDadosGeraisResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
+  }
+  const orcamentoId = String(formData.get("orcamentoId"));
+
+  const orcamento = await prisma.orcamento.findFirst({
+    where: { id: orcamentoId, graficaId: usuario.graficaId },
+  });
+  if (!orcamento) {
+    return { ok: false, mensagem: "Orçamento não encontrado." };
+  }
+
+  const tipoPedidoBruto = formData.get("tipoPedido");
+  const tipoPedidoParsed = tipoPedidoBruto ? tipoPedidoSchema.safeParse(tipoPedidoBruto) : null;
+  if (tipoPedidoParsed && !tipoPedidoParsed.success) {
+    return { ok: false, mensagem: "Tipo de pedido inválido." };
+  }
+
+  const freteBruto = formData.get("frete");
+  const freteParsed = freteBruto ? freteSchema.safeParse(freteBruto) : null;
+  if (freteParsed && !freteParsed.success) {
+    return { ok: false, mensagem: "Tipo de frete inválido." };
+  }
+
+  const campoTexto = (nome: string, max: number) =>
+    String(formData.get(nome) || "").trim().slice(0, max) || null;
+
+  await prisma.orcamento.update({
+    where: { id: orcamentoId },
+    data: {
+      vendedor: campoTexto("vendedor", 120),
+      tipoPedido: tipoPedidoParsed?.success ? tipoPedidoParsed.data : null,
+      contatoNome: campoTexto("contatoNome", 120),
+      contatoEmail: campoTexto("contatoEmail", 200),
+      condicoesPagamento: campoTexto("condicoesPagamento", 200),
+      frete: freteParsed?.success ? freteParsed.data : null,
+      transportadora: campoTexto("transportadora", 120),
+      localEntrega: campoTexto("localEntrega", 500),
+      observacoes: campoTexto("observacoes", 2000),
+    },
+  });
+
+  // Sem gate de status, esses campos podem ser reescritos a qualquer momento
+  // por qualquer pessoa com acesso — o log é o único jeito de saber depois
+  // quem mudou o quê (ver comentário de editarEtapasOrcamento, mesma lógica).
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "orcamento.editar_dados_gerais",
+    entidade: "Orcamento",
+    entidadeId: orcamentoId,
+    descricao: `Dados gerais atualizados no orçamento #${orcamentoId.slice(-6)}`,
+  });
+
+  revalidatePath(`/orcamento/${orcamentoId}`);
+  revalidatePath("/orcamento");
+
+  return { ok: true, mensagem: "Dados do pedido atualizados." };
+}
+
+export type EditarEtapasResult = { ok: boolean; mensagem: string };
+
+// As 5 etapas de produção (data/hora + responsável cada, ver
+// src/lib/orcamento-etapas.ts) — editável a qualquer status (a maioria só
+// faz sentido depois de RASCUNHO mesmo: Aprovação/Pedido/Entrega acontecem
+// depois que o orçamento já avançou). Responsável é texto livre porque pode
+// ser uma pessoa diferente de quem está logado (alguém registrando o
+// trabalho de outra pessoa) — não é um log de eventos, é editável direto.
+export async function editarEtapasOrcamento(
+  _estadoAnterior: EditarEtapasResult | null,
+  formData: FormData
+): Promise<EditarEtapasResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
+  }
+  const orcamentoId = String(formData.get("orcamentoId"));
+
+  const orcamento = await prisma.orcamento.findFirst({
+    where: { id: orcamentoId, graficaId: usuario.graficaId },
+  });
+  if (!orcamento) {
+    return { ok: false, mensagem: "Orçamento não encontrado." };
+  }
+
+  const valoresPorChave = Object.fromEntries(
+    ETAPAS_ORCAMENTO.map(({ chave }) => {
+      const emBruto = formData.get(nomeCampoEtapaEm(chave));
+      const em = typeof emBruto === "string" && emBruto ? dataHoraInputParaUTC(emBruto) : null;
+      const responsavel =
+        String(formData.get(nomeCampoEtapaResponsavel(chave)) || "").trim().slice(0, 120) || null;
+      return [chave, { em, responsavel }];
+    })
+  ) as Record<ChaveEtapaOrcamento, { em: Date | null; responsavel: string | null }>;
+
+  await prisma.orcamento.update({
+    where: { id: orcamentoId },
+    data: {
+      etapaOrcamentoDesenvolvimentoEm: valoresPorChave.orcamentoDesenvolvimento.em,
+      etapaOrcamentoDesenvolvimentoResponsavel: valoresPorChave.orcamentoDesenvolvimento.responsavel,
+      etapaLayoutEm: valoresPorChave.layout.em,
+      etapaLayoutResponsavel: valoresPorChave.layout.responsavel,
+      etapaAprovacaoEm: valoresPorChave.aprovacao.em,
+      etapaAprovacaoResponsavel: valoresPorChave.aprovacao.responsavel,
+      etapaConfirmacaoPedidoEm: valoresPorChave.confirmacaoPedido.em,
+      etapaConfirmacaoPedidoResponsavel: valoresPorChave.confirmacaoPedido.responsavel,
+      etapaEntregaEm: valoresPorChave.entrega.em,
+      etapaEntregaResponsavel: valoresPorChave.entrega.responsavel,
+    },
+  });
+
+  // As etapas não têm gate de status nem trava de campo parcial (ver comentário
+  // acima da função) — data e responsável são texto/data livres, editáveis a
+  // qualquer momento por qualquer pessoa com acesso ao módulo. Sem isso, uma
+  // mudança de "quando entregamos e quem fez" não deixava nenhum rastro.
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "orcamento.editar_etapas",
+    entidade: "Orcamento",
+    entidadeId: orcamentoId,
+    descricao: `Etapas de produção atualizadas no orçamento #${orcamentoId.slice(-6)}`,
+  });
+
+  revalidatePath(`/orcamento/${orcamentoId}`);
+
+  return { ok: true, mensagem: "Etapas atualizadas." };
+}
+
+// Valores dos enums de etiqueta, usados só pra validar campo solto vindo de
+// FormData (adicionarItemOrcamento/editarOrcamento) — o schema zod completo
+// (usado no carrinho JSON de criarOrcamento) vive em src/app/orcamento/actions.ts.
+const MATERIAL_SUBSTRATO_VALORES = [
+  "PAPEL_TERMICO",
+  "COUCHE_C_ROT",
+  "BOPP_METALIZADO_ROT",
+  "BOPP_BCO_PEROLIZADO",
+  "BOPP_BCO_FOSCO",
+  "BOPP_TRANSPARENTE",
+  "L2_SEM_ADESIVO",
+  "POLIETILENO_BRANCO",
+  "POLIETILENO_TRANSPARENTE",
+  "POLIESTER_BRANCO",
+  "POLIESTER_TRANSPARENTE",
+  "POLIESTER_CROMO_FOSCO",
+  "ELETROSTATICO_SEM_COLA",
+  "OUTRO",
+] as const;
+const TIPO_ADESIVO_VALORES = [
+  "ACRILICO_20G",
+  "ACRILICO_30G",
+  "BORRACHA_20G",
+  "BORRACHA_25G",
+  "BORRACHA_30G",
+  "BORRACHA_50G",
+] as const;
+const SUPERFICIE_APLICACAO_VALORES = ["VIDRO", "PLASTICO", "METAL", "PAPEL", "PAPELAO", "OUTROS"] as const;
+const TIPO_ROTULAGEM_VALORES = ["MANUAL", "AUTOMATICA"] as const;
+const TIPO_SERRILHA_VALORES = ["SERRILHA", "MICRO_SERRILHA", "GAP"] as const;
+const TIPO_LAMINACAO_VALORES = ["BRILHO", "FOSCO"] as const;
+const TIPO_VERNIZ_VALORES = ["BRILHO", "FOSCO", "RIBBON"] as const;
+
+const hotStampingFormSchema = z.object({
+  lado: z.enum(["ROTULO", "CONTRA_ROTULO"]),
+  tipo: z.enum(["HOT", "COLD"]),
+  medida: z.string().max(60).nullable(),
+  cor: z.string().max(60).nullable(),
+});
+
+type EtiquetaParaGravar = {
+  materialSubstrato: (typeof MATERIAL_SUBSTRATO_VALORES)[number] | null;
+  materialSubstratoOutro: string | null;
+  tipoAdesivo: (typeof TIPO_ADESIVO_VALORES)[number] | null;
+  superficieAplicacao: (typeof SUPERFICIE_APLICACAO_VALORES)[number] | null;
+  formatoEtiqueta: string | null;
+  coresRotulo: number | null;
+  coresContraRotulo: number | null;
+  embalagemQtdPorRolo: number | null;
+  tubeteMedida: string | null;
+  rotulagem: (typeof TIPO_ROTULAGEM_VALORES)[number] | null;
+  serrilha: (typeof TIPO_SERRILHA_VALORES)[number] | null;
+  vernizRotuloTotal: boolean;
+  vernizRotuloReserva: boolean;
+  vernizRotuloTipo: (typeof TIPO_VERNIZ_VALORES)[number] | null;
+  vernizContraRotuloTotal: boolean;
+  vernizContraRotuloReserva: boolean;
+  vernizContraRotuloTipo: (typeof TIPO_VERNIZ_VALORES)[number] | null;
+  laminacaoRotulo: (typeof TIPO_LAMINACAO_VALORES)[number] | null;
+  laminacaoContraRotulo: (typeof TIPO_LAMINACAO_VALORES)[number] | null;
+  rebobinamento: number | null;
+  hotStampings: z.infer<typeof hotStampingFormSchema>[];
+};
+
+type ResultadoEtiquetaFormData = { ok: true; etiqueta: EtiquetaParaGravar } | { ok: false; mensagem: string };
+
+// Lê e valida os ~18 campos de etiqueta soltos no FormData (não JSON — mesmo
+// padrão do resto deste arquivo) + a lista de hot stampings (essa sim vem
+// como JSON num hidden field, é a única parte de tamanho variável). Usado
+// por adicionarItemOrcamento e editarOrcamento.
+function lerEtiquetaDoFormData(formData: FormData): ResultadoEtiquetaFormData {
+  const campoTexto = (nome: string, max: number) =>
+    String(formData.get(nome) || "").trim().slice(0, max) || null;
+  const campoEnum = <T extends string>(nome: string, valores: readonly T[]): T | null => {
+    const bruto = formData.get(nome);
+    return typeof bruto === "string" && (valores as readonly string[]).includes(bruto) ? (bruto as T) : null;
+  };
+  const campoBooleano = (nome: string) => formData.get(nome) === "on" || formData.get(nome) === "true";
+  const campoString = (nome: string): string | null => {
+    const bruto = formData.get(nome);
+    return typeof bruto === "string" ? bruto : null;
+  };
+
+  const materialSubstrato = campoEnum("materialSubstrato", MATERIAL_SUBSTRATO_VALORES);
+  const materialSubstratoOutro = campoTexto("materialSubstratoOutro", 120);
+  const validacaoOutro = validarMaterialSubstratoOutro(materialSubstrato, materialSubstratoOutro);
+  if (!validacaoOutro.ok) return { ok: false, mensagem: validacaoOutro.mensagem };
+
+  const coresRotuloResult = validarContagemCor(campoString("coresRotulo"), "Cores rótulo");
+  if (!coresRotuloResult.ok) return { ok: false, mensagem: coresRotuloResult.mensagem };
+  const coresContraRotuloResult = validarContagemCor(campoString("coresContraRotulo"), "Cores contra-rótulo");
+  if (!coresContraRotuloResult.ok) return { ok: false, mensagem: coresContraRotuloResult.mensagem };
+  const embalagemQtdResult = validarContagemCor(campoString("embalagemQtdPorRolo"), "Quantidade por rolo");
+  if (!embalagemQtdResult.ok) return { ok: false, mensagem: embalagemQtdResult.mensagem };
+  const rebobinamentoResult = normalizarRebobinamento(campoString("rebobinamento"));
+  if (!rebobinamentoResult.ok) return { ok: false, mensagem: rebobinamentoResult.mensagem };
+
+  const hotStampingsParsed = parseJsonArray(formData.get("hotStampingsJson"), hotStampingFormSchema, {
+    max: 20,
+  });
+  if (!hotStampingsParsed.ok) return { ok: false, mensagem: hotStampingsParsed.mensagem };
+
+  return {
+    ok: true,
+    etiqueta: {
+      materialSubstrato,
+      materialSubstratoOutro,
+      tipoAdesivo: campoEnum("tipoAdesivo", TIPO_ADESIVO_VALORES),
+      superficieAplicacao: campoEnum("superficieAplicacao", SUPERFICIE_APLICACAO_VALORES),
+      formatoEtiqueta: campoTexto("formatoEtiqueta", 120),
+      coresRotulo: coresRotuloResult.valor,
+      coresContraRotulo: coresContraRotuloResult.valor,
+      embalagemQtdPorRolo: embalagemQtdResult.valor,
+      tubeteMedida: campoTexto("tubeteMedida", 60),
+      rotulagem: campoEnum("rotulagem", TIPO_ROTULAGEM_VALORES),
+      serrilha: campoEnum("serrilha", TIPO_SERRILHA_VALORES),
+      vernizRotuloTotal: campoBooleano("vernizRotuloTotal"),
+      vernizRotuloReserva: campoBooleano("vernizRotuloReserva"),
+      vernizRotuloTipo: campoEnum("vernizRotuloTipo", TIPO_VERNIZ_VALORES),
+      vernizContraRotuloTotal: campoBooleano("vernizContraRotuloTotal"),
+      vernizContraRotuloReserva: campoBooleano("vernizContraRotuloReserva"),
+      vernizContraRotuloTipo: campoEnum("vernizContraRotuloTipo", TIPO_VERNIZ_VALORES),
+      laminacaoRotulo: campoEnum("laminacaoRotulo", TIPO_LAMINACAO_VALORES),
+      laminacaoContraRotulo: campoEnum("laminacaoContraRotulo", TIPO_LAMINACAO_VALORES),
+      rebobinamento: rebobinamentoResult.valor,
+      hotStampings: hotStampingsParsed.data,
+    },
+  };
+}
+
 export type AdicionarItemResult = { ok: boolean; mensagem: string };
 
 export async function adicionarItemOrcamento(
@@ -354,8 +720,13 @@ export async function adicionarItemOrcamento(
   const quantidade = Number(formData.get("quantidade"));
   const larguraCm = formData.get("larguraCm") ? Number(formData.get("larguraCm")) : null;
   const alturaCm = formData.get("alturaCm") ? Number(formData.get("alturaCm")) : null;
-  const cores = String(formData.get("cores") || "");
-  const acabamento = String(formData.get("acabamento") || "");
+  // Limites iguais aos de itemEntradaSchema (orcamento/actions.ts), que
+  // criarOrcamento já aplica — editarOrcamento/adicionarItemOrcamento não
+  // usavam zod aqui e aceitavam string de qualquer tamanho. Com
+  // serverActions.bodySizeLimit em 25mb (por causa do upload de arte), isso
+  // permitia gravar dezenas de MB de texto numa única linha de orçamento.
+  const cores = String(formData.get("cores") || "").slice(0, 60);
+  const acabamento = String(formData.get("acabamento") || "").slice(0, 200);
   const corFrente = formData.get("corFrente") ? Number(formData.get("corFrente")) : null;
   const corVerso = formData.get("corVerso") ? Number(formData.get("corVerso")) : null;
 
@@ -396,6 +767,17 @@ export async function adicionarItemOrcamento(
     return { ok: false, mensagem: resultado.mensagem };
   }
 
+  // Etiqueta não entra na conta de preço (ver src/lib/pricing/m2.ts) — só
+  // relevante/gravada quando o item é M2 (flexografia).
+  let etiqueta: EtiquetaParaGravar | null = null;
+  if (resultado.modeloCalculo === "M2") {
+    const etiquetaResult = lerEtiquetaDoFormData(formData);
+    if (!etiquetaResult.ok) {
+      return { ok: false, mensagem: etiquetaResult.mensagem };
+    }
+    etiqueta = etiquetaResult.etiqueta;
+  }
+
   try {
     await prisma.$transaction(
       async (tx) => {
@@ -414,6 +796,41 @@ export async function adicionarItemOrcamento(
             corFrente: resultado.corFrente,
             corVerso: resultado.corVerso,
             breakdown: resultado.breakdown ?? undefined,
+            etiqueta:
+              resultado.modeloCalculo === "M2"
+                ? {
+                    create: {
+                      materialSubstrato: etiqueta?.materialSubstrato ?? null,
+                      materialSubstratoOutro: etiqueta?.materialSubstratoOutro ?? null,
+                      tipoAdesivo: etiqueta?.tipoAdesivo ?? null,
+                      superficieAplicacao: etiqueta?.superficieAplicacao ?? null,
+                      formatoEtiqueta: etiqueta?.formatoEtiqueta ?? null,
+                      coresRotulo: etiqueta?.coresRotulo ?? null,
+                      coresContraRotulo: etiqueta?.coresContraRotulo ?? null,
+                      embalagemQtdPorRolo: etiqueta?.embalagemQtdPorRolo ?? null,
+                      tubeteMedida: etiqueta?.tubeteMedida ?? null,
+                      rotulagem: etiqueta?.rotulagem ?? null,
+                      serrilha: etiqueta?.serrilha ?? null,
+                      vernizRotuloTotal: etiqueta?.vernizRotuloTotal ?? false,
+                      vernizRotuloReserva: etiqueta?.vernizRotuloReserva ?? false,
+                      vernizRotuloTipo: etiqueta?.vernizRotuloTipo ?? null,
+                      vernizContraRotuloTotal: etiqueta?.vernizContraRotuloTotal ?? false,
+                      vernizContraRotuloReserva: etiqueta?.vernizContraRotuloReserva ?? false,
+                      vernizContraRotuloTipo: etiqueta?.vernizContraRotuloTipo ?? null,
+                      laminacaoRotulo: etiqueta?.laminacaoRotulo ?? null,
+                      laminacaoContraRotulo: etiqueta?.laminacaoContraRotulo ?? null,
+                      rebobinamento: etiqueta?.rebobinamento ?? null,
+                      hotStampings: {
+                        create: (etiqueta?.hotStampings ?? []).map((h) => ({
+                          lado: h.lado,
+                          tipo: h.tipo,
+                          medida: h.medida,
+                          cor: h.cor,
+                        })),
+                      },
+                    },
+                  }
+                : undefined,
           },
         });
         const agregado = await tx.orcamentoItem.aggregate({
@@ -506,6 +923,19 @@ export async function removerItemOrcamento(
     throw erro;
   }
 
+  // A linha de OrcamentoItemTinta já foi cascade-apagada junto do item, mas
+  // o razão de armazenamento (ArquivoArmazenado) e o arquivo de verdade no
+  // Blob NÃO — só têm relação com Grafica, não com OrcamentoItem. Melhor
+  // esforço, depois que a remoção do item já foi confirmada.
+  const arquivoTintaRemovido = await removerArquivo({
+    graficaId: usuario.graficaId,
+    tipo: "ANALISE_TINTA",
+    referenciaId: orcamentoItemId,
+  });
+  if (arquivoTintaRemovido) {
+    await del(arquivoTintaRemovido.url).catch(() => {});
+  }
+
   revalidatePath(`/orcamento/${item.orcamentoId}`);
   revalidatePath("/orcamento");
 
@@ -528,6 +958,7 @@ export async function cancelarOrcamento(
 
   const orcamento = await prisma.orcamento.findFirst({
     where: { id: orcamentoId, graficaId: usuario.graficaId },
+    include: { itens: { select: { id: true } } },
   });
   if (!orcamento) {
     return { ok: false, mensagem: "Orçamento não encontrado." };
@@ -539,6 +970,21 @@ export async function cancelarOrcamento(
   // Hard delete: nada foi comunicado ao cliente ainda (rascunho), então não há
   // necessidade de manter um registro "cancelado" — cascade cuida do OrcamentoItem.
   await prisma.orcamento.delete({ where: { id: orcamentoId } });
+
+  // Mesmo cuidado de removerItemOrcamento: o cascade do Prisma apaga
+  // OrcamentoItemTinta junto do item, mas não o razão de armazenamento nem o
+  // arquivo de verdade no Blob (ArquivoArmazenado só tem relação com
+  // Grafica). Melhor esforço, depois do delete confirmado.
+  for (const item of orcamento.itens) {
+    const arquivoTintaRemovido = await removerArquivo({
+      graficaId: usuario.graficaId,
+      tipo: "ANALISE_TINTA",
+      referenciaId: item.id,
+    });
+    if (arquivoTintaRemovido) {
+      await del(arquivoTintaRemovido.url).catch(() => {});
+    }
+  }
 
   updateTag(`uso-${usuario.graficaId}`); // orçamento removido muda a contagem do mês (ver src/lib/billing/uso.ts)
   revalidatePath("/orcamento");
@@ -581,6 +1027,49 @@ export async function gerarLinkPublico(
   return { ok: true, mensagem: "Link gerado!", url };
 }
 
+// O link público não expira nem some sozinho — desde a feature de orçamento
+// completo ele passou a expor a ficha técnica inteira da etiqueta, não só
+// preço/itens. Gera um token novo em vez de reaproveitar (revogado de
+// verdade, não só "escondido"); se a gráfica quiser compartilhar de novo,
+// gerarLinkPublico cria outro token do zero.
+export async function revogarLinkPublico(
+  _estadoAnterior: GerarLinkResult | null,
+  formData: FormData
+): Promise<GerarLinkResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
+  }
+  const orcamentoId = String(formData.get("orcamentoId"));
+
+  const orcamento = await prisma.orcamento.findFirst({
+    where: { id: orcamentoId, graficaId: usuario.graficaId },
+  });
+  if (!orcamento) {
+    return { ok: false, mensagem: "Orçamento não encontrado." };
+  }
+
+  await prisma.orcamento.update({
+    where: { id: orcamentoId },
+    data: { linkPublicoToken: null },
+  });
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "orcamento.revogar_link",
+    entidade: "Orcamento",
+    entidadeId: orcamentoId,
+    descricao: `Link público revogado do orçamento #${orcamentoId.slice(-6)}`,
+  });
+
+  revalidatePath(`/orcamento/${orcamentoId}`);
+  return { ok: true, mensagem: "Link revogado — quem tinha o link anterior não acessa mais." };
+}
+
 const formaPagamentoSchema = z.enum([
   "DINHEIRO",
   "PIX",
@@ -609,7 +1098,7 @@ export async function registrarPagamento(
   const orcamentoId = String(formData.get("orcamentoId"));
   const valor = Number(formData.get("valor"));
   const formaParsed = formaPagamentoSchema.safeParse(formData.get("forma"));
-  const observacao = String(formData.get("observacao") || "").trim() || null;
+  const observacao = String(formData.get("observacao") || "").trim().slice(0, 500) || null;
 
   if (!Number.isFinite(valor) || valor <= 0) {
     return { ok: false, mensagem: "Informe um valor maior que zero." };

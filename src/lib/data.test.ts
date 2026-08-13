@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { formatoData, dataInputParaUTC, dataParaInputValue, dataEhPassado } from "./data";
+import {
+  formatoData,
+  dataInputParaUTC,
+  dataParaInputValue,
+  dataHoraInputParaUTC,
+  dataHoraParaInputValue,
+  dataEhPassado,
+} from "./data";
 
 describe("dataInputParaUTC", () => {
   it("converte string de <input type=date> pra meia-noite UTC exata", () => {
@@ -13,6 +20,21 @@ describe("dataParaInputValue", () => {
     expect(dataParaInputValue(dataInputParaUTC("2026-07-15"))).toBe("2026-07-15");
     expect(dataParaInputValue(dataInputParaUTC("2026-01-01"))).toBe("2026-01-01");
     expect(dataParaInputValue(dataInputParaUTC("2026-12-31"))).toBe("2026-12-31");
+  });
+});
+
+describe("dataHoraInputParaUTC", () => {
+  it("converte string de <input type=datetime-local> pro horário exato, tratado como UTC literal", () => {
+    const data = dataHoraInputParaUTC("2026-07-15T14:30");
+    expect(data.toISOString()).toBe("2026-07-15T14:30:00.000Z");
+  });
+});
+
+describe("dataHoraParaInputValue", () => {
+  it("é o inverso exato de dataHoraInputParaUTC (round-trip sem perder minuto)", () => {
+    expect(dataHoraParaInputValue(dataHoraInputParaUTC("2026-07-15T14:30"))).toBe("2026-07-15T14:30");
+    expect(dataHoraParaInputValue(dataHoraInputParaUTC("2026-01-01T00:00"))).toBe("2026-01-01T00:00");
+    expect(dataHoraParaInputValue(dataHoraInputParaUTC("2026-12-31T23:59"))).toBe("2026-12-31T23:59");
   });
 });
 

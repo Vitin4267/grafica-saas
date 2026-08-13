@@ -7,7 +7,19 @@ import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
-import { validarArquivoLogo, extensaoLogo } from "@/lib/upload-validacao";
+import {
+  validarArquivoLogo,
+  extensaoLogo,
+  assinaturaBateComTipo,
+  BYTES_ASSINATURA,
+} from "@/lib/upload-validacao";
+import {
+  resolverContextoArmazenamento,
+  reservarEspaco,
+  confirmarArquivo,
+  cancelarReserva,
+  removerArquivo,
+} from "@/lib/billing/armazenamento";
 
 export type SalvarLogoResult = { ok: boolean; mensagem: string };
 
@@ -30,21 +42,47 @@ export async function salvarLogo(
   if (!validacao.ok) {
     return { ok: false, mensagem: validacao.mensagem };
   }
+  // Confere a assinatura real do arquivo, não só o Content-Type declarado
+  // pelo cliente (forjável) — ver comentário em upload-validacao.ts.
+  const cabecalho = new Uint8Array(await arquivo.slice(0, BYTES_ASSINATURA).arrayBuffer());
+  if (!assinaturaBateComTipo(cabecalho, arquivo.type)) {
+    return { ok: false, mensagem: "O conteúdo do arquivo não corresponde a uma imagem PNG, JPG ou WEBP." };
+  }
 
   const { logoUrl: logoAnterior } = await prisma.grafica.findUniqueOrThrow({
     where: { id: usuario.graficaId },
     select: { logoUrl: true },
   });
 
+  // Reserva o espaço ANTES do put() — ver src/lib/billing/armazenamento.ts.
+  const contextoArmazenamento = resolverContextoArmazenamento(usuario);
+  const reserva = await reservarEspaco({
+    graficaId: usuario.graficaId,
+    tipo: "LOGO_GRAFICA",
+    referenciaId: usuario.graficaId,
+    bytes: arquivo.size,
+    contexto: contextoArmazenamento,
+  });
+  if (!reserva.ok) {
+    return { ok: false, mensagem: reserva.mensagem };
+  }
+
   const extensao = extensaoLogo(arquivo.type);
   // access: "public" — logo é material de marca da própria gráfica, sem
   // segredo nenhum, e precisa ser visível sem autenticação tanto no PDF
   // (fetch server-side) quanto em qualquer tela pública que venha a mostrá-la.
-  const blob = await put(`logos/${usuario.graficaId}-${Date.now()}.${extensao}`, arquivo, {
-    access: "public",
-    addRandomSuffix: true,
-    contentType: arquivo.type,
-  });
+  let blob;
+  try {
+    blob = await put(`logos/${usuario.graficaId}/${Date.now()}.${extensao}`, arquivo, {
+      access: "public",
+      addRandomSuffix: true,
+      contentType: arquivo.type,
+    });
+  } catch (erro) {
+    await cancelarReserva(reserva.arquivoId);
+    throw erro;
+  }
+  await confirmarArquivo(reserva.arquivoId, { url: blob.url, pathname: blob.pathname });
 
   await prisma.grafica.update({
     where: { id: usuario.graficaId },
@@ -82,7 +120,16 @@ export async function removerLogo(
     data: { logoUrl: null },
   });
 
-  if (logoAnterior) {
+  const arquivoRemovido = await removerArquivo({
+    graficaId: usuario.graficaId,
+    tipo: "LOGO_GRAFICA",
+    referenciaId: usuario.graficaId,
+  });
+  if (arquivoRemovido) {
+    await del(arquivoRemovido.url).catch(() => {});
+  } else if (logoAnterior) {
+    // Fallback pra logo enviada antes desta feature existir (sem linha no
+    // razão) — ainda precisa apagar o arquivo do Blob.
     await del(logoAnterior).catch(() => {});
   }
 

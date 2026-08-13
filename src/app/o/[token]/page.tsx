@@ -6,6 +6,14 @@ import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/Badge";
 import { Logo } from "@/components/Logo";
 import { RespostaPublica } from "./RespostaPublica";
+import { EtiquetaResumo } from "@/app/orcamento/[id]/EtiquetaResumo";
+
+const ROTULO_TIPO_PEDIDO: Record<string, string> = {
+  MODELO_NOVO: "Modelo novo",
+  REPETICAO_SEM_ALTERACAO: "Repetição sem alteração",
+  REPETICAO_COM_ALTERACAO: "Repetição com alteração",
+};
+const ROTULO_FRETE: Record<string, string> = { EMITENTE: "Emitente", DESTINATARIO: "Destinatário" };
 
 export default async function OrcamentoPublicoPage({
   params,
@@ -20,7 +28,12 @@ export default async function OrcamentoPublicoPage({
     include: {
       cliente: true,
       grafica: true,
-      itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
+      itens: {
+        include: {
+          itemGrafica: { include: { itemCatalogo: true } },
+          etiqueta: { include: { hotStampings: true } },
+        },
+      },
     },
   });
 
@@ -44,6 +57,63 @@ export default async function OrcamentoPublicoPage({
           </div>
           <StatusBadge status={orcamento.status} />
         </div>
+
+        {(orcamento.vendedor ||
+          orcamento.tipoPedido ||
+          orcamento.condicoesPagamento ||
+          orcamento.frete ||
+          orcamento.transportadora ||
+          orcamento.localEntrega) && (
+          <Card className="mb-6 p-5">
+            <p className="mb-3 text-sm font-medium text-slate-500">Dados do pedido</p>
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+              {orcamento.vendedor && (
+                <div>
+                  <dt className="text-slate-500">Vendedor</dt>
+                  <dd className="font-medium text-slate-800 dark:text-slate-100">{orcamento.vendedor}</dd>
+                </div>
+              )}
+              {orcamento.tipoPedido && (
+                <div>
+                  <dt className="text-slate-500">Tipo de pedido</dt>
+                  <dd className="font-medium text-slate-800 dark:text-slate-100">
+                    {ROTULO_TIPO_PEDIDO[orcamento.tipoPedido] ?? orcamento.tipoPedido}
+                  </dd>
+                </div>
+              )}
+              {orcamento.condicoesPagamento && (
+                <div>
+                  <dt className="text-slate-500">Condições de pagamento</dt>
+                  <dd className="font-medium text-slate-800 dark:text-slate-100">
+                    {orcamento.condicoesPagamento}
+                  </dd>
+                </div>
+              )}
+              {orcamento.frete && (
+                <div>
+                  <dt className="text-slate-500">Frete</dt>
+                  <dd className="font-medium text-slate-800 dark:text-slate-100">
+                    {ROTULO_FRETE[orcamento.frete] ?? orcamento.frete}
+                  </dd>
+                </div>
+              )}
+              {orcamento.transportadora && (
+                <div>
+                  <dt className="text-slate-500">Transportadora</dt>
+                  <dd className="font-medium text-slate-800 dark:text-slate-100">
+                    {orcamento.transportadora}
+                  </dd>
+                </div>
+              )}
+              {orcamento.localEntrega && (
+                <div>
+                  <dt className="text-slate-500">Local de entrega</dt>
+                  <dd className="font-medium text-slate-800 dark:text-slate-100">{orcamento.localEntrega}</dd>
+                </div>
+              )}
+            </dl>
+          </Card>
+        )}
 
         {/* Nunca renderiza item.breakdown aqui — custo de material, margens etc.
             são dado comercial sensível da gráfica, não algo que o cliente final vê. */}
@@ -69,6 +139,7 @@ export default async function OrcamentoPublicoPage({
                 {item.acabamento && <span>Acabamento: {item.acabamento}</span>}
                 <span>Unitário: {formatoMoeda.format(Number(item.precoUnitario))}</span>
               </div>
+              {item.etiqueta && <EtiquetaResumo etiqueta={item.etiqueta} />}
             </div>
           ))}
         </Card>

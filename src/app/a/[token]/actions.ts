@@ -5,6 +5,9 @@ import { prisma } from "@/lib/prisma";
 import { resolverOrigemPublica } from "@/lib/url-publica";
 import { dispararEventoEmail, type EventoEmail } from "@/lib/email/webhook-email";
 import { templateArteAlteracaoSolicitada, templateArteAprovada } from "@/lib/email/templates";
+import { tentarRegistrarRespostaArte } from "@/lib/auth/rate-limit";
+import { obterIpRequisicao } from "@/lib/auth/ip";
+import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
 
 export type ResponderArteResult = { ok: boolean; mensagem: string };
 
@@ -58,6 +61,28 @@ export async function responderArtePublica(
   }
   if (pedido.arteAprovadaEm) {
     return { ok: false, mensagem: "Esta arte já foi aprovada." };
+  }
+
+  // Rate limit (achado da auditoria de 2026-07-26): quem tem o link consegue
+  // chamar esta action sem limite nenhum — "aprovar" trava sozinho na
+  // primeira vez (arteAprovadaEm), mas "pedir alteração" não, e cada chamada
+  // dispara um e-mail novo pro(s) DONO(s) da gráfica via um webhook
+  // compartilhado com TODOS os tenants. Aplicado nos dois branches, não só
+  // no de alteração, por simplicidade e porque protege também contra spam de
+  // escrita no banco. Ver src/lib/auth/rate-limit.ts.
+  const ip = await obterIpRequisicao();
+  let bloqueado: boolean;
+  try {
+    bloqueado = await tentarRegistrarRespostaArte(pedido.id, ip);
+  } catch (erro) {
+    if (ehConflitoDeSerializacao(erro)) {
+      bloqueado = true;
+    } else {
+      throw erro;
+    }
+  }
+  if (bloqueado) {
+    return { ok: false, mensagem: "Muitas tentativas — aguarde alguns minutos e tente de novo." };
   }
 
   if (decisao === "APROVADA") {

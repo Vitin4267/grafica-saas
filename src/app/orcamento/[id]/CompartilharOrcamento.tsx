@@ -5,7 +5,7 @@ import { useActionState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { linkWhatsApp } from "@/lib/telefone";
-import { gerarLinkPublico } from "./actions";
+import { gerarLinkPublico, revogarLinkPublico } from "./actions";
 import { CopiarLinkButton } from "./CopiarLinkButton";
 
 export function CompartilharOrcamento({
@@ -22,8 +22,10 @@ export function CompartilharOrcamento({
   graficaNome: string;
 }) {
   const [state, formAction, isPending] = useActionState(gerarLinkPublico, null);
+  const [revogarState, revogarAction, isRevogando] = useActionState(revogarLinkPublico, null);
 
-  const url = state?.ok ? state.url : linkExistente;
+  const foiRevogado = revogarState?.ok === true;
+  const url = foiRevogado ? null : state?.ok ? state.url : linkExistente;
 
   if (url) {
     const urlWhatsApp = linkWhatsApp(
@@ -56,6 +58,22 @@ export function CompartilharOrcamento({
             pra habilitar o envio direto por WhatsApp.
           </p>
         )}
+        <form action={revogarAction} className="self-start">
+          <input type="hidden" name="orcamentoId" value={orcamentoId} />
+          <button
+            type="submit"
+            disabled={isRevogando}
+            onClick={(evento) => {
+              if (!confirm("Revogar este link? Quem já tem o link atual perde o acesso.")) {
+                evento.preventDefault();
+              }
+            }}
+            className="text-xs text-slate-400 underline decoration-dotted underline-offset-2 hover:text-red-600 disabled:opacity-50 dark:text-slate-500 dark:hover:text-red-400"
+          >
+            {isRevogando ? "Revogando..." : "Revogar link"}
+          </button>
+        </form>
+        {revogarState && !revogarState.ok && <Alert variant="error">{revogarState.mensagem}</Alert>}
       </div>
     );
   }

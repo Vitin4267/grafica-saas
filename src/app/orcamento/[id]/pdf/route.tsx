@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
+import { podeVerModulo } from "@/lib/auth/permissoes";
 import { OrcamentoDocumento } from "@/lib/pdf/OrcamentoDocumento";
 import { mapearDadosPdf, nomeArquivoPdf } from "@/lib/pdf/mapear-dados";
 
@@ -15,6 +16,14 @@ export async function GET(
   const usuario = await exigirUsuarioAutenticado();
   await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
+  // Mesmo gate de módulo que a tela /orcamento/[id] e que a rota irmã
+  // /financeiro/exportar já faziam — sem isto, um OPERADOR sem permissão de
+  // ver ORCAMENTO era bloqueado na tela mas baixava o PDF completo (cliente,
+  // itens, preço unitário e total) indo direto na URL. Os ids de orçamento
+  // ficam visíveis pra ele em /producao, então não era nem preciso adivinhar.
+  if (!(await podeVerModulo(usuario, "ORCAMENTO"))) {
+    return new Response("Sem permissão pra ver orçamentos.", { status: 403 });
+  }
 
   // Mesmo escopo de tenant da tela /orcamento/[id] — um id de orçamento de
   // outra gráfica não deve nem existir do ponto de vista dessa query.
@@ -23,7 +32,12 @@ export async function GET(
     include: {
       cliente: true,
       grafica: true,
-      itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
+      itens: {
+        include: {
+          itemGrafica: { include: { itemCatalogo: true } },
+          etiqueta: { include: { hotStampings: true } },
+        },
+      },
     },
   });
 

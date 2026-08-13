@@ -17,7 +17,12 @@ export async function GET(
     include: {
       cliente: true,
       grafica: true,
-      itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
+      itens: {
+        include: {
+          itemGrafica: { include: { itemCatalogo: true } },
+          etiqueta: { include: { hotStampings: true } },
+        },
+      },
     },
   });
 

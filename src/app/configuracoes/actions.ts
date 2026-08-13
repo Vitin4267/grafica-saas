@@ -37,7 +37,16 @@ export async function salvarParametros(
   const dados: Record<string, number> = {};
 
   for (const campo of CAMPOS_DECIMAL) {
-    const valor = Number(formData.get(campo));
+    // Checar presença ANTES de Number(): formData.get devolve null pra campo
+    // ausente e "" pra campo em branco, e Number() converte os dois pra 0 —
+    // que passava direto por isFinite(0) && 0 >= 0. Um POST forjado omitindo
+    // margemPadrao gravava margem 0 silenciosamente, e todo orçamento
+    // M2/OFFSET passava a sair a preço de custo sem nenhum aviso.
+    const bruto = formData.get(campo);
+    if (typeof bruto !== "string" || bruto.trim() === "") {
+      return { ok: false, mensagem: `Preencha o campo "${campo}".` };
+    }
+    const valor = Number(bruto);
     if (!Number.isFinite(valor) || valor < 0) {
       return { ok: false, mensagem: `Valor inválido em "${campo}".` };
     }

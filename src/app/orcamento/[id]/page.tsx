@@ -26,6 +26,19 @@ import { PagamentosCard } from "./PagamentosCard";
 import { CustoProducaoCard } from "./CustoProducaoCard";
 import { NotaFiscalCard } from "./NotaFiscalCard";
 import { PrimeiroOrcamentoCelebracao } from "./PrimeiroOrcamentoCelebracao";
+import { EditarDadosGeraisOrcamentoForm } from "./EditarDadosGeraisOrcamentoForm";
+import { EtapasOrcamentoForm } from "./EtapasOrcamentoForm";
+import { ETAPAS_ORCAMENTO, type ChaveEtapaOrcamento } from "@/lib/orcamento-etapas";
+import { EtiquetaResumo } from "./EtiquetaResumo";
+import { etiquetaParaCampos } from "../etiqueta-campos";
+import { AnaliseTintaCard } from "./AnaliseTintaCard";
+import { verificarRecursoPago } from "@/lib/auth/recurso-pago";
+import { urlAssinadaLeitura } from "@/lib/blob-assinado";
+
+// Server Action herda o maxDuration da página (Vercel) — analisarTintaItem
+// espera até 40s do webhook n8n + upload da imagem + margem (ver
+// AnaliseTinta.actions.ts), acima do default de 15s do plano Hobby/Pro.
+export const maxDuration = 60;
 
 export default async function OrcamentoDetalhePage({
   params,
@@ -56,7 +69,13 @@ export default async function OrcamentoDetalhePage({
         cliente: true,
         pedido: true,
         notaFiscal: true,
-        itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
+        itens: {
+          include: {
+            itemGrafica: { include: { itemCatalogo: true } },
+            etiqueta: { include: { hotStampings: true } },
+            tinta: true,
+          },
+        },
         pagamentos: { orderBy: { createdAt: "desc" } },
       },
     }),
@@ -75,6 +94,27 @@ export default async function OrcamentoDetalhePage({
     notFound();
   }
 
+  // Gate de plano do Cálculo de tinta com IA — avaliado uma vez aqui
+  // (síncrono) e passado como prop; a Server Action (AnaliseTinta.actions.ts)
+  // é quem de fato garante o bloqueio, isto é só pra UI mostrar/desabilitar
+  // o botão sem round-trip nenhum.
+  const acessoTinta = verificarRecursoPago(usuario, "calculo_tinta_ia");
+
+  const itensComTinta = orcamento.itens.filter((item) => item.tinta !== null);
+  const [autoresTinta, urlsAssinadasTinta] = await Promise.all([
+    itensComTinta.length > 0
+      ? prisma.usuario.findMany({
+          where: { id: { in: [...new Set(itensComTinta.map((item) => item.tinta!.criadoPorUsuarioId))] } },
+          select: { id: true, nome: true },
+        })
+      : Promise.resolve([]),
+    Promise.all(
+      itensComTinta.map(async (item) => [item.id, await urlAssinadaLeitura(item.tinta!.imagemPathname, 10 * 60 * 1000)] as const)
+    ),
+  ]);
+  const nomePorAutorId = new Map(autoresTinta.map((u) => [u.id, u.nome]));
+  const urlAssinadaPorItemId = new Map(urlsAssinadasTinta);
+
   const custoComparado = orcamento.pedido
     ? await buscarCustoRealVsOrcado(orcamento.pedido.id, usuario.graficaId)
     : null;
@@ -92,6 +132,38 @@ export default async function OrcamentoDetalhePage({
         ncm: item.itemGrafica.itemCatalogo.ncm,
       })),
     });
+  }
+
+  const valoresEtapas = Object.fromEntries(
+    ETAPAS_ORCAMENTO.map(({ chave }) => {
+      const chaveCapitalizada = chave.charAt(0).toUpperCase() + chave.slice(1);
+      const em = orcamento[`etapa${chaveCapitalizada}Em` as keyof typeof orcamento] as Date | null;
+      const responsavel = orcamento[
+        `etapa${chaveCapitalizada}Responsavel` as keyof typeof orcamento
+      ] as string | null;
+      return [chave, { em, responsavel }];
+    })
+  ) as Record<ChaveEtapaOrcamento, { em: Date | null; responsavel: string | null }>;
+
+  function mapearTinta(item: NonNullable<typeof orcamento>["itens"][number]) {
+    if (!item.tinta) return null;
+    return {
+      imagemUrlAssinada: urlAssinadaPorItemId.get(item.id) ?? "",
+      coberturaPercentual: Number(item.tinta.coberturaPercentual),
+      coberturaCiano: item.tinta.coberturaCiano ? Number(item.tinta.coberturaCiano) : null,
+      coberturaMagenta: item.tinta.coberturaMagenta ? Number(item.tinta.coberturaMagenta) : null,
+      coberturaAmarelo: item.tinta.coberturaAmarelo ? Number(item.tinta.coberturaAmarelo) : null,
+      coberturaPreto: item.tinta.coberturaPreto ? Number(item.tinta.coberturaPreto) : null,
+      consumoMlPorPeca: Number(item.tinta.consumoMlPorPeca),
+      consumoMlTotal: Number(item.tinta.consumoMlTotal),
+      confianca: item.tinta.confianca,
+      observacao: item.tinta.observacao,
+      quantidadeSnapshot: item.tinta.quantidadeSnapshot,
+      larguraCmSnapshot: item.tinta.larguraCmSnapshot ? Number(item.tinta.larguraCmSnapshot) : null,
+      alturaCmSnapshot: item.tinta.alturaCmSnapshot ? Number(item.tinta.alturaCmSnapshot) : null,
+      criadoPorNome: nomePorAutorId.get(item.tinta.criadoPorUsuarioId) ?? null,
+      createdAtIso: item.tinta.createdAt.toISOString(),
+    };
   }
 
   return (
@@ -144,26 +216,57 @@ export default async function OrcamentoDetalhePage({
           <StatusBadge status={orcamento.status} />
         </div>
 
+        <Card className="mb-6 p-5">
+          <p className="mb-3 text-sm font-medium text-slate-500">Dados do pedido</p>
+          <EditarDadosGeraisOrcamentoForm
+            orcamentoId={orcamento.id}
+            dados={{
+              vendedor: orcamento.vendedor,
+              tipoPedido: orcamento.tipoPedido,
+              contatoNome: orcamento.contatoNome,
+              contatoEmail: orcamento.contatoEmail,
+              condicoesPagamento: orcamento.condicoesPagamento,
+              frete: orcamento.frete,
+              transportadora: orcamento.transportadora,
+              localEntrega: orcamento.localEntrega,
+              observacoes: orcamento.observacoes,
+            }}
+          />
+        </Card>
+
         {orcamento.status === "RASCUNHO" ? (
           <div className="mb-6 flex flex-col gap-4">
             {orcamento.itens.map((item) => (
-              <EditarOrcamentoForm
-                key={item.id}
-                orcamentoId={orcamento.id}
-                orcamentoItemId={item.id}
-                itemNome={item.itemGrafica.itemCatalogo.nome}
-                modeloCalculo={item.modeloCalculo}
-                podeRemover={orcamento.itens.length > 1}
-                valoresIniciais={{
-                  quantidade: item.quantidade,
-                  larguraCm: item.larguraCm?.toString() ?? "",
-                  alturaCm: item.alturaCm?.toString() ?? "",
-                  cores: item.cores ?? "",
-                  acabamento: item.acabamento ?? "",
-                  corFrente: item.corFrente?.toString() ?? "",
-                  corVerso: item.corVerso?.toString() ?? "",
-                }}
-              />
+              <div key={item.id} className="flex flex-col gap-3">
+                <EditarOrcamentoForm
+                  orcamentoId={orcamento.id}
+                  orcamentoItemId={item.id}
+                  itemNome={item.itemGrafica.itemCatalogo.nome}
+                  modeloCalculo={item.modeloCalculo}
+                  podeRemover={orcamento.itens.length > 1}
+                  valoresIniciais={{
+                    quantidade: item.quantidade,
+                    larguraCm: item.larguraCm?.toString() ?? "",
+                    alturaCm: item.alturaCm?.toString() ?? "",
+                    cores: item.cores ?? "",
+                    acabamento: item.acabamento ?? "",
+                    corFrente: item.corFrente?.toString() ?? "",
+                    corVerso: item.corVerso?.toString() ?? "",
+                    etiqueta: etiquetaParaCampos(item.etiqueta),
+                  }}
+                />
+                <AnaliseTintaCard
+                  orcamentoItemId={item.id}
+                  podeUsar={acessoTinta.liberado}
+                  mensagemBloqueio={acessoTinta.liberado ? null : acessoTinta.mensagem}
+                  itemAtual={{
+                    quantidade: item.quantidade,
+                    larguraCm: item.larguraCm ? Number(item.larguraCm) : null,
+                    alturaCm: item.alturaCm ? Number(item.alturaCm) : null,
+                  }}
+                  tinta={mapearTinta(item)}
+                />
+              </div>
             ))}
             <AdicionarItemForm
               orcamentoId={orcamento.id}
@@ -204,6 +307,20 @@ export default async function OrcamentoDetalhePage({
                   {item.acabamento && <span>Acabamento: {item.acabamento}</span>}
                   <span>Unitário: {formatoMoeda.format(Number(item.precoUnitario))}</span>
                 </div>
+                {item.etiqueta && <EtiquetaResumo etiqueta={item.etiqueta} />}
+                {orcamento.status !== "REJEITADO" && (
+                  <AnaliseTintaCard
+                    orcamentoItemId={item.id}
+                    podeUsar={acessoTinta.liberado}
+                    mensagemBloqueio={acessoTinta.liberado ? null : acessoTinta.mensagem}
+                    itemAtual={{
+                      quantidade: item.quantidade,
+                      larguraCm: item.larguraCm ? Number(item.larguraCm) : null,
+                      alturaCm: item.alturaCm ? Number(item.alturaCm) : null,
+                    }}
+                    tinta={mapearTinta(item)}
+                  />
+                )}
               </div>
             ))}
           </Card>
@@ -262,6 +379,11 @@ export default async function OrcamentoDetalhePage({
             </Card>
           </Link>
         )}
+
+        <Card className="mb-6 p-5">
+          <p className="mb-3 text-sm font-medium text-slate-500">Etapas de produção</p>
+          <EtapasOrcamentoForm orcamentoId={orcamento.id} valores={valoresEtapas} />
+        </Card>
 
         {custoComparado && custoComparado.itens.length > 0 && (
           <CustoProducaoCard comparacao={custoComparado} />

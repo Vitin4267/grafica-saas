@@ -129,10 +129,24 @@ export async function criarItemCatalogo(
   return { ok: true, mensagem: `"${nome}" adicionado ao catálogo.`, itemId: novoItem.id };
 }
 
-function numeroOuNulo(valor: FormDataEntryValue | null): number | null {
+// Devolve null pra campo vazio/ausente (legítimo: nem todo item tem preço ou
+// controle de estoque) e `false` pra valor inválido — que o chamador rejeita
+// com mensagem, em vez de gravar.
+//
+// O `>= 0` entrou em 2026-07-26: antes só checava finitude, e um preço de
+// COMPRA negativo era gravado sem reclamar. Isso não era só um número feio:
+// com a gráfica configurada em comissaoVendedorBase=LUCRO, o cálculo faz
+// `total - custo` (src/lib/comissao.ts) — subtrair um custo negativo inflava
+// a base da comissão do próprio vendedor que editou o catálogo, e essa
+// comissão vira Despesa real ao ser marcada como paga. Preço de VENDA
+// negativo, no modelo SIMPLES, também passava direto pro total do orçamento
+// (M2/OFFSET já rejeitavam). A variante nova logo abaixo (linhaVarianteNovaSchema)
+// já validava certo — este caminho "flat" é que estava fora do padrão.
+function numeroOuNulo(valor: FormDataEntryValue | null): number | null | false {
   if (valor === null || valor === "") return null;
   const n = Number(valor);
-  return Number.isFinite(n) ? n : null;
+  if (!Number.isFinite(n) || n < 0) return false;
+  return n;
 }
 
 const linhaVarianteNovaSchema = z.object({
@@ -140,6 +154,7 @@ const linhaVarianteNovaSchema = z.object({
   precoCompra: z.coerce.number().positive("Preço de compra deve ser maior que zero."),
   estoqueAtual: z.coerce.number().min(0, "Estoque atual não pode ser negativo.").optional(),
   estoqueMinimo: z.coerce.number().min(0, "Estoque mínimo não pode ser negativo.").optional(),
+  perdaFixaPadrao: z.coerce.number().min(0, "Perda fixa não pode ser negativa.").optional(),
 });
 
 export async function salvarCatalogo(
@@ -158,7 +173,7 @@ export async function salvarCatalogo(
   // gráfica e criar um ItemGrafica apontando pra ele.
   const itensCatalogo = await prisma.itemCatalogo.findMany({
     where: { OR: [{ graficaId: null }, { graficaId: usuario.graficaId }] },
-    select: { id: true },
+    select: { id: true, nome: true },
   });
 
   // Item de matéria-prima com variante ativa não usa mais o preço/estoque
@@ -178,7 +193,13 @@ export async function salvarCatalogo(
   // "salva tudo de uma vez, sem operação parcial" usado no resto do app.
   const variantesNovasPorItem = new Map<
     string,
-    { rotulo: string; precoCompra: number; estoqueAtual?: number; estoqueMinimo?: number }[]
+    {
+      rotulo: string;
+      precoCompra: number;
+      estoqueAtual?: number;
+      estoqueMinimo?: number;
+      perdaFixaPadrao?: number;
+    }[]
   >();
   for (const item of itensCatalogo) {
     const raw = formData.get(`variantesNovas_${item.id}`);
@@ -193,6 +214,41 @@ export async function salvarCatalogo(
       return { ok: false, mensagem: "Rótulo de variante duplicado." };
     }
     variantesNovasPorItem.set(item.id, parsedResult.data);
+  }
+
+  // Mesmo princípio do bloco acima: valida os campos numéricos "flat"
+  // (preço/estoque) de TODOS os itens antes de montar qualquer operação, pra
+  // nunca gravar um catálogo pela metade. Ver numeroOuNulo pro motivo de
+  // rejeitar negativo (comissão inflada via base LUCRO).
+  const CAMPOS_NUMERICOS = [
+    "compra",
+    "venda",
+    "estoqueAtual",
+    "estoqueMinimo",
+    "perdaFixaPadrao",
+  ] as const;
+  const ROTULO_CAMPO: Record<(typeof CAMPOS_NUMERICOS)[number], string> = {
+    compra: "preço de compra",
+    venda: "preço de venda",
+    estoqueAtual: "estoque atual",
+    estoqueMinimo: "estoque mínimo",
+    perdaFixaPadrao: "perda fixa de calibragem",
+  };
+  const numericosPorItem = new Map<string, Record<string, number | null>>();
+  for (const item of itensCatalogo) {
+    if (formData.get(`sel_${item.id}`) !== "on") continue;
+    const valores: Record<string, number | null> = {};
+    for (const campo of CAMPOS_NUMERICOS) {
+      const valor = numeroOuNulo(formData.get(`${campo}_${item.id}`));
+      if (valor === false) {
+        return {
+          ok: false,
+          mensagem: `Valor inválido em "${ROTULO_CAMPO[campo]}" de ${item.nome} — não pode ser negativo.`,
+        };
+      }
+      valores[campo] = valor;
+    }
+    numericosPorItem.set(item.id, valores);
   }
 
   const operacoes = itensCatalogo.map((item) => {
@@ -219,6 +275,7 @@ export async function salvarCatalogo(
         precoCompra: v.precoCompra,
         estoqueAtual: v.estoqueAtual ?? null,
         estoqueMinimo: v.estoqueMinimo ?? null,
+        perdaFixaPadrao: v.perdaFixaPadrao ?? null,
       }));
       return prisma.itemGrafica.upsert({
         where: {
@@ -234,12 +291,14 @@ export async function salvarCatalogo(
       });
     }
 
+    const numericos = numericosPorItem.get(item.id) ?? {};
     const dados = {
       ativo: true,
-      precoCompra: numeroOuNulo(formData.get(`compra_${item.id}`)),
-      precoVenda: numeroOuNulo(formData.get(`venda_${item.id}`)),
-      estoqueAtual: numeroOuNulo(formData.get(`estoqueAtual_${item.id}`)),
-      estoqueMinimo: numeroOuNulo(formData.get(`estoqueMinimo_${item.id}`)),
+      precoCompra: numericos.compra ?? null,
+      precoVenda: numericos.venda ?? null,
+      estoqueAtual: numericos.estoqueAtual ?? null,
+      estoqueMinimo: numericos.estoqueMinimo ?? null,
+      perdaFixaPadrao: numericos.perdaFixaPadrao ?? null,
     };
 
     return prisma.itemGrafica.upsert({

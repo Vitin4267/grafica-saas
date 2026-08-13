@@ -11,8 +11,13 @@
 // célula. Só se aplica a `string` (não a `number`) de propósito: um valor
 // numérico negativo formatado pela própria app (ex: -5) não deve virar texto
 // só por começar com "-".
+//
+// \r (CR) entrou na lista em 2026-07-26: faz parte da lista canônica da OWASP
+// e faltava aqui. Um campo de texto livre (ex: descrição de despesa) contendo
+// CR cria uma segunda linha lógica dentro da célula citada, e essa linha pode
+// começar com "=" mesmo que o campo inteiro não comece.
 function sanitizarCelulaCsv(valor: string): string {
-  return /^[=+\-@\t]/.test(valor) ? `'${valor}` : valor;
+  return /^[=+\-@\t\r]/.test(valor) ? `'${valor}` : valor;
 }
 
 export function linhaCsv(campos: (string | number)[]): string {

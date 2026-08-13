@@ -47,6 +47,7 @@ export default async function CatalogoPage() {
         precoVenda: ig.precoVenda?.toString() ?? "",
         estoqueAtual: ig.estoqueAtual?.toString() ?? "",
         estoqueMinimo: ig.estoqueMinimo?.toString() ?? "",
+        perdaFixaPadrao: ig.perdaFixaPadrao?.toString() ?? "",
         variantes: ig.variantes.map((v) => v.rotulo),
       },
     ])

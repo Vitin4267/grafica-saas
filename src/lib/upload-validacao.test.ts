@@ -26,16 +26,16 @@ describe("validarArquivoArte", () => {
     expect(resultado.ok).toBe(false);
   });
 
-  it("rejeita arquivo acima de 20MB", () => {
+  it("rejeita arquivo acima de 30MB", () => {
     const resultado = validarArquivoArte({
       type: "application/pdf",
-      size: 20 * 1024 * 1024 + 1,
+      size: 30 * 1024 * 1024 + 1,
     });
     expect(resultado.ok).toBe(false);
   });
 
-  it("aceita exatamente no limite de 20MB", () => {
-    expect(validarArquivoArte({ type: "application/pdf", size: 20 * 1024 * 1024 }).ok).toBe(true);
+  it("aceita exatamente no limite de 30MB", () => {
+    expect(validarArquivoArte({ type: "application/pdf", size: 30 * 1024 * 1024 }).ok).toBe(true);
   });
 });
 

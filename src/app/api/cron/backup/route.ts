@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { put, list, del } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
+import { cronAutorizado } from "@/lib/auth/cron";
 
 // Camada EXTRA de backup, não a principal — a defesa real contra perda de
 // dados é o PITR do próprio Neon (recomendado fazer upgrade de plano pro
@@ -95,10 +96,10 @@ async function limparBackupsAntigos() {
 export async function GET(request: NextRequest) {
   // Padrão Vercel Cron: só a própria infra da Vercel (ou quem souber o
   // segredo) consegue disparar — sem isso, a URL do endpoint sozinha já
-  // seria suficiente pra qualquer um forçar um backup (barato, mas ainda
-  // assim não deveria ser público).
-  const auth = request.headers.get("authorization");
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  // seria suficiente pra qualquer um forçar um backup (dump completo de
+  // TODAS as tabelas de TODOS os tenants a cada chamada, caro no Neon e no
+  // Blob). Ver src/lib/auth/cron.ts pro porquê de não comparar direto.
+  if (!cronAutorizado(request.headers.get("authorization"))) {
     return new Response("Unauthorized", { status: 401 });
   }
 

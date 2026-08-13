@@ -13,6 +13,18 @@ export function escapeHtml(texto: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
+
+// Nome de cliente/gráfica só faz `.trim()` na validação de entrada (remove
+// quebra de linha só das BORDAS, ver src/lib/clientes.ts e
+// src/lib/auth/validation.ts) — uma quebra de linha no MEIO do nome
+// sobrevive e vai parar direto no campo `assunto` do envelope de e-mail. Se o
+// nó de e-mail do n8n mapear `assunto` pro header Subject sem sanitizar, isso
+// é header injection de SMTP (o "atacante" aqui só consegue mirar contra o
+// próprio dono da gráfica, por isso baixo risco — mas custa nada fechar).
+// Aplicado a todo nome que entra em `assunto` abaixo.
+function removerQuebrasDeLinha(texto: string): string {
+  return texto.replace(/[\r\n]+/g, " ");
+}
 export function templateResetSenha(link: string): { assunto: string; html: string; texto: string } {
   return {
     assunto: "Redefinir sua senha — Gráfica+",
@@ -45,8 +57,8 @@ export function templateEstoqueBaixo(
 ): { assunto: string; html: string; texto: string } {
   const assunto =
     itens.length === 1
-      ? `Estoque baixo: ${itens[0].nome} — ${graficaNome}`
-      : `${itens.length} itens com estoque baixo — ${graficaNome}`;
+      ? `Estoque baixo: ${removerQuebrasDeLinha(itens[0].nome)} — ${removerQuebrasDeLinha(graficaNome)}`
+      : `${itens.length} itens com estoque baixo — ${removerQuebrasDeLinha(graficaNome)}`;
 
   const linhaTexto = (i: ItemEstoqueBaixo) =>
     `- ${i.nome}: ${i.estoqueAtual} ${i.unidade} (mínimo: ${i.estoqueMinimo} ${i.unidade})`;
@@ -121,7 +133,7 @@ export function templateArteAlteracaoSolicitada(
   linkProducao: string
 ): { assunto: string; html: string; texto: string } {
   return {
-    assunto: `${clienteNome} pediu alteração na arte — ${graficaNome}`,
+    assunto: `${removerQuebrasDeLinha(clienteNome)} pediu alteração na arte — ${removerQuebrasDeLinha(graficaNome)}`,
     texto: `${clienteNome} pediu uma alteração na arte de um pedido.\n\nComentário do cliente:\n"${comentario}"\n\nVeja o pedido em: ${linkProducao}`,
     html: `
       <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
@@ -159,7 +171,7 @@ export function templateArteAprovada(
         </li>`;
 
   return {
-    assunto: `Arte aprovada — pedido de ${clienteNome} — ${graficaNome}`,
+    assunto: `Arte aprovada — pedido de ${removerQuebrasDeLinha(clienteNome)} — ${removerQuebrasDeLinha(graficaNome)}`,
     texto: `${clienteNome} aprovou a arte do pedido — já pode seguir pra impressão.\n\nItens:\n${itens.map(linhaTexto).join("\n")}\n\nVeja o pedido em: ${linkProducao}`,
     html: `
       <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">

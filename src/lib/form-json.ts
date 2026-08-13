@@ -9,7 +9,8 @@ export type ParseJsonArrayResult<T> =
 // no cliente — valida a forma (array) e cada item contra o schema zod fornecido.
 export function parseJsonArray<T>(
   raw: FormDataEntryValue | null,
-  schema: z.ZodType<T>
+  schema: z.ZodType<T>,
+  opcoes?: { max?: number }
 ): ParseJsonArrayResult<T> {
   if (!raw) return { ok: true, data: [] };
 
@@ -21,6 +22,11 @@ export function parseJsonArray<T>(
   }
   if (!Array.isArray(parsedJson)) {
     return { ok: false, mensagem: "Dados inválidos enviados pelo formulário." };
+  }
+  // Sem isso, um POST forjado podia mandar dezenas de milhares de linhas — cada
+  // uma validada e gravada, deixando a página/PDF permanentemente pesados.
+  if (opcoes?.max !== undefined && parsedJson.length > opcoes.max) {
+    return { ok: false, mensagem: `Envie no máximo ${opcoes.max} itens.` };
   }
 
   const resultado: T[] = [];

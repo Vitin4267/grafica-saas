@@ -121,6 +121,39 @@ const JANELA_VERIFICACAO_EMAIL_MS = 1000 * 60 * 15; // 15 minutos
 const LIMITE_VERIFICACAO_EMAIL_POR_USUARIO = 3;
 const LIMITE_VERIFICACAO_EMAIL_POR_IP = 10;
 
+// Protege responderArtePublica (src/app/a/[token]/actions.ts): quem tem o
+// token de um pedido consegue chamar a action indefinidamente — o branch
+// "pedir alteração" não trava sozinho (diferente de "aprovar"), então cada
+// chamada dispara um e-mail novo pro(s) DONO(s). Limita por pedidoId (o
+// alvo real, não muda trocando de IP) e por IP (limita abuso espalhado por
+// vários pedidos). Janela mais curta e limite mais alto que reset de senha
+// de propósito: um cliente real pode legitimamente pedir 2-3 alterações
+// seguidas numa conversa indo e voltando com a gráfica.
+const JANELA_RESPOSTA_ARTE_MS = 1000 * 60 * 15; // 15 minutos
+const LIMITE_RESPOSTA_ARTE_POR_PEDIDO = 5;
+const LIMITE_RESPOSTA_ARTE_POR_IP = 15;
+
+export async function tentarRegistrarRespostaArte(pedidoId: string, ip: string): Promise<boolean> {
+  const desde = new Date(Date.now() - JANELA_RESPOSTA_ARTE_MS);
+  return prisma.$transaction(
+    async (tx) => {
+      const [tentativasPedido, tentativasIp] = await Promise.all([
+        tx.tentativaRespostaArte.count({ where: { pedidoId, createdAt: { gte: desde } } }),
+        tx.tentativaRespostaArte.count({ where: { ip, createdAt: { gte: desde } } }),
+      ]);
+      if (
+        tentativasPedido >= LIMITE_RESPOSTA_ARTE_POR_PEDIDO ||
+        tentativasIp >= LIMITE_RESPOSTA_ARTE_POR_IP
+      ) {
+        return true;
+      }
+      await tx.tentativaRespostaArte.create({ data: { pedidoId, ip } });
+      return false;
+    },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+  );
+}
+
 export async function tentarRegistrarVerificacaoEmail(
   usuarioId: string,
   ip: string

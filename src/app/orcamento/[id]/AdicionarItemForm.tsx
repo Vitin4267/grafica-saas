@@ -47,6 +47,46 @@ export function AdicionarItemForm({
         <input type="hidden" name="corVerso" value={campos.corVerso} />
         <input type="hidden" name="cores" value={campos.cores} />
         <input type="hidden" name="acabamento" value={campos.acabamento} />
+        <input type="hidden" name="materialSubstrato" value={campos.etiqueta.materialSubstrato} />
+        <input type="hidden" name="materialSubstratoOutro" value={campos.etiqueta.materialSubstratoOutro} />
+        <input type="hidden" name="tipoAdesivo" value={campos.etiqueta.tipoAdesivo} />
+        <input type="hidden" name="superficieAplicacao" value={campos.etiqueta.superficieAplicacao} />
+        <input type="hidden" name="formatoEtiqueta" value={campos.etiqueta.formatoEtiqueta} />
+        <input type="hidden" name="coresRotulo" value={campos.etiqueta.coresRotulo} />
+        <input type="hidden" name="coresContraRotulo" value={campos.etiqueta.coresContraRotulo} />
+        <input type="hidden" name="embalagemQtdPorRolo" value={campos.etiqueta.embalagemQtdPorRolo} />
+        <input type="hidden" name="tubeteMedida" value={campos.etiqueta.tubeteMedida} />
+        <input type="hidden" name="rotulagem" value={campos.etiqueta.rotulagem} />
+        <input type="hidden" name="serrilha" value={campos.etiqueta.serrilha} />
+        <input type="hidden" name="vernizRotuloTotal" value={String(campos.etiqueta.vernizRotuloTotal)} />
+        <input type="hidden" name="vernizRotuloReserva" value={String(campos.etiqueta.vernizRotuloReserva)} />
+        <input type="hidden" name="vernizRotuloTipo" value={campos.etiqueta.vernizRotuloTipo} />
+        <input
+          type="hidden"
+          name="vernizContraRotuloTotal"
+          value={String(campos.etiqueta.vernizContraRotuloTotal)}
+        />
+        <input
+          type="hidden"
+          name="vernizContraRotuloReserva"
+          value={String(campos.etiqueta.vernizContraRotuloReserva)}
+        />
+        <input type="hidden" name="vernizContraRotuloTipo" value={campos.etiqueta.vernizContraRotuloTipo} />
+        <input type="hidden" name="laminacaoRotulo" value={campos.etiqueta.laminacaoRotulo} />
+        <input type="hidden" name="laminacaoContraRotulo" value={campos.etiqueta.laminacaoContraRotulo} />
+        <input type="hidden" name="rebobinamento" value={campos.etiqueta.rebobinamento} />
+        <input
+          type="hidden"
+          name="hotStampingsJson"
+          value={JSON.stringify(
+            campos.etiqueta.hotStampings.map((h) => ({
+              lado: h.lado,
+              tipo: h.tipo,
+              medida: h.medida || null,
+              cor: h.cor || null,
+            }))
+          )}
+        />
 
         <SeletorItemOrcamento itens={itens} valores={campos} onChange={setCampos} />
 

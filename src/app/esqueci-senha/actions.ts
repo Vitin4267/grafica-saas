@@ -63,11 +63,15 @@ export async function solicitarResetSenha(
     const link = `${origem}/redefinir-senha?token=${tokenBruto}`;
     const { assunto, html, texto } = templateResetSenha(link);
 
-    // dispararEventoEmail já é melhor esforço por dentro (nunca lança) —
-    // reforça o mesmo princípio aqui: falha de envio não pode vazar
-    // diferença na resposta em relação ao caminho "e-mail não existe"
-    // (ver MENSAGEM_GENERICA).
-    await dispararEventoEmail({
+    // `void` em vez de `await` (2026-07-26): a MENSAGEM já era idêntica nos
+    // dois caminhos, mas o TEMPO não. E-mail inexistente respondia logo após
+    // o findUnique; e-mail existente ainda esperava um fetch HTTPS completo
+    // até o n8n (timeout de 5s) — dezenas a centenas de ms de diferença,
+    // suficiente pra enumerar contas cronometrando a resposta, anulando todo
+    // o cuidado da MENSAGEM_GENERICA. dispararEventoEmail já é melhor esforço
+    // por dentro (nunca lança), então não aguardar não perde tratamento de
+    // erro nenhum — mesmo padrão de void já usado em producao/actions.ts.
+    void dispararEventoEmail({
       tipo: "reset_senha_solicitado",
       destinatario: email,
       assunto,

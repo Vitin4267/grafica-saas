@@ -14,6 +14,7 @@ type LinhaVariante = {
   precoCompra: string;
   estoqueAtual: string;
   estoqueMinimo: string;
+  perdaFixaPadrao: string;
 };
 
 function CampoLinha({
@@ -53,18 +54,29 @@ export function VariantesMateriaPrimaForm({
     precoCompra: string;
     estoqueAtual: string;
     estoqueMinimo: string;
+    perdaFixaPadrao: string;
   }[];
 }) {
   const [linhas, setLinhas] = useState<LinhaVariante[]>(() =>
     linhasIniciais.length > 0
       ? linhasIniciais.map((l) => ({ chave: gerarChave(), ...l }))
-      : [{ chave: gerarChave(), id: "", rotulo: "", precoCompra: "", estoqueAtual: "", estoqueMinimo: "" }]
+      : [
+          {
+            chave: gerarChave(),
+            id: "",
+            rotulo: "",
+            precoCompra: "",
+            estoqueAtual: "",
+            estoqueMinimo: "",
+            perdaFixaPadrao: "",
+          },
+        ]
   );
   const [state, formAction, isPending] = useActionState(salvarVariantesMateriaPrima, null);
 
   const atualizar = (
     chave: string,
-    campo: "rotulo" | "precoCompra" | "estoqueAtual" | "estoqueMinimo",
+    campo: "rotulo" | "precoCompra" | "estoqueAtual" | "estoqueMinimo" | "perdaFixaPadrao",
     valor: string
   ) => {
     setLinhas((atual) => atual.map((l) => (l.chave === chave ? { ...l, [campo]: valor } : l)));
@@ -73,7 +85,15 @@ export function VariantesMateriaPrimaForm({
   const adicionar = () =>
     setLinhas((atual) => [
       ...atual,
-      { chave: gerarChave(), id: "", rotulo: "", precoCompra: "", estoqueAtual: "", estoqueMinimo: "" },
+      {
+        chave: gerarChave(),
+        id: "",
+        rotulo: "",
+        precoCompra: "",
+        estoqueAtual: "",
+        estoqueMinimo: "",
+        perdaFixaPadrao: "",
+      },
     ]);
 
   return (
@@ -98,12 +118,13 @@ export function VariantesMateriaPrimaForm({
           value={JSON.stringify(
             linhas
               .filter((l) => l.rotulo && l.precoCompra)
-              .map(({ id, rotulo, precoCompra, estoqueAtual, estoqueMinimo }) => ({
+              .map(({ id, rotulo, precoCompra, estoqueAtual, estoqueMinimo, perdaFixaPadrao }) => ({
                 id: id || undefined,
                 rotulo,
                 precoCompra,
                 estoqueAtual: estoqueAtual || undefined,
                 estoqueMinimo: estoqueMinimo || undefined,
+                perdaFixaPadrao: perdaFixaPadrao || undefined,
               }))
           )}
         />
@@ -148,6 +169,16 @@ export function VariantesMateriaPrimaForm({
                   onChange={(v) => atualizar(linha.chave, "estoqueMinimo", v)}
                   placeholder="opcional"
                   step="0.01"
+                  min="0"
+                />
+              </label>
+              <label className="flex w-32 flex-col gap-1">
+                <span className="text-xs text-slate-500">Perda fixa de calibragem</span>
+                <CampoLinha
+                  value={linha.perdaFixaPadrao}
+                  onChange={(v) => atualizar(linha.chave, "perdaFixaPadrao", v)}
+                  placeholder="opcional"
+                  step="0.0001"
                   min="0"
                 />
               </label>

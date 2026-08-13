@@ -9,6 +9,7 @@ import { UsersIcon, TrendingUpIcon, BuildingIcon, CheckCircleIcon, SparklesIcon 
 import type { StatusAssinatura, PapelUsuario } from "@/generated/prisma/enums";
 import type { Plano, PlanoId } from "@/lib/billing/planos";
 import type { PlanoComPreco } from "@/lib/billing/precos";
+import { formatarBytes, percentualUsado } from "@/lib/billing/limite-armazenamento";
 
 const ROTULO_STATUS: Record<StatusAssinatura, string> = {
   TRIALING: "Em teste gratuito",
@@ -43,6 +44,7 @@ function CardPlano({ plano }: { plano: PlanoComPreco }) {
     plano.limiteUsuarios === null
       ? "Usuários ilimitados"
       : `Até ${plano.limiteUsuarios} usuário${plano.limiteUsuarios === 1 ? "" : "s"}`,
+    `Até ${formatarBytes(plano.limiteArmazenamentoMb * 1024 * 1024)} de arquivos`,
   ];
 
   return (
@@ -123,6 +125,9 @@ export function AssinaturaForm({
   planoAtual,
   uso,
   diasAteBloqueio,
+  armazenamentoUsadoBytes,
+  armazenamentoLimiteBytes,
+  armazenamentoEhTrial,
 }: {
   status: StatusAssinatura;
   cortesia: boolean;
@@ -135,7 +140,20 @@ export function AssinaturaForm({
   planoAtual: Plano | null;
   uso: { orcamentosMes: number; usuarios: number } | null;
   diasAteBloqueio: number | null;
+  armazenamentoUsadoBytes: number;
+  armazenamentoLimiteBytes: number;
+  armazenamentoEhTrial: boolean;
 }) {
+  const percentualArmazenamento = percentualUsado({
+    usadoBytes: armazenamentoUsadoBytes,
+    limiteBytes: armazenamentoLimiteBytes,
+  });
+  const corBarraArmazenamento =
+    percentualArmazenamento >= 95
+      ? "bg-rose-600"
+      : percentualArmazenamento >= 80
+        ? "bg-amber-500"
+        : "bg-teal-600";
   const [estadoPortal, acaoPortal, portalPending] = useActionState(abrirPortalCliente, null);
 
   // "ADMIN", não "Cortesia" — é o dono da plataforma, faz sentido a etiqueta
@@ -180,26 +198,54 @@ export function AssinaturaForm({
           </Alert>
         )}
 
-        {uso && planoAtual && (
-          <div className="flex flex-wrap gap-6 border-t border-slate-100 pt-4 dark:border-slate-800">
+        {(uso || armazenamentoLimiteBytes > 0) && (
+          <div className="flex flex-col gap-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+            {uso && planoAtual && (
+              <div className="flex flex-wrap gap-6">
+                <div>
+                  <p className="text-xs text-slate-500">Orçamentos este mês</p>
+                  <p className="text-lg font-semibold text-slate-900 dark:text-white">
+                    {uso.orcamentosMes}
+                    {planoAtual.limiteOrcamentosMes !== null && (
+                      <span className="text-sm font-normal text-slate-400"> / {planoAtual.limiteOrcamentosMes}</span>
+                    )}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Usuários</p>
+                  <p className="text-lg font-semibold text-slate-900 dark:text-white">
+                    {uso.usuarios}
+                    {planoAtual.limiteUsuarios !== null && (
+                      <span className="text-sm font-normal text-slate-400"> / {planoAtual.limiteUsuarios}</span>
+                    )}
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div>
-              <p className="text-xs text-slate-500">Orçamentos este mês</p>
-              <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                {uso.orcamentosMes}
-                {planoAtual.limiteOrcamentosMes !== null && (
-                  <span className="text-sm font-normal text-slate-400"> / {planoAtual.limiteOrcamentosMes}</span>
-                )}
-              </p>
+              <div className="mb-1.5 flex items-baseline justify-between">
+                <p className="text-xs text-slate-500">Armazenamento</p>
+                <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                  {formatarBytes(armazenamentoUsadoBytes)} / {formatarBytes(armazenamentoLimiteBytes)}
+                </p>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                <div
+                  className={`h-full rounded-full transition-all ${corBarraArmazenamento}`}
+                  style={{ width: `${percentualArmazenamento}%` }}
+                />
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-slate-500">Usuários</p>
-              <p className="text-lg font-semibold text-slate-900 dark:text-white">
-                {uso.usuarios}
-                {planoAtual.limiteUsuarios !== null && (
-                  <span className="text-sm font-normal text-slate-400"> / {planoAtual.limiteUsuarios}</span>
-                )}
-              </p>
-            </div>
+
+            {percentualArmazenamento >= 90 && (
+              <Alert variant="warning">
+                Você já usou {Math.round(percentualArmazenamento)}% do seu espaço.{" "}
+                {armazenamentoEhTrial
+                  ? "Apague artes de pedidos antigos ou assine um plano pra liberar mais espaço."
+                  : "Apague artes de pedidos antigos ou faça upgrade pra continuar enviando arquivos."}
+              </Alert>
+            )}
           </div>
         )}
 

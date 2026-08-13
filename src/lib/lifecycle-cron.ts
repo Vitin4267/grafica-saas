@@ -1,8 +1,10 @@
 import "server-only";
+import { list, del, head } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { dispararEventoEmail } from "@/lib/email/webhook-email";
 import { templateTrialExpirando } from "@/lib/email/templates";
 import { dispararMetrica } from "@/lib/webhook-metricas";
+import { diferencaReconciliacao, type LinhaRazao, type BlobReal } from "@/lib/billing/reconciliacao-armazenamento";
 
 // Lógica do cron diário de "ciclo de vida" (src/app/api/cron/lifecycle/
 // route.ts) — separada da rota pra poder ser testada sem precisar montar um
@@ -128,4 +130,124 @@ export async function enviarMetricasDiarias(): Promise<MetricasAgregadas> {
   // não estiver configurada, isso é só um no-op; o cron continua ok.
   await dispararMetrica({ tipo: "metricas_diarias", dados: metricas });
   return metricas;
+}
+
+// --- Reconciliação da cota de armazenamento ------------------------------
+
+// Preenche o razão (ArquivoArmazenado) pra arte/logo que já existiam ANTES
+// desta feature — sem isso, todo arquivo enviado antes de hoje seria
+// classificado como "órfão" pela etapa de limpeza abaixo. Idempotente: só
+// cria linha pra quem ainda não tem uma.
+async function backfillArquivosLegados(): Promise<void> {
+  const [pedidosComArte, graficasComLogo] = await Promise.all([
+    prisma.pedido.findMany({
+      where: { arteUrl: { not: null } },
+      select: { id: true, graficaId: true, arteUrl: true },
+    }),
+    prisma.grafica.findMany({
+      where: { logoUrl: { not: null } },
+      select: { id: true, logoUrl: true },
+    }),
+  ]);
+
+  for (const pedido of pedidosComArte) {
+    const jaTemLinha = await prisma.arquivoArmazenado.findFirst({
+      where: { tipo: "ARTE_PEDIDO", referenciaId: pedido.id },
+    });
+    if (jaTemLinha) continue;
+    const info = await head(pedido.arteUrl!).catch(() => null);
+    if (!info) continue; // blob já não existe mais — nada a preencher
+    await prisma.arquivoArmazenado.create({
+      data: {
+        graficaId: pedido.graficaId,
+        tipo: "ARTE_PEDIDO",
+        referenciaId: pedido.id,
+        bytes: info.size,
+        url: info.url,
+        pathname: info.pathname,
+      },
+    });
+  }
+
+  for (const grafica of graficasComLogo) {
+    const jaTemLinha = await prisma.arquivoArmazenado.findFirst({
+      where: { tipo: "LOGO_GRAFICA", referenciaId: grafica.id },
+    });
+    if (jaTemLinha) continue;
+    const info = await head(grafica.logoUrl!).catch(() => null);
+    if (!info) continue;
+    await prisma.arquivoArmazenado.create({
+      data: {
+        graficaId: grafica.id,
+        tipo: "LOGO_GRAFICA",
+        referenciaId: grafica.id,
+        bytes: info.size,
+        url: info.url,
+        pathname: info.pathname,
+      },
+    });
+  }
+}
+
+export type ResultadoReconciliacaoArmazenamento = {
+  reservasExpiradas: number;
+  bytesCorrigidos: number;
+  linhasRemovidasDoRazao: number;
+  orfaosEncontrados: number;
+  orfaosApagados: number;
+};
+
+// Rede de segurança da cota de armazenamento (ver src/lib/billing/armazenamento.ts
+// e o comentário do model ArquivoArmazenado no schema): corrige o razão pra
+// bater com a verdade do Blob, e opcionalmente apaga arquivo órfão (upload
+// cujo registro nunca existiu/foi perdido — a mesma classe de bug que o
+// del() ausente já causou uma vez neste projeto, ver comentário em
+// enviarArte). A etapa de apagar é destrutiva, então fica atrás de uma env
+// var desligada por padrão — rode uma vez só CONTANDO antes de ligar.
+export async function reconciliarArmazenamento(): Promise<ResultadoReconciliacaoArmazenamento> {
+  await backfillArquivosLegados();
+
+  const linhasRazao: LinhaRazao[] = await prisma.arquivoArmazenado.findMany({
+    select: { id: true, url: true, bytes: true, createdAt: true },
+  });
+
+  const blobsReais: BlobReal[] = [];
+  let cursor: string | undefined;
+  do {
+    const pagina = await list({ cursor, limit: 1000 });
+    blobsReais.push(
+      ...pagina.blobs.map((b) => ({ url: b.url, pathname: b.pathname, size: b.size, uploadedAt: b.uploadedAt }))
+    );
+    cursor = pagina.hasMore ? pagina.cursor : undefined;
+  } while (cursor);
+
+  const diferenca = diferencaReconciliacao(linhasRazao, blobsReais);
+
+  if (diferenca.reservasExpiradas.length > 0) {
+    await prisma.arquivoArmazenado.deleteMany({ where: { id: { in: diferenca.reservasExpiradas } } });
+  }
+  for (const item of diferenca.paraCorrigirBytes) {
+    await prisma.arquivoArmazenado.update({ where: { id: item.id }, data: { bytes: item.bytesCorreto } });
+  }
+  if (diferenca.paraRemoverDoRazao.length > 0) {
+    await prisma.arquivoArmazenado.deleteMany({ where: { id: { in: diferenca.paraRemoverDoRazao } } });
+  }
+
+  let orfaosApagados = 0;
+  // Desligado por padrão de propósito (ver comentário da função) — com a
+  // env var ausente/diferente de "1", esta etapa só CONTA, nunca apaga.
+  if (process.env.ARMAZENAMENTO_LIMPEZA_ORFAOS === "1") {
+    for (const orfao of diferenca.orfaosParaApagar) {
+      await del(orfao.url).catch(() => {});
+      orfaosApagados++;
+    }
+  }
+
+  return {
+    reservasExpiradas: diferenca.reservasExpiradas.length,
+    bytesCorrigidos: diferenca.paraCorrigirBytes.length,
+    linhasRemovidasDoRazao: diferenca.paraRemoverDoRazao.length,
+    orfaosEncontrados: diferenca.orfaosParaApagar.length,
+    orfaosApagados,
+  };
 }

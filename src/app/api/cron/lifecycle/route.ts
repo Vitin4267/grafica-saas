@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
-import { enviarAvisosTrialExpirando, enviarMetricasDiarias } from "@/lib/lifecycle-cron";
+import { enviarAvisosTrialExpirando, enviarMetricasDiarias, reconciliarArmazenamento } from "@/lib/lifecycle-cron";
+import { cronAutorizado } from "@/lib/auth/cron";
 
 // Cron diário (vercel.json) de "ciclo de vida" da plataforma: 1) aviso de
 // trial acabando (e-mail via EMAIL_WEBHOOK_URL) e 2) métricas agregadas de
@@ -10,8 +11,7 @@ import { enviarAvisosTrialExpirando, enviarMetricasDiarias } from "@/lib/lifecyc
 export async function GET(request: NextRequest) {
   // Mesma proteção de src/app/api/cron/backup/route.ts: só a própria infra
   // da Vercel (ou quem souber o segredo) consegue disparar.
-  const auth = request.headers.get("authorization");
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!cronAutorizado(request.headers.get("authorization"))) {
     return new Response("Unauthorized", { status: 401 });
   }
 
@@ -21,14 +21,16 @@ export async function GET(request: NextRequest) {
   // Components) pra montar o link que vai dentro do e-mail de trial.
   const origemPublica = (process.env.APP_URL ?? request.nextUrl.origin).replace(/\/+$/, "");
 
-  const [avisosTrial, metricas] = await Promise.all([
+  const [avisosTrial, metricas, armazenamento] = await Promise.all([
     enviarAvisosTrialExpirando(origemPublica),
     enviarMetricasDiarias(),
+    reconciliarArmazenamento(),
   ]);
 
   return Response.json({
     ok: true,
     avisosTrial,
     metricas,
+    armazenamento,
   });
 }

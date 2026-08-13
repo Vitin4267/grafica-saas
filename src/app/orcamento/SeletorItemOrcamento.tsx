@@ -2,6 +2,7 @@
 
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { CamposEtiquetaOrcamento, etiquetaInicial, type CamposEtiqueta } from "./CamposEtiquetaOrcamento";
 
 export type ItemVenda = {
   id: string;
@@ -20,6 +21,7 @@ export type CamposItemOrcamento = {
   corVerso: string;
   cores: string;
   acabamento: string;
+  etiqueta: CamposEtiqueta;
 };
 
 export function camposIniciais(itens: ItemVenda[]): CamposItemOrcamento {
@@ -32,6 +34,7 @@ export function camposIniciais(itens: ItemVenda[]): CamposItemOrcamento {
     corVerso: "0",
     cores: "",
     acabamento: "",
+    etiqueta: etiquetaInicial(),
   };
 }
 
@@ -74,6 +77,7 @@ export function SeletorItemOrcamento({
       corVerso: "0",
       cores: "",
       acabamento: "",
+      etiqueta: etiquetaInicial(),
     });
   };
 
@@ -153,6 +157,13 @@ export function SeletorItemOrcamento({
         onChange={set("acabamento")}
         placeholder="ex: laminação fosca, corte reto"
       />
+
+      {usaModeloM2 && (
+        <CamposEtiquetaOrcamento
+          valores={valores.etiqueta}
+          onChange={(etiqueta) => onChange({ ...valores, etiqueta })}
+        />
+      )}
     </div>
   );
 }

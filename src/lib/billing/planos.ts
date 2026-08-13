@@ -1,5 +1,7 @@
 import "server-only";
 
+import { ROTULO_PLANO } from "@/lib/billing/recursos-pagos";
+
 // O preço em si mora no Stripe (Product + Price), não duplicado aqui — evita
 // duas fontes de verdade pro valor em R$. Limites de uso (orçamentos/mês,
 // usuários) é que definem qual plano cada gráfica precisa — ver
@@ -13,6 +15,12 @@ export type Plano = {
   descricao: string;
   limiteOrcamentosMes: number | null; // null = ilimitado
   limiteUsuarios: number | null; // null = ilimitado
+  // Nunca null, ao contrário dos dois de cima: armazenamento tem custo
+  // direto e recorrente pra plataforma (Vercel Blob), diferente de
+  // orçamento/usuário (linha de banco, custo marginal ~zero) — "ilimitado"
+  // aqui seria repasse de custo sem teto num plano de preço fixo. Ver
+  // src/lib/billing/limite-armazenamento.ts.
+  limiteArmazenamentoMb: number;
 };
 
 export const TRIAL_DIAS = 14;
@@ -32,30 +40,34 @@ const DEFINICOES_PLANO: {
   descricao: string;
   limiteOrcamentosMes: number | null;
   limiteUsuarios: number | null;
+  limiteArmazenamentoMb: number;
 }[] = [
   {
     id: "basico",
-    nome: "Básico",
+    nome: ROTULO_PLANO.basico,
     envVar: "STRIPE_PRICE_ID_BASICO",
-    descricao: "Pra quem está começando: até 90 orçamentos por mês, até 2 usuários.",
+    descricao: "Pra quem está começando: até 90 orçamentos por mês, até 2 usuários, 5GB de arquivos.",
     limiteOrcamentosMes: 90,
     limiteUsuarios: 2,
+    limiteArmazenamentoMb: 5 * 1024,
   },
   {
     id: "pro",
-    nome: "Pro",
+    nome: ROTULO_PLANO.pro,
     envVar: "STRIPE_PRICE_ID_PRO",
-    descricao: "Pra gráfica em crescimento: até 300 orçamentos por mês, até 8 usuários.",
+    descricao: "Pra gráfica em crescimento: até 300 orçamentos por mês, até 8 usuários, 25GB de arquivos.",
     limiteOrcamentosMes: 300,
     limiteUsuarios: 8,
+    limiteArmazenamentoMb: 25 * 1024,
   },
   {
     id: "empresarial",
-    nome: "Empresarial",
+    nome: ROTULO_PLANO.empresarial,
     envVar: "STRIPE_PRICE_ID_EMPRESARIAL",
-    descricao: "Uso e usuários ilimitados.",
+    descricao: "Uso e usuários ilimitados, até 100GB de arquivos.",
     limiteOrcamentosMes: null,
     limiteUsuarios: null,
+    limiteArmazenamentoMb: 100 * 1024,
   },
 ];
 

@@ -52,13 +52,17 @@ const TAMANHO_MAXIMO_RESPOSTA = 4000; // evita renderizar uma resposta absurdame
 // pro nível de confiança de um admin configurando o próprio webhook.
 function ipv4EhPrivadoOuReservado(ip: string): boolean {
   const octetos = ip.split(".").map(Number);
-  const [a, b] = octetos;
+  const [a, b, c] = octetos;
   if (a === 10) return true;
   if (a === 172 && b >= 16 && b <= 31) return true;
   if (a === 192 && b === 168) return true;
   if (a === 127) return true;
   if (a === 169 && b === 254) return true; // inclui metadata de nuvem
   if (a === 0) return true;
+  // Faixas que faltavam (achado da auditoria de 2026-07-26):
+  if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10, CGNAT — inclui metadata da Alibaba Cloud (100.100.100.200)
+  if (a === 198 && (b === 18 || b === 19)) return true; // 198.18.0.0/15, benchmarking
+  if (a === 192 && b === 0 && c === 0) return true; // 192.0.0.0/24, IETF Protocol Assignments
   return false;
 }
 
@@ -97,8 +101,10 @@ function hostnameEhPrivadoOuReservado(hostname: string): boolean {
   }
   if (versaoIp === 6) {
     if (host === "::1") return true;
+    if (host === "::") return true; // não-especificado — roteia pra loopback em dual-stack
     if (host.startsWith("fc") || host.startsWith("fd")) return true; // fc00::/7
     if (host.startsWith("fe80:")) return true; // link-local
+    if (host.startsWith("64:ff9b::")) return true; // NAT64 (RFC 6052) — mesmo raciocínio do IPv4-mapeado abaixo
 
     const ipv4Mapeado = extrairIpv4MapeadoEmIpv6(host);
     if (ipv4Mapeado && ipv4EhPrivadoOuReservado(ipv4Mapeado)) return true;

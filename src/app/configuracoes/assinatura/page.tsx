@@ -5,6 +5,8 @@ import { TRIAL_DIAS, obterPlanos, obterPlanoPorPriceId } from "@/lib/billing/pla
 import { DIAS_TOLERANCIA_LIMITE } from "@/lib/billing/limite-uso";
 import { calcularUsoAtual } from "@/lib/billing/uso";
 import { anexarPrecos } from "@/lib/billing/precos";
+import { calcularArmazenamentoUsado } from "@/lib/billing/armazenamento";
+import { resolverLimiteArmazenamentoMb, mbParaBytes } from "@/lib/billing/limite-armazenamento";
 import { UserNav } from "@/components/UserNav";
 import { Alert } from "@/components/ui/Alert";
 import { AssinaturaForm } from "./AssinaturaForm";
@@ -48,6 +50,19 @@ export default async function ConfiguracoesAssinaturaPage({
 
   const planoAtual = obterPlanoPorPriceId(assinatura.stripePriceId);
   const uso = assinatura.status === "ATIVA" ? await calcularUsoAtual(usuario.graficaId) : null;
+
+  // Sem condicionar ao status, ao contrário de `uso` acima — armazenamento é
+  // o único indicador que também vale durante o trial. Usa a `assinatura`
+  // recém lida/upsertada nesta página (não usuario.grafica.assinatura, que
+  // pode estar desatualizada na primeira visita — ver self-healing acima).
+  const armazenamentoLimiteMb = resolverLimiteArmazenamentoMb({
+    status: assinatura.status,
+    cortesia: assinatura.cortesia,
+    plano: planoAtual,
+  });
+  const armazenamentoEhTrial = assinatura.status === "TRIALING" && !planoAtual;
+  const armazenamentoUsadoBytes = await calcularArmazenamentoUsado(usuario.graficaId);
+  const armazenamentoLimiteBytes = mbParaBytes(armazenamentoLimiteMb);
 
   const diasAteBloqueio = assinatura.limiteExcedidoDesde
     ? DIAS_TOLERANCIA_LIMITE -
@@ -116,6 +131,9 @@ export default async function ConfiguracoesAssinaturaPage({
           planoAtual={planoAtual}
           uso={uso}
           diasAteBloqueio={diasAteBloqueio}
+          armazenamentoUsadoBytes={armazenamentoUsadoBytes}
+          armazenamentoLimiteBytes={armazenamentoLimiteBytes}
+          armazenamentoEhTrial={armazenamentoEhTrial}
         />
       </main>
     </div>

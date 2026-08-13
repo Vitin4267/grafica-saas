@@ -46,6 +46,7 @@ model Grafica {
   assinatura            AssinaturaGrafica?
   comissoes             Comissao[]
   filiais               Filial[]
+  arquivos              ArquivoArmazenado[]
 
   @@map("graficas")
 }
@@ -500,6 +501,29 @@ model TentativaResetSenha {
   @@map("tentativas_reset_senha")
 }
 
+// Mesmo padrão de TentativaResetSenha, por pedidoId em vez de e-mail —
+// responderArtePublica (src/app/a/[token]/actions.ts) é uma Server Action
+// sem autenticação (o token É a credencial), e o branch de "pedir alteração"
+// não é idempotente por natureza (diferente de "aprovar", que trava sozinho
+// em arteAprovadaEm): cada chamada dispara um e-mail novo pro(s) DONO(s) da
+// gráfica. Sem este limite, quem tiver o link (ele circula por WhatsApp,
+// fica no histórico do cliente) podia martelar a action e encher a caixa de
+// entrada do dono — ou, na escala errada, estourar a cota diária de envio do
+// Gmail/Workspace do EMAIL_WEBHOOK_URL, que é compartilhado com reset de
+// senha e verificação de e-mail de TODOS os tenants (achado da auditoria de
+// 2026-07-26). Limita por pedidoId (o alvo real do abuso, não muda trocando
+// de IP) e por IP (limita quem tenta abusar de vários pedidos).
+model TentativaRespostaArte {
+  id        String   @id @default(cuid())
+  pedidoId  String
+  ip        String
+  createdAt DateTime @default(now())
+
+  @@index([pedidoId, createdAt])
+  @@index([ip, createdAt])
+  @@map("tentativas_resposta_arte")
+}
+
 // Mesmo padrão de TentativaResetSenha, só que por usuarioId em vez de
 // email (usuário já está autenticado nesse ponto do fluxo, não precisa
 // aceitar e-mail cru) — limita quantos códigos NOVOS podem ser pedidos,
@@ -639,6 +663,17 @@ model ItemGrafica {
   precoVenda     Decimal? @db.Decimal(12, 2)
   estoqueAtual   Decimal? @db.Decimal(12, 4)
   estoqueMinimo  Decimal? @db.Decimal(12, 4)
+  // Quanto desse material é perdido por CALIBRAGEM toda vez que uma produção
+  // entra em impressão (FILA→IMPRESSAO) — fixo, não escala com a quantidade
+  // do pedido (1 unidade ou 1000 = mesma perda). Diferente de
+  // Prensa.perdaPercentPadrao, que é percentual e só entra na ESTIMATIVA DE
+  // PREÇO do motor Offset (src/lib/pricing/offset.ts) — nunca mexe em
+  // estoque real. null = sem perda de calibragem configurada (comportamento
+  // de hoje: baixa só pela ficha técnica). Só relevante quando este
+  // ItemGrafica é matéria-prima (itemCatalogo.tipo=MATERIA_PRIMA); é o
+  // padrão sugerido na tela de confirmação de avancarPedido — editável por
+  // pedido lá, sem alterar este valor.
+  perdaFixaPadrao Decimal? @db.Decimal(12, 4)
   // Dedup do alerta de estoque baixo por e-mail (ver src/lib/alerta-estoque.ts)
   // — preenchido quando o e-mail/aviso é disparado, limpo de volta pra null
   // assim que o estoque volta a ficar acima do mínimo (self-healing: cai nunca
@@ -770,6 +805,9 @@ model VarianteMateriaPrima {
   precoCompra   Decimal  @db.Decimal(12, 4)
   estoqueAtual  Decimal? @db.Decimal(12, 4)
   estoqueMinimo Decimal? @db.Decimal(12, 4)
+  // Mesma ideia de ItemGrafica.perdaFixaPadrao, só que por variante (ex: uma
+  // espessura de chapa pode ter perda de calibragem diferente de outra).
+  perdaFixaPadrao Decimal? @db.Decimal(12, 4)
   // Mesmo dedup self-healing de ItemGrafica.alertaEstoqueEnviadoEm, só que por
   // variante (cada uma tem saldo próprio).
   alertaEstoqueEnviadoEm DateTime?
@@ -882,6 +920,17 @@ enum StatusOrcamento {
   REJEITADO
 }
 
+enum TipoPedidoOrcamento {
+  MODELO_NOVO
+  REPETICAO_SEM_ALTERACAO
+  REPETICAO_COM_ALTERACAO
+}
+
+enum TipoFrete {
+  EMITENTE
+  DESTINATARIO
+}
+
 model Orcamento {
   id               String          @id @default(cuid())
   graficaId        String
@@ -898,6 +947,41 @@ model Orcamento {
   // da gráfica (ver model Filial): isto é só um rótulo de "onde esse
   // orçamento foi feito", pra relatório, não um tenant separado.
   filialId String?
+
+  // Dados gerais do pedido — todos opcionais, editáveis a qualquer status
+  // (não só RASCUNHO: frete/transportadora normalmente só são definidos
+  // depois que o cliente já aprovou, e nenhum desses campos entra na conta
+  // de preço). contatoNome/contatoEmail são um snapshot específico DESTE
+  // pedido, diferente de Cliente.nome/Cliente.email (que são o cadastro).
+  vendedor           String?
+  tipoPedido         TipoPedidoOrcamento?
+  contatoNome        String?
+  contatoEmail       String?
+  condicoesPagamento String?
+  frete              TipoFrete?
+  transportadora     String?
+  localEntrega       String?
+  // Nota interna — nunca aparece no PDF nem no link público (ver
+  // src/lib/pdf/mapear-dados.ts), só na tela autenticada da gráfica.
+  observacoes        String?
+
+  // Rastreamento de etapas de produção (data+hora combinados, mesmo padrão
+  // de arteAprovadaEm) + nome de quem é responsável — não precisa ser o
+  // usuário logado, por isso é texto livre e não uma FK pra Usuario. Editável
+  // direto (não é um log de eventos), a qualquer status. etapaConfirmacaoPedido*
+  // corresponde à etapa "Pedido" do formulário físico original — nome do
+  // campo é diferente pra não colidir com o model Pedido (produção) já
+  // existente neste schema.
+  etapaOrcamentoDesenvolvimentoEm          DateTime?
+  etapaOrcamentoDesenvolvimentoResponsavel String?
+  etapaLayoutEm                            DateTime?
+  etapaLayoutResponsavel                   String?
+  etapaAprovacaoEm                         DateTime?
+  etapaAprovacaoResponsavel                String?
+  etapaConfirmacaoPedidoEm                 DateTime?
+  etapaConfirmacaoPedidoResponsavel        String?
+  etapaEntregaEm                           DateTime?
+  etapaEntregaResponsavel                  String?
 
   grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   cliente Cliente @relation(fields: [clienteId], references: [id])
@@ -1085,9 +1169,140 @@ model OrcamentoItem {
   itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id])
 
   acabamentos OrcamentoItemAcabamento[]
+  etiqueta    OrcamentoItemEtiqueta?
+  tinta       OrcamentoItemTinta?
 
   @@index([orcamentoId])
   @@map("orcamento_itens")
+}
+
+enum MaterialSubstrato {
+  PAPEL_TERMICO
+  COUCHE_C_ROT
+  BOPP_METALIZADO_ROT
+  BOPP_BCO_PEROLIZADO
+  BOPP_BCO_FOSCO
+  BOPP_TRANSPARENTE
+  L2_SEM_ADESIVO
+  POLIETILENO_BRANCO
+  POLIETILENO_TRANSPARENTE
+  POLIESTER_BRANCO
+  POLIESTER_TRANSPARENTE
+  POLIESTER_CROMO_FOSCO
+  ELETROSTATICO_SEM_COLA
+  OUTRO
+}
+
+enum TipoAdesivo {
+  ACRILICO_20G
+  ACRILICO_30G
+  BORRACHA_20G
+  BORRACHA_25G
+  BORRACHA_30G
+  BORRACHA_50G
+}
+
+enum SuperficieAplicacao {
+  VIDRO
+  PLASTICO
+  METAL
+  PAPEL
+  PAPELAO
+  OUTROS
+}
+
+enum TipoRotulagem {
+  MANUAL
+  AUTOMATICA
+}
+
+enum TipoSerrilha {
+  SERRILHA
+  MICRO_SERRILHA
+  GAP
+}
+
+enum TipoLaminacao {
+  BRILHO
+  FOSCO
+}
+
+enum TipoAcabamentoVerniz {
+  BRILHO
+  FOSCO
+  RIBBON
+}
+
+enum TipoHotStamping {
+  HOT
+  COLD
+}
+
+enum LadoEtiqueta {
+  ROTULO
+  CONTRA_ROTULO
+}
+
+// Detalhe descritivo/de produção de etiqueta (rótulo adesivo) — só relevante
+// pra item com modeloCalculo=M2 (flexografia). Não entra na conta de preço
+// (o motor M2 em src/lib/pricing/m2.ts só usa geometria + custo por m²) —
+// isso aqui é 100% dado de especificação técnica pra imprimir/produzir, uma
+// tabela separada (não colunas em OrcamentoItem) pra não deixar ~18 colunas
+// sempre nulas em todo item SIMPLES/OFFSET, mesmo raciocínio que já levou
+// OrcamentoItemAcabamento a ser tabela própria.
+model OrcamentoItemEtiqueta {
+  id              String @id @default(cuid())
+  orcamentoItemId String @unique
+
+  materialSubstrato      MaterialSubstrato?
+  materialSubstratoOutro String? // só usado quando materialSubstrato = OUTRO
+  tipoAdesivo            TipoAdesivo?
+  superficieAplicacao    SuperficieAplicacao?
+  formatoEtiqueta        String?
+
+  coresRotulo       Int?
+  coresContraRotulo Int?
+
+  embalagemQtdPorRolo Int?
+  tubeteMedida        String?
+
+  rotulagem TipoRotulagem?
+  serrilha  TipoSerrilha?
+
+  vernizRotuloTotal         Boolean               @default(false)
+  vernizRotuloReserva       Boolean               @default(false)
+  vernizRotuloTipo          TipoAcabamentoVerniz?
+  vernizContraRotuloTotal   Boolean               @default(false)
+  vernizContraRotuloReserva Boolean               @default(false)
+  vernizContraRotuloTipo    TipoAcabamentoVerniz?
+
+  laminacaoRotulo       TipoLaminacao?
+  laminacaoContraRotulo TipoLaminacao?
+
+  rebobinamento Int? // 1-8, validado em app (src/lib/orcamento-etiqueta.ts) — sem nome pras opções ainda
+
+  orcamentoItem OrcamentoItem              @relation(fields: [orcamentoItemId], references: [id], onDelete: Cascade)
+  hotStampings  OrcamentoItemHotStamping[]
+
+  @@map("orcamento_item_etiquetas")
+}
+
+// Hot/cold stamping pode ter mais de uma variação no mesmo item (ex: dois
+// hots diferentes, cada um com sua própria medida/cor) — por isso é tabela
+// 1:N, diferente de verniz/laminação (que são "um valor por lado", únicos).
+model OrcamentoItemHotStamping {
+  id                      String @id @default(cuid())
+  orcamentoItemEtiquetaId String
+
+  lado   LadoEtiqueta
+  tipo   TipoHotStamping
+  medida String?
+  cor    String?
+
+  orcamentoItemEtiqueta OrcamentoItemEtiqueta @relation(fields: [orcamentoItemEtiquetaId], references: [id], onDelete: Cascade)
+
+  @@index([orcamentoItemEtiquetaId])
+  @@map("orcamento_item_hot_stampings")
 }
 
 // Acabamentos estruturados aplicados a um item de orçamento no motor avançado
@@ -1158,4 +1373,111 @@ model Pedido {
 
   @@index([graficaId])
   @@map("pedidos")
+}
+
+enum TipoArquivoArmazenado {
+  ARTE_PEDIDO
+  LOGO_GRAFICA
+  ANALISE_TINTA // reservado pra Cálculo de gasto de tinta com IA
+}
+
+// Razão de TODO arquivo que a gráfica sobe pro Vercel Blob (arte de pedido,
+// logo, imagem de análise de tinta) — existe pra sustentar a cota de
+// armazenamento por plano (ver src/lib/billing/limite-armazenamento.ts),
+// não pra guardar o arquivo em si (isso continua no Blob; aqui só o
+// tamanho e a referência). Uma linha por arquivo VIVO: ao substituir uma
+// arte/logo, a linha antiga é apagada na mesma operação que confirma a
+// nova (ver src/lib/billing/armazenamento.ts), nunca acumula histórico.
+//
+// url null = reserva pendente (a soma da cota já conta esta linha antes do
+// put() no Blob terminar, pra duas escritas concorrentes não furarem o
+// limite — ver reservarEspaco). Uma reserva que nunca vira upload de
+// verdade (crash entre reservar e subir) é varrida pelo cron de
+// reconciliação (src/lib/lifecycle-cron.ts) depois de 1h.
+//
+// onDelete: Cascade em graficaId apaga as LINHAS quando a Grafica é
+// apagada, mas não os blobs — eles viram órfão e são recolhidos pela mesma
+// reconciliação (varre o Blob inteiro, não só o razão).
+model ArquivoArmazenado {
+  id           String                @id @default(cuid())
+  graficaId    String
+  tipo         TipoArquivoArmazenado
+  referenciaId String // pedidoId | graficaId | orcamentoItemId, conforme o tipo
+  bytes        Int
+  url          String?               @unique
+  pathname     String?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+
+  @@index([graficaId])
+  @@index([tipo, referenciaId])
+  @@map("arquivos_armazenados")
+}
+
+// Estimativa de gasto de tinta gerada por IA a partir de uma imagem da arte
+// (recurso de plano pago — ver src/lib/billing/recursos-pagos.ts,
+// "calculo_tinta_ia" — disparado manualmente pelo usuário). Tabela separada
+// da OrcamentoItem pelo mesmo motivo de OrcamentoItemEtiqueta: colunas que
+// ficariam nulas na esmagadora maioria dos itens. 1:1 com substituição —
+// refazer a análise sobrescreve esta linha e apaga a imagem antiga do Blob,
+// mesma semântica de Pedido.arteUrl. Histórico de USO (pra rate limit) vive
+// em AnaliseTintaLog, não aqui.
+model OrcamentoItemTinta {
+  id              String @id @default(cuid())
+  orcamentoItemId String @unique
+
+  // Blob PRIVADO (diferente de Pedido.arteUrl, que é público de propósito —
+  // esta imagem nunca é vista fora do tenant). pathname guardado à parte
+  // pra assinar/apagar sem precisar reparsear a URL.
+  imagemUrl      String
+  imagemPathname String
+  imagemTipo     String
+
+  coberturaPercentual Decimal  @db.Decimal(5, 2)
+  coberturaCiano      Decimal? @db.Decimal(5, 2)
+  coberturaMagenta    Decimal? @db.Decimal(5, 2)
+  coberturaAmarelo    Decimal? @db.Decimal(5, 2)
+  coberturaPreto      Decimal? @db.Decimal(5, 2)
+
+  consumoMlPorPeca Decimal @db.Decimal(12, 6)
+  consumoMlTotal   Decimal @db.Decimal(12, 3)
+
+  // String, não enum: valor vem de um LLM externo, normalizado na aplicação
+  // (ALTA/MEDIA/BAIXA, com MEDIA como fallback) — um enum quebraria se a IA
+  // devolvesse um valor inesperado.
+  confianca String
+
+  observacao String? @db.Text
+  modeloIa   String?
+
+  // Snapshot do que foi analisado — o item é editável em RASCUNHO, e sem
+  // isso mudar a quantidade/medida depois transforma consumoMlTotal numa
+  // mentira silenciosa (ver aviso de desatualização na UI).
+  quantidadeSnapshot Int
+  larguraCmSnapshot  Decimal? @db.Decimal(8, 2)
+  alturaCmSnapshot   Decimal? @db.Decimal(8, 2)
+
+  criadoPorUsuarioId String
+  createdAt          DateTime @default(now())
+
+  orcamentoItem OrcamentoItem @relation(fields: [orcamentoItemId], references: [id], onDelete: Cascade)
+
+  @@map("orcamento_item_tinta")
+}
+
+// Log de USO (não de conteúdo) do cálculo de tinta com IA — mesmo padrão de
+// PerguntaAssistenteLog, existe só pra sustentar o rate limit (ver
+// src/lib/rate-limit-tinta.ts): protege o custo de token/imagem da
+// PLATAFORMA contra abuso, já que a IA roda numa conta única, não por tenant.
+model AnaliseTintaLog {
+  id        String   @id @default(cuid())
+  graficaId String
+  usuarioId String
+  createdAt DateTime @default(now())
+
+  @@index([usuarioId, createdAt])
+  @@index([graficaId, createdAt])
+  @@map("analise_tinta_log")
 }

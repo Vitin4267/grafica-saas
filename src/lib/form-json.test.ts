@@ -61,4 +61,24 @@ describe("parseJsonArray", () => {
     );
     expect(resultado.ok).toBe(false);
   });
+
+  it("respeita o limite opcional de tamanho, sem nem chegar a validar os itens", () => {
+    const resultado = parseJsonArray(
+      JSON.stringify([
+        { nome: "1", quantidade: 1 },
+        { nome: "2", quantidade: 1 },
+        { nome: "3", quantidade: 1 },
+      ]),
+      itemSchema,
+      { max: 2 }
+    );
+    expect(resultado.ok).toBe(false);
+  });
+
+  it("array dentro do limite passa normalmente", () => {
+    const resultado = parseJsonArray(JSON.stringify([{ nome: "1", quantidade: 1 }]), itemSchema, {
+      max: 2,
+    });
+    expect(resultado.ok).toBe(true);
+  });
 });

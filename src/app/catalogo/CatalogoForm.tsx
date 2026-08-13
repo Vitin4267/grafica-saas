@@ -47,6 +47,7 @@ type Selecao = {
   precoVenda: string;
   estoqueAtual: string;
   estoqueMinimo: string;
+  perdaFixaPadrao: string;
   variantes: string[];
 };
 
@@ -194,6 +195,7 @@ type LinhaVarianteNova = {
   precoCompra: string;
   estoqueAtual: string;
   estoqueMinimo: string;
+  perdaFixaPadrao: string;
 };
 
 // Editor inline de variantes pra um item de matéria-prima que ainda NÃO foi
@@ -215,7 +217,7 @@ function VariantesInlineEditor({
 }) {
   const atualizar = (
     chave: string,
-    campo: "rotulo" | "precoCompra" | "estoqueAtual" | "estoqueMinimo",
+    campo: "rotulo" | "precoCompra" | "estoqueAtual" | "estoqueMinimo" | "perdaFixaPadrao",
     valor: string
   ) => {
     onChange(linhas.map((l) => (l.chave === chave ? { ...l, [campo]: valor } : l)));
@@ -224,7 +226,14 @@ function VariantesInlineEditor({
   const adicionar = () =>
     onChange([
       ...linhas,
-      { chave: gerarChave(), rotulo: "", precoCompra: "", estoqueAtual: "", estoqueMinimo: "" },
+      {
+        chave: gerarChave(),
+        rotulo: "",
+        precoCompra: "",
+        estoqueAtual: "",
+        estoqueMinimo: "",
+        perdaFixaPadrao: "",
+      },
     ]);
 
   return (
@@ -235,11 +244,12 @@ function VariantesInlineEditor({
         value={JSON.stringify(
           linhas
             .filter((l) => l.rotulo && l.precoCompra)
-            .map(({ rotulo, precoCompra, estoqueAtual, estoqueMinimo }) => ({
+            .map(({ rotulo, precoCompra, estoqueAtual, estoqueMinimo, perdaFixaPadrao }) => ({
               rotulo,
               precoCompra,
               estoqueAtual: estoqueAtual || undefined,
               estoqueMinimo: estoqueMinimo || undefined,
+              perdaFixaPadrao: perdaFixaPadrao || undefined,
             }))
         )}
       />
@@ -270,6 +280,12 @@ function VariantesInlineEditor({
             placeholder="Estoque mínimo"
             value={linha.estoqueMinimo}
             onChange={(v) => atualizar(linha.chave, "estoqueMinimo", v)}
+          />
+          <CampoNumero
+            name={`__perdaFixaPadrao_${linha.chave}`}
+            placeholder="Perda fixa de calibragem"
+            value={linha.perdaFixaPadrao}
+            onChange={(v) => atualizar(linha.chave, "perdaFixaPadrao", v)}
           />
           <button
             type="button"
@@ -337,7 +353,14 @@ const ItemLinha = memo(function ItemLinha({
     item.tipo === "MATERIA_PRIMA" && item.categoria !== "Papéis" && !selecaoInicial?.id;
   const [usarVariantesNovas, setUsarVariantesNovas] = useState(false);
   const [variantesNovas, setVariantesNovas] = useState<LinhaVarianteNova[]>(() => [
-    { chave: gerarChave(), rotulo: "", precoCompra: "", estoqueAtual: "", estoqueMinimo: "" },
+    {
+      chave: gerarChave(),
+      rotulo: "",
+      precoCompra: "",
+      estoqueAtual: "",
+      estoqueMinimo: "",
+      perdaFixaPadrao: "",
+    },
   ]);
 
   const mudarPreco = (valor: string) => onMudarPreco(item.id, valor);
@@ -438,6 +461,11 @@ const ItemLinha = memo(function ItemLinha({
                         name={`estoqueMinimo_${item.id}`}
                         placeholder="Estoque mínimo"
                         defaultValue={selecaoInicial?.estoqueMinimo}
+                      />
+                      <CampoNumero
+                        name={`perdaFixaPadrao_${item.id}`}
+                        placeholder="Perda fixa de calibragem"
+                        defaultValue={selecaoInicial?.perdaFixaPadrao}
                       />
                     </>
                   )}

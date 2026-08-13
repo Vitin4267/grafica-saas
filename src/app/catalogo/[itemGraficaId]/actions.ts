@@ -57,6 +57,7 @@ const linhaVarianteSchema = z.object({
   precoCompra: z.coerce.number().positive("Preço de compra deve ser maior que zero."),
   estoqueAtual: z.coerce.number().min(0, "Estoque atual não pode ser negativo.").optional(),
   estoqueMinimo: z.coerce.number().min(0, "Estoque mínimo não pode ser negativo.").optional(),
+  perdaFixaPadrao: z.coerce.number().min(0, "Perda fixa não pode ser negativa.").optional(),
 });
 
 export async function salvarModeloProduto(
@@ -481,6 +482,7 @@ export async function salvarVariantesMateriaPrima(
         precoCompra: linha.precoCompra,
         estoqueAtual: linha.estoqueAtual ?? null,
         estoqueMinimo: linha.estoqueMinimo ?? null,
+        perdaFixaPadrao: linha.perdaFixaPadrao ?? null,
       };
       if (linha.id) {
         return prisma.varianteMateriaPrima.updateMany({

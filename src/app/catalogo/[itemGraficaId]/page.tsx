@@ -186,6 +186,7 @@ export default async function ConfiguracaoItemPage({
                 precoCompra: v.precoCompra.toString(),
                 estoqueAtual: v.estoqueAtual?.toString() ?? "",
                 estoqueMinimo: v.estoqueMinimo?.toString() ?? "",
+                perdaFixaPadrao: v.perdaFixaPadrao?.toString() ?? "",
               }))}
             />
           )

@@ -18,6 +18,23 @@ export function dataParaInputValue(data: Date): string {
   return data.toISOString().slice(0, 10);
 }
 
+// Converte o valor de um <input type="datetime-local"> ("2026-07-15T14:30")
+// pra Date — mesma filosofia de dataInputParaUTC: trata o horário digitado
+// como literal (nunca reinterpreta por fuso de servidor/navegador), só que
+// pra data+hora em vez de só data. Usado pelas etapas de produção do
+// orçamento (Orcamento.etapa*Em), que guardam "às 14:30 conforme digitado",
+// não um instante ajustado por timezone.
+export function dataHoraInputParaUTC(valor: string): Date {
+  return new Date(`${valor}:00Z`);
+}
+
+// Caminho inverso: de volta pro formato "AAAA-MM-DDTHH:mm" que um <input
+// type="datetime-local"> espera como defaultValue, sempre lendo os
+// componentes em UTC (mesmo raciocínio de dataParaInputValue).
+export function dataHoraParaInputValue(data: Date): string {
+  return data.toISOString().slice(0, 16);
+}
+
 export function dataEhPassado(data: Date): boolean {
   const hojeUTC = new Date();
   hojeUTC.setUTCHours(0, 0, 0, 0);

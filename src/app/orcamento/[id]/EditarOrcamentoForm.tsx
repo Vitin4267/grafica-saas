@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
+import { CamposEtiquetaOrcamento, type CamposEtiqueta } from "../CamposEtiquetaOrcamento";
 import { editarOrcamento, removerItemOrcamento } from "./actions";
 
 export function EditarOrcamentoForm({
@@ -29,6 +30,7 @@ export function EditarOrcamentoForm({
     acabamento: string;
     corFrente: string;
     corVerso: string;
+    etiqueta: CamposEtiqueta;
   };
   podeRemover: boolean;
 }) {
@@ -40,6 +42,7 @@ export function EditarOrcamentoForm({
   const usaMotorAvancado = modeloCalculo === "M2" || modeloCalculo === "OFFSET";
   const [larguraCm, setLarguraCm] = useState(valoresIniciais.larguraCm);
   const [alturaCm, setAlturaCm] = useState(valoresIniciais.alturaCm);
+  const [etiqueta, setEtiqueta] = useState<CamposEtiqueta>(valoresIniciais.etiqueta);
   const [confirmandoRemocao, setConfirmandoRemocao] = useState(false);
 
   useAoMudar(estadoRemocao, (estadoRemocao) => {
@@ -150,6 +153,52 @@ export function EditarOrcamentoForm({
           defaultValue={valoresIniciais.acabamento}
           placeholder="ex: laminação fosca, corte reto"
         />
+
+        {modeloCalculo === "M2" && (
+          <>
+            <CamposEtiquetaOrcamento valores={etiqueta} onChange={setEtiqueta} />
+            <input type="hidden" name="materialSubstrato" value={etiqueta.materialSubstrato} />
+            <input type="hidden" name="materialSubstratoOutro" value={etiqueta.materialSubstratoOutro} />
+            <input type="hidden" name="tipoAdesivo" value={etiqueta.tipoAdesivo} />
+            <input type="hidden" name="superficieAplicacao" value={etiqueta.superficieAplicacao} />
+            <input type="hidden" name="formatoEtiqueta" value={etiqueta.formatoEtiqueta} />
+            <input type="hidden" name="coresRotulo" value={etiqueta.coresRotulo} />
+            <input type="hidden" name="coresContraRotulo" value={etiqueta.coresContraRotulo} />
+            <input type="hidden" name="embalagemQtdPorRolo" value={etiqueta.embalagemQtdPorRolo} />
+            <input type="hidden" name="tubeteMedida" value={etiqueta.tubeteMedida} />
+            <input type="hidden" name="rotulagem" value={etiqueta.rotulagem} />
+            <input type="hidden" name="serrilha" value={etiqueta.serrilha} />
+            <input type="hidden" name="vernizRotuloTotal" value={String(etiqueta.vernizRotuloTotal)} />
+            <input type="hidden" name="vernizRotuloReserva" value={String(etiqueta.vernizRotuloReserva)} />
+            <input type="hidden" name="vernizRotuloTipo" value={etiqueta.vernizRotuloTipo} />
+            <input
+              type="hidden"
+              name="vernizContraRotuloTotal"
+              value={String(etiqueta.vernizContraRotuloTotal)}
+            />
+            <input
+              type="hidden"
+              name="vernizContraRotuloReserva"
+              value={String(etiqueta.vernizContraRotuloReserva)}
+            />
+            <input type="hidden" name="vernizContraRotuloTipo" value={etiqueta.vernizContraRotuloTipo} />
+            <input type="hidden" name="laminacaoRotulo" value={etiqueta.laminacaoRotulo} />
+            <input type="hidden" name="laminacaoContraRotulo" value={etiqueta.laminacaoContraRotulo} />
+            <input type="hidden" name="rebobinamento" value={etiqueta.rebobinamento} />
+            <input
+              type="hidden"
+              name="hotStampingsJson"
+              value={JSON.stringify(
+                etiqueta.hotStampings.map((h) => ({
+                  lado: h.lado,
+                  tipo: h.tipo,
+                  medida: h.medida || null,
+                  cor: h.cor || null,
+                }))
+              )}
+            />
+          </>
+        )}
 
         {state && <Alert variant={state.ok ? "success" : "error"}>{state.mensagem}</Alert>}
 

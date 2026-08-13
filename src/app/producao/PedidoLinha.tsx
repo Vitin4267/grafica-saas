@@ -9,8 +9,13 @@ import { Button } from "@/components/ui/Button";
 import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
 import { PrinterIcon } from "@/components/icons";
 import { AvancarPedidoButton } from "./AvancarPedidoButton";
+import {
+  useIniciarImpressao,
+  IniciarImpressaoBotao,
+  PainelConfirmacaoImpressao,
+} from "./IniciarImpressaoConfirm";
 import { EnviarArteForm } from "./EnviarArteForm";
-import { cancelarPedido } from "./actions";
+import { cancelarPedido, avancarPedido } from "./actions";
 
 // Linha inteira é um client component (não só o botão de cancelar) pra poder
 // colocar o ConfirmarExclusao como bloco abaixo da linha inteira quando
@@ -45,6 +50,15 @@ export function PedidoLinha({
   const [confirmando, setConfirmando] = useState(false);
   const podeCancelar = status !== "ENTREGUE" && status !== "CANCELADO";
 
+  // FILA é a única transição que baixa estoque (ver avancarPedido) — por
+  // isso é a única que passa por uma tela de confirmação editável em vez do
+  // botão de um clique só que AvancarPedidoButton usa pros outros status.
+  const iniciarImpressao = useIniciarImpressao(pedidoId);
+  const [avancarState, avancarFormAction, avancarPending] = useActionState(avancarPedido, null);
+  useAoMudar(avancarState, (estado) => {
+    if (estado?.ok) iniciarImpressao.cancelar();
+  });
+
   // Ao contrário de PagamentosCard (onde sucesso remove a linha da lista e o
   // componente desmonta sozinho), aqui o pedido continua na lista com um
   // status novo — sem isso, a caixa de confirmação ficava presa aberta pra
@@ -76,7 +90,11 @@ export function PedidoLinha({
           <StatusBadge status={status} tipo="pedido" />
           {podeEditar && (
             <>
-              <AvancarPedidoButton pedidoId={pedidoId} status={status} />
+              {status === "FILA" ? (
+                <IniciarImpressaoBotao estado={iniciarImpressao.estado} onIniciar={iniciarImpressao.iniciar} />
+              ) : (
+                <AvancarPedidoButton pedidoId={pedidoId} status={status} />
+              )}
               {podeCancelar && (
                 <Button
                   type="button"
@@ -99,6 +117,17 @@ export function PedidoLinha({
           arteAprovadaEm={arteAprovadaEm}
           arteComentarioCliente={arteComentarioCliente}
           linkArtePublico={linkArtePublico}
+        />
+      )}
+
+      {iniciarImpressao.estado.tipo === "confirmando" && (
+        <PainelConfirmacaoImpressao
+          pedidoId={pedidoId}
+          itens={iniciarImpressao.estado.itens}
+          formAction={avancarFormAction}
+          isPending={avancarPending}
+          erroSubmit={avancarState && !avancarState.ok ? avancarState.mensagem : undefined}
+          onCancelar={iniciarImpressao.cancelar}
         />
       )}
 

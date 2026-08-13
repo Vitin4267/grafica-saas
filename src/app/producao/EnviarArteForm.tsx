@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { CopiarLinkButton } from "@/app/orcamento/[id]/CopiarLinkButton";
 import { validarArquivoArte } from "@/lib/upload-validacao";
-import { enviarArte } from "./actions";
+import { enviarArte, removerArte } from "./actions";
 
 // Só aparece com o pedido em FILA (ver PedidoLinha) — gate de negócio real
 // fica em avancarPedido (producao/actions.ts): aqui é só a UI de enviar o
@@ -27,6 +27,7 @@ export function EnviarArteForm({
   linkArtePublico: string | null;
 }) {
   const [state, formAction, isPending] = useActionState(enviarArte, null);
+  const [estadoRemover, removerAction, removendoArte] = useActionState(removerArte, null);
   const [mostrarUpload, setMostrarUpload] = useState(!arteUrl);
   const [erroArquivo, setErroArquivo] = useState<string | null>(null);
 
@@ -79,13 +80,28 @@ export function EnviarArteForm({
           <Button type="button" variant="ghost" onClick={() => setMostrarUpload(true)}>
             Reenviar arte
           </Button>
+          <form action={removerAction}>
+            <input type="hidden" name="pedidoId" value={pedidoId} />
+            <button
+              type="submit"
+              disabled={removendoArte}
+              onClick={(evento) => {
+                if (!confirm("Remover esta arte? Você pode enviar outra depois.")) {
+                  evento.preventDefault();
+                }
+              }}
+              className="text-xs text-slate-400 underline decoration-dotted underline-offset-2 hover:text-red-600 disabled:opacity-50 dark:text-slate-500 dark:hover:text-red-400"
+            >
+              {removendoArte ? "Removendo..." : "Remover arte"}
+            </button>
+          </form>
         </div>
       ) : (
         <form action={formAction} className="flex flex-col gap-2">
           <input type="hidden" name="pedidoId" value={pedidoId} />
           <div className="flex flex-wrap items-end gap-2">
             <Input
-              label="Arquivo de arte (PDF, JPG ou PNG, até 20MB)"
+              label="Arquivo de arte (PDF, JPG ou PNG, até 30MB)"
               name="arquivo"
               type="file"
               accept=".pdf,.jpg,.jpeg,.png"
@@ -106,6 +122,7 @@ export function EnviarArteForm({
         </form>
       )}
       {state && !state.ok && <p className="text-xs text-rose-600">{state.mensagem}</p>}
+      {estadoRemover && !estadoRemover.ok && <p className="text-xs text-rose-600">{estadoRemover.mensagem}</p>}
     </div>
   );
 }

@@ -44,9 +44,25 @@ export async function dispararEventoEmail(evento: EventoEmail): Promise<void> {
     const { tipo, ...dados } = evento;
     const corpo = JSON.stringify(construirEnvelope(tipo, dados));
 
+    // Segredo opcional (EMAIL_WEBHOOK_SECRET), mesmo padrão de
+    // src/lib/webhook-metricas.ts: sem essa env var, o header some do
+    // request e o n8n simplesmente não confere nada (melhor esforço, não
+    // obriga configuração extra). Com ela, fecha a brecha mais séria dos
+    // 4 webhooks de saída do projeto — diferente de automação/métricas
+    // (que nunca recebem dado sensível), o payload de e-mail tem
+    // destinatario/assunto/html mapeados DIRETO pro nó do Gmail do n8n
+    // (comentário acima). Sem o segredo, quem descobrisse a URL do webhook
+    // (path previsível do n8n) conseguia mandar e-mail de phishing saindo
+    // da conta Gmail legítima da plataforma, passando SPF/DKIM/DMARC —
+    // achado da auditoria de 2026-07-26.
+    const segredo = process.env.EMAIL_WEBHOOK_SECRET;
+
     await fetch(webhookUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(segredo ? { "X-Email-Secret": segredo } : {}),
+      },
       body: corpo,
       signal: AbortSignal.timeout(TIMEOUT_MS),
       redirect: "error",

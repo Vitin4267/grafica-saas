@@ -6,6 +6,8 @@ import { formatoMoeda } from "@/lib/moeda";
 import { gerarChave } from "@/lib/chave-local";
 import { Card } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Select";
+import { Input } from "@/components/ui/Input";
+import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { ReceiptIcon, RulerIcon, SparklesIcon } from "@/components/icons";
@@ -16,6 +18,82 @@ import {
   type ItemVenda,
   type CamposItemOrcamento,
 } from "./SeletorItemOrcamento";
+import type { CamposEtiqueta } from "./CamposEtiquetaOrcamento";
+
+const OPCOES_TIPO_PEDIDO: [string, string][] = [
+  ["MODELO_NOVO", "Modelo novo"],
+  ["REPETICAO_SEM_ALTERACAO", "Repetição sem alteração"],
+  ["REPETICAO_COM_ALTERACAO", "Repetição com alteração"],
+];
+const OPCOES_FRETE: [string, string][] = [
+  ["EMITENTE", "Emitente"],
+  ["DESTINATARIO", "Destinatário"],
+];
+
+type DadosGerais = {
+  vendedor: string;
+  tipoPedido: string;
+  contatoNome: string;
+  contatoEmail: string;
+  condicoesPagamento: string;
+  frete: string;
+  transportadora: string;
+  localEntrega: string;
+  observacoes: string;
+};
+
+function dadosGeraisIniciais(): DadosGerais {
+  return {
+    vendedor: "",
+    tipoPedido: "",
+    contatoNome: "",
+    contatoEmail: "",
+    condicoesPagamento: "",
+    frete: "",
+    transportadora: "",
+    localEntrega: "",
+    observacoes: "",
+  };
+}
+
+// Converte os campos de etiqueta (todos string, controlados por input/select)
+// pro shape que etiquetaEntradaSchema (src/app/orcamento/actions.ts) espera
+// — números/enum/null em vez de string vazia. A validação de verdade
+// acontece no servidor (zod); isso aqui só evita mandar "" onde o schema
+// espera number|null.
+function etiquetaParaEntrada(etiqueta: CamposEtiqueta) {
+  const numeroOuNulo = (v: string) => (v.trim() === "" ? null : Number(v));
+  const textoOuNulo = (v: string) => (v.trim() === "" ? null : v.trim());
+  const enumOuNulo = (v: string) => (v === "" ? null : v);
+  return {
+    materialSubstrato: enumOuNulo(etiqueta.materialSubstrato),
+    materialSubstratoOutro: textoOuNulo(etiqueta.materialSubstratoOutro),
+    tipoAdesivo: enumOuNulo(etiqueta.tipoAdesivo),
+    superficieAplicacao: enumOuNulo(etiqueta.superficieAplicacao),
+    formatoEtiqueta: textoOuNulo(etiqueta.formatoEtiqueta),
+    coresRotulo: numeroOuNulo(etiqueta.coresRotulo),
+    coresContraRotulo: numeroOuNulo(etiqueta.coresContraRotulo),
+    embalagemQtdPorRolo: numeroOuNulo(etiqueta.embalagemQtdPorRolo),
+    tubeteMedida: textoOuNulo(etiqueta.tubeteMedida),
+    rotulagem: enumOuNulo(etiqueta.rotulagem),
+    serrilha: enumOuNulo(etiqueta.serrilha),
+    vernizRotuloTotal: etiqueta.vernizRotuloTotal,
+    vernizRotuloReserva: etiqueta.vernizRotuloReserva,
+    vernizRotuloTipo: enumOuNulo(etiqueta.vernizRotuloTipo),
+    vernizContraRotuloTotal: etiqueta.vernizContraRotuloTotal,
+    vernizContraRotuloReserva: etiqueta.vernizContraRotuloReserva,
+    vernizContraRotuloTipo: enumOuNulo(etiqueta.vernizContraRotuloTipo),
+    laminacaoRotulo: enumOuNulo(etiqueta.laminacaoRotulo),
+    laminacaoContraRotulo: enumOuNulo(etiqueta.laminacaoContraRotulo),
+    rebobinamento: numeroOuNulo(etiqueta.rebobinamento),
+    hotStampings: etiqueta.hotStampings.map((h) => ({
+      lado: h.lado,
+      tipo: h.tipo,
+      medida: textoOuNulo(h.medida),
+      cor: textoOuNulo(h.cor),
+    })),
+  };
+}
 
 type Cliente = {
   id: string;
@@ -42,6 +120,7 @@ type ItemCarrinho = {
   precoUnitario: string;
   precoTotal: string;
   modeloCalculo: "SIMPLES" | "M2" | "OFFSET";
+  etiqueta: CamposEtiqueta;
 };
 
 export function CalculadoraForm({
@@ -59,7 +138,12 @@ export function CalculadoraForm({
   const [itensCarrinho, setItensCarrinho] = useState<ItemCarrinho[]>([]);
   const [adicionando, setAdicionando] = useState(false);
   const [erroAdicionar, setErroAdicionar] = useState<string | null>(null);
+  const [dadosGerais, setDadosGerais] = useState<DadosGerais>(dadosGeraisIniciais);
+  const [mostrarDadosGerais, setMostrarDadosGerais] = useState(false);
   const [state, formAction, isPending] = useActionState(criarOrcamento, null);
+
+  const setDadoGeral = (campo: keyof DadosGerais) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+    setDadosGerais((atual) => ({ ...atual, [campo]: e.target.value }));
 
   const itemSelecionado = itens.find((i) => i.id === campos.itemGraficaId);
   const usaMotorAvancado =
@@ -127,6 +211,7 @@ export function CalculadoraForm({
         precoUnitario: resultado.precoUnitario,
         precoTotal: resultado.precoTotal,
         modeloCalculo: resultado.modeloCalculo,
+        etiqueta: campos.etiqueta,
       },
     ]);
     setCampos(camposIniciais(itens));
@@ -146,6 +231,7 @@ export function CalculadoraForm({
       corVerso: i.corVerso,
       cores: i.cores,
       acabamento: i.acabamento,
+      etiqueta: etiquetaParaEntrada(i.etiqueta),
     }))
   );
 
@@ -185,6 +271,72 @@ export function CalculadoraForm({
                 </option>
               ))}
             </Select>
+          )}
+
+          {!mostrarDadosGerais ? (
+            <button
+              type="button"
+              onClick={() => setMostrarDadosGerais(true)}
+              className="self-start text-xs font-medium text-teal-700 hover:underline dark:text-teal-400"
+            >
+              + vendedor, frete, condições de pagamento e mais
+            </button>
+          ) : (
+            <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-800/30">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Input label="Vendedor" value={dadosGerais.vendedor} onChange={setDadoGeral("vendedor")} />
+                <Select label="Tipo de pedido" value={dadosGerais.tipoPedido} onChange={setDadoGeral("tipoPedido")}>
+                  <option value="">não informado</option>
+                  {OPCOES_TIPO_PEDIDO.map(([v, rotulo]) => (
+                    <option key={v} value={v}>
+                      {rotulo}
+                    </option>
+                  ))}
+                </Select>
+                <Input
+                  label="Contato do pedido"
+                  value={dadosGerais.contatoNome}
+                  onChange={setDadoGeral("contatoNome")}
+                  hint="Pessoa de contato deste pedido, se diferente do cadastro do cliente"
+                />
+                <Input
+                  label="E-mail de contato"
+                  type="email"
+                  value={dadosGerais.contatoEmail}
+                  onChange={setDadoGeral("contatoEmail")}
+                />
+                <Input
+                  label="Condições de pagamento"
+                  value={dadosGerais.condicoesPagamento}
+                  onChange={setDadoGeral("condicoesPagamento")}
+                  placeholder="ex: 28/35ddl"
+                />
+                <Select label="Frete" value={dadosGerais.frete} onChange={setDadoGeral("frete")}>
+                  <option value="">não informado</option>
+                  {OPCOES_FRETE.map(([v, rotulo]) => (
+                    <option key={v} value={v}>
+                      {rotulo}
+                    </option>
+                  ))}
+                </Select>
+                <Input
+                  label="Transportadora"
+                  value={dadosGerais.transportadora}
+                  onChange={setDadoGeral("transportadora")}
+                />
+                <Input
+                  label="Local de entrega"
+                  value={dadosGerais.localEntrega}
+                  onChange={setDadoGeral("localEntrega")}
+                />
+              </div>
+              <Textarea
+                label="Observações internas"
+                value={dadosGerais.observacoes}
+                onChange={setDadoGeral("observacoes")}
+                hint="Só aparece pra sua gráfica — nunca no PDF nem no link do cliente."
+              />
+            </div>
           )}
 
           <div className="border-t border-slate-100 pt-5 dark:border-slate-800">
@@ -256,6 +408,15 @@ export function CalculadoraForm({
             <input type="hidden" name="clienteId" value={clienteId} />
             <input type="hidden" name="filialId" value={filialId} />
             <input type="hidden" name="itensJson" value={itensJson} />
+            <input type="hidden" name="vendedor" value={dadosGerais.vendedor} />
+            <input type="hidden" name="tipoPedido" value={dadosGerais.tipoPedido} />
+            <input type="hidden" name="contatoNome" value={dadosGerais.contatoNome} />
+            <input type="hidden" name="contatoEmail" value={dadosGerais.contatoEmail} />
+            <input type="hidden" name="condicoesPagamento" value={dadosGerais.condicoesPagamento} />
+            <input type="hidden" name="frete" value={dadosGerais.frete} />
+            <input type="hidden" name="transportadora" value={dadosGerais.transportadora} />
+            <input type="hidden" name="localEntrega" value={dadosGerais.localEntrega} />
+            <input type="hidden" name="observacoes" value={dadosGerais.observacoes} />
 
             {state && !state.ok && <Alert variant="error">{state.mensagem}</Alert>}
 
