@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState, type ChangeEvent } from "react";
+import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -59,6 +60,15 @@ export function AnaliseTintaCard({
   const [state, formAction, isPending] = useActionState(analisarTintaItem, null);
   const [mostrarUpload, setMostrarUpload] = useState(!tinta);
   const [erroArquivo, setErroArquivo] = useState<string | null>(null);
+
+  // Sem isso, a primeira análise bem-sucedida num item gravava certinho no
+  // banco (revalidatePath já traz o `tinta` novo como prop), mas a tela
+  // continuava presa no formulário de upload — mostrarUpload só é
+  // inicializado uma vez no mount, não reage sozinho a um prop novo chegando
+  // depois. Mesmo padrão de EnviarArteForm.tsx.
+  useAoMudar(state, (state) => {
+    if (state?.ok) setMostrarUpload(false);
+  });
 
   function handleArquivoChange(evento: ChangeEvent<HTMLInputElement>) {
     const arquivo = evento.target.files?.[0];
