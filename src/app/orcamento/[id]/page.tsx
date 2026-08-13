@@ -62,7 +62,7 @@ export default async function OrcamentoDetalhePage({
   await exigirVerModulo(usuario, "ORCAMENTO");
   const origem = await resolverOrigemPublica();
 
-  const [orcamento, clientes, itensVendaveis] = await Promise.all([
+  const [orcamento, clientes, itensVendaveis, parametrosGrafica] = await Promise.all([
     prisma.orcamento.findFirst({
       where: { id, graficaId: usuario.graficaId },
       include: {
@@ -88,7 +88,12 @@ export default async function OrcamentoDetalhePage({
       include: { itemCatalogo: true },
       orderBy: { itemCatalogo: { nome: "asc" } },
     }),
+    prisma.parametrosGrafica.findUnique({
+      where: { graficaId: usuario.graficaId },
+      select: { custoTintaPorMl: true },
+    }),
   ]);
+  const custoTintaPorMl = parametrosGrafica?.custoTintaPorMl ? Number(parametrosGrafica.custoTintaPorMl) : null;
 
   if (!orcamento) {
     notFound();
@@ -265,6 +270,7 @@ export default async function OrcamentoDetalhePage({
                     alturaCm: item.alturaCm ? Number(item.alturaCm) : null,
                   }}
                   tinta={mapearTinta(item)}
+                  custoPorMl={custoTintaPorMl}
                 />
               </div>
             ))}
@@ -319,6 +325,7 @@ export default async function OrcamentoDetalhePage({
                       alturaCm: item.alturaCm ? Number(item.alturaCm) : null,
                     }}
                     tinta={mapearTinta(item)}
+                    custoPorMl={custoTintaPorMl}
                   />
                 )}
               </div>

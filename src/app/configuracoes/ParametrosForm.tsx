@@ -13,9 +13,11 @@ import type { BaseComissao } from "@/generated/prisma/enums";
 export function ParametrosForm({
   parametros,
   comissaoVendedorBase,
+  custoTintaPorMl,
 }: {
   parametros: ParametrosTenant;
   comissaoVendedorBase: BaseComissao;
+  custoTintaPorMl: number | null;
 }) {
   const [state, formAction, isPending] = useActionState(salvarParametros, null);
 
@@ -235,6 +237,30 @@ export function ParametrosForm({
             defaultValue={parametros.gapPecasPadrao}
           />
         </div>
+      </Card>
+
+      <Card className="flex flex-col gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Cálculo de tinta com IA
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Custo do ml da sua tinta — usado só pra mostrar uma estimativa de
+            valor ao lado do resultado da análise de tinta. Não afeta o preço
+            de nenhum orçamento.
+          </p>
+        </div>
+        <Input
+          label="Custo do ml de tinta (R$)"
+          name="custoTintaPorMl"
+          type="number"
+          step="0.0001"
+          min="0"
+          defaultValue={custoTintaPorMl ?? ""}
+          placeholder="ex: 0.08"
+          hint="Deixe em branco pra não mostrar estimativa de valor"
+          className="max-w-xs"
+        />
       </Card>
 
       {state && <Alert variant={state.ok ? "success" : "error"}>{state.mensagem}</Alert>}

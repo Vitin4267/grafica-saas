@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { gerarChave } from "@/lib/chave-local";
-import { etiquetaInicial, type CamposEtiqueta, type CamposHotStamping } from "./etiqueta-campos";
+import type { CamposEtiqueta, CamposHotStamping } from "./etiqueta-campos";
 
 // Tipos e etiquetaInicial/etiquetaParaCampos moraram aqui antes — movidos pra
 // ./etiqueta-campos.ts (módulo sem "use client") porque page.tsx (Server

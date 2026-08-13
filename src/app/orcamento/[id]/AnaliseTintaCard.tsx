@@ -9,6 +9,7 @@ import { Alert } from "@/components/ui/Alert";
 import { ProportionBar } from "@/components/ui/ProportionBar";
 import { LockIcon } from "@/components/icons";
 import { validarArquivoImagemTinta } from "@/lib/upload-validacao";
+import { formatoMoeda } from "@/lib/moeda";
 import { analisarTintaItem } from "./AnaliseTinta.actions";
 
 export type AnaliseTintaDados = {
@@ -50,12 +51,17 @@ export function AnaliseTintaCard({
   mensagemBloqueio,
   itemAtual,
   tinta,
+  custoPorMl,
 }: {
   orcamentoItemId: string;
   podeUsar: boolean;
   mensagemBloqueio: string | null;
   itemAtual: { quantidade: number; larguraCm: number | null; alturaCm: number | null };
   tinta: AnaliseTintaDados | null;
+  // Referência de Configurações → Cálculo de tinta com IA — null quando o
+  // usuário nunca preencheu, e nesse caso a estimativa de R$ simplesmente
+  // não aparece (nunca mostra "R$ 0,00" como se fosse um valor real).
+  custoPorMl: number | null;
 }) {
   const [state, formAction, isPending] = useActionState(analisarTintaItem, null);
   const [mostrarUpload, setMostrarUpload] = useState(!tinta);
@@ -137,6 +143,11 @@ export function AnaliseTintaCard({
               <p className="text-xs text-slate-500">
                 {formatarMl(tinta.consumoMlPorPeca, 4)} ml por peça · {tinta.quantidadeSnapshot} peças
               </p>
+              {custoPorMl !== null && (
+                <p className="mt-1 text-sm font-medium text-teal-700 dark:text-teal-400">
+                  ≈ {formatoMoeda.format(custoPorMl * tinta.consumoMlTotal)} de tinta
+                </p>
+              )}
             </div>
           </div>
 

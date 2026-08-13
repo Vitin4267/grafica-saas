@@ -71,6 +71,12 @@ model ParametrosGrafica {
   margemSegurancaPadrao Decimal @default(0.02) @db.Decimal(5, 4)
   gapPecasPadrao        Decimal @default(0.008) @db.Decimal(5, 4)
 
+  // Referência pro Cálculo de tinta com IA (ver OrcamentoItemTinta) — NUNCA
+  // entra na composição de preço acima, é só multiplicado pelo ml estimado
+  // na hora de EXIBIR o card, puramente informativo. Nulo = ainda não
+  // configurado, o card não mostra linha de custo nenhuma nesse caso.
+  custoTintaPorMl Decimal? @db.Decimal(10, 4)
+
   // Política de cálculo da comissão PAGA a vendedores (ver model Comissao)
   // — NÃO CONFUNDIR com `comissaoPercent` acima, que é markup de
   // precificação embutido no preço de venda (src/lib/pricing/compor.ts),

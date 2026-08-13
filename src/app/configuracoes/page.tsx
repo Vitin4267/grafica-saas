@@ -21,9 +21,9 @@ export default async function ConfiguracoesPage() {
   // estrito do motor de precificação, ver src/lib/pricing/carregar.ts) —
   // carregarParametrosTenant já garante (via upsert) que a linha existe,
   // então este findUnique nunca vem null.
-  const { comissaoVendedorBase } = await prisma.parametrosGrafica.findUniqueOrThrow({
+  const { comissaoVendedorBase, custoTintaPorMl } = await prisma.parametrosGrafica.findUniqueOrThrow({
     where: { graficaId: usuario.graficaId },
-    select: { comissaoVendedorBase: true },
+    select: { comissaoVendedorBase: true, custoTintaPorMl: true },
   });
 
   return (
@@ -48,7 +48,11 @@ export default async function ConfiguracoesPage() {
           </p>
         </div>
 
-        <ParametrosForm parametros={parametros} comissaoVendedorBase={comissaoVendedorBase} />
+        <ParametrosForm
+          parametros={parametros}
+          comissaoVendedorBase={comissaoVendedorBase}
+          custoTintaPorMl={custoTintaPorMl ? Number(custoTintaPorMl) : null}
+        />
       </main>
     </div>
   );

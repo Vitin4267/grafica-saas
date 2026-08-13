@@ -70,6 +70,19 @@ export async function salvarParametros(
     return { ok: false, mensagem: "Incremento de arredondamento deve ser maior que zero." };
   }
 
+  // Opcional, ao contrário dos CAMPOS_DECIMAL acima — não faz parte da
+  // composição de preço (só exibição no card de tinta), então em branco é um
+  // estado válido (limpa a estimativa de valor), não erro.
+  let custoTintaPorMl: number | null = null;
+  const custoTintaPorMlBruto = formData.get("custoTintaPorMl");
+  if (typeof custoTintaPorMlBruto === "string" && custoTintaPorMlBruto.trim() !== "") {
+    const valor = Number(custoTintaPorMlBruto);
+    if (!Number.isFinite(valor) || valor < 0) {
+      return { ok: false, mensagem: 'Valor inválido em "Custo do ml de tinta".' };
+    }
+    custoTintaPorMl = valor;
+  }
+
   const somaEncargos =
     dados.margemPadrao +
     dados.impostoPercent +
@@ -85,7 +98,7 @@ export async function salvarParametros(
 
   await prisma.parametrosGrafica.update({
     where: { graficaId: usuario.graficaId },
-    data: { ...dados, comissaoVendedorBase },
+    data: { ...dados, comissaoVendedorBase, custoTintaPorMl },
   });
 
   revalidatePath("/configuracoes");
