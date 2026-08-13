@@ -933,7 +933,7 @@ export async function removerItemOrcamento(
     referenciaId: orcamentoItemId,
   });
   if (arquivoTintaRemovido) {
-    await del(arquivoTintaRemovido.url).catch(() => {});
+    await del(arquivoTintaRemovido.url, { token: process.env.BLOB_PRIVATE_READ_WRITE_TOKEN }).catch(() => {});
   }
 
   revalidatePath(`/orcamento/${item.orcamentoId}`);
@@ -982,7 +982,7 @@ export async function cancelarOrcamento(
       referenciaId: item.id,
     });
     if (arquivoTintaRemovido) {
-      await del(arquivoTintaRemovido.url).catch(() => {});
+      await del(arquivoTintaRemovido.url, { token: process.env.BLOB_PRIVATE_READ_WRITE_TOKEN }).catch(() => {});
     }
   }
 

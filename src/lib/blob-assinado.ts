@@ -9,7 +9,17 @@ import { issueSignedToken, presignUrl } from "@vercel/blob";
 // operations incluindo "put"/"delete").
 export async function urlAssinadaLeitura(pathname: string, validadeMs: number): Promise<string> {
   const validUntil = Date.now() + validadeMs;
-  const token = await issueSignedToken({ pathname, operations: ["get"], validUntil });
+  // Store PRIVADO dedicado — acesso público/privado é fixo por store no
+  // Vercel Blob (imutável após criado), então blob privado (tinta) e blob
+  // público (arte/logo) NUNCA podem viver no mesmo store. Sem `token`
+  // explícito aqui, isso cairia no BLOB_READ_WRITE_TOKEN padrão (o store
+  // público), que rejeita qualquer operação privada.
+  const token = await issueSignedToken({
+    pathname,
+    operations: ["get"],
+    validUntil,
+    token: process.env.BLOB_PRIVATE_READ_WRITE_TOKEN,
+  });
   const { presignedUrl } = await presignUrl(token, {
     operation: "get",
     pathname,

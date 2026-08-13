@@ -197,6 +197,22 @@ export type ResultadoReconciliacaoArmazenamento = {
   orfaosApagados: number;
 };
 
+// Lista TODOS os blobs de UM store (paginado) — usado uma vez por store, ver
+// reconciliarArmazenamento abaixo. `token` undefined = store público padrão
+// (BLOB_READ_WRITE_TOKEN); passe BLOB_PRIVATE_READ_WRITE_TOKEN pro privado.
+async function listarTodosOsBlobs(token: string | undefined): Promise<BlobReal[]> {
+  const blobs: BlobReal[] = [];
+  let cursor: string | undefined;
+  do {
+    const pagina = await list({ cursor, limit: 1000, token });
+    blobs.push(
+      ...pagina.blobs.map((b) => ({ url: b.url, pathname: b.pathname, size: b.size, uploadedAt: b.uploadedAt }))
+    );
+    cursor = pagina.hasMore ? pagina.cursor : undefined;
+  } while (cursor);
+  return blobs;
+}
+
 // Rede de segurança da cota de armazenamento (ver src/lib/billing/armazenamento.ts
 // e o comentário do model ArquivoArmazenado no schema): corrige o razão pra
 // bater com a verdade do Blob, e opcionalmente apaga arquivo órfão (upload
@@ -204,6 +220,13 @@ export type ResultadoReconciliacaoArmazenamento = {
 // del() ausente já causou uma vez neste projeto, ver comentário em
 // enviarArte). A etapa de apagar é destrutiva, então fica atrás de uma env
 // var desligada por padrão — rode uma vez só CONTANDO antes de ligar.
+//
+// DOIS stores (público pra arte/logo, privado pra tinta/backup — acesso é
+// fixo por store no Vercel Blob, não dá pra misturar) — precisa listar os
+// dois e juntar, senão TODO arquivo do store privado pareceria "sumido" e
+// seria removido do razão a cada rodada (bytesCorrigidos zerando a cota sem
+// motivo real). tokenPorUrl guarda de qual store cada blob veio, pra
+// del(orfao) usar o token certo lá embaixo.
 export async function reconciliarArmazenamento(): Promise<ResultadoReconciliacaoArmazenamento> {
   await backfillArquivosLegados();
 
@@ -211,15 +234,15 @@ export async function reconciliarArmazenamento(): Promise<ResultadoReconciliacao
     select: { id: true, url: true, bytes: true, createdAt: true },
   });
 
-  const blobsReais: BlobReal[] = [];
-  let cursor: string | undefined;
-  do {
-    const pagina = await list({ cursor, limit: 1000 });
-    blobsReais.push(
-      ...pagina.blobs.map((b) => ({ url: b.url, pathname: b.pathname, size: b.size, uploadedAt: b.uploadedAt }))
-    );
-    cursor = pagina.hasMore ? pagina.cursor : undefined;
-  } while (cursor);
+  const blobsPublicos = await listarTodosOsBlobs(undefined);
+  const blobsPrivados = process.env.BLOB_PRIVATE_READ_WRITE_TOKEN
+    ? await listarTodosOsBlobs(process.env.BLOB_PRIVATE_READ_WRITE_TOKEN)
+    : [];
+  const blobsReais: BlobReal[] = [...blobsPublicos, ...blobsPrivados];
+  const tokenPorUrl = new Map<string, string | undefined>([
+    ...blobsPublicos.map((b): [string, undefined] => [b.url, undefined]),
+    ...blobsPrivados.map((b): [string, string] => [b.url, process.env.BLOB_PRIVATE_READ_WRITE_TOKEN!]),
+  ]);
 
   const diferenca = diferencaReconciliacao(linhasRazao, blobsReais);
 
@@ -238,7 +261,7 @@ export async function reconciliarArmazenamento(): Promise<ResultadoReconciliacao
   // env var ausente/diferente de "1", esta etapa só CONTA, nunca apaga.
   if (process.env.ARMAZENAMENTO_LIMPEZA_ORFAOS === "1") {
     for (const orfao of diferenca.orfaosParaApagar) {
-      await del(orfao.url).catch(() => {});
+      await del(orfao.url, { token: tokenPorUrl.get(orfao.url) }).catch(() => {});
       orfaosApagados++;
     }
   }

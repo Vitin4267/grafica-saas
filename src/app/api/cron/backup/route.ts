@@ -86,10 +86,10 @@ async function exportarDados() {
 }
 
 async function limparBackupsAntigos() {
-  const { blobs } = await list({ prefix: "backups/" });
+  const { blobs } = await list({ prefix: "backups/", token: process.env.BLOB_PRIVATE_READ_WRITE_TOKEN });
   const limite = Date.now() - RETENCAO_DIAS * 24 * 60 * 60 * 1000;
   const antigos = blobs.filter((b) => new Date(b.uploadedAt).getTime() < limite);
-  await Promise.all(antigos.map((b) => del(b.url)));
+  await Promise.all(antigos.map((b) => del(b.url, { token: process.env.BLOB_PRIVATE_READ_WRITE_TOKEN })));
   return antigos.length;
 }
 
@@ -112,10 +112,13 @@ export async function GET(request: NextRequest) {
   // previsível == esses dados baixáveis por qualquer um que descubra a URL do
   // blob store, sem autenticação nenhuma. Restaurar exige usar `get()` de
   // @vercel/blob (autenticado pelo token do servidor), nunca a URL direta.
+  // Store PRIVADO dedicado (BLOB_PRIVATE_READ_WRITE_TOKEN) — mesmo store da
+  // imagem de tinta, público/privado é fixo por store no Vercel Blob.
   const blob = await put(nomeArquivo, JSON.stringify(dados), {
     access: "private",
     addRandomSuffix: true,
     contentType: "application/json",
+    token: process.env.BLOB_PRIVATE_READ_WRITE_TOKEN,
   });
 
   const removidos = await limparBackupsAntigos();

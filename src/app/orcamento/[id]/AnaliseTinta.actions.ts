@@ -123,13 +123,16 @@ export async function analisarTintaItem(
   const extensao = extensaoImagemTinta(arquivo.type);
   // access: "private" — desvia de propósito de enviarArte (arte é pública):
   // esta imagem nunca é vista fora do tenant, então nunca deve ganhar URL
-  // pública permanente (ver src/lib/blob-assinado.ts).
+  // pública permanente (ver src/lib/blob-assinado.ts). Store DEDICADO
+  // (BLOB_PRIVATE_READ_WRITE_TOKEN) — público/privado é fixo por store no
+  // Vercel Blob, não dá pra misturar com o store público de arte/logo.
   let blob;
   try {
     blob = await put(`tinta-analise/${usuario.graficaId}/${orcamentoItemId}-${Date.now()}.${extensao}`, arquivo, {
       access: "private",
       addRandomSuffix: true,
       contentType: arquivo.type,
+      token: process.env.BLOB_PRIVATE_READ_WRITE_TOKEN,
     });
   } catch (erro) {
     await cancelarReserva(reserva.arquivoId);
@@ -201,7 +204,7 @@ export async function analisarTintaItem(
   // de enviarArte/salvarLogo. O razão (ArquivoArmazenado) já trocou dentro
   // de confirmarArquivo; aqui só falta apagar o arquivo de verdade.
   if (imagemAnteriorPathname && imagemAnteriorPathname !== blob.pathname) {
-    await del(imagemAnteriorPathname).catch(() => {});
+    await del(imagemAnteriorPathname, { token: process.env.BLOB_PRIVATE_READ_WRITE_TOKEN }).catch(() => {});
   }
 
   revalidatePath(`/orcamento/${item.orcamentoId}`);
