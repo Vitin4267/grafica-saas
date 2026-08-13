@@ -1,4 +1,5 @@
 import "server-only";
+import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { dispararEventoEmail } from "@/lib/email/webhook-email";
 import { templateEstoqueBaixo, type ItemEstoqueBaixo } from "@/lib/email/templates";
@@ -95,7 +96,10 @@ export async function verificarEDispararAlertaEstoque(
     });
     const { assunto, html, texto } = templateEstoqueBaixo(graficaNome, novosCriticos);
     for (const dono of donos) {
-      void dispararEventoEmail({ tipo: "estoque_baixo", destinatario: dono.email, assunto, html, texto });
+      // after() em vez de void: garante que a instância serverless continua
+      // viva até o e-mail terminar, mesmo depois da resposta (render da
+      // página /catalogo) já ter sido enviada ao cliente.
+      after(() => dispararEventoEmail({ tipo: "estoque_baixo", destinatario: dono.email, assunto, html, texto }));
     }
   }
 

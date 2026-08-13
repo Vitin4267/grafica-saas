@@ -19,10 +19,11 @@ import {
   reservarEspaco,
   confirmarArquivo,
   cancelarReserva,
+  removerArquivo,
 } from "@/lib/billing/armazenamento";
 import { tentarRegistrarAnaliseTinta } from "@/lib/rate-limit-tinta";
 import { solicitarAnaliseTinta, ErroWebhookTinta } from "@/lib/webhook-tinta";
-import { urlAssinadaLeitura } from "@/lib/blob-assinado";
+import { urlAssinadaLeitura, exigirTokenBlobPrivado } from "@/lib/blob-assinado";
 import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
 
 export type AnalisarTintaResult = { ok: boolean; mensagem: string };
@@ -49,6 +50,12 @@ export async function analisarTintaItem(
   if (!acesso.liberado) {
     return { ok: false, mensagem: acesso.mensagem };
   }
+
+  // Falha alto se o store privado não estiver configurado, em vez de deixar
+  // put()/del() caírem silenciosamente pro token do store público (ver
+  // exigirTokenBlobPrivado em src/lib/blob-assinado.ts). Confere cedo, antes
+  // de reservar espaço/gastar rate limit.
+  const tokenPrivado = exigirTokenBlobPrivado();
 
   const orcamentoItemId = String(formData.get("orcamentoItemId"));
   const arquivo = formData.get("arquivo");
@@ -132,7 +139,7 @@ export async function analisarTintaItem(
       access: "private",
       addRandomSuffix: true,
       contentType: arquivo.type,
-      token: process.env.BLOB_PRIVATE_READ_WRITE_TOKEN,
+      token: tokenPrivado,
     });
   } catch (erro) {
     await cancelarReserva(reserva.arquivoId);
@@ -168,6 +175,24 @@ export async function analisarTintaItem(
       }
     );
   } catch (erro) {
+    // Neste ponto o blob já foi CONFIRMADO (confirmarArquivo, acima) — a
+    // linha do razão e o arquivo no store privado já existem de verdade.
+    // Se a chamada ao n8n falhar/der timeout aqui, a análise nunca termina,
+    // mas o espaço já foi "pago": sem reverter, ficaria ocupando cota pra
+    // sempre caso o usuário desista. OrcamentoItemTinta (a tabela de
+    // resultado) ainda NÃO foi tocada neste ponto — o upsert só roda mais
+    // abaixo, depois deste bloco — então não há nada pra reverter lá.
+    // removerArquivo apaga a linha que confirmarArquivo acabou de gravar
+    // (mesmo helper usado por removerArte/removerLogo) e devolve a url pra
+    // apagar o arquivo físico também.
+    const arquivoRevertido = await removerArquivo({
+      graficaId: usuario.graficaId,
+      tipo: "ANALISE_TINTA",
+      referenciaId: orcamentoItemId,
+    });
+    if (arquivoRevertido) {
+      await del(arquivoRevertido.url, { token: tokenPrivado }).catch(() => {});
+    }
     if (erro instanceof ErroWebhookTinta) {
       return { ok: false, mensagem: erro.message };
     }
@@ -204,7 +229,7 @@ export async function analisarTintaItem(
   // de enviarArte/salvarLogo. O razão (ArquivoArmazenado) já trocou dentro
   // de confirmarArquivo; aqui só falta apagar o arquivo de verdade.
   if (imagemAnteriorPathname && imagemAnteriorPathname !== blob.pathname) {
-    await del(imagemAnteriorPathname, { token: process.env.BLOB_PRIVATE_READ_WRITE_TOKEN }).catch(() => {});
+    await del(imagemAnteriorPathname, { token: tokenPrivado }).catch(() => {});
   }
 
   revalidatePath(`/orcamento/${item.orcamentoId}`);

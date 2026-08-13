@@ -20,7 +20,8 @@ export type EventoEmail = {
     | "estoque_baixo"
     | "trial_expirando"
     | "arte_alteracao_solicitada"
-    | "arte_aprovada";
+    | "arte_aprovada"
+    | "estagio_responsavel";
   destinatario: string;
   assunto: string;
   html: string;

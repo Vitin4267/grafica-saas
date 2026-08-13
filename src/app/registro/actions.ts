@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth/password";
 import { criarSessao } from "@/lib/auth/session";
@@ -146,16 +147,27 @@ export async function registrar(
 
   await criarSessao(usuario.id);
 
-  // Melhor esforço — nunca lança (ver dispararEventoEmail). Mesmo se o
-  // e-mail falhar, o usuário cai em /verificar-email e pode pedir reenvio.
+  // Continua com `await` aqui (diferente de dispararMetrica logo abaixo):
+  // gerarEEnviarCodigoVerificacao GRAVA o código no banco (transação) antes
+  // de disparar o e-mail — essa gravação precisa terminar ANTES do redirect,
+  // senão o usuário podia cair em /verificar-email sem o código ainda
+  // existir. O disparo do e-mail em si já não bloqueia mais este `await`:
+  // dentro da função (src/lib/email/verificacao-email.ts) o webhook agora
+  // roda via after(), então esperar a função inteira aqui é rápido (só
+  // espera o banco, não o e-mail).
   await gerarEEnviarCodigoVerificacao(usuario);
 
-  // Melhor esforço — nunca lança (ver dispararMetrica). Métrica pro n8n
-  // acompanhar novos registros; uma falha aqui nunca pode travar o cadastro.
-  await dispararMetrica({
-    tipo: "novo_registro",
-    dados: { graficaId: usuario.graficaId, graficaNome, criadoEm: new Date().toISOString() },
-  });
+  // after() em vez de await: métrica pro n8n acompanhar novos registros,
+  // puramente fire-and-forget (nenhum resultado é usado depois) — não
+  // precisa bloquear o redirect. Garante também que a instância serverless
+  // continua viva até o webhook terminar, mesmo depois da resposta já ter
+  // sido enviada ao cliente.
+  after(() =>
+    dispararMetrica({
+      tipo: "novo_registro",
+      dados: { graficaId: usuario.graficaId, graficaNome, criadoEm: new Date().toISOString() },
+    })
+  );
 
   redirect("/verificar-email");
 }

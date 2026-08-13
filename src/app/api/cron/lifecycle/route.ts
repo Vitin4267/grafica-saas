@@ -8,6 +8,18 @@ import { cronAutorizado } from "@/lib/auth/cron";
 // (em vez de duas), já que ambos são "melhor esforço, roda 1x/dia, sem
 // efeito colateral um no outro" — mesmo raciocínio de manter poucas rotas
 // de cron (o plano grátis da Vercel tem limite de crons).
+//
+// maxDuration explícito: a terceira tarefa do Promise.all abaixo
+// (reconciliarArmazenamento, ver src/lib/lifecycle-cron.ts) faz uma
+// query+head() de rede por pedido/gráfica no backfill — sem isso, o default
+// de 15s do plano Hobby/Pro (mesmo default citado em
+// src/app/orcamento/[id]/page.tsx) estoura bem antes da base crescer,
+// matando o cron NO MEIO e derrubando as outras duas tarefas junto (nenhuma
+// delas completa quando o Promise.all é abortado). 60s dá folga: o backfill
+// agora roda em lotes paralelos de 10 (ver TAMANHO_LOTE_BACKFILL), mas ainda
+// é uma chamada de rede por linha.
+export const maxDuration = 60;
+
 export async function GET(request: NextRequest) {
   // Mesma proteção de src/app/api/cron/backup/route.ts: só a própria infra
   // da Vercel (ou quem souber o segredo) consegue disparar.

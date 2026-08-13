@@ -28,6 +28,7 @@ export function PedidoLinha({
   itensResumo,
   status,
   podeEditar,
+  souResponsavelDesteStatus,
   chipAtraso,
   arteUrl,
   arteAprovadaEm,
@@ -40,6 +41,12 @@ export function PedidoLinha({
   itensResumo: string;
   status: string;
   podeEditar: boolean;
+  // Responsável atribuído (ver ResponsavelEstagio) pela etapa ATUAL deste
+  // pedido — libera o botão de avançar mesmo sem PRODUCAO.podeEditar
+  // completo. Nunca true pra FILA (não é uma etapa atribuível, ver
+  // ESTAGIOS_ATRIBUIVEIS), então IniciarImpressaoBotao abaixo continua
+  // exigindo podeEditar puro.
+  souResponsavelDesteStatus: boolean;
   chipAtraso: ReactNode;
   arteUrl: string | null;
   arteAprovadaEm: Date | null;
@@ -88,24 +95,22 @@ export function PedidoLinha({
         <div className="flex items-center gap-3">
           {chipAtraso}
           <StatusBadge status={status} tipo="pedido" />
-          {podeEditar && (
-            <>
-              {status === "FILA" ? (
+          {status === "FILA"
+            ? podeEditar && (
                 <IniciarImpressaoBotao estado={iniciarImpressao.estado} onIniciar={iniciarImpressao.iniciar} />
-              ) : (
+              )
+            : (podeEditar || souResponsavelDesteStatus) && (
                 <AvancarPedidoButton pedidoId={pedidoId} status={status} />
               )}
-              {podeCancelar && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="!text-rose-600 hover:!bg-rose-50 dark:!text-rose-400 dark:hover:!bg-rose-950/50"
-                  onClick={() => setConfirmando(true)}
-                >
-                  Cancelar
-                </Button>
-              )}
-            </>
+          {podeEditar && podeCancelar && (
+            <Button
+              type="button"
+              variant="ghost"
+              className="!text-rose-600 hover:!bg-rose-50 dark:!text-rose-400 dark:hover:!bg-rose-950/50"
+              onClick={() => setConfirmando(true)}
+            >
+              Cancelar
+            </Button>
           )}
         </div>
       </div>

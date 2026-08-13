@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolverOrigemPublica } from "@/lib/url-publica";
 import { dispararEventoEmail, type EventoEmail } from "@/lib/email/webhook-email";
@@ -26,7 +27,11 @@ async function notificarDonos(
     select: { email: true },
   });
   for (const dono of donos) {
-    void dispararEventoEmail({ tipo, destinatario: dono.email, ...template });
+    // after() em vez de void: em serverless (Vercel) a instância pode ser
+    // congelada assim que a resposta é enviada, antes do fetch do `void`
+    // terminar — after() garante que a instância continua viva até o
+    // callback terminar. Ver AGENTS.md/node_modules/next/dist/docs/.../after.md.
+    after(() => dispararEventoEmail({ tipo, destinatario: dono.email, ...template }));
   }
 }
 

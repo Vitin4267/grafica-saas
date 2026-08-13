@@ -1,10 +1,16 @@
 import "server-only";
 import { list, del, head } from "@vercel/blob";
+import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { dispararEventoEmail } from "@/lib/email/webhook-email";
 import { templateTrialExpirando } from "@/lib/email/templates";
 import { dispararMetrica } from "@/lib/webhook-metricas";
-import { diferencaReconciliacao, type LinhaRazao, type BlobReal } from "@/lib/billing/reconciliacao-armazenamento";
+import {
+  diferencaReconciliacao,
+  type LinhaRazao,
+  type BlobReal,
+  type DiferencaReconciliacao,
+} from "@/lib/billing/reconciliacao-armazenamento";
 
 // Lógica do cron diário de "ciclo de vida" (src/app/api/cron/lifecycle/
 // route.ts) — separada da rota pra poder ser testada sem precisar montar um
@@ -71,7 +77,17 @@ export async function enviarAvisosTrialExpirando(
 
     const { assunto, html, texto } = templateTrialExpirando(orcamentosGerados, linkAssinatura);
     for (const dono of donos) {
-      await dispararEventoEmail({ tipo: "trial_expirando", destinatario: dono.email, assunto, html, texto });
+      // after() em vez de await: dispararEventoEmail é melhor esforço
+      // (nunca lança) e o resultado nunca é usado depois — não precisa
+      // bloquear o loop/a resposta do cron. after() funciona em Route
+      // Handlers (não só Server Actions/Components) — confirmado em
+      // node_modules/next/dist/docs/01-app/03-api-reference/04-functions/after.md
+      // ("It can be used in ... Route Handlers"). Esta função roda dentro
+      // do GET de src/app/api/cron/lifecycle/route.ts; o AsyncLocalStorage
+      // que o after() usa por baixo dos panos propaga através da cadeia de
+      // await normal, então chamar after() aqui — mesmo fora do arquivo da
+      // rota — ainda está dentro do escopo da mesma requisição.
+      after(() => dispararEventoEmail({ tipo: "trial_expirando", destinatario: dono.email, assunto, html, texto }));
     }
   }
 
@@ -134,10 +150,27 @@ export async function enviarMetricasDiarias(): Promise<MetricasAgregadas> {
 
 // --- Reconciliação da cota de armazenamento ------------------------------
 
+// Tamanho do lote de query+head() em paralelo no backfill abaixo — grande o
+// bastante pra não estourar maxDuration (ver src/app/api/cron/lifecycle/
+// route.ts) conforme a base cresce, pequeno o bastante pra não disparar rate
+// limit/excesso de conexão simultânea contra o Blob e o Postgres.
+const TAMANHO_LOTE_BACKFILL = 10;
+
+async function emLotes<T>(itens: T[], tamanhoLote: number, tarefa: (item: T) => Promise<void>): Promise<void> {
+  for (let i = 0; i < itens.length; i += tamanhoLote) {
+    await Promise.all(itens.slice(i, i + tamanhoLote).map(tarefa));
+  }
+}
+
 // Preenche o razão (ArquivoArmazenado) pra arte/logo que já existiam ANTES
 // desta feature — sem isso, todo arquivo enviado antes de hoje seria
 // classificado como "órfão" pela etapa de limpeza abaixo. Idempotente: só
 // cria linha pra quem ainda não tem uma.
+//
+// Query + head() de rede POR LINHA, em lotes de TAMANHO_LOTE_BACKFILL em vez
+// de sequencial — com a base crescendo (centenas de pedidos), um `for`
+// totalmente sequencial passa de maxDuration e mata o cron no meio,
+// derrubando junto as outras tarefas do mesmo Promise.all em route.ts.
 async function backfillArquivosLegados(): Promise<void> {
   const [pedidosComArte, graficasComLogo] = await Promise.all([
     prisma.pedido.findMany({
@@ -150,13 +183,13 @@ async function backfillArquivosLegados(): Promise<void> {
     }),
   ]);
 
-  for (const pedido of pedidosComArte) {
+  await emLotes(pedidosComArte, TAMANHO_LOTE_BACKFILL, async (pedido) => {
     const jaTemLinha = await prisma.arquivoArmazenado.findFirst({
       where: { tipo: "ARTE_PEDIDO", referenciaId: pedido.id },
     });
-    if (jaTemLinha) continue;
+    if (jaTemLinha) return;
     const info = await head(pedido.arteUrl!).catch(() => null);
-    if (!info) continue; // blob já não existe mais — nada a preencher
+    if (!info) return; // blob já não existe mais — nada a preencher
     await prisma.arquivoArmazenado.create({
       data: {
         graficaId: pedido.graficaId,
@@ -167,15 +200,15 @@ async function backfillArquivosLegados(): Promise<void> {
         pathname: info.pathname,
       },
     });
-  }
+  });
 
-  for (const grafica of graficasComLogo) {
+  await emLotes(graficasComLogo, TAMANHO_LOTE_BACKFILL, async (grafica) => {
     const jaTemLinha = await prisma.arquivoArmazenado.findFirst({
       where: { tipo: "LOGO_GRAFICA", referenciaId: grafica.id },
     });
-    if (jaTemLinha) continue;
+    if (jaTemLinha) return;
     const info = await head(grafica.logoUrl!).catch(() => null);
-    if (!info) continue;
+    if (!info) return;
     await prisma.arquivoArmazenado.create({
       data: {
         graficaId: grafica.id,
@@ -186,7 +219,7 @@ async function backfillArquivosLegados(): Promise<void> {
         pathname: info.pathname,
       },
     });
-  }
+  });
 }
 
 export type ResultadoReconciliacaoArmazenamento = {
@@ -213,6 +246,19 @@ async function listarTodosOsBlobs(token: string | undefined): Promise<BlobReal[]
   return blobs;
 }
 
+const DIFERENCA_VAZIA: DiferencaReconciliacao = {
+  reservasExpiradas: [],
+  paraCorrigirBytes: [],
+  paraRemoverDoRazao: [],
+  orfaosParaApagar: [],
+};
+
+// Tipos de ArquivoArmazenado que vivem no store PÚBLICO — o resto
+// (ANALISE_TINTA) vive no store PRIVADO. Usado só pra separar a linha do
+// razão pro lado certo antes de comparar contra os blobs de cada store (ver
+// comentário de reconciliarArmazenamento).
+const TIPOS_STORE_PUBLICO = new Set(["ARTE_PEDIDO", "LOGO_GRAFICA"]);
+
 // Rede de segurança da cota de armazenamento (ver src/lib/billing/armazenamento.ts
 // e o comentário do model ArquivoArmazenado no schema): corrige o razão pra
 // bater com a verdade do Blob, e opcionalmente apaga arquivo órfão (upload
@@ -222,55 +268,72 @@ async function listarTodosOsBlobs(token: string | undefined): Promise<BlobReal[]
 // var desligada por padrão — rode uma vez só CONTANDO antes de ligar.
 //
 // DOIS stores (público pra arte/logo, privado pra tinta/backup — acesso é
-// fixo por store no Vercel Blob, não dá pra misturar) — precisa listar os
-// dois e juntar, senão TODO arquivo do store privado pareceria "sumido" e
-// seria removido do razão a cada rodada (bytesCorrigidos zerando a cota sem
-// motivo real). tokenPorUrl guarda de qual store cada blob veio, pra
+// fixo por store no Vercel Blob, não dá pra misturar) — por isso rodam em
+// DUAS passadas independentes (ver comentário abaixo), nunca misturadas
+// numa lista só. tokenPorUrl guarda de qual store cada blob veio, pra
 // del(orfao) usar o token certo lá embaixo.
 export async function reconciliarArmazenamento(): Promise<ResultadoReconciliacaoArmazenamento> {
   await backfillArquivosLegados();
 
-  const linhasRazao: LinhaRazao[] = await prisma.arquivoArmazenado.findMany({
-    select: { id: true, url: true, bytes: true, createdAt: true },
+  const linhasRazao = await prisma.arquivoArmazenado.findMany({
+    select: { id: true, url: true, bytes: true, createdAt: true, tipo: true },
   });
+  const linhasPublicas: LinhaRazao[] = linhasRazao.filter((l) => TIPOS_STORE_PUBLICO.has(l.tipo));
+  const linhasPrivadas: LinhaRazao[] = linhasRazao.filter((l) => !TIPOS_STORE_PUBLICO.has(l.tipo));
+
+  // Duas passadas INDEPENDENTES, uma por store — nunca junta os blobs dos
+  // dois numa lista só. O lado público sempre roda. O lado privado só roda
+  // se BLOB_PRIVATE_READ_WRITE_TOKEN existir: sem a env var, "não consigo
+  // checar o store privado agora" é bem diferente de "nenhum blob privado
+  // existe" — tratar como o segundo (ex: blobsPrivados = []) faria TODA
+  // linha ANALISE_TINTA do razão parecer órfã e ser apagada do banco de
+  // verdade, mesmo que o arquivo continue vivo no Blob. Pular a passada
+  // inteira evita isso: nenhuma linha ANALISE_TINTA é tocada na rodada em
+  // que o token está ausente.
+  const tokenPorUrl = new Map<string, string | undefined>();
 
   const blobsPublicos = await listarTodosOsBlobs(undefined);
-  const blobsPrivados = process.env.BLOB_PRIVATE_READ_WRITE_TOKEN
-    ? await listarTodosOsBlobs(process.env.BLOB_PRIVATE_READ_WRITE_TOKEN)
-    : [];
-  const blobsReais: BlobReal[] = [...blobsPublicos, ...blobsPrivados];
-  const tokenPorUrl = new Map<string, string | undefined>([
-    ...blobsPublicos.map((b): [string, undefined] => [b.url, undefined]),
-    ...blobsPrivados.map((b): [string, string] => [b.url, process.env.BLOB_PRIVATE_READ_WRITE_TOKEN!]),
-  ]);
+  for (const b of blobsPublicos) tokenPorUrl.set(b.url, undefined);
+  const diferencaPublica = diferencaReconciliacao(linhasPublicas, blobsPublicos);
 
-  const diferenca = diferencaReconciliacao(linhasRazao, blobsReais);
-
-  if (diferenca.reservasExpiradas.length > 0) {
-    await prisma.arquivoArmazenado.deleteMany({ where: { id: { in: diferenca.reservasExpiradas } } });
+  let diferencaPrivada = DIFERENCA_VAZIA;
+  const tokenPrivado = process.env.BLOB_PRIVATE_READ_WRITE_TOKEN;
+  if (tokenPrivado) {
+    const blobsPrivados = await listarTodosOsBlobs(tokenPrivado);
+    for (const b of blobsPrivados) tokenPorUrl.set(b.url, tokenPrivado);
+    diferencaPrivada = diferencaReconciliacao(linhasPrivadas, blobsPrivados);
   }
-  for (const item of diferenca.paraCorrigirBytes) {
+
+  const reservasExpiradas = [...diferencaPublica.reservasExpiradas, ...diferencaPrivada.reservasExpiradas];
+  const paraCorrigirBytes = [...diferencaPublica.paraCorrigirBytes, ...diferencaPrivada.paraCorrigirBytes];
+  const paraRemoverDoRazao = [...diferencaPublica.paraRemoverDoRazao, ...diferencaPrivada.paraRemoverDoRazao];
+  const orfaosParaApagar = [...diferencaPublica.orfaosParaApagar, ...diferencaPrivada.orfaosParaApagar];
+
+  if (reservasExpiradas.length > 0) {
+    await prisma.arquivoArmazenado.deleteMany({ where: { id: { in: reservasExpiradas } } });
+  }
+  for (const item of paraCorrigirBytes) {
     await prisma.arquivoArmazenado.update({ where: { id: item.id }, data: { bytes: item.bytesCorreto } });
   }
-  if (diferenca.paraRemoverDoRazao.length > 0) {
-    await prisma.arquivoArmazenado.deleteMany({ where: { id: { in: diferenca.paraRemoverDoRazao } } });
+  if (paraRemoverDoRazao.length > 0) {
+    await prisma.arquivoArmazenado.deleteMany({ where: { id: { in: paraRemoverDoRazao } } });
   }
 
   let orfaosApagados = 0;
   // Desligado por padrão de propósito (ver comentário da função) — com a
   // env var ausente/diferente de "1", esta etapa só CONTA, nunca apaga.
   if (process.env.ARMAZENAMENTO_LIMPEZA_ORFAOS === "1") {
-    for (const orfao of diferenca.orfaosParaApagar) {
+    for (const orfao of orfaosParaApagar) {
       await del(orfao.url, { token: tokenPorUrl.get(orfao.url) }).catch(() => {});
       orfaosApagados++;
     }
   }
 
   return {
-    reservasExpiradas: diferenca.reservasExpiradas.length,
-    bytesCorrigidos: diferenca.paraCorrigirBytes.length,
-    linhasRemovidasDoRazao: diferenca.paraRemoverDoRazao.length,
-    orfaosEncontrados: diferenca.orfaosParaApagar.length,
+    reservasExpiradas: reservasExpiradas.length,
+    bytesCorrigidos: paraCorrigirBytes.length,
+    linhasRemovidasDoRazao: paraRemoverDoRazao.length,
+    orfaosEncontrados: orfaosParaApagar.length,
     orfaosApagados,
   };
 }

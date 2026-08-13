@@ -102,7 +102,7 @@ const etiquetaEntradaSchema = z
 // calcularItemOrcamento antes de gravar (ver criarOrcamento).
 const itemEntradaSchema = z.object({
   itemGraficaId: z.string().min(1),
-  quantidade: z.number().int().positive(),
+  quantidade: z.number().int().positive().max(1_000_000, "Quantidade não pode passar de 1.000.000 unidades."),
   larguraCm: z.number().positive().nullable(),
   alturaCm: z.number().positive().nullable(),
   corFrente: z.number().int().nullable(),

@@ -1,4 +1,5 @@
 import "server-only";
+import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizarTelefone } from "@/lib/telefone";
 import { buscarWebhookAutomacao, dispararEventoAutomacao } from "@/lib/webhook-automacao";
@@ -33,16 +34,21 @@ export async function verificarEDispararAlertasAtraso(
 
   for (const pedido of pedidosAtrasados) {
     const prazoEntrega = pedido.prazoEntrega!;
-    void dispararEventoAutomacao(webhookUrl, {
-      tipo: "pedido_atrasado",
-      graficaNome,
-      clienteNome: pedido.orcamento.cliente.nome,
-      clienteTelefone: normalizarTelefone(pedido.orcamento.cliente.telefone),
-      status: pedido.status,
-      prazoEntrega: prazoEntrega.toISOString().slice(0, 10),
-      diasAtraso: Math.floor((hojeUTC.getTime() - prazoEntrega.getTime()) / MS_POR_DIA),
-      orcamentoId: pedido.orcamentoId,
-    });
+    // after() em vez de void: garante que a instância serverless continua
+    // viva até o webhook terminar, mesmo depois da resposta (render da
+    // página /producao) já ter sido enviada ao cliente.
+    after(() =>
+      dispararEventoAutomacao(webhookUrl, {
+        tipo: "pedido_atrasado",
+        graficaNome,
+        clienteNome: pedido.orcamento.cliente.nome,
+        clienteTelefone: normalizarTelefone(pedido.orcamento.cliente.telefone),
+        status: pedido.status,
+        prazoEntrega: prazoEntrega.toISOString().slice(0, 10),
+        diasAtraso: Math.floor((hojeUTC.getTime() - prazoEntrega.getTime()) / MS_POR_DIA),
+        orcamentoId: pedido.orcamentoId,
+      })
+    );
 
     await prisma.pedido.update({
       where: { id: pedido.id },

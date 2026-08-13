@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { put, list, del } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { cronAutorizado } from "@/lib/auth/cron";
+import { exigirTokenBlobPrivado } from "@/lib/blob-assinado";
 
 // Camada EXTRA de backup, não a principal — a defesa real contra perda de
 // dados é o PITR do próprio Neon (recomendado fazer upgrade de plano pro
@@ -85,11 +86,11 @@ async function exportarDados() {
   };
 }
 
-async function limparBackupsAntigos() {
-  const { blobs } = await list({ prefix: "backups/", token: process.env.BLOB_PRIVATE_READ_WRITE_TOKEN });
+async function limparBackupsAntigos(tokenPrivado: string) {
+  const { blobs } = await list({ prefix: "backups/", token: tokenPrivado });
   const limite = Date.now() - RETENCAO_DIAS * 24 * 60 * 60 * 1000;
   const antigos = blobs.filter((b) => new Date(b.uploadedAt).getTime() < limite);
-  await Promise.all(antigos.map((b) => del(b.url, { token: process.env.BLOB_PRIVATE_READ_WRITE_TOKEN })));
+  await Promise.all(antigos.map((b) => del(b.url, { token: tokenPrivado })));
   return antigos.length;
 }
 
@@ -102,6 +103,14 @@ export async function GET(request: NextRequest) {
   if (!cronAutorizado(request.headers.get("authorization"))) {
     return new Response("Unauthorized", { status: 401 });
   }
+
+  // Falha alto se o store privado não estiver configurado, em vez de deixar
+  // put()/list()/del() caírem silenciosamente pro token do store público
+  // (ver exigirTokenBlobPrivado em src/lib/blob-assinado.ts) — este dump
+  // contém Usuario.senhaHash e DadosFiscaisGrafica.focusNfeToken em texto
+  // claro, não pode arriscar ir pro store público sem erro nenhum. Confere
+  // ANTES de exportar os dados (evita gastar a query cara à toa).
+  const tokenPrivado = exigirTokenBlobPrivado();
 
   const dados = await exportarDados();
   const nomeArquivo = `backups/backup-${new Date().toISOString().slice(0, 10)}.json`;
@@ -118,10 +127,10 @@ export async function GET(request: NextRequest) {
     access: "private",
     addRandomSuffix: true,
     contentType: "application/json",
-    token: process.env.BLOB_PRIVATE_READ_WRITE_TOKEN,
+    token: tokenPrivado,
   });
 
-  const removidos = await limparBackupsAntigos();
+  const removidos = await limparBackupsAntigos(tokenPrivado);
 
   return Response.json({
     ok: true,

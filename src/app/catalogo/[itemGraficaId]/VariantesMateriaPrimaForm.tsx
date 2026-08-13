@@ -13,6 +13,10 @@ type LinhaVariante = {
   rotulo: string;
   precoCompra: string;
   estoqueAtual: string;
+  // Valor de estoqueAtual como veio do banco quando a tela carregou — nunca
+  // muda depois disso (não é tocado por `atualizar`), só viaja junto no
+  // envio pra a action fazer compare-and-swap (ver salvarVariantesMateriaPrima).
+  estoqueAtualOriginal: string;
   estoqueMinimo: string;
   perdaFixaPadrao: string;
 };
@@ -59,7 +63,7 @@ export function VariantesMateriaPrimaForm({
 }) {
   const [linhas, setLinhas] = useState<LinhaVariante[]>(() =>
     linhasIniciais.length > 0
-      ? linhasIniciais.map((l) => ({ chave: gerarChave(), ...l }))
+      ? linhasIniciais.map((l) => ({ chave: gerarChave(), ...l, estoqueAtualOriginal: l.estoqueAtual }))
       : [
           {
             chave: gerarChave(),
@@ -67,6 +71,7 @@ export function VariantesMateriaPrimaForm({
             rotulo: "",
             precoCompra: "",
             estoqueAtual: "",
+            estoqueAtualOriginal: "",
             estoqueMinimo: "",
             perdaFixaPadrao: "",
           },
@@ -91,6 +96,7 @@ export function VariantesMateriaPrimaForm({
         rotulo: "",
         precoCompra: "",
         estoqueAtual: "",
+        estoqueAtualOriginal: "",
         estoqueMinimo: "",
         perdaFixaPadrao: "",
       },
@@ -118,14 +124,25 @@ export function VariantesMateriaPrimaForm({
           value={JSON.stringify(
             linhas
               .filter((l) => l.rotulo && l.precoCompra)
-              .map(({ id, rotulo, precoCompra, estoqueAtual, estoqueMinimo, perdaFixaPadrao }) => ({
-                id: id || undefined,
-                rotulo,
-                precoCompra,
-                estoqueAtual: estoqueAtual || undefined,
-                estoqueMinimo: estoqueMinimo || undefined,
-                perdaFixaPadrao: perdaFixaPadrao || undefined,
-              }))
+              .map(
+                ({
+                  id,
+                  rotulo,
+                  precoCompra,
+                  estoqueAtual,
+                  estoqueAtualOriginal,
+                  estoqueMinimo,
+                  perdaFixaPadrao,
+                }) => ({
+                  id: id || undefined,
+                  rotulo,
+                  precoCompra,
+                  estoqueAtual: estoqueAtual || undefined,
+                  estoqueAtualOriginal: estoqueAtualOriginal || undefined,
+                  estoqueMinimo: estoqueMinimo || undefined,
+                  perdaFixaPadrao: perdaFixaPadrao || undefined,
+                })
+              )
           )}
         />
 

@@ -452,6 +452,18 @@ const ItemLinha = memo(function ItemLinha({
                   )}
                   {item.tipo === "MATERIA_PRIMA" && !temVariantes && (
                     <>
+                      {/* Valor de estoqueAtual que a TELA leu quando carregou —
+                          viaja junto pra a action conseguir comparar (compare-and-
+                          -swap) antes de sobrescrever: se uma baixa de produção
+                          mudou o estoque enquanto esta aba ficava aberta, esse
+                          valor aqui não bate mais com o banco no momento de
+                          salvar, e a action pula esse campo específico em vez de
+                          apagar a baixa que aconteceu no meio-tempo. */}
+                      <input
+                        type="hidden"
+                        name={`estoqueAtualOriginal_${item.id}`}
+                        value={selecaoInicial?.estoqueAtual ?? ""}
+                      />
                       <CampoNumero
                         name={`estoqueAtual_${item.id}`}
                         placeholder="Estoque atual"

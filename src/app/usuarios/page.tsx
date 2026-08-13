@@ -11,6 +11,7 @@ import { UsersIcon } from "@/components/icons";
 import { UsuarioForm } from "./UsuarioForm";
 import { AcessoMeuNegocioForm } from "./AcessoMeuNegocioForm";
 import { ComissaoUsuarioForm } from "./ComissaoUsuarioForm";
+import { ResponsaveisEstagioForm } from "./ResponsaveisEstagioForm";
 
 export default async function UsuariosPage() {
   const usuario = await exigirUsuarioAutenticado();
@@ -21,6 +22,7 @@ export default async function UsuariosPage() {
   const usuarios = await prisma.usuario.findMany({
     where: { graficaId: usuario.graficaId },
     orderBy: { nome: "asc" },
+    include: { responsaveisEstagio: { select: { status: true } } },
   });
 
   return (
@@ -122,6 +124,26 @@ export default async function UsuariosPage() {
               email: u.email,
               papel: u.papel,
               comissaoPercent: u.comissaoPercent?.toString() ?? "",
+            }))}
+          />
+        </section>
+
+        <section className="mt-12">
+          <h2 className="mb-1 text-lg font-semibold text-slate-900 dark:text-white">
+            Responsáveis por etapa de produção
+          </h2>
+          <p className="mb-4 text-sm text-slate-500">
+            Marque quem cuida de cada etapa. Quando um pedido chega lá, essa
+            pessoa recebe um e-mail com um botão de confirmação — e também
+            pode confirmar pelo site, mesmo sem acesso completo à Produção.
+          </p>
+          <ResponsaveisEstagioForm
+            funcionarios={usuarios.map((u) => ({
+              id: u.id,
+              nome: u.nome,
+              email: u.email,
+              papel: u.papel,
+              etapas: u.responsaveisEstagio.map((r) => r.status),
             }))}
           />
         </section>

@@ -24,7 +24,7 @@ const cspHeader = `
   style-src 'self' 'unsafe-inline';
   img-src 'self' blob: data: https://*.blob.vercel-storage.com;
   font-src 'self';
-  connect-src 'self' https://challenges.cloudflare.com;
+  connect-src 'self' https://challenges.cloudflare.com https://viacep.com.br;
   frame-src https://challenges.cloudflare.com;
   object-src 'none';
   base-uri 'self';
@@ -85,14 +85,15 @@ const nextConfig: NextConfig = {
             : []),
         ],
       },
-      // Rotas públicas por token (/a/[token], /o/[token]) nunca devem ser
-      // indexadas — o link em si é a credencial (aprova orçamento/arte), e
-      // link com token acaba em lugar crawlável com frequência real (preview
-      // de WhatsApp/Telegram, encurtador de URL). robots.ts complementa isso
-      // pros crawlers que respeitam robots.txt; este header cobre os que não
-      // respeitam mas obedecem X-Robots-Tag.
+      // Rotas públicas por token (/a/[token], /o/[token], /p/[token]) nunca
+      // devem ser indexadas — o link em si é a credencial (aprova
+      // orçamento/arte/etapa de produção), e link com token acaba em lugar
+      // crawlável com frequência real (preview de WhatsApp/Telegram,
+      // encurtador de URL). robots.ts complementa isso pros crawlers que
+      // respeitam robots.txt; este header cobre os que não respeitam mas
+      // obedecem X-Robots-Tag.
       {
-        source: "/(a|o)/:path*",
+        source: "/(a|o|p)/:path*",
         headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" }],
       },
     ];

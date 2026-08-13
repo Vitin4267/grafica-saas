@@ -1,6 +1,7 @@
 import "server-only";
 
 import { randomInt } from "crypto";
+import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashToken } from "@/lib/auth/session";
 import { dispararEventoEmail } from "./webhook-email";
@@ -38,11 +39,21 @@ export async function gerarEEnviarCodigoVerificacao(usuario: {
   ]);
 
   const { assunto, html, texto } = templateVerificacaoEmail(codigo);
-  await dispararEventoEmail({
-    tipo: "verificacao_email_codigo",
-    destinatario: usuario.email,
-    assunto,
-    html,
-    texto,
-  });
+  // after() em vez de await: o código já está gravado no banco (transação
+  // acima) antes de chegar aqui, então o disparo do e-mail em si é
+  // fire-and-forget — não faz sentido bloquear quem chama esta função (ex:
+  // o cadastro em src/app/registro/actions.ts) esperando o webhook
+  // terminar. after() garante que a instância serverless continua viva até
+  // o e-mail terminar de enviar, mesmo depois da resposta já ter ido pro
+  // cliente — ao contrário de um `void` solto, que arriscaria ser cortado
+  // no meio se a instância for congelada logo após a resposta.
+  after(() =>
+    dispararEventoEmail({
+      tipo: "verificacao_email_codigo",
+      destinatario: usuario.email,
+      assunto,
+      html,
+      texto,
+    })
+  );
 }

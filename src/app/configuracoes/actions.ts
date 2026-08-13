@@ -77,8 +77,8 @@ export async function salvarParametros(
   const custoTintaPorMlBruto = formData.get("custoTintaPorMl");
   if (typeof custoTintaPorMlBruto === "string" && custoTintaPorMlBruto.trim() !== "") {
     const valor = Number(custoTintaPorMlBruto);
-    if (!Number.isFinite(valor) || valor < 0) {
-      return { ok: false, mensagem: 'Valor inválido em "Custo do ml de tinta".' };
+    if (!Number.isFinite(valor) || valor < 0 || valor > 1000) {
+      return { ok: false, mensagem: 'Valor inválido em "Custo do ml de tinta" — deve ser entre 0 e R$ 1.000,00.' };
     }
     custoTintaPorMl = valor;
   }

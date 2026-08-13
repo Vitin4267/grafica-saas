@@ -5,6 +5,7 @@ import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { randomBytes } from "node:crypto";
 import { del } from "@vercel/blob";
+import { exigirTokenBlobPrivado } from "@/lib/blob-assinado";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
@@ -155,7 +156,13 @@ export async function atualizarStatusOrcamento(
       await tx.pedido.upsert({
         where: { orcamentoId },
         update: {},
-        create: { graficaId: usuario.graficaId, orcamentoId, status: "FILA", prazoEntrega },
+        create: {
+          graficaId: usuario.graficaId,
+          orcamentoId,
+          status: "FILA",
+          prazoEntrega,
+          producaoLinkToken: randomBytes(20).toString("base64url"),
+        },
       });
 
       if (dadosComissao) {
@@ -233,8 +240,8 @@ export async function editarOrcamento(
   const corFrente = formData.get("corFrente") ? Number(formData.get("corFrente")) : null;
   const corVerso = formData.get("corVerso") ? Number(formData.get("corVerso")) : null;
 
-  if (!quantidade || quantidade <= 0) {
-    return { ok: false, mensagem: "Informe uma quantidade válida." };
+  if (!quantidade || quantidade <= 0 || quantidade > 1_000_000) {
+    return { ok: false, mensagem: "Informe uma quantidade válida (até 1.000.000 unidades)." };
   }
 
   const orcamento = await prisma.orcamento.findFirst({
@@ -730,8 +737,8 @@ export async function adicionarItemOrcamento(
   const corFrente = formData.get("corFrente") ? Number(formData.get("corFrente")) : null;
   const corVerso = formData.get("corVerso") ? Number(formData.get("corVerso")) : null;
 
-  if (!itemGraficaId || !quantidade || quantidade <= 0) {
-    return { ok: false, mensagem: "Escolha um produto e uma quantidade válida." };
+  if (!itemGraficaId || !quantidade || quantidade <= 0 || quantidade > 1_000_000) {
+    return { ok: false, mensagem: "Escolha um produto e uma quantidade válida (até 1.000.000 unidades)." };
   }
 
   const orcamento = await prisma.orcamento.findFirst({
@@ -933,7 +940,7 @@ export async function removerItemOrcamento(
     referenciaId: orcamentoItemId,
   });
   if (arquivoTintaRemovido) {
-    await del(arquivoTintaRemovido.url, { token: process.env.BLOB_PRIVATE_READ_WRITE_TOKEN }).catch(() => {});
+    await del(arquivoTintaRemovido.url, { token: exigirTokenBlobPrivado() }).catch(() => {});
   }
 
   revalidatePath(`/orcamento/${item.orcamentoId}`);
@@ -982,7 +989,7 @@ export async function cancelarOrcamento(
       referenciaId: item.id,
     });
     if (arquivoTintaRemovido) {
-      await del(arquivoTintaRemovido.url, { token: process.env.BLOB_PRIVATE_READ_WRITE_TOKEN }).catch(() => {});
+      await del(arquivoTintaRemovido.url, { token: exigirTokenBlobPrivado() }).catch(() => {});
     }
   }
 

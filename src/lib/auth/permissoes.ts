@@ -2,7 +2,7 @@ import "server-only";
 
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import type { PapelUsuario, ModuloPermissao } from "@/generated/prisma/enums";
+import type { PapelUsuario, ModuloPermissao, StatusPedido } from "@/generated/prisma/enums";
 
 export { MODULOS_PERMISSAO } from "@/lib/modulos-permissao";
 
@@ -82,6 +82,23 @@ export async function obterModulosVisiveis(usuario: {
     select: { modulo: true },
   });
   return permissoes.map((p) => p.modulo);
+}
+
+// OR-fallback pra avancarPedido (src/app/producao/actions.ts): um OPERADOR
+// sem PRODUCAO.podeEditar ainda pode confirmar a etapa ATUAL de um pedido
+// específico se estiver atribuído como responsável por esse status em
+// /usuarios (ver ResponsavelEstagio). Recebe o status como parâmetro (não
+// busca o pedido) porque quem chama já tem o pedido em mãos nesse ponto do
+// fluxo. DONO/ADMIN não precisam disso — já passam por podeEditarModulo.
+export async function podeConfirmarEstagio(
+  usuario: { id: string; papel: PapelUsuario },
+  status: StatusPedido
+): Promise<boolean> {
+  if (usuario.papel !== "OPERADOR") return true;
+  const linha = await prisma.responsavelEstagio.findUnique({
+    where: { usuarioId_status: { usuarioId: usuario.id, status } },
+  });
+  return linha !== null;
 }
 
 // Acesso à aba "Meu Negócio": DONO sempre vê; qualquer outro papel só vê se o DONO

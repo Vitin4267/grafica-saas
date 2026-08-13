@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
@@ -56,6 +57,12 @@ const linhaVarianteSchema = z.object({
   rotulo: z.string().trim().min(1, "Informe um rótulo pra variante.").max(40),
   precoCompra: z.coerce.number().positive("Preço de compra deve ser maior que zero."),
   estoqueAtual: z.coerce.number().min(0, "Estoque atual não pode ser negativo.").optional(),
+  // Valor de estoqueAtual como a TELA leu no carregamento da página — usado só
+  // pra compare-and-swap em salvarVariantesMateriaPrima, nunca gravado
+  // sozinho. Evita apagar uma baixa de produção que aconteceu enquanto a aba
+  // de Catálogo ficou aberta (mesma correção de salvarCatalogo, ver
+  // src/app/catalogo/actions.ts).
+  estoqueAtualOriginal: z.coerce.number().min(0).optional(),
   estoqueMinimo: z.coerce.number().min(0, "Estoque mínimo não pode ser negativo.").optional(),
   perdaFixaPadrao: z.coerce.number().min(0, "Perda fixa não pode ser negativa.").optional(),
 });
@@ -467,36 +474,73 @@ export async function salvarVariantesMateriaPrima(
   // é desativado (some da tela, histórico continua íntegro).
   const idsParaDesativar = [...idsExistentes].filter((id) => !idsNoPayload.has(id));
 
-  await prisma.$transaction([
-    ...(idsParaDesativar.length > 0
-      ? [
-          prisma.varianteMateriaPrima.updateMany({
-            where: { id: { in: idsParaDesativar }, itemGraficaId },
-            data: { ativo: false },
-          }),
-        ]
-      : []),
-    ...parsedResult.data.map((linha) => {
-      const dados = {
-        rotulo: linha.rotulo,
-        precoCompra: linha.precoCompra,
-        estoqueAtual: linha.estoqueAtual ?? null,
-        estoqueMinimo: linha.estoqueMinimo ?? null,
-        perdaFixaPadrao: linha.perdaFixaPadrao ?? null,
-      };
-      if (linha.id) {
-        return prisma.varianteMateriaPrima.updateMany({
+  const operacoes: Prisma.PrismaPromise<unknown>[] = [];
+  if (idsParaDesativar.length > 0) {
+    operacoes.push(
+      prisma.varianteMateriaPrima.updateMany({
+        where: { id: { in: idsParaDesativar }, itemGraficaId },
+        data: { ativo: false },
+      })
+    );
+  }
+
+  // Índice de cada updateMany de estoque dentro de `operacoes`, pra depois
+  // conferir count === 0 (CAS perdido — alguém baixou estoque em produção
+  // enquanto a tela ficava aberta) e avisar sem falhar o salvamento inteiro.
+  const indicesEstoqueCas: { indice: number; rotulo: string }[] = [];
+
+  for (const linha of parsedResult.data) {
+    const dadosSemEstoque = {
+      rotulo: linha.rotulo,
+      precoCompra: linha.precoCompra,
+      estoqueMinimo: linha.estoqueMinimo ?? null,
+      perdaFixaPadrao: linha.perdaFixaPadrao ?? null,
+    };
+    if (linha.id) {
+      operacoes.push(
+        prisma.varianteMateriaPrima.updateMany({
           where: { id: linha.id, itemGraficaId },
-          data: dados,
-        });
-      }
-      return prisma.varianteMateriaPrima.create({ data: { itemGraficaId, ativo: true, ...dados } });
-    }),
-  ]);
+          data: dadosSemEstoque,
+        })
+      );
+      // Compare-and-swap: só grava o estoqueAtual novo se ele ainda for o
+      // mesmo valor que a tela leu quando carregou — senão uma baixa de
+      // produção concorrente seria apagada silenciosamente (mesma correção
+      // de salvarCatalogo em src/app/catalogo/actions.ts).
+      indicesEstoqueCas.push({ indice: operacoes.length, rotulo: linha.rotulo });
+      operacoes.push(
+        prisma.varianteMateriaPrima.updateMany({
+          where: { id: linha.id, itemGraficaId, estoqueAtual: linha.estoqueAtualOriginal ?? null },
+          data: { estoqueAtual: linha.estoqueAtual ?? null },
+        })
+      );
+    } else {
+      // Variante nova — nada a comparar, ninguém pode ter baixado estoque de
+      // uma linha que ainda não existia.
+      operacoes.push(
+        prisma.varianteMateriaPrima.create({
+          data: { itemGraficaId, ativo: true, ...dadosSemEstoque, estoqueAtual: linha.estoqueAtual ?? null },
+        })
+      );
+    }
+  }
+
+  const resultados = await prisma.$transaction(operacoes);
+
+  const rotulosEstoqueNaoAtualizado = indicesEstoqueCas
+    .filter(({ indice }) => (resultados[indice] as { count: number }).count === 0)
+    .map(({ rotulo }) => rotulo);
 
   revalidatePath(`/catalogo/${itemGraficaId}`);
   revalidatePath("/catalogo");
   revalidatePath("/producao");
   revalidatePath("/meu-negocio");
+
+  if (rotulosEstoqueNaoAtualizado.length > 0) {
+    return {
+      ok: true,
+      mensagem: `Variantes salvas — mas o estoque de "${rotulosEstoqueNaoAtualizado.join('", "')}" mudou desde que a tela carregou e não foi sobrescrito. Recarregue a página pra conferir o valor atual antes de editar de novo.`,
+    };
+  }
   return { ok: true, mensagem: "Variantes salvas com sucesso!" };
 }

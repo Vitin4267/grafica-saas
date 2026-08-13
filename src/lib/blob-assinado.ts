@@ -1,6 +1,26 @@
 import "server-only";
 import { issueSignedToken, presignUrl } from "@vercel/blob";
 
+// Confere ANTES de qualquer put/del/list/issueSignedToken contra o store
+// PRIVADO (tinta/backup) que a env var está de fato presente. Sem essa
+// checagem, `token: process.env.BLOB_PRIVATE_READ_WRITE_TOKEN` vira
+// `token: undefined` quando a var falta — e o SDK do @vercel/blob trata
+// isso como "não fornecido", caindo silenciosamente pro token do store
+// PÚBLICO (BLOB_READ_WRITE_TOKEN). Isso mandaria arquivo privado (imagem de
+// análise de tinta, ou o backup diário com Usuario.senhaHash e
+// DadosFiscaisGrafica.focusNfeToken em texto claro) pro store errado, sem
+// erro nenhum. Falha alto em vez disso — reaproveitada por
+// AnaliseTinta.actions.ts e src/app/api/cron/backup/route.ts.
+export function exigirTokenBlobPrivado(): string {
+  const token = process.env.BLOB_PRIVATE_READ_WRITE_TOKEN;
+  if (!token) {
+    throw new Error(
+      "BLOB_PRIVATE_READ_WRITE_TOKEN não configurado — operação no store privado do Blob abortada (evita cair pro store público por engano)."
+    );
+  }
+  return token;
+}
+
 // Gera uma URL de LEITURA temporária pra um blob PRIVADO (ver
 // OrcamentoItemTinta.imagemPathname) — usado tanto pro payload que sai pro
 // n8n (5 min, só o tempo de baixar e analisar) quanto pra miniatura exibida
@@ -9,16 +29,11 @@ import { issueSignedToken, presignUrl } from "@vercel/blob";
 // operations incluindo "put"/"delete").
 export async function urlAssinadaLeitura(pathname: string, validadeMs: number): Promise<string> {
   const validUntil = Date.now() + validadeMs;
-  // Store PRIVADO dedicado — acesso público/privado é fixo por store no
-  // Vercel Blob (imutável após criado), então blob privado (tinta) e blob
-  // público (arte/logo) NUNCA podem viver no mesmo store. Sem `token`
-  // explícito aqui, isso cairia no BLOB_READ_WRITE_TOKEN padrão (o store
-  // público), que rejeita qualquer operação privada.
   const token = await issueSignedToken({
     pathname,
     operations: ["get"],
     validUntil,
-    token: process.env.BLOB_PRIVATE_READ_WRITE_TOKEN,
+    token: exigirTokenBlobPrivado(),
   });
   const { presignedUrl } = await presignUrl(token, {
     operation: "get",

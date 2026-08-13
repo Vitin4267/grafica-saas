@@ -9,6 +9,7 @@ import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { exigirPapel, MODULOS_PERMISSAO } from "@/lib/auth/permissoes";
 import { senhaSchema } from "@/lib/auth/validation";
 import { hashPassword } from "@/lib/auth/password";
+import { ESTAGIOS_ATRIBUIVEIS } from "@/lib/producao-estagios";
 
 export type CriarUsuarioResult = { ok: boolean; mensagem: string };
 
@@ -195,4 +196,44 @@ export async function salvarComissaoUsuarios(
   revalidatePath("/usuarios");
 
   return { ok: true, mensagem: "Comissão por vendedor atualizada com sucesso!" };
+}
+
+export type SalvarResponsaveisEstagioResult = { ok: boolean; mensagem: string };
+
+// Mesmo padrão de formulário único de salvarAcessoMeuNegocio/salvarComissaoUsuarios
+// (todos os funcionários numa tabela só, campo `resp_${usuarioId}_${status}` por
+// célula) — mas ResponsavelEstagio não tem flag boolean pra fazer upsert em
+// cima (diferente de PermissaoUsuario): a PRESENÇA da linha é o "marcado".
+// Por isso apaga tudo do tenant e recria só o que veio marcado, em vez de
+// upsert por célula — é uma lista pequena (funcionários × 3 etapas), sem
+// histórico a preservar.
+export async function salvarResponsaveisEstagio(
+  _estadoAnterior: SalvarResponsaveisEstagioResult | null,
+  formData: FormData
+): Promise<SalvarResponsaveisEstagioResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  exigirPapel(usuario, ["DONO"]);
+
+  const funcionarios = await prisma.usuario.findMany({
+    where: { graficaId: usuario.graficaId },
+    select: { id: true },
+  });
+  const funcionarioIds = funcionarios.map((f) => f.id);
+
+  await prisma.$transaction([
+    prisma.responsavelEstagio.deleteMany({ where: { usuarioId: { in: funcionarioIds } } }),
+    prisma.responsavelEstagio.createMany({
+      data: funcionarioIds.flatMap((usuarioId) =>
+        ESTAGIOS_ATRIBUIVEIS.filter(({ valor }) => formData.get(`resp_${usuarioId}_${valor}`) === "on").map(
+          ({ valor }) => ({ usuarioId, status: valor })
+        )
+      ),
+    }),
+  ]);
+
+  revalidatePath("/usuarios");
+
+  return { ok: true, mensagem: "Responsáveis por etapa atualizados com sucesso!" };
 }

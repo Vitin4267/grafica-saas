@@ -154,6 +154,63 @@ export async function tentarRegistrarRespostaArte(pedidoId: string, ip: string):
   );
 }
 
+// Protege confirmarEstagioPublico (src/app/p/[token]/actions.ts) — mesma
+// ideia de tentarRegistrarRespostaArte, tabela própria (TentativaConfirmacaoEstagio)
+// pra não misturar o orçamento de tentativas dos dois fluxos públicos.
+const JANELA_CONFIRMACAO_ESTAGIO_MS = 1000 * 60 * 15; // 15 minutos
+const LIMITE_CONFIRMACAO_ESTAGIO_POR_PEDIDO = 5;
+const LIMITE_CONFIRMACAO_ESTAGIO_POR_IP = 15;
+
+export async function tentarRegistrarConfirmacaoEstagio(pedidoId: string, ip: string): Promise<boolean> {
+  const desde = new Date(Date.now() - JANELA_CONFIRMACAO_ESTAGIO_MS);
+  return prisma.$transaction(
+    async (tx) => {
+      const [tentativasPedido, tentativasIp] = await Promise.all([
+        tx.tentativaConfirmacaoEstagio.count({ where: { pedidoId, createdAt: { gte: desde } } }),
+        tx.tentativaConfirmacaoEstagio.count({ where: { ip, createdAt: { gte: desde } } }),
+      ]);
+      if (
+        tentativasPedido >= LIMITE_CONFIRMACAO_ESTAGIO_POR_PEDIDO ||
+        tentativasIp >= LIMITE_CONFIRMACAO_ESTAGIO_POR_IP
+      ) {
+        return true;
+      }
+      await tx.tentativaConfirmacaoEstagio.create({ data: { pedidoId, ip } });
+      return false;
+    },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+  );
+}
+
+// Protege responderOrcamentoPublico (src/app/o/[token]/actions.ts) — mesma
+// ideia de tentarRegistrarRespostaArte/tentarRegistrarConfirmacaoEstagio,
+// tabela própria (TentativaRespostaOrcamento) pra não misturar o orçamento
+// de tentativas dos três fluxos públicos por token.
+const JANELA_RESPOSTA_ORCAMENTO_MS = 1000 * 60 * 15; // 15 minutos
+const LIMITE_RESPOSTA_ORCAMENTO_POR_ORCAMENTO = 5;
+const LIMITE_RESPOSTA_ORCAMENTO_POR_IP = 15;
+
+export async function tentarRegistrarRespostaOrcamento(orcamentoId: string, ip: string): Promise<boolean> {
+  const desde = new Date(Date.now() - JANELA_RESPOSTA_ORCAMENTO_MS);
+  return prisma.$transaction(
+    async (tx) => {
+      const [tentativasOrcamento, tentativasIp] = await Promise.all([
+        tx.tentativaRespostaOrcamento.count({ where: { orcamentoId, createdAt: { gte: desde } } }),
+        tx.tentativaRespostaOrcamento.count({ where: { ip, createdAt: { gte: desde } } }),
+      ]);
+      if (
+        tentativasOrcamento >= LIMITE_RESPOSTA_ORCAMENTO_POR_ORCAMENTO ||
+        tentativasIp >= LIMITE_RESPOSTA_ORCAMENTO_POR_IP
+      ) {
+        return true;
+      }
+      await tx.tentativaRespostaOrcamento.create({ data: { orcamentoId, ip } });
+      return false;
+    },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+  );
+}
+
 export async function tentarRegistrarVerificacaoEmail(
   usuarioId: string,
   ip: string

@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { gerarTokenBruto, hashToken } from "@/lib/auth/session";
 import { tentarRegistrarResetSenha } from "@/lib/auth/rate-limit";
@@ -63,21 +64,25 @@ export async function solicitarResetSenha(
     const link = `${origem}/redefinir-senha?token=${tokenBruto}`;
     const { assunto, html, texto } = templateResetSenha(link);
 
-    // `void` em vez de `await` (2026-07-26): a MENSAGEM já era idêntica nos
-    // dois caminhos, mas o TEMPO não. E-mail inexistente respondia logo após
-    // o findUnique; e-mail existente ainda esperava um fetch HTTPS completo
-    // até o n8n (timeout de 5s) — dezenas a centenas de ms de diferença,
-    // suficiente pra enumerar contas cronometrando a resposta, anulando todo
-    // o cuidado da MENSAGEM_GENERICA. dispararEventoEmail já é melhor esforço
-    // por dentro (nunca lança), então não aguardar não perde tratamento de
-    // erro nenhum — mesmo padrão de void já usado em producao/actions.ts.
-    void dispararEventoEmail({
-      tipo: "reset_senha_solicitado",
-      destinatario: email,
-      assunto,
-      html,
-      texto,
-    });
+    // after() em vez de void/await (2026-07-26, atualizado 2026-08-13): a
+    // MENSAGEM já era idêntica nos dois caminhos, mas o TEMPO não podia
+    // depender de esperar o fetch até o n8n (timeout de 5s) só quando o
+    // e-mail existe — isso daria pra enumerar contas cronometrando a
+    // resposta, anulando o cuidado da MENSAGEM_GENERICA. after() resolve os
+    // dois problemas de uma vez: a resposta sai imediatamente nos dois
+    // caminhos (mesmo tempo), e — diferente do `void` puro — a instância
+    // serverless continua viva até o e-mail terminar de enviar, em vez de
+    // arriscar ser congelada no meio do fetch. dispararEventoEmail já é
+    // melhor esforço por dentro (nunca lança).
+    after(() =>
+      dispararEventoEmail({
+        tipo: "reset_senha_solicitado",
+        destinatario: email,
+        assunto,
+        html,
+        texto,
+      })
+    );
   }
 
   return { ok: true, mensagem: MENSAGEM_GENERICA };

@@ -23,6 +23,20 @@ export function ehConflitoDeSerializacao(erro: unknown): boolean {
   if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2034") {
     return true;
   }
+  // P2028 é o código de "Transaction API error" do gerenciador de transação
+  // interativa do próprio Prisma (não vem do Postgres, ao contrário do
+  // P2034) — cobre tanto "Unable to start a transaction in the given time"
+  // (estourou maxWait, ex: cold start do Neon) quanto a transação expirar
+  // por ter passado do timeout configurado (ex: baixa de estoque de um
+  // pedido GRANDE). Confirmado lendo node_modules/@prisma/client/runtime
+  // (classe TransactionManagerError sempre usa code "P2028" fixo, tanto pra
+  // maxWait quanto pra timeout, e essa lógica roda no runtime JS do client
+  // — não depende de driver adapter, diferente do caso P2034/
+  // TransactionWriteConflict acima). Tratamos igual ao P2034 porque pro
+  // usuário a ação recomendada é a mesma: "tente de novo".
+  if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2028") {
+    return true;
+  }
   if (
     typeof erro === "object" &&
     erro !== null &&

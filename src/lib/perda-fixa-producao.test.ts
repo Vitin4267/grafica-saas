@@ -4,6 +4,7 @@ import {
   resolverPerdasConfirmadas,
   calcularEstoqueDepois,
   validarEstoqueSuficiente,
+  chaveFisicaMaterial,
   type ItemParaBaixa,
   type ItemParaValidacaoEstoque,
 } from "./perda-fixa-producao";
@@ -83,13 +84,35 @@ describe("calcularEstoqueDepois", () => {
   });
 });
 
+describe("chaveFisicaMaterial", () => {
+  it("usa varianteId quando existe", () => {
+    expect(chaveFisicaMaterial({ materiaPrimaId: "m1", varianteId: "v1" })).toBe("v1");
+  });
+
+  it("cai pra materiaPrimaId quando não há variante", () => {
+    expect(chaveFisicaMaterial({ materiaPrimaId: "m1", varianteId: null })).toBe("m1");
+  });
+});
+
 describe("validarEstoqueSuficiente", () => {
-  const item = (chave: string, estoqueAtual: number, quantidadeConsumida: number): ItemParaValidacaoEstoque => ({
+  // materiaPrimaId default = a própria chave, então por padrão cada item()
+  // representa um material físico DIFERENTE (comportamento dos testes já
+  // existentes abaixo) — passe o mesmo materiaPrimaId explicitamente pra
+  // simular duas linhas apontando pro mesmo saldo físico.
+  const item = (
+    chave: string,
+    estoqueAtual: number,
+    quantidadeConsumida: number,
+    materiaPrimaId: string = chave,
+    varianteId: string | null = null
+  ): ItemParaValidacaoEstoque => ({
     chave,
     quantidadeConsumida,
     perdaPadrao: 0,
     estoqueAtual,
     materiaPrimaNome: `Material ${chave}`,
+    materiaPrimaId,
+    varianteId,
   });
 
   it("passa quando consumo + perda não deixa nada negativo", () => {
@@ -133,6 +156,59 @@ describe("validarEstoqueSuficiente", () => {
 
   it("estoque exatamente zero não conta como insuficiente", () => {
     const resultado = validarEstoqueSuficiente([item("a", 10, 10)], new Map([["a", 0]]));
+    expect(resultado.ok).toBe(true);
+  });
+
+  // Bug real relatado: dois produtos do MESMO orçamento consomem o MESMO
+  // material (ex: dois produtos impressos no mesmo papel). itensParaBaixa é
+  // achatado por item×ficha técnica, então cada linha carrega o
+  // estoqueAtual CHEIO do material — sem agregar por identidade física
+  // (varianteId ?? materiaPrimaId) antes de comparar, cada linha passa
+  // isoladamente mas a baixa de verdade desconta as duas cumulativamente,
+  // deixando o estoque negativo sem a validação nunca ter percebido.
+  it("bloqueia quando dois itens do mesmo orçamento consomem o MESMO material físico e cada um cabe sozinho mas juntos não", () => {
+    const resultado = validarEstoqueSuficiente(
+      [
+        item("item1::fichaA", 100, 60, "papel-A4"),
+        item("item2::fichaB", 100, 60, "papel-A4"),
+      ],
+      new Map()
+    );
+    expect(resultado.ok).toBe(false);
+    if (!resultado.ok) {
+      expect(resultado.mensagem).toContain("Material item1::fichaA");
+      // Não deve listar o material duas vezes, mesmo com duas linhas.
+      expect(resultado.mensagem.split("Material item1::fichaA").length - 1).toBe(1);
+    }
+  });
+
+  it("soma consumo E perda aplicada de todas as linhas do mesmo material físico antes de validar", () => {
+    const resultado = validarEstoqueSuficiente(
+      [item("item1::fichaA", 100, 40, "papel-A4"), item("item2::fichaB", 100, 40, "papel-A4")],
+      new Map([
+        ["item1::fichaA", 10],
+        ["item2::fichaB", 10],
+      ])
+    );
+    // 40+10 + 40+10 = 100, exatamente o estoque — não deveria faltar.
+    expect(resultado.ok).toBe(true);
+  });
+
+  it("não agrega materiais DIFERENTES (materiaPrimaId distinto) mesmo com consumos parecidos", () => {
+    const resultado = validarEstoqueSuficiente(
+      [item("item1::fichaA", 100, 60), item("item2::fichaB", 100, 60)],
+      new Map()
+    );
+    // materiaPrimaId default = a própria chave => materiais diferentes,
+    // cada um cabe isoladamente (60 <= 100).
+    expect(resultado.ok).toBe(true);
+  });
+
+  it("não agrega uma variante com a matéria-prima genérica sem variante, mesmo com o mesmo materiaPrimaId", () => {
+    const semVariante = item("item1::fichaA", 100, 60, "papel", null);
+    const comVariante = item("item2::fichaB", 100, 60, "papel", "variante-300g");
+    const resultado = validarEstoqueSuficiente([semVariante, comVariante], new Map());
+    // São saldos físicos diferentes — não deveriam ser somados.
     expect(resultado.ok).toBe(true);
   });
 });

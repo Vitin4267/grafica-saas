@@ -149,6 +149,19 @@ function numeroOuNulo(valor: FormDataEntryValue | null): number | null | false {
   return n;
 }
 
+// Lê o valor de estoqueAtual que a TELA tinha quando carregou (campo oculto
+// estoqueAtualOriginal_, ver CatalogoForm.tsx) — usado só pra COMPARAR
+// (compare-and-swap) antes de sobrescrever estoqueAtual, nunca pra validar
+// nem gravar diretamente. Qualquer coisa que não dê pra interpretar vira
+// null ("sem baseline confiável"), o que só faz o CAS abaixo falhar com
+// segurança (pula esse campo específico) em vez de travar o resto do
+// salvamento — diferente de numeroOuNulo, nunca retorna `false`.
+function numeroOriginalOuNulo(valor: FormDataEntryValue | null): number | null {
+  if (valor === null || valor === "") return null;
+  const n = Number(valor);
+  return Number.isFinite(n) ? n : null;
+}
+
 const linhaVarianteNovaSchema = z.object({
   rotulo: z.string().trim().min(1, "Informe um rótulo pra variante.").max(40),
   precoCompra: z.coerce.number().positive("Preço de compra deve ser maior que zero."),
@@ -180,11 +193,21 @@ export async function salvarCatalogo(
   // "flat" — isso mora nas variantes. A tela nem manda esses campos pra
   // esses itens, mas por segurança ignoramos aqui também (nunca zera preço/
   // estoque de um item que já tem variante só porque o campo veio vazio).
-  const itensComVariante = await prisma.itemGrafica.findMany({
-    where: { graficaId: usuario.graficaId, variantes: { some: { ativo: true } } },
-    select: { itemCatalogoId: true },
+  //
+  // A mesma consulta também dá idsComItemGrafica: quais itens JÁ TÊM uma
+  // linha em ItemGrafica pra esta gráfica — usado pelo compare-and-swap do
+  // estoque mais abaixo (só existe um valor "antigo" pra proteger quando a
+  // linha já existia antes deste salvamento; linha nova não tem concorrência
+  // possível, porque nada em produção pode ter baixado um estoque que ainda
+  // nem existia).
+  const itensGraficaAtuais = await prisma.itemGrafica.findMany({
+    where: { graficaId: usuario.graficaId },
+    select: { itemCatalogoId: true, variantes: { where: { ativo: true }, select: { id: true } } },
   });
-  const idsComVariante = new Set(itensComVariante.map((i) => i.itemCatalogoId));
+  const idsComVariante = new Set(
+    itensGraficaAtuais.filter((i) => i.variantes.length > 0).map((i) => i.itemCatalogoId)
+  );
+  const idsComItemGrafica = new Set(itensGraficaAtuais.map((i) => i.itemCatalogoId));
 
   // Variantes cadastradas inline no próprio catálogo (item ainda não salvo,
   // ver VariantesInlineEditor em CatalogoForm.tsx) — deixa configurar sem
@@ -251,21 +274,37 @@ export async function salvarCatalogo(
     numericosPorItem.set(item.id, valores);
   }
 
-  const operacoes = itensCatalogo.map((item) => {
+  // Construído com push (em vez de itensCatalogo.map) porque um item
+  // existente pode virar DUAS operações agora: os campos "normais" (sempre
+  // gravados) e, à parte, o compare-and-swap do estoque atual (só grava se
+  // ninguém mexeu nele desde que a tela carregou — ver comentário mais
+  // abaixo). casPendentes guarda em que posição de `operacoes` cada CAS de
+  // estoque caiu, pra conferir o resultado depois que a transação roda e
+  // avisar o usuário se algum ficou de fora.
+  const operacoes: Prisma.PrismaPromise<unknown>[] = [];
+  const casPendentes: { nome: string; opIndex: number }[] = [];
+
+  for (const item of itensCatalogo) {
     const selecionado = formData.get(`sel_${item.id}`) === "on";
 
     if (!selecionado) {
-      return prisma.itemGrafica.updateMany({
-        where: { graficaId: usuario.graficaId, itemCatalogoId: item.id },
-        data: { ativo: false },
-      });
+      operacoes.push(
+        prisma.itemGrafica.updateMany({
+          where: { graficaId: usuario.graficaId, itemCatalogoId: item.id },
+          data: { ativo: false },
+        })
+      );
+      continue;
     }
 
     if (idsComVariante.has(item.id)) {
-      return prisma.itemGrafica.update({
-        where: { graficaId_itemCatalogoId: { graficaId: usuario.graficaId, itemCatalogoId: item.id } },
-        data: { ativo: true },
-      });
+      operacoes.push(
+        prisma.itemGrafica.update({
+          where: { graficaId_itemCatalogoId: { graficaId: usuario.graficaId, itemCatalogoId: item.id } },
+          data: { ativo: true },
+        })
+      );
+      continue;
     }
 
     const variantesNovas = variantesNovasPorItem.get(item.id);
@@ -277,46 +316,108 @@ export async function salvarCatalogo(
         estoqueMinimo: v.estoqueMinimo ?? null,
         perdaFixaPadrao: v.perdaFixaPadrao ?? null,
       }));
-      return prisma.itemGrafica.upsert({
-        where: {
-          graficaId_itemCatalogoId: { graficaId: usuario.graficaId, itemCatalogoId: item.id },
-        },
-        update: { ativo: true, variantes: { create: dadosVariantes } },
-        create: {
-          graficaId: usuario.graficaId,
-          itemCatalogoId: item.id,
-          ativo: true,
-          variantes: { createMany: { data: dadosVariantes } },
-        },
-      });
+      operacoes.push(
+        prisma.itemGrafica.upsert({
+          where: {
+            graficaId_itemCatalogoId: { graficaId: usuario.graficaId, itemCatalogoId: item.id },
+          },
+          update: { ativo: true, variantes: { create: dadosVariantes } },
+          create: {
+            graficaId: usuario.graficaId,
+            itemCatalogoId: item.id,
+            ativo: true,
+            variantes: { createMany: { data: dadosVariantes } },
+          },
+        })
+      );
+      continue;
     }
 
     const numericos = numericosPorItem.get(item.id) ?? {};
-    const dados = {
+    // estoqueAtual sai do conjunto "normal" de propósito — quem grava ele é
+    // o bloco de compare-and-swap logo abaixo. Preço e estoque mínimo
+    // continuam sobrescrevendo direto: só o estoque ATUAL sofre baixa
+    // automática durante a produção (ver status-transicao.ts), então só ele
+    // corre risco de ficar obsoleto entre a tela abrir e o usuário salvar.
+    const dadosSemEstoqueAtual = {
       ativo: true,
       precoCompra: numericos.compra ?? null,
       precoVenda: numericos.venda ?? null,
-      estoqueAtual: numericos.estoqueAtual ?? null,
       estoqueMinimo: numericos.estoqueMinimo ?? null,
       perdaFixaPadrao: numericos.perdaFixaPadrao ?? null,
     };
+    const novoEstoqueAtual = numericos.estoqueAtual ?? null;
 
-    return prisma.itemGrafica.upsert({
-      where: {
-        graficaId_itemCatalogoId: {
+    if (!idsComItemGrafica.has(item.id)) {
+      // Linha nova pra esta gráfica: sem valor concorrente pra proteger,
+      // grava o estoque direto junto com o resto.
+      operacoes.push(
+        prisma.itemGrafica.upsert({
+          where: {
+            graficaId_itemCatalogoId: { graficaId: usuario.graficaId, itemCatalogoId: item.id },
+          },
+          update: dadosSemEstoqueAtual,
+          create: {
+            graficaId: usuario.graficaId,
+            itemCatalogoId: item.id,
+            ...dadosSemEstoqueAtual,
+            estoqueAtual: novoEstoqueAtual,
+          },
+        })
+      );
+      continue;
+    }
+
+    // Linha já existia: os demais campos sempre gravam — o usuário pode ter
+    // só mexido no preço de OUTRO item e mandado de volta o resto igual.
+    operacoes.push(
+      prisma.itemGrafica.update({
+        where: { graficaId_itemCatalogoId: { graficaId: usuario.graficaId, itemCatalogoId: item.id } },
+        data: dadosSemEstoqueAtual,
+      })
+    );
+
+    // Compare-and-swap: só sobrescreve estoqueAtual se ele ainda for igual
+    // ao valor que a TELA leu quando a página abriu (estoqueAtualOriginal_,
+    // ver CatalogoForm.tsx). Se uma produção baixou esse estoque enquanto a
+    // aba ficava aberta, o valor no banco já não bate mais com o original —
+    // o updateMany abaixo então casa zero linhas (o WHERE não encontra
+    // nada) e o campo simplesmente não é tocado, em vez de apagar a baixa
+    // que aconteceu no meio-tempo (e, se aquele pedido for cancelado depois,
+    // o estorno soma em cima do estoque real, não de um valor "resetado").
+    const original = numeroOriginalOuNulo(formData.get(`estoqueAtualOriginal_${item.id}`));
+    casPendentes.push({ nome: item.nome, opIndex: operacoes.length });
+    operacoes.push(
+      prisma.itemGrafica.updateMany({
+        where: {
           graficaId: usuario.graficaId,
           itemCatalogoId: item.id,
+          estoqueAtual: original,
         },
-      },
-      update: dados,
-      create: { graficaId: usuario.graficaId, itemCatalogoId: item.id, ...dados },
-    });
-  });
+        data: { estoqueAtual: novoEstoqueAtual },
+      })
+    );
+  }
 
-  await prisma.$transaction(operacoes);
+  const resultados = await prisma.$transaction(operacoes);
+
+  const itensComEstoqueDivergente = casPendentes
+    .filter(({ opIndex }) => (resultados[opIndex] as { count: number }).count === 0)
+    .map(({ nome }) => nome);
 
   revalidatePath("/catalogo");
   revalidatePath("/orcamento");
+
+  if (itensComEstoqueDivergente.length > 0) {
+    return {
+      ok: true,
+      mensagem:
+        `Catálogo salvo! Mas o estoque atual de ${itensComEstoqueDivergente.join(", ")} mudou ` +
+        `(provavelmente uma baixa de produção) desde que esta tela carregou, então esse valor não ` +
+        `foi sobrescrito — os demais campos foram salvos normalmente. Recarregue a página pra ver o ` +
+        `estoque atual antes de editá-lo de novo.`,
+    };
+  }
 
   return { ok: true, mensagem: "Catálogo atualizado com sucesso!" };
 }

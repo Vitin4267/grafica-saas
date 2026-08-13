@@ -1,10 +1,11 @@
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import {
   podeVerMeuNegocio,
-  exigirVerModulo,
+  podeVerModulo,
   podeEditarModulo,
   obterModulosVisiveis,
 } from "@/lib/auth/permissoes";
@@ -41,13 +42,30 @@ export default async function ProducaoPage() {
   const usuario = await exigirUsuarioAutenticado();
   await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
-  await exigirVerModulo(usuario, "PRODUCAO");
+
+  // Responsabilidades por etapa (ver ResponsavelEstagio) dão acesso a
+  // /producao mesmo sem PRODUCAO.podeVer completo — precisa ler isso ANTES
+  // do gate pra decidir se redireciona. DONO/ADMIN sempre passam por
+  // podeVerModulo, então nunca precisam do fallback.
+  const responsabilidades =
+    usuario.papel === "OPERADOR"
+      ? await prisma.responsavelEstagio.findMany({
+          where: { usuarioId: usuario.id },
+          select: { status: true },
+        })
+      : [];
+  const etapasResponsavel = new Set(responsabilidades.map((r) => r.status));
+
+  const podeVer = await podeVerModulo(usuario, "PRODUCAO");
+  if (!podeVer && etapasResponsavel.size === 0) {
+    redirect("/comecar");
+  }
   const podeEditar = await podeEditarModulo(usuario, "PRODUCAO");
 
   await verificarEDispararAlertasAtraso(usuario.graficaId, usuario.grafica.nome);
   const origem = await resolverOrigemPublica();
 
-  const pedidos = await prisma.pedido.findMany({
+  const todosPedidos = await prisma.pedido.findMany({
     where: { graficaId: usuario.graficaId },
     include: {
       orcamento: {
@@ -59,6 +77,14 @@ export default async function ProducaoPage() {
     },
     orderBy: { createdAt: "asc" },
   });
+
+  // Quem só entrou aqui pela responsabilidade de etapa (sem PRODUCAO.podeVer
+  // de verdade) não deveria ver a fila inteira — só os pedidos que estão
+  // numa das etapas dele. Quem tem podeVer completo continua vendo tudo,
+  // sem filtro (inclui DONO/ADMIN, que nunca dependem de etapasResponsavel).
+  const pedidos = podeVer
+    ? todosPedidos
+    : todosPedidos.filter((pedido) => etapasResponsavel.has(pedido.status));
 
   return (
     <div className="flex flex-1 flex-col">
@@ -102,6 +128,7 @@ export default async function ProducaoPage() {
                   .join(", ")}
                 status={pedido.status}
                 podeEditar={podeEditar}
+                souResponsavelDesteStatus={etapasResponsavel.has(pedido.status)}
                 chipAtraso={chipAtraso(pedido.prazoEntrega, pedido.status)}
                 arteUrl={pedido.arteUrl}
                 arteAprovadaEm={pedido.arteAprovadaEm}

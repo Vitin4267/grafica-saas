@@ -378,6 +378,7 @@ model Usuario {
   tokensResetSenha       TokenResetSenha[]
   tokensVerificacaoEmail TokenVerificacaoEmail[]
   comissoes              Comissao[]
+  responsaveisEstagio    ResponsavelEstagio[]
 
   @@index([graficaId])
   @@map("usuarios")
@@ -1372,6 +1373,15 @@ model Pedido {
   arteComentarioCliente String?
   arteLinkToken         String?   @unique
 
+  // Link público evergreen: "confirmar a etapa atual deste pedido", sem
+  // login (ver ResponsavelEstagio e src/app/p/[token]). Gerado na criação
+  // do Pedido e NUNCA rotacionado — como o status é um FSM estritamente
+  // linear e só existe uma etapa viva por vez, o token não precisa saber
+  // "qual" etapa confirma, só lê o status atual. Deixa de fazer sentido
+  // quando o pedido chega em ENTREGUE/CANCELADO (terminal) — a página trata
+  // isso como "nada pra confirmar agora", não como link inválido.
+  producaoLinkToken String? @unique
+
   grafica   Grafica   @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   orcamento Orcamento @relation(fields: [orcamentoId], references: [id])
 
@@ -1379,6 +1389,57 @@ model Pedido {
 
   @@index([graficaId])
   @@map("pedidos")
+}
+
+// Atribuição gráfica-wide (não por Pedido individual) de quem é responsável
+// por cada etapa de produção — configurada em /usuarios. Usada em dois
+// pontos: (1) e-mail automático quando um Pedido ENTRA nesse status (ver
+// avancarStatusPedido em src/app/producao/status-transicao.ts), (2) bypass
+// de permissão pra confirmar em app sem precisar de PRODUCAO.podeEditar
+// completo (ver podeConfirmarEstagio em src/lib/auth/permissoes.ts). Só
+// cobre as 3 etapas "vivas" atribuíveis (IMPRESSAO/ACABAMENTO/PRONTO, ver
+// ESTAGIOS_ATRIBUIVEIS) — FILA fica de fora (decisão do produto: evita
+// expor a tela de perda de material do estoque a um link sem login) e
+// ENTREGUE/CANCELADO são terminais, sem transição de "confirmar" alguma.
+model ResponsavelEstagio {
+  id        String       @id @default(cuid())
+  usuarioId String
+  status    StatusPedido
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, status])
+  @@index([status])
+  @@map("responsaveis_estagio")
+}
+
+// Rate limit da confirmação pública de etapa (src/app/p/[token]) — tabela
+// separada de TentativaRespostaArte pra não misturar os dois orçamentos de
+// tentativa (abuso num fluxo não deve travar o outro).
+model TentativaConfirmacaoEstagio {
+  id        String   @id @default(cuid())
+  pedidoId  String
+  ip        String
+  createdAt DateTime @default(now())
+
+  @@index([pedidoId, createdAt])
+  @@index([ip, createdAt])
+  @@map("tentativas_confirmacao_estagio")
+}
+
+// Rate limit da resposta pública ao orçamento (src/app/o/[token]) — mesmo
+// padrão de TentativaRespostaArte/TentativaConfirmacaoEstagio, tabela
+// própria pra não misturar o orçamento de tentativas dos três fluxos
+// públicos por token.
+model TentativaRespostaOrcamento {
+  id          String   @id @default(cuid())
+  orcamentoId String
+  ip          String
+  createdAt   DateTime @default(now())
+
+  @@index([orcamentoId, createdAt])
+  @@index([ip, createdAt])
+  @@map("tentativas_resposta_orcamento")
 }
 
 enum TipoArquivoArmazenado {
