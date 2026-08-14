@@ -38,6 +38,42 @@ export class ErroWebhookAssistente extends Error {
 const TIMEOUT_MS = 15_000;
 const TAMANHO_MAXIMO_RESPOSTA = 4000; // evita renderizar uma resposta absurdamente grande no chat
 
+// Teto de bytes pro corpo bruto da resposta do webhook, compartilhado entre
+// este arquivo e webhook-tinta.ts. Existe porque `Response.text()` bufferiza
+// o corpo INTEIRO na memória antes de qualquer corte por tamanho de string
+// rodar — um workflow n8n com bug (ex: um nó devolvendo uma imagem em
+// base64 inline por engano) podia estourar a memória da function serverless
+// dentro da janela de timeout, muito antes do JSON.parse ou de qualquer
+// checagem de tamanho de texto entrar em ação. 2 MB é folgado o bastante pra
+// qualquer resposta legítima (texto de chat ou o JSON de análise de tinta,
+// que já se limita a 20.000 caracteres) e pequeno o bastante pra não pesar
+// na memória da function.
+const LIMITE_BYTES_RESPOSTA_WEBHOOK = 2 * 1024 * 1024;
+
+// Lê o corpo da resposta pelo stream, abortando cedo se ultrapassar
+// `limiteBytes` — ao contrário de `resposta.text()`, nunca chega a
+// bufferizar mais do que o limite na memória.
+export async function lerCorpoComLimite(
+  resposta: Response,
+  limiteBytes: number = LIMITE_BYTES_RESPOSTA_WEBHOOK
+): Promise<string> {
+  const reader = resposta.body?.getReader();
+  if (!reader) return resposta.text();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > limiteBytes) {
+      await reader.cancel();
+      throw new Error("Resposta do webhook excedeu o tamanho máximo permitido.");
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf-8");
+}
+
 // Faixas de IP privadas/reservadas (RFC 1918, loopback, link-local — inclui
 // 169.254.169.254, o endereço de metadata da AWS/GCP/Azure) e o hostname
 // "localhost". Guarda proporcional pra uma URL que um ADMIN AUTENTICADO da
@@ -183,7 +219,13 @@ export async function perguntarAssistente(
     throw new ErroWebhookAssistente(`O assistente respondeu com erro (HTTP ${resposta.status}).`);
   }
 
-  const bruto = await resposta.text();
+  let bruto: string;
+  try {
+    bruto = await lerCorpoComLimite(resposta);
+  } catch {
+    throw new ErroWebhookAssistente("O assistente devolveu uma resposta grande demais.");
+  }
+
   const json = (() => {
     try {
       return JSON.parse(bruto);

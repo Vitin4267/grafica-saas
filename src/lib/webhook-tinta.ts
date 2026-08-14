@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { validarWebhookUrl } from "@/lib/webhook-assistente";
+import { validarWebhookUrl, lerCorpoComLimite } from "@/lib/webhook-assistente";
 import { construirEnvelope } from "@/lib/webhook-envelope";
 
 // Cliente do workflow n8n de "Cálculo de gasto de tinta com IA" — webhook
@@ -132,7 +132,12 @@ export async function solicitarAnaliseTinta(
     throw new ErroWebhookTinta(`O serviço de análise respondeu com erro (HTTP ${resposta.status}).`);
   }
 
-  const bruto = await resposta.text();
+  let bruto: string;
+  try {
+    bruto = await lerCorpoComLimite(resposta);
+  } catch {
+    throw new ErroWebhookTinta("O serviço de análise devolveu uma resposta grande demais.");
+  }
   if (bruto.length > TAMANHO_MAXIMO_RESPOSTA) {
     throw new ErroWebhookTinta("O serviço de análise devolveu uma resposta grande demais.");
   }

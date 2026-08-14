@@ -60,10 +60,19 @@ export function comporPreco(params: {
 
   const precoBruto = custoTotal.div(paraDecimal(1).minus(somaEncargosDec));
   const precoComPiso = maiorDec(precoBruto, paraDecimal(params.parametros.pedidoMinimo));
-  const precoFinal = arredondarParaIncremento(
+  const precoFinalAlvo = arredondarParaIncremento(
     precoComPiso,
     paraDecimal(params.parametros.incrementoArredondamento)
   );
+
+  // precoUnitario é a fonte única de verdade pro arredondamento: arredonda pra
+  // 2 casas aqui (mesma precisão da coluna Decimal(12,2) do Postgres) e deriva
+  // precoFinal multiplicando o valor já arredondado pela quantidade. Assim as
+  // duas colunas sempre batem entre si quando gravadas no banco — inclusive
+  // pra validação de unitário × quantidade da NF-e. Ver calcularPreco em
+  // src/lib/orcamento.ts, que segue a mesma ordem.
+  const precoUnitario = precoFinalAlvo.div(params.quantidade).toDecimalPlaces(2);
+  const precoFinal = precoUnitario.times(params.quantidade);
 
   if (precoFinal.lt(custoDireto)) {
     throw new ErroPrecificacao(
@@ -72,8 +81,6 @@ export function comporPreco(params: {
       { precoFinal: precoFinal.toString(), custoDireto: custoDireto.toString() }
     );
   }
-
-  const precoUnitario = precoFinal.div(params.quantidade);
 
   return {
     precoFinal,

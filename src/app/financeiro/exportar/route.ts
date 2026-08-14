@@ -4,7 +4,7 @@ import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeVerModulo } from "@/lib/auth/permissoes";
-import { formatoData } from "@/lib/data";
+import { anoMesBrasilia, formatoData, formatoInstanteReal, limitesMesBrasilia } from "@/lib/data";
 import { D, type Dec } from "@/lib/pricing/decimal";
 import { linhaCsv } from "@/lib/csv";
 
@@ -27,28 +27,45 @@ export async function GET(request: NextRequest) {
   }
 
   const mesParam = request.nextUrl.searchParams.get("mes");
-  const mes = mesParam && /^\d{4}-\d{2}$/.test(mesParam) ? mesParam : new Date().toISOString().slice(0, 7);
+  // Sem ?mes=, o padrão é o mês corrente no calendário de BRASÍLIA — não
+  // `toISOString()` (que é UTC e, nas ~3h finais de cada dia, já teria
+  // virado o mês: quem exportasse às 22h do dia 31 baixaria o CSV do mês
+  // seguinte, vazio, sem entender por quê).
+  const mesAtual = anoMesBrasilia(new Date());
+  const mes =
+    mesParam && /^\d{4}-\d{2}$/.test(mesParam)
+      ? mesParam
+      : `${mesAtual.ano}-${String(mesAtual.mes).padStart(2, "0")}`;
   const [anoStr, mesStr] = mes.split("-");
   const ano = Number(anoStr);
   const mesNumero = Number(mesStr);
-  const inicio = new Date(Date.UTC(ano, mesNumero - 1, 1));
-  const fim = new Date(Date.UTC(ano, mesNumero, 1));
+  // Despesa.vencimento é DATA-PURA (meia-noite UTC representando o dia
+  // digitado, ver formatoData/src/lib/data.ts) — fronteira em UTC puro, sem
+  // deslocamento de fuso, senão o vencimento passaria a aparecer um dia
+  // antes/depois.
+  const inicioLiteral = new Date(Date.UTC(ano, mesNumero - 1, 1));
+  const fimLiteral = new Date(Date.UTC(ano, mesNumero, 1));
+  // Pagamento.createdAt e Despesa.pagoEm são INSTANTE REAL — fronteira com
+  // offset de Brasília (ver limitesMesBrasilia), senão um pagamento das 22h
+  // do dia 31 (ainda dentro do mês em Brasília) cai no mês seguinte no CSV
+  // que vai pro contador.
+  const { inicio: inicioReal, fim: fimReal } = limitesMesBrasilia(ano, mesNumero);
 
   const [pagamentos, despesasPagas, despesasPendentes] = await Promise.all([
     prisma.pagamento.findMany({
       where: {
         orcamento: { graficaId: usuario.graficaId },
-        createdAt: { gte: inicio, lt: fim },
+        createdAt: { gte: inicioReal, lt: fimReal },
       },
       include: { orcamento: { include: { cliente: true, filial: true } } },
       orderBy: { createdAt: "asc" },
     }),
     prisma.despesa.findMany({
-      where: { graficaId: usuario.graficaId, status: "PAGA", pagoEm: { gte: inicio, lt: fim } },
+      where: { graficaId: usuario.graficaId, status: "PAGA", pagoEm: { gte: inicioReal, lt: fimReal } },
       orderBy: { pagoEm: "asc" },
     }),
     prisma.despesa.findMany({
-      where: { graficaId: usuario.graficaId, status: "PENDENTE", vencimento: { gte: inicio, lt: fim } },
+      where: { graficaId: usuario.graficaId, status: "PENDENTE", vencimento: { gte: inicioLiteral, lt: fimLiteral } },
       orderBy: { vencimento: "asc" },
     }),
   ]);
@@ -57,7 +74,7 @@ export async function GET(request: NextRequest) {
     month: "long",
     year: "numeric",
     timeZone: "UTC",
-  }).format(inicio);
+  }).format(inicioLiteral);
 
   let csv = "﻿"; // BOM: Excel só reconhece acentuação em UTF-8 com isso.
   csv += linhaCsv([`Relatório financeiro - ${nomeMes}`]);
@@ -70,7 +87,7 @@ export async function GET(request: NextRequest) {
   for (const pagamento of pagamentos) {
     totalReceitas = totalReceitas.plus(pagamento.valor.toString());
     csv += linhaCsv([
-      new Date(pagamento.createdAt).toLocaleDateString("pt-BR"),
+      formatoInstanteReal.format(pagamento.createdAt),
       pagamento.orcamento.cliente.nome,
       pagamento.orcamento.filial?.nome ?? "",
       pagamento.forma,
@@ -85,7 +102,7 @@ export async function GET(request: NextRequest) {
   for (const despesa of despesasPagas) {
     totalDespesasPagas = totalDespesasPagas.plus(despesa.valor.toString());
     csv += linhaCsv([
-      despesa.pagoEm ? new Date(despesa.pagoEm).toLocaleDateString("pt-BR") : "",
+      despesa.pagoEm ? formatoInstanteReal.format(despesa.pagoEm) : "",
       despesa.descricao,
       despesa.categoria ?? "",
       formatoValor(Number(despesa.valor)),

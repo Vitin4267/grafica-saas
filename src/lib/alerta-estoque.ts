@@ -21,7 +21,12 @@ export async function verificarEDispararAlertaEstoque(
 ): Promise<number> {
   const [itens, variantes] = await Promise.all([
     prisma.itemGrafica.findMany({
-      where: { graficaId, ativo: true, estoqueMinimo: { not: null } },
+      where: {
+        graficaId,
+        ativo: true,
+        estoqueMinimo: { not: null },
+        variantes: { none: { ativo: true } }, // pula o pai quando há variante — mesmo raciocínio de previsao-estoque-db.ts
+      },
       include: { itemCatalogo: true },
     }),
     prisma.varianteMateriaPrima.findMany({

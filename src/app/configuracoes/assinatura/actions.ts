@@ -114,6 +114,7 @@ export async function iniciarCheckout(
   }
 
   if (!session.url) {
+    await liberarReservaCheckout(usuario.graficaId, reserva.agora);
     return { ok: false, mensagem: "O Stripe não devolveu uma URL de checkout." };
   }
 

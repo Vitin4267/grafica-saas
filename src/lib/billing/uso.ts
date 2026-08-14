@@ -16,7 +16,11 @@ async function buscarUsoAtual(graficaId: string): Promise<UsoAtual> {
     prisma.orcamento.count({
       where: { graficaId, createdAt: { gte: inicioDoMesUTC() } },
     }),
-    prisma.usuario.count({ where: { graficaId } }),
+    // Funcionário removido (desativadoEm preenchido) não ocupa vaga — remover
+    // alguém precisa liberar espaço pra convidar outra pessoa na hora, não só
+    // depois de o histórico dele "sair" do banco (o que nunca acontece,
+    // por design — ver comentário de Usuario.desativadoEm).
+    prisma.usuario.count({ where: { graficaId, desativadoEm: null } }),
   ]);
   return { orcamentosMes, usuarios };
 }

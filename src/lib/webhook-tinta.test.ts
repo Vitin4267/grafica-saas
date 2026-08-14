@@ -113,6 +113,15 @@ describe("solicitarAnaliseTinta", () => {
     await expect(solicitarAnaliseTinta(config, input)).rejects.toThrow(/grande demais/);
   });
 
+  it("lança ErroWebhookTinta quando o corpo da resposta excede o limite de bytes (antes mesmo do corte de 20KB)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("a".repeat(2_100_000), { status: 200 }))
+    );
+
+    await expect(solicitarAnaliseTinta(config, input)).rejects.toThrow(/grande demais/);
+  });
+
   it("lança ErroWebhookTinta em resposta não-2xx", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("erro interno", { status: 500 })));
 

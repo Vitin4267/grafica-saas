@@ -87,9 +87,16 @@ export async function editarDespesa(
 
   const despesa = await prisma.despesa.findFirst({
     where: { id: despesaId, graficaId: usuario.graficaId },
+    include: { comissao: { select: { id: true } } },
   });
   if (!despesa) {
     return { ok: false, mensagem: "Despesa não encontrada." };
+  }
+  if (despesa.comissao) {
+    return {
+      ok: false,
+      mensagem: "Esta despesa foi gerada pelo pagamento de uma comissão — ajuste em Financeiro → Comissões.",
+    };
   }
 
   const parsed = despesaSchema.safeParse({
@@ -145,9 +152,16 @@ export async function excluirDespesa(
 
   const despesa = await prisma.despesa.findFirst({
     where: { id: despesaId, graficaId: usuario.graficaId },
+    include: { comissao: { select: { id: true } } },
   });
   if (!despesa) {
     return { ok: false, mensagem: "Despesa não encontrada." };
+  }
+  if (despesa.comissao) {
+    return {
+      ok: false,
+      mensagem: "Esta despesa foi gerada pelo pagamento de uma comissão — ajuste em Financeiro → Comissões.",
+    };
   }
 
   // Registrado ANTES do delete: entidadeId não é FK de propósito (ver
@@ -163,8 +177,9 @@ export async function excluirDespesa(
     descricao: `Despesa "${despesa.descricao}" excluída (${formatoMoeda.format(Number(despesa.valor))})`,
   });
 
-  // Hard delete direto: nada tem FK pra Despesa (diferente de Prensa, que
-  // bloqueia por causa de ItemGrafica.prensaId).
+  // Hard delete direto: Comissao.despesaId é a única FK pra Despesa (onDelete:
+  // SetNull), e já foi barrada acima — diferente de Prensa, que bloqueia por
+  // causa de ItemGrafica.prensaId.
   await prisma.despesa.delete({ where: { id: despesaId } });
 
   revalidarFinanceiro();
@@ -234,9 +249,16 @@ export async function marcarComoPendente(
 
   const despesa = await prisma.despesa.findFirst({
     where: { id: despesaId, graficaId: usuario.graficaId },
+    include: { comissao: { select: { id: true } } },
   });
   if (!despesa) {
     return { ok: false, mensagem: "Despesa não encontrada." };
+  }
+  if (despesa.comissao) {
+    return {
+      ok: false,
+      mensagem: "Esta despesa foi gerada pelo pagamento de uma comissão — ajuste em Financeiro → Comissões.",
+    };
   }
 
   await prisma.despesa.update({

@@ -52,6 +52,17 @@ export type AvancarStatusResult =
 const MENSAGEM_CONFLITO_CONCORRENTE =
   "Outra pessoa já avançou este pedido — recarregue a página e confira o status atual.";
 
+// Distinta de MENSAGEM_CONFLITO_CONCORRENTE de propósito: a leitura da ficha
+// técnica/estoque roda FORA da transação Serializable (mantém a transação
+// curta), então um erro de serialização aqui normalmente não é sobre ESTE
+// pedido — é o Postgres abortando porque outro pedido, avançado ao mesmo
+// tempo, mexeu no estoque do MESMO material físico (papel, chapa etc.)
+// compartilhado entre os dois. Devolver a mensagem de "outra pessoa avançou
+// este pedido" nesse caso confunde o operador: ele recarrega, vê o próprio
+// pedido intocado, e a mensagem não bate com o que aconteceu.
+const MENSAGEM_CONFLITO_MATERIAL_COMPARTILHADO =
+  "Outro pedido usando o mesmo material foi processado ao mesmo tempo — tente novamente.";
+
 // Sinaliza, de dentro da transação, que o status já mudou entre a leitura
 // inicial e a escrita (duplo clique, duas abas, retry de rede) — usado só
 // pra abortar com uma mensagem amigável. Não é um erro de banco de verdade.
@@ -359,7 +370,7 @@ export async function avancarStatusPedido(
       return { ok: false, mensagem: MENSAGEM_CONFLITO_CONCORRENTE };
     }
     if (ehConflitoDeSerializacao(erro)) {
-      return { ok: false, mensagem: MENSAGEM_CONFLITO_CONCORRENTE };
+      return { ok: false, mensagem: MENSAGEM_CONFLITO_MATERIAL_COMPARTILHADO };
     }
     throw erro;
   }

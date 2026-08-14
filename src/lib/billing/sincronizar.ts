@@ -53,6 +53,17 @@ async function sincronizarSubscription(subscriptionDoEvento: Stripe.Subscription
   // mapearStatusStripe) — sem isso, um checkout que expira no 3D Secure virava
   // CANCELADA com canceladaEm nulo (registro inconsistente).
   const status = mapearStatusStripe(subscription.status);
+  // trial_end é epoch seconds da própria Subscription do Stripe — só tem
+  // sentido enquanto o status mapeado for TRIALING. Sem isso, o upsert nunca
+  // tocava trialExpiraEm (só era escrito no cadastro / revogação de
+  // cortesia), então uma gráfica cujo trial do APP já tinha vencido, ao
+  // assinar um Price com trial_period_days, ficava com o Stripe reportando
+  // "trialing" mas assinaturaEstaLiberada (status.ts) comparando contra a
+  // trialExpiraEm antiga e vencida — bloqueada mesmo tendo acabado de assinar.
+  const trialExpiraEm =
+    status === "TRIALING" && subscription.trial_end
+      ? new Date(subscription.trial_end * 1000)
+      : null;
 
   await prisma.assinaturaGrafica.upsert({
     where: { graficaId },
@@ -66,6 +77,7 @@ async function sincronizarSubscription(subscriptionDoEvento: Stripe.Subscription
       stripeSubscriptionId: subscription.id,
       stripePriceId: priceId,
       periodoAtualExpiraEm,
+      trialExpiraEm,
       canceladaEm: status === "CANCELADA" ? new Date() : null,
       // Sincronização real chegou: a reserva de checkout (ver iniciarCheckout
       // em configuracoes/assinatura/actions.ts) já cumpriu seu papel, não
@@ -80,6 +92,7 @@ async function sincronizarSubscription(subscriptionDoEvento: Stripe.Subscription
       stripeSubscriptionId: subscription.id,
       stripePriceId: priceId,
       periodoAtualExpiraEm,
+      trialExpiraEm,
     },
   });
 }

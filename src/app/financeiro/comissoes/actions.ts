@@ -8,6 +8,8 @@ import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { dataInputParaUTC } from "@/lib/data";
+import { registrarAuditoria } from "@/lib/auditoria";
+import { formatoMoeda } from "@/lib/moeda";
 
 const FORMAS_PAGAMENTO = ["DINHEIRO", "PIX", "CARTAO", "BOLETO", "TRANSFERENCIA", "OUTRO"] as const;
 
@@ -107,6 +109,16 @@ export async function marcarComissaoPaga(
     }
     throw erro;
   }
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "comissao.marcar_paga",
+    entidade: "Comissao",
+    entidadeId: comissaoId,
+    descricao: `Comissão de ${comissao.usuario.nome} (orçamento #${comissao.orcamento.id.slice(-6)}) marcada como paga — ${formatoMoeda.format(Number(comissao.valorComissao))} via ${formaPagamento}`,
+  });
 
   revalidatePath("/financeiro/comissoes");
   revalidatePath("/financeiro");

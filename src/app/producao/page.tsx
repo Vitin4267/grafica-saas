@@ -132,6 +132,7 @@ export default async function ProducaoPage() {
                 chipAtraso={chipAtraso(pedido.prazoEntrega, pedido.status)}
                 arteUrl={pedido.arteUrl}
                 arteAprovadaEm={pedido.arteAprovadaEm}
+                arteRespondidaPor={pedido.arteRespondidaPor}
                 arteComentarioCliente={pedido.arteComentarioCliente}
                 linkArtePublico={pedido.arteLinkToken ? `${origem}/a/${pedido.arteLinkToken}` : null}
               />

@@ -90,6 +90,15 @@ describe("perguntarAssistente", () => {
     expect(resultado.resposta).toBe("Vá em Clientes > Novo.");
   });
 
+  it("lança ErroWebhookAssistente quando o corpo da resposta excede o limite de bytes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("a".repeat(2_100_000), { status: 200 }))
+    );
+
+    await expect(perguntarAssistente(config, input)).rejects.toThrow(/grande demais/);
+  });
+
   it("lança ErroWebhookAssistente em resposta não-2xx", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("erro interno", { status: 500 })));
 

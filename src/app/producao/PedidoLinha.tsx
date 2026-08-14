@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useActionState, useState } from "react";
+import { formatoInstanteRealComHora } from "@/lib/data";
 import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { StatusBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -33,6 +34,7 @@ export function PedidoLinha({
   arteUrl,
   arteAprovadaEm,
   arteComentarioCliente,
+  arteRespondidaPor = null,
   linkArtePublico,
 }: {
   pedidoId: string;
@@ -51,6 +53,11 @@ export function PedidoLinha({
   arteUrl: string | null;
   arteAprovadaEm: Date | null;
   arteComentarioCliente: string | null;
+  // Nome DECLARADO por quem aprovou a arte pelo link público (ver
+  // Pedido.arteRespondidaPor no schema — não verificado, só registro).
+  // Opcional/default null: producao/page.tsx (fora do escopo desta tarefa)
+  // ainda não passa esta prop — ver relatório final.
+  arteRespondidaPor?: string | null;
   linkArtePublico: string | null;
 }) {
   const [state, formAction, isPending] = useActionState(cancelarPedido, null);
@@ -123,6 +130,16 @@ export function PedidoLinha({
           arteComentarioCliente={arteComentarioCliente}
           linkArtePublico={linkArtePublico}
         />
+      )}
+      {/* Nome é declarado, não verificado (ver comentário do prop acima) —
+          por isso "aprovada por", nunca "confirmada por". Mostrado
+          independente de status/podeEditar: mesmo depois do pedido sair de
+          FILA, "quem aprovou essa arte" continua sendo informação relevante
+          numa disputa. */}
+      {arteAprovadaEm && arteRespondidaPor && (
+        <p className="text-xs text-slate-500">
+          Arte aprovada por {arteRespondidaPor} em {formatoInstanteRealComHora.format(arteAprovadaEm)}
+        </p>
       )}
 
       {iniciarImpressao.estado.tipo === "confirmando" && (

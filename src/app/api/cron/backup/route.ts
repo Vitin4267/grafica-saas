@@ -19,6 +19,14 @@ import { exigirTokenBlobPrivado } from "@/lib/blob-assinado";
 // validade curto, sem motivo pra persistir num blob.
 const RETENCAO_DIAS = 14;
 
+// Mesmo raciocínio de src/app/api/cron/lifecycle/route.ts: findMany de várias
+// tabelas de TODOS os tenants (exportarDados) + upload do dump pro Blob é
+// trabalho que cresce com o número de tenants, sem teto — sem maxDuration
+// explícito, o default mais curto da plataforma pode abortar o backup no
+// meio conforme a base cresce, sem alerta, justo na camada que existe pra
+// ser rede de segurança.
+export const maxDuration = 60;
+
 async function exportarDados() {
   const [
     graficas,

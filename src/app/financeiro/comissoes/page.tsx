@@ -9,7 +9,7 @@ import {
   podeEditarModulo,
   obterModulosVisiveis,
 } from "@/lib/auth/permissoes";
-import { formatoData } from "@/lib/data";
+import { formatoInstanteReal } from "@/lib/data";
 import { formatoMoeda } from "@/lib/moeda";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
@@ -88,7 +88,7 @@ export default async function ComissoesPage() {
               percentualAplicado={c.percentualAplicado.toString()}
               valorComissao={c.valorComissao.toString()}
               status={c.status}
-              pagoEm={c.pagoEm ? formatoData.format(c.pagoEm) : null}
+              pagoEm={c.pagoEm ? formatoInstanteReal.format(c.pagoEm) : null}
               podeEditar={podeEditar}
             />
           ))}

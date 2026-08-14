@@ -318,6 +318,14 @@ export async function enviarArte(
   if (!pedido) {
     return { ok: false, mensagem: "Pedido não encontrado." };
   }
+  // A tela só mostra este formulário com status === "FILA", mas isso não é
+  // proteção real — um POST direto pra esta action com o id de um pedido já
+  // ENTREGUE/CANCELADO subiria arte, geraria link de aprovação novo e
+  // zeraria arteAprovadaEm pra um pedido que já acabou (ver comentário sobre
+  // defesa em profundidade em src/lib/auth/permissoes.ts).
+  if (pedido.status !== "FILA") {
+    return { ok: false, mensagem: "Só é possível enviar/remover arte enquanto o pedido está na fila." };
+  }
 
   // Reserva o espaço ANTES do put() — nunca depois, senão um upload rejeitado
   // por cota já teria custado o armazenamento (ver src/lib/billing/armazenamento.ts).
@@ -396,6 +404,11 @@ export async function removerArte(
   });
   if (!pedido) {
     return { ok: false, mensagem: "Pedido não encontrado." };
+  }
+  // Mesmo gate de enviarArte acima: a tela só mostra o botão com
+  // status === "FILA", mas isso não é proteção real por si só.
+  if (pedido.status !== "FILA") {
+    return { ok: false, mensagem: "Só é possível enviar/remover arte enquanto o pedido está na fila." };
   }
   if (!pedido.arteUrl) {
     return { ok: false, mensagem: "Este pedido não tem arte enviada." };

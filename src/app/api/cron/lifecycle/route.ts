@@ -33,16 +33,23 @@ export async function GET(request: NextRequest) {
   // Components) pra montar o link que vai dentro do e-mail de trial.
   const origemPublica = (process.env.APP_URL ?? request.nextUrl.origin).replace(/\/+$/, "");
 
-  const [avisosTrial, metricas, armazenamento] = await Promise.all([
+  // Promise.allSettled em vez de Promise.all: as três tarefas são
+  // independentes (ver comentário do arquivo), mas Promise.all também as
+  // acopla por ERRO — se uma rejeitar (ex: instabilidade do Vercel Blob no
+  // list() de reconciliarArmazenamento), a rota inteira responde 500 e o
+  // resultado das outras duas, que podem ter terminado normalmente, nunca é
+  // reportado. Cada resultado é reportado individualmente abaixo; "ok"
+  // reflete se TODAS as três tarefas terminaram sem lançar.
+  const [avisosTrial, metricas, armazenamento] = await Promise.allSettled([
     enviarAvisosTrialExpirando(origemPublica),
     enviarMetricasDiarias(),
     reconciliarArmazenamento(),
   ]);
 
   return Response.json({
-    ok: true,
-    avisosTrial,
-    metricas,
-    armazenamento,
+    ok: [avisosTrial, metricas, armazenamento].every((r) => r.status === "fulfilled"),
+    avisosTrial: avisosTrial.status === "fulfilled" ? avisosTrial.value : { erro: String(avisosTrial.reason) },
+    metricas: metricas.status === "fulfilled" ? metricas.value : { erro: String(metricas.reason) },
+    armazenamento: armazenamento.status === "fulfilled" ? armazenamento.value : { erro: String(armazenamento.reason) },
   });
 }

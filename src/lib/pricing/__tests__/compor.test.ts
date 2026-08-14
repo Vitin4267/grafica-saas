@@ -55,4 +55,23 @@ describe("comporPreco", () => {
     });
     expect(resultado.precoFinal.toNumber()).toBe(50);
   });
+
+  it("precoUnitario × quantidade bate com precoFinal mesmo quando a divisão não fecha redondo (evita item.precoUnitario × item.quantidade ≠ item.precoTotal depois de gravar em Decimal(12,2))", () => {
+    const resultado = comporPreco({
+      quantidade: 7,
+      custoBase: paraDecimal(10),
+      parametros: PARAMS,
+    });
+
+    // precoUnitario já deve sair arredondado pra 2 casas (fonte da verdade),
+    // e precoFinal deve ser o unitário × quantidade — não uma divisão à parte.
+    expect(resultado.precoUnitario.toNumber()).toBe(2.23);
+    expect(resultado.precoFinal.toNumber()).toBe(15.61);
+
+    // Simula o que o Postgres faz ao gravar cada coluna Decimal(12,2)
+    // independentemente: arredonda as duas pra 2 casas e confere que ainda batem.
+    const unitarioGravado = Number(resultado.precoUnitario.toFixed(2));
+    const totalGravado = Number(resultado.precoFinal.toFixed(2));
+    expect(Math.round(unitarioGravado * 7 * 100) / 100).toBe(totalGravado);
+  });
 });

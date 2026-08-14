@@ -132,11 +132,32 @@ function completarUrlArquivo(caminho: string | undefined, ambiente: AmbienteFocu
   return `${BASE_URL[ambiente]}${caminho}`;
 }
 
+// A Focus NFe espera data_emissao/data_entrada_saida em horário LOCAL do
+// emitente (confirmado no exemplo oficial da doc — doc.focusnfe.com.br/
+// reference/emitir_nfe — que mostra "2024-01-15T12:00:00-03:00", ou seja,
+// horário de São Paulo). Gera o horário de Brasília via Intl, sem depender
+// do TZ do processo (a Vercel roda em UTC).
+function agoraBrasilIso(): string {
+  const p = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  })
+    .formatToParts(new Date())
+    .reduce((a, x) => ({ ...a, [x.type]: x.value }), {} as Record<string, string>);
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`;
+}
+
 export async function emitirNfe(
   config: ConfigFocusNfe,
   input: EmitirNfeInput
 ): Promise<RespostaFocusNfe> {
-  const agora = new Date().toISOString().slice(0, 19);
+  const agora = agoraBrasilIso();
   const documentoDestinatarioLimpo = input.destinatario.documento.replace(/\D/g, "");
   const ehHomologacao = config.ambiente === "homologacao";
 
