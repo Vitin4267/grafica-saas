@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { ehViolacaoDeUnicidade } from "@/lib/prisma-conflito";
 
-function proximoMes(data: Date): Date {
+export function proximoMes(data: Date): Date {
   const dia = data.getUTCDate();
   const inicioProximoMes = new Date(Date.UTC(data.getUTCFullYear(), data.getUTCMonth() + 1, 1));
   const ultimoDiaProximoMes = new Date(
@@ -12,7 +12,7 @@ function proximoMes(data: Date): Date {
   return inicioProximoMes;
 }
 
-function mesmoMesOuDepois(data: Date, referencia: Date): boolean {
+export function mesmoMesOuDepois(data: Date, referencia: Date): boolean {
   return (
     data.getUTCFullYear() > referencia.getUTCFullYear() ||
     (data.getUTCFullYear() === referencia.getUTCFullYear() &&
