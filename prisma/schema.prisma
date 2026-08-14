@@ -10,6 +10,17 @@ datasource db {
   provider = "postgresql"
 }
 
+// Unidade de ENTRADA/EXIBIÇÃO de medida de item de orçamento — ver
+// Grafica.unidadePadraoDimensao e src/lib/unidade-dimensao.ts. O banco
+// sempre grava em centímetros (OrcamentoItem.larguraCm/alturaCm), então
+// isto nunca é a unidade armazenada, só a unidade que a gráfica prefere
+// digitar/ver.
+enum UnidadeDimensao {
+  MM
+  CM
+  M
+}
+
 // Cada gráfica é um tenant: todo dado abaixo pertence a uma Grafica
 // e nunca deve vazar entre tenants nas queries da aplicação.
 model Grafica {
@@ -29,6 +40,15 @@ model Grafica {
   // no lugar da marca da plataforma. Opcional: sem logo, o PDF mostra só o
   // nome da gráfica em texto, nunca a marca "Gráfica+".
   logoUrl String?
+
+  // Unidade padrão pra ENTRADA e EXIBIÇÃO de medidas de item de orçamento
+  // (largura/altura) — não afeta como o dado é gravado: OrcamentoItem.
+  // larguraCm/alturaCm continuam SEMPRE em centímetros, a unidade canônica
+  // do motor de cálculo (ver src/lib/unidade-dimensao.ts). Default CM
+  // preserva o comportamento de toda gráfica existente. Mais tarde um item
+  // específico de orçamento poderá sobrescrever isso pontualmente — trocar
+  // este padrão aqui nunca reconverte/altera orçamentos já salvos.
+  unidadePadraoDimensao UnidadeDimensao @default(CM)
 
   usuarios              Usuario[]
   clientes              Cliente[]
@@ -370,6 +390,22 @@ model Usuario {
   // independente do papel — DONO/ADMIN/OPERADOR podem todos vender. Ver
   // model Comissao e ParametrosGrafica.comissaoVendedorBase.
   comissaoPercent Decimal? @db.Decimal(5, 4)
+
+  // null = ativo. Preenchido = funcionário removido da gráfica: perde acesso
+  // NA HORA (exigirUsuarioAutenticado recusa, e as sessões são apagadas junto
+  // no momento da remoção), some das listas e para de receber e-mail de etapa.
+  //
+  // Desativa em vez de apagar de propósito: Orcamento.usuarioId,
+  // Comissao.usuarioId e LogAuditoria.usuarioId apontam pra cá. Apagar o
+  // cadastro ou faria a exclusão falhar, ou deixaria o histórico órfão — e o
+  // log de auditoria ficaria cego justamente sobre quem saiu da empresa, que
+  // é quando mais se precisa dele. Comissão pendente continua devida e
+  // pagável depois da remoção.
+  //
+  // É data (não boolean) porque "quando saiu" é a pergunta que aparece junto
+  // com "quem fez isso" numa investigação. Reversível: voltar pra null
+  // reativa.
+  desativadoEm DateTime?
 
   grafica                Grafica                  @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   orcamentos             Orcamento[]
@@ -946,6 +982,22 @@ model Orcamento {
   status           StatusOrcamento @default(RASCUNHO)
   total            Decimal         @default(0) @db.Decimal(12, 2)
   linkPublicoToken String?         @unique
+
+  // Quem respondeu pelo link público, e quando. Nome DECLARADO, não
+  // verificado — quem tem o link digita o que quiser. Vale como registro
+  // (mesma força de uma assinatura em formulário de papel), não como prova
+  // de identidade: a tela deve dizer "aceito por", nunca "confirmado por".
+  // Fica separado de LogAuditoria de propósito — aquele responde "qual
+  // FUNCIONÁRIO mexeu", este responde "qual pessoa do CLIENTE respondeu",
+  // e misturar os dois exigiria usuarioId nulo lá, enfraquecendo o log
+  // interno justamente onde ele precisa ser firme.
+  respostaPublicaNome String?
+  respostaPublicaEm   DateTime?
+  // Motivo escrito PELO CLIENTE ao recusar, no próprio link público.
+  // Diferente de `observacoes` (nota interna da gráfica, logo abaixo): este
+  // texto veio de fora e é o que o vendedor precisa ler pra saber se perdeu
+  // por preço, por prazo ou por arte. Vai junto no e-mail de recusa.
+  respostaPublicaMotivo String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
@@ -1146,6 +1198,19 @@ model LogAuditoria {
   descricao   String
   createdAt   DateTime @default(now())
 
+  // O QUE mudou, não só que mudou. Sem estes dois, "Fulano editou a despesa
+  // X" não resolve nenhuma investigação — o que resolve é "mudou de R$ 300
+  // pra R$ 100". Guardados como texto legível por humano (não JSON cru),
+  // porque quem lê isto é o dono da gráfica na tela de auditoria, não um
+  // programa. Nulos em ação que não é edição (criar, excluir, aprovar).
+  valorAnterior String?
+  valorNovo     String?
+
+  // IP de quem fez a ação. Existe pra responder "foi mesmo esse funcionário
+  // ou alguém usando a conta dele" — a pergunta que o dono faz quando algo
+  // dá errado. Nulo quando não foi possível resolver o IP.
+  ip String?
+
   grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
 
   @@index([graficaId, createdAt])
@@ -1159,6 +1224,14 @@ model OrcamentoItem {
   quantidade    Int
   larguraCm     Decimal? @db.Decimal(8, 2)
   alturaCm      Decimal? @db.Decimal(8, 2)
+  // Unidade em que o usuário efetivamente DIGITOU largura/altura deste item
+  // (mm/cm/m — ver src/lib/unidade-dimensao.ts) — congelada no momento da
+  // criação do item, nunca lida dinamicamente de Grafica.unidadePadraoDimensao
+  // depois: trocar o padrão da gráfica não deve reinterpretar itens já salvos.
+  // larguraCm/alturaCm acima continuam SEMPRE em centímetros; isto é só a
+  // unidade de ENTRADA/EXIBIÇÃO. Default CM preserva o comportamento de toda
+  // linha existente (nunca teve outra unidade).
+  unidadeDimensao UnidadeDimensao @default(CM)
   cores         String? // ex: "4x0", "4x4" — snapshot legível, sempre preenchido
   acabamento    String? // texto livre, modo SIMPLES apenas
 
@@ -1372,6 +1445,12 @@ model Pedido {
   arteAprovadaEm        DateTime?
   arteComentarioCliente String?
   arteLinkToken         String?   @unique
+  // Nome DECLARADO por quem respondeu pelo link público — não é verificado
+  // (quem tem o link digita o que quiser), vale como registro, igual a uma
+  // assinatura em formulário de papel. Nunca escrever "confirmado por" na
+  // tela a partir disto, só "aprovado por". Mesmo par existe em Orcamento
+  // (respostaPublicaNome/Em) pro aceite do orçamento.
+  arteRespondidaPor     String?
 
   // Link público evergreen: "confirmar a etapa atual deste pedido", sem
   // login (ver ResponsavelEstagio e src/app/p/[token]). Gerado na criação

@@ -2,6 +2,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { formatoMoeda } from "@/lib/moeda";
 import { slugify } from "@/lib/slug";
 import { linhasEtiqueta, ROTULO_LADO, ROTULO_TIPO_HOT } from "@/app/orcamento/[id]/EtiquetaResumo";
+import { converterDeCm, ROTULO_UNIDADE_DIMENSAO, type UnidadeDimensao } from "@/lib/unidade-dimensao";
 import type { DadosPdfOrcamento } from "./OrcamentoDocumento";
 
 const ROTULO_TIPO_PEDIDO: Record<string, string> = {
@@ -18,6 +19,12 @@ export type OrcamentoParaPdf = {
   status: "RASCUNHO" | "ENVIADO" | "APROVADO" | "REJEITADO";
   createdAt: Date;
   total: Prisma.Decimal;
+  // Nome DECLARADO por quem respondeu pelo link público — não verificado
+  // (ver comentário de Orcamento.respostaPublicaNome no schema). Só existe
+  // quando status já é APROVADO/REJEITADO; nunca escrever "confirmado por"
+  // a partir disto, só "aprovado/recusado por".
+  respostaPublicaNome: string | null;
+  respostaPublicaEm: Date | null;
   cliente: { nome: string };
   grafica: { nome: string; logoUrl: string | null };
   // Bloco 1 (dados gerais) — seguros pro cliente ver, ao contrário de
@@ -33,6 +40,7 @@ export type OrcamentoParaPdf = {
     quantidade: number;
     larguraCm: Prisma.Decimal | null;
     alturaCm: Prisma.Decimal | null;
+    unidadeDimensao: UnidadeDimensao;
     cores: string | null;
     acabamento: string | null;
     precoUnitario: Prisma.Decimal;
@@ -81,6 +89,8 @@ export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
     clienteNome: orcamento.cliente.nome,
     status: orcamento.status,
     criadoEm: orcamento.createdAt,
+    respostaPublicaNome: orcamento.respostaPublicaNome,
+    respostaPublicaEm: orcamento.respostaPublicaEm,
     total: formatoMoeda.format(Number(orcamento.total)),
     dadosPedido: temDadosPedido ? dadosPedido : null,
     itens: orcamento.itens.map((item) => ({
@@ -88,7 +98,7 @@ export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
       quantidade: item.quantidade,
       medidas:
         item.larguraCm && item.alturaCm
-          ? `${Number(item.larguraCm)} × ${Number(item.alturaCm)} cm`
+          ? `${converterDeCm(Number(item.larguraCm), item.unidadeDimensao)} × ${converterDeCm(Number(item.alturaCm), item.unidadeDimensao)} ${ROTULO_UNIDADE_DIMENSAO[item.unidadeDimensao]}`
           : null,
       cores: item.cores,
       acabamento: item.acabamento,

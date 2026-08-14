@@ -43,6 +43,18 @@ export function CompartilharOrcamento({
           />
           <CopiarLinkButton valor={url} />
         </div>
+        {/* Puramente GET — abrir a página pública pra conferir como o
+            cliente vê nunca muda o status (só gerarLinkPublico, a action
+            acima, faz isso). "Ver não pode ser enviar": isto é o jeito do
+            vendedor olhar sem que isso conte como ter enviado de verdade. */}
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs font-medium text-teal-700 hover:underline dark:text-teal-400"
+        >
+          Visualizar como o cliente vê
+        </a>
         {urlWhatsApp ? (
           <a href={urlWhatsApp} target="_blank" rel="noopener noreferrer">
             <Button type="button" variant="primary" className="w-full sm:w-auto">
@@ -85,6 +97,12 @@ export function CompartilharOrcamento({
       <Button type="submit" variant="outline" loading={isPending}>
         Gerar link para o cliente
       </Button>
+      {/* Transparência sobre o efeito colateral: gerar o link aqui também
+          marca o orçamento como Enviado (ver gerarLinkPublico), pra liberar
+          a resposta do cliente pelo link público. */}
+      <p className="text-xs text-slate-400 dark:text-slate-500">
+        Isso marca o orçamento como &quot;Enviado&quot;.
+      </p>
     </form>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
@@ -35,6 +36,14 @@ export function DadosExemploPanel({
     null
   );
   const [confirmandoLimpar, setConfirmandoLimpar] = useState(false);
+
+  // Fecha a caixa de confirmação sempre que a action responde (sucesso ou
+  // erro) — sem isso, `confirmandoLimpar` fica travado em `true` e o Alert
+  // logo abaixo (condicionado a `!confirmandoLimpar`) nunca aparece, então o
+  // usuário nem fica sabendo se a remoção deu certo ou falhou.
+  useAoMudar(stateLimpar, (estado) => {
+    if (estado) setConfirmandoLimpar(false);
+  });
 
   return (
     <Card className="flex flex-col gap-4 border-teal-200 bg-teal-50/40 p-6 dark:border-teal-900 dark:bg-teal-950/20">

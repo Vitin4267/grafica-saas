@@ -61,6 +61,7 @@ export function PermissoesForm({
               name={`ver_${valor}`}
               checked={permissoes[valor].ver}
               onChange={(e) => alternarVer(valor, e.target.checked)}
+              aria-label={`Ver ${rotulo}`}
               className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
             />
             <input
@@ -69,6 +70,7 @@ export function PermissoesForm({
               checked={permissoes[valor].editar}
               disabled={!permissoes[valor].ver}
               onChange={(e) => alternarEditar(valor, e.target.checked)}
+              aria-label={`Editar ${rotulo}`}
               className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500 disabled:opacity-30"
             />
           </div>

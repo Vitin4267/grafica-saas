@@ -11,15 +11,22 @@ import {
   type ItemVenda,
   type CamposItemOrcamento,
 } from "../SeletorItemOrcamento";
+import type { UnidadeDimensao } from "@/lib/unidade-dimensao";
 
 export function AdicionarItemForm({
   orcamentoId,
   itens,
+  unidadePadrao,
 }: {
   orcamentoId: string;
   itens: ItemVenda[];
+  // Grafica.unidadePadraoDimensao — o formulário nasce nessa unidade (ver
+  // camposIniciais em SeletorItemOrcamento.tsx).
+  unidadePadrao: UnidadeDimensao;
 }) {
-  const [campos, setCampos] = useState<CamposItemOrcamento>(() => camposIniciais(itens));
+  const [campos, setCampos] = useState<CamposItemOrcamento>(() =>
+    camposIniciais(itens, unidadePadrao)
+  );
   const [state, formAction, isPending] = useActionState(adicionarItemOrcamento, null);
   const [estadoAnterior, setEstadoAnterior] = useState(state);
 
@@ -27,7 +34,7 @@ export function AdicionarItemForm({
   // que o item é adicionado, pra ficar pronto pro próximo.
   if (state !== estadoAnterior) {
     setEstadoAnterior(state);
-    if (state?.ok) setCampos(camposIniciais(itens));
+    if (state?.ok) setCampos(camposIniciais(itens, unidadePadrao));
   }
 
   if (itens.length === 0) return null;
@@ -41,8 +48,9 @@ export function AdicionarItemForm({
         <input type="hidden" name="orcamentoId" value={orcamentoId} />
         <input type="hidden" name="itemGraficaId" value={campos.itemGraficaId} />
         <input type="hidden" name="quantidade" value={campos.quantidade} />
-        <input type="hidden" name="larguraCm" value={campos.larguraCm} />
-        <input type="hidden" name="alturaCm" value={campos.alturaCm} />
+        <input type="hidden" name="largura" value={campos.largura} />
+        <input type="hidden" name="altura" value={campos.altura} />
+        <input type="hidden" name="unidadeDimensao" value={campos.unidadeDimensao} />
         <input type="hidden" name="corFrente" value={campos.corFrente} />
         <input type="hidden" name="corVerso" value={campos.corVerso} />
         <input type="hidden" name="cores" value={campos.cores} />

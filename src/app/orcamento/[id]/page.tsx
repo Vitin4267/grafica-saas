@@ -13,6 +13,7 @@ import { resolverOrigemPublica } from "@/lib/url-publica";
 import { buscarCustoRealVsOrcado } from "@/lib/custo-producao";
 import { verificarProntidaoFiscal } from "@/lib/nota-fiscal";
 import { formatoMoeda } from "@/lib/moeda";
+import { formatoInstanteRealComHora } from "@/lib/data";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/Badge";
@@ -34,6 +35,7 @@ import { etiquetaParaCampos } from "../etiqueta-campos";
 import { AnaliseTintaCard } from "./AnaliseTintaCard";
 import { verificarRecursoPago } from "@/lib/auth/recurso-pago";
 import { urlAssinadaLeitura } from "@/lib/blob-assinado";
+import { converterDeCm, ROTULO_UNIDADE_DIMENSAO } from "@/lib/unidade-dimensao";
 
 // Server Action herda o maxDuration da página (Vercel) — analisarTintaItem
 // espera até 40s do webhook n8n + upload da imagem + margem (ver
@@ -114,7 +116,7 @@ export default async function OrcamentoDetalhePage({
         })
       : Promise.resolve([]),
     Promise.all(
-      itensComTinta.map(async (item) => [item.id, await urlAssinadaLeitura(item.tinta!.imagemPathname, 10 * 60 * 1000)] as const)
+      itensComTinta.map(async (item) => [item.id, await urlAssinadaLeitura(item.tinta!.imagemPathname, 60 * 60 * 1000)] as const)
     ),
   ]);
   const nomePorAutorId = new Map(autoresTinta.map((u) => [u.id, u.nome]));
@@ -217,6 +219,19 @@ export default async function OrcamentoDetalhePage({
                 />
               </div>
             )}
+            {/* Nome é DECLARADO por quem respondeu pelo link público, nunca
+                verificado (ver comentário de Orcamento.respostaPublicaNome
+                no schema) — por isso "aprovado/recusado por", nunca
+                "confirmado por". */}
+            {(orcamento.status === "APROVADO" || orcamento.status === "REJEITADO") &&
+              orcamento.respostaPublicaNome && (
+                <p className="mt-1 text-xs text-slate-500">
+                  {orcamento.status === "APROVADO" ? "Aprovado" : "Recusado"} por{" "}
+                  {orcamento.respostaPublicaNome}
+                  {orcamento.respostaPublicaEm &&
+                    ` em ${formatoInstanteRealComHora.format(orcamento.respostaPublicaEm)}`}
+                </p>
+              )}
           </div>
           <StatusBadge status={orcamento.status} />
         </div>
@@ -248,6 +263,7 @@ export default async function OrcamentoDetalhePage({
                   orcamentoItemId={item.id}
                   itemNome={item.itemGrafica.itemCatalogo.nome}
                   modeloCalculo={item.modeloCalculo}
+                  unidadeDimensao={item.unidadeDimensao}
                   podeRemover={orcamento.itens.length > 1}
                   valoresIniciais={{
                     quantidade: item.quantidade,
@@ -283,6 +299,7 @@ export default async function OrcamentoDetalhePage({
                 precoVenda: ig.precoVenda!.toString(),
                 modeloCalculo: ig.modeloCalculo,
               }))}
+              unidadePadrao={usuario.grafica.unidadePadraoDimensao}
             />
           </div>
         ) : (
@@ -301,7 +318,9 @@ export default async function OrcamentoDetalhePage({
                   <span>Qtd: {item.quantidade}</span>
                   {item.larguraCm && item.alturaCm && (
                     <span>
-                      {Number(item.larguraCm)} × {Number(item.alturaCm)} cm
+                      {converterDeCm(Number(item.larguraCm), item.unidadeDimensao)} ×{" "}
+                      {converterDeCm(Number(item.alturaCm), item.unidadeDimensao)}{" "}
+                      {ROTULO_UNIDADE_DIMENSAO[item.unidadeDimensao]}
                     </span>
                   )}
                   {item.cores && <span>Cores: {item.cores}</span>}

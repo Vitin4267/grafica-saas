@@ -22,6 +22,13 @@ const COR_STATUS: Record<string, string> = {
   ERRO: "bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300",
 };
 
+// Espelha o prefixo que actions.ts (formatarMensagemErroNfe) grava em
+// mensagemErro quando a SEFAZ denega a nota — diferente de uma rejeição por
+// dados inválidos, denegação é bloqueio fiscal do destinatário e pode não
+// sumir só corrigindo um campo. StatusNotaFiscal não tem um valor DENEGADO
+// próprio (fica REJEITADA), então essa é a única forma de diferenciar aqui.
+const PREFIXO_DENEGADO = "SEFAZ denegou:";
+
 type NotaFiscalExistente = {
   status: string;
   chaveAcesso: string | null;
@@ -89,6 +96,14 @@ export function NotaFiscalCard({
               {notaFiscal.mensagemErro}
             </Alert>
           )}
+          {notaFiscal.status === "REJEITADA" && notaFiscal.mensagemErro?.startsWith(PREFIXO_DENEGADO) && (
+            <Alert variant="error">
+              Essa nota foi <span className="font-medium">denegada pela SEFAZ</span>, não apenas
+              rejeitada por dados inválidos — geralmente é um bloqueio fiscal do destinatário
+              (ex.: CNPJ irregular). Pode ser necessário regularizar a situação do cliente antes
+              de tentar emitir de novo.
+            </Alert>
+          )}
           {notaFiscal.status === "AUTORIZADA" && (notaFiscal.xmlUrl || notaFiscal.danfeUrl) && (
             <div className="flex gap-4 text-sm font-medium text-teal-700 dark:text-teal-400">
               {notaFiscal.danfeUrl && (
@@ -111,6 +126,17 @@ export function NotaFiscalCard({
               )}
               <Button type="submit" variant="outline" loading={atualizando} className="mt-1">
                 {atualizando ? "Consultando..." : "Atualizar status"}
+              </Button>
+            </form>
+          )}
+          {notaFiscal.status === "REJEITADA" && (
+            <form action={emitirAction}>
+              <input type="hidden" name="orcamentoId" value={orcamentoId} />
+              {estadoEmissao && !estadoEmissao.ok && (
+                <Alert variant="error">{estadoEmissao.mensagem}</Alert>
+              )}
+              <Button type="submit" loading={emitindo} className="mt-1">
+                {emitindo ? "Emitindo..." : "Tentar emitir de novo"}
               </Button>
             </form>
           )}

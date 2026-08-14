@@ -2,14 +2,52 @@
 
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { TRANSICOES_VALIDAS, type StatusOrcamento } from "@/lib/orcamento-status";
 import { calcularValorBase, calcularComissao } from "@/lib/comissao";
 import { tentarRegistrarRespostaOrcamento } from "@/lib/auth/rate-limit";
 import { obterIpRequisicao } from "@/lib/auth/ip";
 import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
+import { resolverOrigemPublica } from "@/lib/url-publica";
+import { dispararEventoEmail, type EventoEmail } from "@/lib/email/webhook-email";
+import { templateOrcamentoAprovado, templateOrcamentoRecusado } from "@/lib/email/templates";
+import { assinaturaEstaLiberada } from "@/lib/billing/status";
 
 export type ResponderPublicoResult = { ok: boolean; mensagem: string };
+
+const NOME_MAX = 200;
+const MOTIVO_MAX = 2000;
+
+// Destinatários da resposta pública (aprovação e recusa): quem CRIOU o
+// orçamento (Orcamento.usuarioId — é quem precisa agir e quem ganha
+// comissão) + todos os DONO(s) da gráfica (garantia de que alguém vê, caso
+// o vendedor esteja fora). Deduplicado por e-mail: se o vendedor FOR um dos
+// donos, ele recebe um único e-mail, não dois. Busca feita FORA da
+// transação principal (o CAS de status já commitou quando isto roda) —
+// mesmo cuidado de não alongar a transação por algo que não precisa de
+// atomicidade com ela.
+async function notificarRespostaOrcamento(
+  graficaId: string,
+  usuarioIdVendedor: string,
+  tipo: EventoEmail["tipo"],
+  template: { assunto: string; html: string; texto: string }
+) {
+  const [vendedor, donos] = await Promise.all([
+    prisma.usuario.findUnique({ where: { id: usuarioIdVendedor }, select: { email: true } }),
+    prisma.usuario.findMany({ where: { graficaId, papel: "DONO" }, select: { email: true } }),
+  ]);
+  const destinatarios = new Set<string>();
+  if (vendedor?.email) destinatarios.add(vendedor.email);
+  for (const dono of donos) destinatarios.add(dono.email);
+  for (const destinatario of destinatarios) {
+    // after() em vez de void: em serverless (Vercel) a instância pode ser
+    // congelada assim que a resposta é enviada, antes do fetch do `void`
+    // terminar — after() garante que a instância continua viva até o
+    // callback terminar. Mesmo padrão de src/app/a/[token]/actions.ts.
+    after(() => dispararEventoEmail({ tipo, destinatario, ...template }));
+  }
+}
 
 // Sem autenticação: o próprio token é o "credencial" — dá acesso de leitura/decisão
 // só sobre ESTE orçamento, nunca sobre a conta da gráfica.
@@ -24,11 +62,54 @@ export async function responderOrcamentoPublico(
     return { ok: false, mensagem: "Ação inválida." };
   }
 
+  // Nome DECLARADO por quem responde — não é verificado, quem tem o link
+  // digita o que quiser (mesmo princípio de Pedido.arteRespondidaPor, ver
+  // comentário no schema). Obrigatório nos dois caminhos: sem isso, um
+  // orçamento podia ser aprovado/recusado sem nenhum registro de quem
+  // decidiu. Motivo é só da recusa, e opcional — o campo em si (mesmo vazio)
+  // já é sinal ("recusou sem dizer por quê").
+  const nome = String(formData.get("nome") ?? "").trim();
+  if (!nome) {
+    return { ok: false, mensagem: "Informe seu nome pra confirmar." };
+  }
+  if (nome.length > NOME_MAX) {
+    return { ok: false, mensagem: "Nome muito longo — use até 200 caracteres." };
+  }
+  const motivo = String(formData.get("motivo") ?? "").trim();
+  if (motivo.length > MOTIVO_MAX) {
+    return { ok: false, mensagem: "Motivo muito longo — resuma em até 2000 caracteres." };
+  }
+
   const orcamento = await prisma.orcamento.findUnique({
     where: { linkPublicoToken: token },
+    include: {
+      cliente: { select: { nome: true } },
+      grafica: { select: { nome: true } },
+    },
   });
   if (!orcamento) {
     return { ok: false, mensagem: "Orçamento não encontrado." };
+  }
+
+  // Furo de paywall (achado de revisão de código): o link público é evergreen
+  // e nunca expira por design, então uma gráfica com assinatura cancelada
+  // (bloqueada no app autenticado) continuava deixando o cliente final
+  // aprovar orçamentos por aqui — criando Pedido e Comissao de graça. Mesmo
+  // padrão de confirmarEstagioPublico (src/app/p/[token]/actions.ts): sem
+  // sessão de usuário aqui, não dá pra reaproveitar exigirAssinaturaAtiva,
+  // então busca a assinatura da gráfica DONA do orçamento pelo graficaId e
+  // aplica assinaturaEstaLiberada direto, devolvendo erro amigável sem
+  // detalhe de billing. Antes do rate limit e da transação de propósito:
+  // falha rápido, sem gastar tentativa do rate limit nem abrir transação à
+  // toa.
+  const assinatura = await prisma.assinaturaGrafica.findUnique({
+    where: { graficaId: orcamento.graficaId },
+  });
+  if (!assinaturaEstaLiberada(assinatura)) {
+    return {
+      ok: false,
+      mensagem: "A assinatura desta gráfica não está ativa no momento — não é possível responder por aqui.",
+    };
   }
 
   // Rate limit: quem tem o link consegue chamar esta action indefinidamente —
@@ -67,6 +148,11 @@ export async function responderOrcamentoPublico(
   // checagem de transição e o último a gravar venceria — deixando, por
   // exemplo, um Pedido criado mas o orçamento marcado como REJEITADO (mesmo
   // padrão de guarda que producao/actions.ts já usa em avancarPedido).
+  // Um único instante pros dois campos abaixo (e pros dois branches) — não
+  // faz sentido respostaPublicaEm divergir por milissegundos de quando o
+  // status realmente mudou no banco.
+  const agora = new Date();
+
   if (decisao === "APROVADO") {
     // Leitura fora da transação de propósito (mesmo cuidado de
     // atualizarStatusOrcamento em src/app/orcamento/[id]/actions.ts): ficha de
@@ -119,9 +205,13 @@ export async function responderOrcamentoPublico(
         : null;
 
     const resultado = await prisma.$transaction(async (tx) => {
+      // Nome + instante gravados na MESMA operação que muda o status — nunca
+      // num update solto depois, senão dá pra ter status mudado sem nome
+      // (ex: o CAS abaixo falha por corrida, mas um update de nome solto já
+      // teria gravado antes).
       const cas = await tx.orcamento.updateMany({
         where: { id: orcamento.id, status: orcamento.status },
-        data: { status: "APROVADO" },
+        data: { status: "APROVADO", respostaPublicaNome: nome, respostaPublicaEm: agora },
       });
       if (cas.count === 0) return false;
       await tx.pedido.upsert({
@@ -155,14 +245,47 @@ export async function responderOrcamentoPublico(
     if (!resultado) {
       return { ok: false, mensagem: "Este orçamento não pode mais ser respondido." };
     }
+
+    const origem = await resolverOrigemPublica();
+    const template = templateOrcamentoAprovado(
+      orcamento.grafica.nome,
+      orcamento.cliente.nome,
+      nome,
+      Number(orcamento.total),
+      `${origem}/orcamento/${orcamento.id}`
+    );
+    await notificarRespostaOrcamento(orcamento.graficaId, orcamento.usuarioId, "orcamento_aprovado", template);
   } else {
+    // Motivo vai pro campo próprio (Orcamento.respostaPublicaMotivo — ver
+    // comentário no schema), na MESMA operação que muda o status e grava o
+    // nome, mesmo cuidado do bloco de aprovação acima: sem isso, o CAS podia
+    // ter sucesso e um update de motivo solto depois falhar/nem rodar,
+    // deixando status mudado sem motivo registrado. Vazio vira `null`
+    // (nunca string vazia) pra distinguir de forma limpa "campo não
+    // preenchido" no e-mail e em qualquer tela futura que leia este campo.
     const cas = await prisma.orcamento.updateMany({
       where: { id: orcamento.id, status: orcamento.status },
-      data: { status: "REJEITADO" },
+      data: {
+        status: "REJEITADO",
+        respostaPublicaNome: nome,
+        respostaPublicaEm: agora,
+        respostaPublicaMotivo: motivo || null,
+      },
     });
     if (cas.count === 0) {
       return { ok: false, mensagem: "Este orçamento não pode mais ser respondido." };
     }
+
+    const origem = await resolverOrigemPublica();
+    const template = templateOrcamentoRecusado(
+      orcamento.grafica.nome,
+      orcamento.cliente.nome,
+      nome,
+      Number(orcamento.total),
+      motivo,
+      `${origem}/orcamento/${orcamento.id}`
+    );
+    await notificarRespostaOrcamento(orcamento.graficaId, orcamento.usuarioId, "orcamento_recusado", template);
   }
 
   revalidatePath(`/o/${token}`);

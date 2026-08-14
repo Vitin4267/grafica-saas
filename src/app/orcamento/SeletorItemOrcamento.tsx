@@ -3,6 +3,14 @@
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { CamposEtiquetaOrcamento, etiquetaInicial, type CamposEtiqueta } from "./CamposEtiquetaOrcamento";
+import {
+  UNIDADES_DIMENSAO,
+  ROTULO_UNIDADE_DIMENSAO,
+  converterParaCm,
+  converterDeCm,
+  passoInputDimensao,
+  type UnidadeDimensao,
+} from "@/lib/unidade-dimensao";
 
 export type ItemVenda = {
   id: string;
@@ -15,8 +23,12 @@ export type ItemVenda = {
 export type CamposItemOrcamento = {
   itemGraficaId: string;
   quantidade: string;
-  larguraCm: string;
-  alturaCm: string;
+  // Valor DIGITADO pelo usuário, na unidade de `unidadeDimensao` abaixo — NÃO
+  // é necessariamente centímetro (ver conversão na fronteira do servidor em
+  // src/app/orcamento/actions.ts e src/app/orcamento/[id]/actions.ts).
+  largura: string;
+  altura: string;
+  unidadeDimensao: UnidadeDimensao;
   corFrente: string;
   corVerso: string;
   cores: string;
@@ -24,12 +36,31 @@ export type CamposItemOrcamento = {
   etiqueta: CamposEtiqueta;
 };
 
-export function camposIniciais(itens: ItemVenda[]): CamposItemOrcamento {
+// unidadePadrao vem de Grafica.unidadePadraoDimensao (lida pelo servidor no
+// momento em que a página é montada) — o formulário nasce nessa unidade, mas
+// o usuário pode trocar livremente pra este item específico (ver seletor
+// mm/cm/m abaixo). Default "CM" cobre chamadas que não têm essa informação
+// disponível (ver comentário em CalculadoraForm.tsx sobre a Calculadora não
+// receber o padrão da gráfica).
+export function camposIniciais(
+  _itens: ItemVenda[],
+  unidadePadrao: UnidadeDimensao = "CM"
+): CamposItemOrcamento {
   return {
-    itemGraficaId: itens[0]?.id ?? "",
+    // Começa SEM produto selecionado — nunca pré-seleciona itens[0]. Um select
+    // nativo sem opção vazia mostra a primeira opção da lista como "escolhida"
+    // mesmo sem o usuário ter clicado nela; combinado com a ordenação
+    // alfabética de src/app/orcamento/page.tsx (fora do escopo deste arquivo),
+    // isso fazia o primeiro produto do catálogo (podendo ser um item de
+    // exemplo do onboarding, nome prefixado "[Exemplo] ") entrar sozinho no
+    // orçamento sempre que o usuário preenchia quantidade/medidas e clicava
+    // "Adicionar item" sem prestar atenção no dropdown. Ver SeletorItemOrcamento
+    // abaixo pra opção placeholder correspondente.
+    itemGraficaId: "",
     quantidade: "100",
-    larguraCm: "",
-    alturaCm: "",
+    largura: "",
+    altura: "",
+    unidadeDimensao: unidadePadrao,
     corFrente: "4",
     corVerso: "0",
     cores: "",
@@ -71,8 +102,12 @@ export function SeletorItemOrcamento({
     onChange({
       itemGraficaId: e.target.value,
       quantidade: valores.quantidade,
-      larguraCm: "",
-      alturaCm: "",
+      largura: "",
+      altura: "",
+      // Mantém a unidade que o usuário já tinha escolhido nesta sessão do
+      // formulário — só as medidas em si (específicas do produto anterior)
+      // são resetadas, ver comentário acima.
+      unidadeDimensao: valores.unidadeDimensao,
       corFrente: "4",
       corVerso: "0",
       cores: "",
@@ -81,6 +116,30 @@ export function SeletorItemOrcamento({
     });
   };
 
+  // Trocar a unidade CONVERTE o valor já digitado em vez de reinterpretá-lo
+  // (quem digitou 9 cm e troca pra mm deve ver 90, não 9) — passa por
+  // centímetros como intermediário (mesmo caminho que o servidor usa),
+  // preservando a resolução da coluna no banco. Campo vazio continua vazio.
+  const trocarUnidade = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const novaUnidade = e.target.value as UnidadeDimensao;
+    const converter = (valorTexto: string) => {
+      if (valorTexto.trim() === "") return valorTexto;
+      const numero = Number(valorTexto);
+      if (!Number.isFinite(numero)) return valorTexto;
+      const cm = converterParaCm(numero, valores.unidadeDimensao);
+      return String(converterDeCm(cm, novaUnidade));
+    };
+    onChange({
+      ...valores,
+      unidadeDimensao: novaUnidade,
+      largura: converter(valores.largura),
+      altura: converter(valores.altura),
+    });
+  };
+
+  const rotuloUnidade = ROTULO_UNIDADE_DIMENSAO[valores.unidadeDimensao];
+  const passoDimensao = passoInputDimensao(valores.unidadeDimensao);
+
   return (
     <div className="flex flex-col gap-5">
       <Select
@@ -88,7 +147,11 @@ export function SeletorItemOrcamento({
         value={valores.itemGraficaId}
         onChange={trocarItem}
         hint={itemSelecionado?.categoria}
+        required
       >
+        <option value="" disabled>
+          Selecione o produto ou serviço
+        </option>
         {itens.map((i) => (
           <option key={i.id} value={i.id}>
             {i.nome}
@@ -104,23 +167,32 @@ export function SeletorItemOrcamento({
         onChange={set("quantidade")}
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Input
-          label="Largura (cm)"
+          label={`Largura (${rotuloUnidade})`}
           type="number"
-          value={valores.larguraCm}
-          onChange={set("larguraCm")}
+          step={passoDimensao}
+          value={valores.largura}
+          onChange={set("largura")}
           placeholder="opcional"
           required={usaMotorAvancado}
         />
         <Input
-          label="Altura (cm)"
+          label={`Altura (${rotuloUnidade})`}
           type="number"
-          value={valores.alturaCm}
-          onChange={set("alturaCm")}
+          step={passoDimensao}
+          value={valores.altura}
+          onChange={set("altura")}
           placeholder="opcional"
           required={usaMotorAvancado}
         />
+        <Select label="Unidade" value={valores.unidadeDimensao} onChange={trocarUnidade}>
+          {UNIDADES_DIMENSAO.map((u) => (
+            <option key={u} value={u}>
+              {ROTULO_UNIDADE_DIMENSAO[u]}
+            </option>
+          ))}
+        </Select>
       </div>
 
       {usaModeloOffset && (

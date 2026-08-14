@@ -1,14 +1,12 @@
-import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { exigirPapel, podeVerMeuNegocio } from "@/lib/auth/permissoes";
-import { ROTULO_PAPEL } from "@/lib/papel-usuario";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
-import { UsersIcon } from "@/components/icons";
 import { UsuarioForm } from "./UsuarioForm";
+import { UsuariosLista } from "./UsuariosLista";
 import { AcessoMeuNegocioForm } from "./AcessoMeuNegocioForm";
 import { ComissaoUsuarioForm } from "./ComissaoUsuarioForm";
 import { ResponsaveisEstagioForm } from "./ResponsaveisEstagioForm";
@@ -19,11 +17,19 @@ export default async function UsuariosPage() {
   await exigirAssinaturaAtiva(usuario);
   exigirPapel(usuario, ["DONO"]);
 
-  const usuarios = await prisma.usuario.findMany({
+  const todosUsuarios = await prisma.usuario.findMany({
     where: { graficaId: usuario.graficaId },
     orderBy: { nome: "asc" },
     include: { responsaveisEstagio: { select: { status: true } } },
   });
+
+  // Particionado em memória (não duas queries): volume baixo por gráfica, e
+  // as duas listas precisam dos mesmos campos (responsaveisEstagio incluído)
+  // pra alimentar os formulários abaixo. Desativado nunca é candidato a
+  // vendedor/responsável/acesso ao Meu Negócio — só usuariosAtivos alimenta
+  // esses formulários; ver comentário de Usuario.desativadoEm no schema.
+  const usuarios = todosUsuarios.filter((u) => !u.desativadoEm);
+  const usuariosDesativados = todosUsuarios.filter((u) => u.desativadoEm);
 
   return (
     <div className="flex flex-1 flex-col">
@@ -53,36 +59,21 @@ export default async function UsuariosPage() {
           </Card>
 
           <div className="lg:col-span-3">
-            <Card className="divide-y divide-slate-100 dark:divide-slate-800">
-              {usuarios.map((u) => (
-                <div key={u.id} className="flex items-center justify-between gap-3 p-5">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-teal-50 text-teal-600 dark:bg-teal-950 dark:text-teal-400">
-                      <UsersIcon className="h-5 w-5" />
-                    </span>
-                    <div>
-                      <p className="font-medium text-slate-900 dark:text-white">{u.nome}</p>
-                      <p className="text-sm text-slate-500">{u.email}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                      {ROTULO_PAPEL[u.papel] ?? u.papel}
-                    </span>
-                    {u.papel === "OPERADOR" ? (
-                      <Link
-                        href={`/usuarios/${u.id}/permissoes`}
-                        className="text-sm font-medium text-teal-700 hover:underline dark:text-teal-400"
-                      >
-                        Permissões
-                      </Link>
-                    ) : u.papel === "ADMIN" ? (
-                      <span className="text-xs text-slate-400">Acesso total</span>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
-            </Card>
+            <UsuariosLista
+              usuariosAtivos={usuarios.map((u) => ({
+                id: u.id,
+                nome: u.nome,
+                email: u.email,
+                papel: u.papel,
+              }))}
+              usuariosDesativados={usuariosDesativados.map((u) => ({
+                id: u.id,
+                nome: u.nome,
+                email: u.email,
+                papel: u.papel,
+                desativadoEm: u.desativadoEm!.toISOString(),
+              }))}
+            />
           </div>
         </div>
 

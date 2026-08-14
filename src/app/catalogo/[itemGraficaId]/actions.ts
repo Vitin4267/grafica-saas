@@ -10,6 +10,18 @@ import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { parseJsonArray } from "@/lib/form-json";
 import { resolverItemParaNcm } from "@/lib/catalogo-ncm";
+import { registrarAuditoria } from "@/lib/auditoria";
+import { formatoMoeda } from "@/lib/moeda";
+
+const formatoQuantidade = new Intl.NumberFormat("pt-BR");
+
+function formatarPreco(valor: unknown): string {
+  return valor === null || valor === undefined ? "—" : formatoMoeda.format(Number(valor));
+}
+
+function formatarQuantidade(valor: unknown): string {
+  return valor === null || valor === undefined ? "—" : formatoQuantidade.format(Number(valor));
+}
 
 export type SalvarConfigResult = { ok: boolean; mensagem: string };
 
@@ -92,11 +104,30 @@ export async function salvarModeloProduto(
   }
   const modeloCalculo = modeloParsed.data;
 
+  const ROTULO_MODELO: Record<typeof modeloCalculo, string> = {
+    SIMPLES: "Simples",
+    M2: "M² (flexografia)",
+    OFFSET: "Offset",
+  };
+  const modeloAntes = ROTULO_MODELO[itemGrafica.modeloCalculo as typeof modeloCalculo] ?? itemGrafica.modeloCalculo;
+
   try {
     if (modeloCalculo === "SIMPLES") {
       await prisma.itemGrafica.update({
         where: { id: itemGraficaId },
         data: { modeloCalculo: "SIMPLES" },
+      });
+
+      await registrarAuditoria({
+        graficaId: usuario.graficaId,
+        usuarioId: usuario.id,
+        usuarioNome: usuario.nome,
+        acao: "catalogo.salvar_modelo_calculo",
+        entidade: "ItemGrafica",
+        entidadeId: itemGraficaId,
+        descricao: "Modelo de cálculo do item atualizado",
+        valorAnterior: `Modelo: ${modeloAntes}`,
+        valorNovo: `Modelo: ${ROTULO_MODELO.SIMPLES}`,
       });
     } else if (modeloCalculo === "M2") {
       const bobinasResult = parseJsonArray(formData.get("bobinasJson"), bobinaSchema);
@@ -129,6 +160,18 @@ export async function salvarModeloProduto(
           data: bobinasResult.data.map((b) => ({ itemGraficaId, ...b })),
         }),
       ]);
+
+      await registrarAuditoria({
+        graficaId: usuario.graficaId,
+        usuarioId: usuario.id,
+        usuarioNome: usuario.nome,
+        acao: "catalogo.salvar_modelo_calculo",
+        entidade: "ItemGrafica",
+        entidadeId: itemGraficaId,
+        descricao: "Modelo de cálculo do item atualizado para M²",
+        valorAnterior: `Modelo: ${modeloAntes}, custo impressão/m²: ${formatarPreco(itemGrafica.custoImpressaoM2)}, área mínima: ${formatarQuantidade(itemGrafica.areaMinimaFaturavel)}`,
+        valorNovo: `Modelo: ${ROTULO_MODELO.M2}, custo impressão/m²: ${formatarPreco(custoImpressaoM2)}, área mínima: ${formatarQuantidade(areaMinimaFaturavel)}, ${bobinasResult.data.length} bobina${bobinasResult.data.length > 1 ? "s" : ""}`,
+      });
     } else {
       const formatosResult = parseJsonArray(
         formData.get("formatosFolhaJson"),
@@ -188,6 +231,18 @@ export async function salvarModeloProduto(
           data: formatosResult.data.map((f) => ({ itemGraficaId, ...f })),
         }),
       ]);
+
+      await registrarAuditoria({
+        graficaId: usuario.graficaId,
+        usuarioId: usuario.id,
+        usuarioNome: usuario.nome,
+        acao: "catalogo.salvar_modelo_calculo",
+        entidade: "ItemGrafica",
+        entidadeId: itemGraficaId,
+        descricao: "Modelo de cálculo do item atualizado para Offset",
+        valorAnterior: `Modelo: ${modeloAntes}, gramatura: ${formatarQuantidade(itemGrafica.gramaturaGm2)}g/m²`,
+        valorNovo: `Modelo: ${ROTULO_MODELO.OFFSET}, gramatura: ${formatarQuantidade(gramaturaGm2)}g/m², ${formatosResult.data.length} formato${formatosResult.data.length > 1 ? "s" : ""} de folha`,
+      });
     }
   } catch {
     return {
@@ -228,10 +283,32 @@ export async function salvarNcm(
 
   const ncm = String(formData.get("ncm") ?? "").trim();
 
+  // Lido ANTES do update pro log de auditoria — NCM errado é nota fiscal
+  // rejeitada pela SEFAZ, e saber quem trocou e de qual valor pro qual é o
+  // que resolve a investigação depois.
+  const anterior = await prisma.itemCatalogo.findUnique({
+    where: { id: itemCatalogoId },
+    select: { nome: true, ncm: true },
+  });
+
   await prisma.itemCatalogo.update({
     where: { id: itemCatalogoId },
     data: { ncm: ncm || null },
   });
+
+  if (anterior && (anterior.ncm ?? "") !== ncm) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "catalogo.salvar_ncm",
+      entidade: "ItemCatalogo",
+      entidadeId: itemCatalogoId,
+      descricao: `NCM de "${anterior.nome}" alterado`,
+      valorAnterior: anterior.ncm ?? "sem NCM",
+      valorNovo: ncm || "sem NCM",
+    });
+  }
 
   revalidatePath(`/catalogo/${resolvido.itemGraficaId}`);
   revalidatePath("/catalogo");
@@ -281,6 +358,8 @@ export async function salvarConfiguracaoAcabamento(
     return { ok: false, mensagem: "Custo de ferramental inválido." };
   }
 
+  const configAntes = await prisma.configuracaoAcabamento.findUnique({ where: { itemGraficaId } });
+
   await prisma.configuracaoAcabamento.upsert({
     where: { itemGraficaId },
     update: {
@@ -299,6 +378,35 @@ export async function salvarConfiguracaoAcabamento(
       custoFerramental,
     },
   });
+
+  const antesTextos: string[] = [];
+  const depoisTextos: string[] = [];
+  const camposAcabamento: { rotulo: string; antes: unknown; depois: unknown }[] = [
+    { rotulo: "Custo de setup", antes: configAntes?.custoSetup ?? null, depois: custoSetup },
+    { rotulo: "Custo mínimo", antes: configAntes?.custoMinimo ?? null, depois: custoMinimo },
+    { rotulo: "Custo de ferramental", antes: configAntes?.custoFerramental ?? null, depois: custoFerramental },
+  ];
+  for (const { rotulo, antes, depois } of camposAcabamento) {
+    const textoAntes = formatarPreco(antes);
+    const textoDepois = formatarPreco(depois);
+    if (textoAntes !== textoDepois) {
+      antesTextos.push(`${rotulo}: ${textoAntes}`);
+      depoisTextos.push(`${rotulo}: ${textoDepois}`);
+    }
+  }
+  if (antesTextos.length > 0) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "catalogo.salvar_config_acabamento",
+      entidade: "ItemGrafica",
+      entidadeId: itemGraficaId,
+      descricao: "Configuração de acabamento do item atualizada",
+      valorAnterior: antesTextos.join(", "),
+      valorNovo: depoisTextos.join(", "),
+    });
+  }
 
   revalidatePath(`/catalogo/${itemGraficaId}`);
   revalidatePath("/catalogo");
@@ -366,6 +474,14 @@ export async function salvarFichaTecnica(
     }
   }
 
+  // Contagem anterior lida antes da transação (que apaga tudo e recria) — a
+  // ficha técnica é o que define o custo de material de todo job futuro deste
+  // produto, então trocá-la muda preço daqui pra frente. Registra o tamanho
+  // da ficha antes/depois; o detalhe linha a linha fica no próprio cadastro.
+  const quantidadeAnterior = await prisma.fichaTecnicaItem.count({
+    where: { itemGraficaId },
+  });
+
   await prisma.$transaction([
     prisma.fichaTecnicaItem.deleteMany({ where: { itemGraficaId } }),
     prisma.fichaTecnicaItem.createMany({
@@ -377,6 +493,18 @@ export async function salvarFichaTecnica(
       })),
     }),
   ]);
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "catalogo.salvar_ficha_tecnica",
+    entidade: "ItemGrafica",
+    entidadeId: itemGraficaId,
+    descricao: `Ficha técnica de "${itemGrafica.itemCatalogo.nome}" alterada`,
+    valorAnterior: `${quantidadeAnterior} matéria(s)-prima(s)`,
+    valorNovo: `${parsedResult.data.length} matéria(s)-prima(s)`,
+  });
 
   revalidatePath(`/catalogo/${itemGraficaId}`);
   return { ok: true, mensagem: "Ficha técnica salva com sucesso!" };
@@ -412,6 +540,8 @@ export async function salvarTabelaGramatura(
     return { ok: false, mensagem: "Gramatura duplicada na tabela." };
   }
 
+  const tabelaAntes = await prisma.tabelaPrecoPapel.findMany({ where: { itemGraficaId } });
+
   await prisma.$transaction([
     prisma.tabelaPrecoPapel.deleteMany({ where: { itemGraficaId } }),
     prisma.tabelaPrecoPapel.createMany({
@@ -422,6 +552,22 @@ export async function salvarTabelaGramatura(
       })),
     }),
   ]);
+
+  // Tabela inteira é substituída a cada save (delete + recreate) — logar
+  // faixa a faixa poluiria a tela igual reajuste em lote faria, então o log
+  // é um resumo (quantas faixas antes/depois) pra "mudou o preço do papel X"
+  // ainda aparecer na trilha sem virar ruído.
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "catalogo.salvar_tabela_gramatura",
+    entidade: "ItemGrafica",
+    entidadeId: itemGraficaId,
+    descricao: `Tabela de preço por gramatura de "${itemGrafica.itemCatalogo.nome}" atualizada`,
+    valorAnterior: `${tabelaAntes.length} faixa${tabelaAntes.length !== 1 ? "s" : ""} de gramatura`,
+    valorNovo: `${parsedResult.data.length} faixa${parsedResult.data.length !== 1 ? "s" : ""} de gramatura`,
+  });
 
   revalidatePath(`/catalogo/${itemGraficaId}`);
   revalidatePath("/catalogo");
@@ -530,6 +676,85 @@ export async function salvarVariantesMateriaPrima(
   const rotulosEstoqueNaoAtualizado = indicesEstoqueCas
     .filter(({ indice }) => (resultados[indice] as { count: number }).count === 0)
     .map(({ rotulo }) => rotulo);
+
+  // Preço/estoque de variante: mesma lógica de salvarCatalogo (registrar
+  // antes/depois de campo que mudou de verdade). estoqueAtual só entra na
+  // comparação se o compare-and-swap acima realmente aplicou — senão o
+  // valor no banco continua o de antes, e comparar contra o que a tela
+  // ENVIOU (não o que foi gravado) geraria um log falso.
+  const nomeItem = itemGrafica.itemCatalogo.nome;
+  const antesPorId = new Map(itemGrafica.variantes.map((v) => [v.id, v]));
+
+  for (const id of idsParaDesativar) {
+    const antes = antesPorId.get(id);
+    if (!antes) continue;
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "catalogo.desativar_variante",
+      entidade: "VarianteMateriaPrima",
+      entidadeId: id,
+      descricao: `Variante "${antes.rotulo}" de "${nomeItem}" desativada`,
+    });
+  }
+
+  for (const linha of parsedResult.data) {
+    if (linha.id) {
+      const antes = antesPorId.get(linha.id);
+      if (!antes) continue;
+      const estoqueAplicado = !rotulosEstoqueNaoAtualizado.includes(linha.rotulo);
+      const antesTextos: string[] = [];
+      const depoisTextos: string[] = [];
+      if (antes.rotulo !== linha.rotulo) {
+        antesTextos.push(`Rótulo: ${antes.rotulo}`);
+        depoisTextos.push(`Rótulo: ${linha.rotulo}`);
+      }
+      const camposVariante: { rotulo: string; antes: unknown; depois: unknown; formatar: (v: unknown) => string }[] = [
+        { rotulo: "Compra", antes: antes.precoCompra, depois: linha.precoCompra, formatar: formatarPreco },
+        {
+          rotulo: "Estoque atual",
+          antes: antes.estoqueAtual,
+          depois: estoqueAplicado ? (linha.estoqueAtual ?? null) : antes.estoqueAtual,
+          formatar: formatarQuantidade,
+        },
+        { rotulo: "Estoque mínimo", antes: antes.estoqueMinimo, depois: linha.estoqueMinimo ?? null, formatar: formatarQuantidade },
+        { rotulo: "Perda fixa", antes: antes.perdaFixaPadrao, depois: linha.perdaFixaPadrao ?? null, formatar: formatarQuantidade },
+      ];
+      for (const campo of camposVariante) {
+        const textoAntes = campo.formatar(campo.antes);
+        const textoDepois = campo.formatar(campo.depois);
+        if (textoAntes !== textoDepois) {
+          antesTextos.push(`${campo.rotulo}: ${textoAntes}`);
+          depoisTextos.push(`${campo.rotulo}: ${textoDepois}`);
+        }
+      }
+      if (antesTextos.length > 0) {
+        await registrarAuditoria({
+          graficaId: usuario.graficaId,
+          usuarioId: usuario.id,
+          usuarioNome: usuario.nome,
+          acao: "catalogo.editar_variante",
+          entidade: "VarianteMateriaPrima",
+          entidadeId: linha.id,
+          descricao: `Variante "${linha.rotulo}" de "${nomeItem}" atualizada`,
+          valorAnterior: antesTextos.join(", "),
+          valorNovo: depoisTextos.join(", "),
+        });
+      }
+    } else {
+      await registrarAuditoria({
+        graficaId: usuario.graficaId,
+        usuarioId: usuario.id,
+        usuarioNome: usuario.nome,
+        acao: "catalogo.criar_variante",
+        entidade: "VarianteMateriaPrima",
+        entidadeId: itemGraficaId,
+        descricao: `Variante "${linha.rotulo}" criada em "${nomeItem}"`,
+        valorNovo: `Compra: ${formatarPreco(linha.precoCompra)}, Estoque atual: ${formatarQuantidade(linha.estoqueAtual ?? null)}`,
+      });
+    }
+  }
 
   revalidatePath(`/catalogo/${itemGraficaId}`);
   revalidatePath("/catalogo");

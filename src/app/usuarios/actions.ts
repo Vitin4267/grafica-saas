@@ -10,6 +10,12 @@ import { exigirPapel, MODULOS_PERMISSAO } from "@/lib/auth/permissoes";
 import { senhaSchema } from "@/lib/auth/validation";
 import { hashPassword } from "@/lib/auth/password";
 import { ESTAGIOS_ATRIBUIVEIS } from "@/lib/producao-estagios";
+import { registrarAuditoria } from "@/lib/auditoria";
+
+const ROTULO_PAPEL: Record<"ADMIN" | "OPERADOR", string> = {
+  ADMIN: "Admin",
+  OPERADOR: "Operador",
+};
 
 export type CriarUsuarioResult = { ok: boolean; mensagem: string };
 
@@ -50,7 +56,7 @@ export async function criarUsuario(
 
   const senhaHash = await hashPassword(senha);
 
-  await prisma.usuario.create({
+  const novoUsuario = await prisma.usuario.create({
     data: {
       graficaId: usuario.graficaId,
       nome,
@@ -62,6 +68,16 @@ export async function criarUsuario(
       // self-service em /registro).
       emailVerificadoEm: new Date(),
     },
+  });
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "usuario.criar",
+    entidade: "Usuario",
+    entidadeId: novoUsuario.id,
+    descricao: `Usuário "${nome}" (${email}) criado com papel ${ROTULO_PAPEL[papel]}`,
   });
 
   updateTag(`uso-${usuario.graficaId}`); // usuário novo muda a contagem de seats (ver src/lib/billing/uso.ts)
@@ -86,10 +102,22 @@ export async function salvarAcessoMeuNegocio(
 
   const compartilhar = formData.get("compartilhar") === "on";
 
-  const funcionarios = await prisma.usuario.findMany({
-    where: { graficaId: usuario.graficaId, papel: { not: "DONO" } },
-    select: { id: true },
+  const graficaAntes = await prisma.grafica.findUnique({
+    where: { id: usuario.graficaId },
+    select: { compartilharMeuNegocio: true },
   });
+  // desativadoEm: null — funcionário removido não entra no fetch nem no
+  // formData enviado pelo form (não aparece mais na tela), então sem esse
+  // filtro a linha dele nem seria incluída na transação abaixo mas TAMBÉM
+  // não teria `acesso_${f.id}` no formData, o que zeraria o acesso dele
+  // silenciosamente a cada salvamento — mantém o valor como estava.
+  const funcionarios = await prisma.usuario.findMany({
+    where: { graficaId: usuario.graficaId, papel: { not: "DONO" }, desativadoEm: null },
+    select: { id: true, nome: true, acessoMeuNegocio: true },
+  });
+  const novoAcessoPorId = new Map(
+    funcionarios.map((f) => [f.id, formData.get(`acesso_${f.id}`) === "on"])
+  );
 
   await prisma.$transaction([
     prisma.grafica.update({
@@ -99,10 +127,44 @@ export async function salvarAcessoMeuNegocio(
     ...funcionarios.map((f) =>
       prisma.usuario.update({
         where: { id: f.id },
-        data: { acessoMeuNegocio: formData.get(`acesso_${f.id}`) === "on" },
+        data: { acessoMeuNegocio: novoAcessoPorId.get(f.id) ?? false },
       })
     ),
   ]);
+
+  // Quem ganhou/perdeu acesso individual é o que importa pra investigar
+  // depois "por que o Fulano conseguia ver o Meu Negócio" — reportar o
+  // switch geral sozinho não respondia isso.
+  const concedidoA = funcionarios
+    .filter((f) => !f.acessoMeuNegocio && novoAcessoPorId.get(f.id))
+    .map((f) => f.nome);
+  const revogadoDe = funcionarios
+    .filter((f) => f.acessoMeuNegocio && !novoAcessoPorId.get(f.id))
+    .map((f) => f.nome);
+  const switchMudou = (graficaAntes?.compartilharMeuNegocio ?? false) !== compartilhar;
+
+  if (switchMudou || concedidoA.length > 0 || revogadoDe.length > 0) {
+    const partes: string[] = [];
+    if (concedidoA.length > 0) partes.push(`acesso concedido a ${concedidoA.join(", ")}`);
+    if (revogadoDe.length > 0) partes.push(`acesso revogado de ${revogadoDe.join(", ")}`);
+
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "usuario.acesso_meu_negocio",
+      entidade: "Grafica",
+      entidadeId: usuario.graficaId,
+      descricao:
+        partes.length > 0
+          ? `Acesso ao Meu Negócio atualizado — ${partes.join("; ")}`
+          : "Acesso ao Meu Negócio atualizado",
+      valorAnterior: switchMudou
+        ? `compartilhar: ${graficaAntes?.compartilharMeuNegocio ? "sim" : "não"}`
+        : undefined,
+      valorNovo: switchMudou ? `compartilhar: ${compartilhar ? "sim" : "não"}` : undefined,
+    });
+  }
 
   revalidatePath("/usuarios");
   revalidatePath("/meu-negocio");
@@ -133,17 +195,48 @@ export async function salvarPermissoes(
     return { ok: false, mensagem: "Usuário não encontrado (ou não é Operador)." };
   }
 
-  await prisma.$transaction(
-    MODULOS_PERMISSAO.map(({ valor }) => {
-      const podeVer = formData.get(`ver_${valor}`) === "on";
-      const podeEditar = podeVer && formData.get(`editar_${valor}`) === "on";
-      return prisma.permissaoUsuario.upsert({
-        where: { usuarioId_modulo: { usuarioId: usuarioAlvoId, modulo: valor } },
-        create: { usuarioId: usuarioAlvoId, modulo: valor, podeVer, podeEditar },
-        update: { podeVer, podeEditar },
-      });
-    })
-  );
+  const permissoesAntes = await prisma.permissaoUsuario.findMany({
+    where: { usuarioId: usuarioAlvoId },
+  });
+  const antesPorModulo = new Map(permissoesAntes.map((p) => [p.modulo, p]));
+
+  // O antes/depois é o que importa aqui — "quem ganhou o quê" (ver missão) —
+  // por isso o diff é montado módulo a módulo ANTES da transação gravar, só
+  // incluindo no log os módulos que realmente mudaram.
+  const antesTextos: string[] = [];
+  const depoisTextos: string[] = [];
+  const operacoes = MODULOS_PERMISSAO.map(({ valor, rotulo }) => {
+    const podeVer = formData.get(`ver_${valor}`) === "on";
+    const podeEditar = podeVer && formData.get(`editar_${valor}`) === "on";
+    const atual = antesPorModulo.get(valor);
+    const verAntes = atual?.podeVer ?? false;
+    const editarAntes = atual?.podeEditar ?? false;
+    if (verAntes !== podeVer || editarAntes !== podeEditar) {
+      antesTextos.push(`${rotulo} (ver: ${verAntes ? "sim" : "não"}, editar: ${editarAntes ? "sim" : "não"})`);
+      depoisTextos.push(`${rotulo} (ver: ${podeVer ? "sim" : "não"}, editar: ${podeEditar ? "sim" : "não"})`);
+    }
+    return prisma.permissaoUsuario.upsert({
+      where: { usuarioId_modulo: { usuarioId: usuarioAlvoId, modulo: valor } },
+      create: { usuarioId: usuarioAlvoId, modulo: valor, podeVer, podeEditar },
+      update: { podeVer, podeEditar },
+    });
+  });
+
+  await prisma.$transaction(operacoes);
+
+  if (antesTextos.length > 0) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "usuario.salvar_permissoes",
+      entidade: "Usuario",
+      entidadeId: usuarioAlvoId,
+      descricao: `Permissões de "${alvo.nome}" atualizadas`,
+      valorAnterior: antesTextos.join("; "),
+      valorNovo: depoisTextos.join("; "),
+    });
+  }
 
   revalidatePath(`/usuarios/${usuarioAlvoId}/permissoes`);
   revalidatePath("/usuarios");
@@ -167,9 +260,12 @@ export async function salvarComissaoUsuarios(
   await exigirAssinaturaAtiva(usuario);
   exigirPapel(usuario, ["DONO"]);
 
+  // desativadoEm: null — mesmo motivo de salvarAcessoMeuNegocio: sem o filtro,
+  // um funcionário removido (que não aparece mais no form) teria a comissão
+  // zerada a cada salvamento por falta do campo `percentual_${id}` no formData.
   const usuarios = await prisma.usuario.findMany({
-    where: { graficaId: usuario.graficaId },
-    select: { id: true },
+    where: { graficaId: usuario.graficaId, desativadoEm: null },
+    select: { id: true, nome: true, comissaoPercent: true },
   });
 
   const atualizacoes: { id: string; comissaoPercent: number | null }[] = [];
@@ -192,6 +288,33 @@ export async function salvarComissaoUsuarios(
       prisma.usuario.update({ where: { id: a.id }, data: { comissaoPercent: a.comissaoPercent } })
     )
   );
+
+  // Muda quanto cada vendedor recebe em toda venda futura — só entra no log
+  // quem de fato mudou, não a lista inteira de funcionários.
+  const nomePorId = new Map(usuarios.map((u) => [u.id, u.nome]));
+  const mudancas = atualizacoes
+    .filter((a) => {
+      const antes = usuarios.find((u) => u.id === a.id)?.comissaoPercent;
+      const antesNum = antes ? Number(antes) : null;
+      return antesNum !== a.comissaoPercent;
+    })
+    .map((a) => {
+      const antes = usuarios.find((u) => u.id === a.id)?.comissaoPercent;
+      const antesNum = antes ? Number(antes) : null;
+      return `${nomePorId.get(a.id)}: ${antesNum === null ? "—" : `${(antesNum * 100).toFixed(1)}%`} → ${a.comissaoPercent === null ? "—" : `${(a.comissaoPercent * 100).toFixed(1)}%`}`;
+    });
+
+  if (mudancas.length > 0) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "usuario.salvar_comissao",
+      entidade: "Grafica",
+      entidadeId: usuario.graficaId,
+      descricao: `Comissão por vendedor atualizada — ${mudancas.join(", ")}`,
+    });
+  }
 
   revalidatePath("/usuarios");
 
@@ -216,24 +339,170 @@ export async function salvarResponsaveisEstagio(
   await exigirAssinaturaAtiva(usuario);
   exigirPapel(usuario, ["DONO"]);
 
+  // desativadoEm: null — um funcionário removido não aparece mais no form,
+  // então funcionarioIds precisa excluí-lo: senão o deleteMany abaixo apaga o
+  // ResponsavelEstagio dele (vínculo já existente que deve ser preservado —
+  // só não pode ser reatribuído a ele de novo enquanto estiver desativado).
   const funcionarios = await prisma.usuario.findMany({
-    where: { graficaId: usuario.graficaId },
-    select: { id: true },
+    where: { graficaId: usuario.graficaId, desativadoEm: null },
+    select: { id: true, nome: true },
   });
   const funcionarioIds = funcionarios.map((f) => f.id);
+  const nomePorId = new Map(funcionarios.map((f) => [f.id, f.nome]));
+
+  const responsaveisAntes = await prisma.responsavelEstagio.findMany({
+    where: { usuarioId: { in: funcionarioIds } },
+  });
+  const chaveAntes = new Set(responsaveisAntes.map((r) => `${r.usuarioId}::${r.status}`));
+
+  const paresNovos = funcionarioIds.flatMap((usuarioId) =>
+    ESTAGIOS_ATRIBUIVEIS.filter(({ valor }) => formData.get(`resp_${usuarioId}_${valor}`) === "on").map(
+      ({ valor }) => ({ usuarioId, status: valor })
+    )
+  );
+  const chaveDepois = new Set(paresNovos.map((p) => `${p.usuarioId}::${p.status}`));
 
   await prisma.$transaction([
     prisma.responsavelEstagio.deleteMany({ where: { usuarioId: { in: funcionarioIds } } }),
-    prisma.responsavelEstagio.createMany({
-      data: funcionarioIds.flatMap((usuarioId) =>
-        ESTAGIOS_ATRIBUIVEIS.filter(({ valor }) => formData.get(`resp_${usuarioId}_${valor}`) === "on").map(
-          ({ valor }) => ({ usuarioId, status: valor })
-        )
-      ),
-    }),
+    prisma.responsavelEstagio.createMany({ data: paresNovos }),
   ]);
+
+  const rotuloEstagio = Object.fromEntries(ESTAGIOS_ATRIBUIVEIS.map((e) => [e.valor, e.rotulo]));
+  const descreverChave = (chave: string) => {
+    const [usuarioId, status] = chave.split("::");
+    return `${nomePorId.get(usuarioId) ?? usuarioId} → ${rotuloEstagio[status] ?? status}`;
+  };
+  const ganhos = [...chaveDepois].filter((c) => !chaveAntes.has(c)).map(descreverChave);
+  const perdas = [...chaveAntes].filter((c) => !chaveDepois.has(c)).map(descreverChave);
+
+  if (ganhos.length > 0 || perdas.length > 0) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "usuario.salvar_responsaveis_estagio",
+      entidade: "Grafica",
+      entidadeId: usuario.graficaId,
+      descricao: "Responsáveis por etapa de produção atualizados",
+      valorAnterior: perdas.length > 0 ? perdas.join(", ") : undefined,
+      valorNovo: ganhos.length > 0 ? ganhos.join(", ") : undefined,
+    });
+  }
 
   revalidatePath("/usuarios");
 
   return { ok: true, mensagem: "Responsáveis por etapa atualizados com sucesso!" };
+}
+
+export type DesativarUsuarioResult = { ok: boolean; mensagem: string };
+
+// "Remover" um funcionário = desativar, nunca apagar (ver comentário de
+// Usuario.desativadoEm no schema): Orcamento.usuarioId, Comissao.usuarioId e
+// LogAuditoria.usuarioId apontam pra cá, e apagar deixaria esse histórico
+// órfão ou faria a exclusão falhar. A transação faz as duas coisas que juntas
+// garantem "perde acesso NA HORA": marca desativadoEm E apaga as sessões —
+// só marcar desativadoEm não bastaria, a sessão continuaria válida até
+// expirar sozinha (até 7 dias, ver SESSION_DURATION_MS em session.ts).
+export async function desativarUsuario(
+  _estadoAnterior: DesativarUsuarioResult | null,
+  formData: FormData
+): Promise<DesativarUsuarioResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  exigirPapel(usuario, ["DONO"]);
+
+  const usuarioAlvoId = String(formData.get("usuarioId"));
+
+  // Bloqueio explícito de autodesativação, antes até de buscar o alvo no
+  // banco: sem isso a gráfica pode ficar sem ninguém com acesso, já que só
+  // DONO pode chamar esta action.
+  if (usuarioAlvoId === usuario.id) {
+    return { ok: false, mensagem: "Você não pode remover a si mesmo." };
+  }
+
+  const alvo = await prisma.usuario.findFirst({
+    where: { id: usuarioAlvoId, graficaId: usuario.graficaId },
+  });
+  if (!alvo) {
+    return { ok: false, mensagem: "Usuário não encontrado." };
+  }
+  // Não existe UI pra criar um segundo DONO na gráfica, então isto não deve
+  // acontecer na prática — mas é a mesma proteção da autodesativação, só que
+  // sem depender de "usuarioAlvoId === usuario.id".
+  if (alvo.papel === "DONO") {
+    return { ok: false, mensagem: "Não é possível remover o dono da gráfica." };
+  }
+  if (alvo.desativadoEm) {
+    return { ok: false, mensagem: "Este usuário já está removido." };
+  }
+
+  await prisma.$transaction([
+    prisma.usuario.update({
+      where: { id: alvo.id },
+      data: { desativadoEm: new Date() },
+    }),
+    prisma.sessao.deleteMany({ where: { usuarioId: alvo.id } }),
+  ]);
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "usuario.desativar",
+    entidade: "Usuario",
+    entidadeId: alvo.id,
+    descricao: `Usuário "${alvo.nome}" (${alvo.email}) removido`,
+  });
+
+  updateTag(`uso-${usuario.graficaId}`); // um funcionário a menos muda a contagem de seats (ver src/lib/billing/uso.ts)
+  revalidatePath("/usuarios");
+  return { ok: true, mensagem: `Usuário "${alvo.nome}" removido com sucesso.` };
+}
+
+export type ReativarUsuarioResult = { ok: boolean; mensagem: string };
+
+// Reverso de desativarUsuario: volta desativadoEm pra null. Não precisa mexer
+// em Sessao — quem está desativado não tem sessão nenhuma (foram todas
+// apagadas na remoção), então não há nada a restaurar; a pessoa loga de novo
+// com a mesma senha de antes.
+export async function reativarUsuario(
+  _estadoAnterior: ReativarUsuarioResult | null,
+  formData: FormData
+): Promise<ReativarUsuarioResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  exigirPapel(usuario, ["DONO"]);
+
+  const usuarioAlvoId = String(formData.get("usuarioId"));
+
+  const alvo = await prisma.usuario.findFirst({
+    where: { id: usuarioAlvoId, graficaId: usuario.graficaId },
+  });
+  if (!alvo) {
+    return { ok: false, mensagem: "Usuário não encontrado." };
+  }
+  if (!alvo.desativadoEm) {
+    return { ok: false, mensagem: "Este usuário já está ativo." };
+  }
+
+  await prisma.usuario.update({
+    where: { id: alvo.id },
+    data: { desativadoEm: null },
+  });
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "usuario.reativar",
+    entidade: "Usuario",
+    entidadeId: alvo.id,
+    descricao: `Usuário "${alvo.nome}" (${alvo.email}) reativado`,
+  });
+
+  updateTag(`uso-${usuario.graficaId}`);
+  revalidatePath("/usuarios");
+  return { ok: true, mensagem: `Usuário "${alvo.nome}" reativado com sucesso.` };
 }

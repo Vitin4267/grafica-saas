@@ -1,4 +1,5 @@
 import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
+import { formatoInstanteReal, formatoInstanteRealHora, formatoInstanteRealComHora } from "@/lib/data";
 
 // Mesmo recorte de informação do link público (/o/[token]) — nunca inclui
 // breakdown (custo/margem), que é dado comercial sensível da gráfica.
@@ -31,6 +32,8 @@ export type DadosPdfOrcamento = {
   clienteNome: string;
   status: "RASCUNHO" | "ENVIADO" | "APROVADO" | "REJEITADO";
   criadoEm: Date;
+  respostaPublicaNome: string | null;
+  respostaPublicaEm: Date | null;
   itens: ItemPdfOrcamento[];
   total: string;
   dadosPedido: DadosPdfPedido | null;
@@ -68,6 +71,7 @@ const estilos = StyleSheet.create({
   secao: { marginBottom: 16 },
   tituloCliente: { fontSize: 14, fontWeight: "bold", marginBottom: 2 },
   dataCriacao: { fontSize: 9, color: "#64748b" },
+  respostaPublica: { fontSize: 9, color: "#0f766e", marginTop: 2 },
   tabela: { borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 4 },
   linhaCabecalho: {
     flexDirection: "row",
@@ -159,8 +163,20 @@ export function OrcamentoDocumento({ dados }: { dados: DadosPdfOrcamento }) {
         <View style={estilos.secao}>
           <Text style={estilos.tituloCliente}>{dados.clienteNome}</Text>
           <Text style={estilos.dataCriacao}>
-            Orçamento criado em {dados.criadoEm.toLocaleDateString("pt-BR")}
+            Orçamento criado em {formatoInstanteReal.format(dados.criadoEm)}
           </Text>
+          {/* Nome DECLARADO por quem respondeu pelo link público, nunca
+              verificado — "aprovado/recusado por", nunca "confirmado por"
+              (ver comentário de Orcamento.respostaPublicaNome no schema). */}
+          {(dados.status === "APROVADO" || dados.status === "REJEITADO") &&
+            dados.respostaPublicaNome && (
+              <Text style={estilos.respostaPublica}>
+                {dados.status === "APROVADO" ? "Aprovado" : "Recusado"} por{" "}
+                {dados.respostaPublicaNome}
+                {dados.respostaPublicaEm &&
+                  ` em ${formatoInstanteRealComHora.format(dados.respostaPublicaEm)}`}
+              </Text>
+            )}
         </View>
 
         {dados.dadosPedido && (
@@ -237,7 +253,7 @@ export function OrcamentoDocumento({ dados }: { dados: DadosPdfOrcamento }) {
         </View>
 
         <Text style={estilos.rodape} fixed>
-          Gerado em {agora.toLocaleDateString("pt-BR")} às {agora.toLocaleTimeString("pt-BR")}
+          Gerado em {formatoInstanteReal.format(agora)} às {formatoInstanteRealHora.format(agora)}
         </Text>
       </Page>
     </Document>

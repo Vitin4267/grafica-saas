@@ -5,6 +5,7 @@ import { ROTULOS_STATUS_ORCAMENTO, type StatusOrcamento } from "@/lib/orcamento-
 import { calcularPrevisaoEstoque } from "@/lib/previsao-estoque-db";
 import { LIMITE_DIAS_ALERTA } from "@/lib/previsao-estoque";
 import { D } from "@/lib/pricing/decimal";
+import { inicioMesAtualBrasilia, inicioMesAtualLiteralBrasilia } from "@/lib/data";
 
 const SEMANAS_SERIE_FATURAMENTO = 8;
 const MS_POR_SEMANA = 1000 * 60 * 60 * 24 * 7;
@@ -92,7 +93,20 @@ export type VisaoGeralNegocio = {
 
 export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoGeralNegocio> {
   const agora = new Date();
-  const inicioDoMes = new Date(agora.getFullYear(), agora.getMonth(), 1);
+  // Fronteira de mês pra colunas de INSTANTE REAL (Orcamento.createdAt,
+  // Despesa.pagoEm) — calculada no calendário de Brasília, não no fuso do
+  // processo (ver src/lib/data.ts). `agora.getFullYear()/getMonth()` puro
+  // seria UTC na Vercel e faria um orçamento aprovado às 22h do último dia
+  // do mês (ainda dentro do mês em Brasília) sumir do "faturamento do mês".
+  const inicioDoMesReal = inicioMesAtualBrasilia(agora);
+  // Fronteira de mês pra Despesa.vencimento — essa é DATA-PURA (meia-noite
+  // UTC representando o dia digitado, ver formatoData em src/lib/data.ts),
+  // então NÃO pode usar a fronteira acima (ela tem +3h de offset, que
+  // deslocaria a comparação contra um campo literal). Mas o MÊS em si é
+  // decidido pelo calendário de Brasília, não pelo relógio do processo —
+  // senão nas ~3h finais de cada dia a Vercel (UTC) já teria virado o mês e
+  // as despesas a vencer do mês corrente sumiriam da tela.
+  const inicioDoMesVencimento = inicioMesAtualLiteralBrasilia(agora);
   const inicioSerieFaturamento = new Date(
     agora.getTime() - SEMANAS_SERIE_FATURAMENTO * MS_POR_SEMANA
   );
@@ -111,7 +125,7 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
     orcamentosParaSerie,
   ] = await Promise.all([
     prisma.orcamento.aggregate({
-      where: { graficaId, status: "APROVADO", createdAt: { gte: inicioDoMes } },
+      where: { graficaId, status: "APROVADO", createdAt: { gte: inicioDoMesReal } },
       _sum: { total: true },
       _count: true,
     }),
@@ -135,14 +149,14 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
     }),
     prisma.cliente.count({ where: { graficaId } }),
     prisma.itemGrafica.count({ where: { graficaId, ativo: true } }),
-    prisma.orcamento.count({ where: { graficaId, createdAt: { gte: inicioDoMes } } }),
+    prisma.orcamento.count({ where: { graficaId, createdAt: { gte: inicioDoMesReal } } }),
     prisma.despesa.aggregate({
-      where: { graficaId, status: "PENDENTE", vencimento: { gte: inicioDoMes } },
+      where: { graficaId, status: "PENDENTE", vencimento: { gte: inicioDoMesVencimento } },
       _sum: { valor: true },
       _count: true,
     }),
     prisma.despesa.aggregate({
-      where: { graficaId, status: "PAGA", pagoEm: { gte: inicioDoMes } },
+      where: { graficaId, status: "PAGA", pagoEm: { gte: inicioDoMesReal } },
       _sum: { valor: true },
     }),
     prisma.orcamento.findMany({

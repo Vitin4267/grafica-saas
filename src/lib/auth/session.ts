@@ -66,7 +66,15 @@ export const obterUsuarioAtual = cache(async () => {
     include: { usuario: { include: { grafica: { include: { assinatura: true } } } } },
   });
 
-  if (!sessao || sessao.expiraEm < new Date()) {
+  // desativadoEm preenchido = funcionário removido (ver comentário do campo
+  // no schema): tratado exatamente como sessão inválida/expirada, não como
+  // "usuário logado sem permissão" — quem chama obterUsuarioAtual() direto
+  // (login/registro, pra saber se já tem alguém logado) também precisa ver
+  // null aqui, senão um cookie remanescente de quem foi removido causaria um
+  // loop de redirecionamento entre /login e a página protegida. As sessões
+  // já são apagadas no momento da remoção (ver desativarUsuario em
+  // src/app/usuarios/actions.ts) — este check é a segunda linha de defesa.
+  if (!sessao || sessao.expiraEm < new Date() || sessao.usuario.desativadoEm) {
     return null;
   }
 

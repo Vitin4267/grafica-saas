@@ -11,6 +11,7 @@ import { calcularPrevisaoEstoque } from "@/lib/previsao-estoque-db";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { ArrowLeftIcon, BoxIcon } from "@/components/icons";
+import { formatoInstanteReal } from "@/lib/data";
 
 function chipUrgencia(diasRestantes: number | null, abaixoDoMinimo: boolean) {
   if (diasRestantes !== null && diasRestantes <= 7) {
@@ -110,7 +111,7 @@ export default async function PrevisaoEstoquePage() {
                   {item.dataPrevistaEsgotamento && (
                     <p className="mt-0.5 text-xs text-slate-500">
                       Previsão de acabar em{" "}
-                      {item.dataPrevistaEsgotamento.toLocaleDateString("pt-BR")}
+                      {formatoInstanteReal.format(item.dataPrevistaEsgotamento)}
                     </p>
                   )}
                 </div>

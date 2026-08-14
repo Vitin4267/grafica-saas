@@ -38,9 +38,15 @@ export function ResponsaveisEstagioForm({ funcionarios }: { funcionarios: Funcio
           <table className="w-full min-w-[480px] border-collapse">
             <thead>
               <tr>
-                <th className="pb-3 text-left text-xs font-medium text-slate-500">Funcionário</th>
+                <th scope="col" className="pb-3 text-left text-xs font-medium text-slate-500">
+                  Funcionário
+                </th>
                 {ESTAGIOS_ATRIBUIVEIS.map((estagio) => (
-                  <th key={estagio.valor} className="pb-3 text-center text-xs font-medium text-slate-500">
+                  <th
+                    key={estagio.valor}
+                    scope="col"
+                    className="pb-3 text-center text-xs font-medium text-slate-500"
+                  >
                     {estagio.rotulo}
                   </th>
                 ))}
@@ -70,6 +76,7 @@ export function ResponsaveisEstagioForm({ funcionarios }: { funcionarios: Funcio
                         type="checkbox"
                         name={`resp_${f.id}_${estagio.valor}`}
                         defaultChecked={f.etapas.includes(estagio.valor)}
+                        aria-label={`${f.nome} responsável por ${estagio.rotulo}`}
                         className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
                       />
                     </td>

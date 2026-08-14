@@ -11,6 +11,7 @@ import { D } from "@/lib/pricing/decimal";
 import { calcularNovoPreco } from "@/lib/catalogo-reajuste";
 import { buscarItensReajustaveis } from "@/lib/catalogo-reajuste-db";
 import { reajusteInputSchema } from "./schema";
+import { registrarAuditoria } from "@/lib/auditoria";
 
 export type ItemReajustado = {
   itemGraficaId: string;
@@ -122,6 +123,22 @@ export async function aplicarReajusteEmLote(
   });
 
   await prisma.$transaction(operacoes);
+
+  // Reajuste em lote: UM log pro lote inteiro (percentual + quantos itens +
+  // filtro de categoria), nunca um log por item — senão a trilha de
+  // auditoria fica inutilizável depois de um reajuste em centenas de
+  // produtos (ver missão).
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "catalogo.reajuste_em_lote",
+    entidade: "ItemGrafica",
+    entidadeId: usuario.graficaId,
+    descricao: categoriaFiltro
+      ? `Reajuste de ${(percentual * 100).toFixed(1)}% aplicado em ${itens.length} produto${itens.length > 1 ? "s" : ""} da categoria "${categoriaFiltro}"`
+      : `Reajuste de ${(percentual * 100).toFixed(1)}% aplicado em ${itens.length} produto${itens.length > 1 ? "s" : ""}`,
+  });
 
   revalidatePath("/catalogo");
   revalidatePath("/orcamento");

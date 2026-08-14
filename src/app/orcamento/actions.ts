@@ -12,6 +12,12 @@ import { calcularItemOrcamento } from "@/lib/orcamento-precificacao";
 import { parseJsonArray } from "@/lib/form-json";
 import { D } from "@/lib/pricing/decimal";
 import { revalidatePath, updateTag } from "next/cache";
+import { UNIDADES_DIMENSAO, converterParaCm } from "@/lib/unidade-dimensao";
+
+// Nunca confia na unidade que vem do formulário/JSON — validada contra as
+// únicas 3 que existem (ver src/lib/unidade-dimensao.ts) antes de converter
+// pra centímetro na fronteira.
+const unidadeDimensaoSchema = z.enum(UNIDADES_DIMENSAO);
 
 // Campos gerais do orçamento (bloco 1) — mesmos schemas/validação de
 // editarDadosGeraisOrcamento em src/app/orcamento/[id]/actions.ts, só que
@@ -103,8 +109,12 @@ const etiquetaEntradaSchema = z
 const itemEntradaSchema = z.object({
   itemGraficaId: z.string().min(1),
   quantidade: z.number().int().positive().max(1_000_000, "Quantidade não pode passar de 1.000.000 unidades."),
-  larguraCm: z.number().positive().nullable(),
-  alturaCm: z.number().positive().nullable(),
+  // Valor DIGITADO na unidade abaixo — NÃO é necessariamente centímetro (ver
+  // SeletorItemOrcamento.tsx). Convertido pra cm logo no início de
+  // criarOrcamento, antes de qualquer validação/cálculo.
+  largura: z.number().positive().nullable(),
+  altura: z.number().positive().nullable(),
+  unidadeDimensao: unidadeDimensaoSchema,
   corFrente: z.number().int().nullable(),
   corVerso: z.number().int().nullable(),
   cores: z.string().max(60).nullable(),
@@ -132,8 +142,11 @@ export type PrecificarItemResult =
 export async function precificarItem(input: {
   itemGraficaId: string;
   quantidade: number;
-  larguraCm: number | null;
-  alturaCm: number | null;
+  // Valor DIGITADO na unidade `unidadeDimensao` abaixo — NÃO necessariamente
+  // centímetro. Convertido logo abaixo, antes de chamar o motor de preço.
+  largura: number | null;
+  altura: number | null;
+  unidadeDimensao: string;
   corFrente: number | null;
   corVerso: number | null;
 }): Promise<PrecificarItemResult> {
@@ -148,23 +161,43 @@ export async function precificarItem(input: {
     return { ok: false, mensagem: "Escolha um produto e uma quantidade válida." };
   }
 
+  // Nunca confia na unidade vinda do cliente — precisa ser uma das 3 que
+  // existem antes de converter pra cm.
+  const unidadeParsed = unidadeDimensaoSchema.safeParse(input.unidadeDimensao);
+  if (!unidadeParsed.success) {
+    return { ok: false, mensagem: "Unidade de medida inválida." };
+  }
+  const larguraCm =
+    input.largura !== null ? converterParaCm(input.largura, unidadeParsed.data) : null;
+  const alturaCm = input.altura !== null ? converterParaCm(input.altura, unidadeParsed.data) : null;
+
+  // NÃO filtra por precoVenda aqui: um item existir mas estar sem preço é um
+  // estado válido do catálogo (produto cadastrado, preço ainda não definido).
+  // Filtrar faria esse caso cair no mesmo "não encontrado" de um item que
+  // nem existe — mensagem enganosa pro usuário, que só via o produto na
+  // lista minutos atrás. Distingue os dois casos abaixo.
   const itemGrafica = await prisma.itemGrafica.findFirst({
     where: {
       id: input.itemGraficaId,
       graficaId: usuario.graficaId,
       ativo: true,
-      precoVenda: { not: null },
     },
     include: { itemCatalogo: true },
   });
-  if (!itemGrafica || !itemGrafica.precoVenda) {
+  if (!itemGrafica) {
     return { ok: false, mensagem: "Produto ou serviço não encontrado." };
+  }
+  if (!itemGrafica.precoVenda) {
+    return {
+      ok: false,
+      mensagem: `O produto "${itemGrafica.itemCatalogo.nome}" está sem preço de venda no catálogo — configure o preço antes de usar em um orçamento.`,
+    };
   }
 
   const resultado = await calcularItemOrcamento(itemGrafica, usuario.graficaId, {
     quantidade: input.quantidade,
-    larguraCm: input.larguraCm,
-    alturaCm: input.alturaCm,
+    larguraCm,
+    alturaCm,
     corFrente: input.corFrente,
     corVerso: input.corVerso,
   });
@@ -263,6 +296,7 @@ export async function criarOrcamento(
     quantidade: number;
     larguraCm: number | null;
     alturaCm: number | null;
+    unidadeDimensao: (typeof UNIDADES_DIMENSAO)[number];
     cores: string | null;
     acabamento: string | null;
     precoUnitario: string;
@@ -277,22 +311,41 @@ export async function criarOrcamento(
   // Recalcula cada item no servidor — nunca confia no preço que veio do carrinho
   // do cliente (poderia ter sido adulterado no DOM/DevTools).
   for (const [indice, entrada] of itensResult.data.entries()) {
+    // Mesmo cuidado de precificarItem acima: não filtra por precoVenda na
+    // query, senão um item que existe mas está sem preço cai na mensagem
+    // genérica de "não encontrado" — enganoso pro usuário, que escolheu o
+    // produto de uma lista onde ele aparecia normalmente.
     const itemGrafica = await prisma.itemGrafica.findFirst({
       where: {
         id: entrada.itemGraficaId,
         graficaId: usuario.graficaId,
         ativo: true,
-        precoVenda: { not: null },
       },
+      include: { itemCatalogo: true },
     });
-    if (!itemGrafica || !itemGrafica.precoVenda) {
+    if (!itemGrafica) {
       return { ok: false, mensagem: `Item ${indice + 1}: produto ou serviço não encontrado.` };
     }
+    if (!itemGrafica.precoVenda) {
+      return {
+        ok: false,
+        mensagem: `Item ${indice + 1}: o produto "${itemGrafica.itemCatalogo.nome}" está sem preço de venda no catálogo — configure o preço antes de usar em um orçamento.`,
+      };
+    }
+
+    // Convertido pra cm AQUI, antes de qualquer validação de dimensão ou
+    // chamada ao motor de preço — entrada.largura/altura vêm na unidade que
+    // o usuário efetivamente digitou (entrada.unidadeDimensao), nunca cm
+    // direto (ver SeletorItemOrcamento.tsx).
+    const larguraCm =
+      entrada.largura !== null ? converterParaCm(entrada.largura, entrada.unidadeDimensao) : null;
+    const alturaCm =
+      entrada.altura !== null ? converterParaCm(entrada.altura, entrada.unidadeDimensao) : null;
 
     const resultado = await calcularItemOrcamento(itemGrafica, usuario.graficaId, {
       quantidade: entrada.quantidade,
-      larguraCm: entrada.larguraCm,
-      alturaCm: entrada.alturaCm,
+      larguraCm,
+      alturaCm,
       corFrente: entrada.corFrente,
       corVerso: entrada.corVerso,
     });
@@ -304,8 +357,9 @@ export async function criarOrcamento(
     itensParaCriar.push({
       itemGraficaId: itemGrafica.id,
       quantidade: entrada.quantidade,
-      larguraCm: entrada.larguraCm,
-      alturaCm: entrada.alturaCm,
+      larguraCm,
+      alturaCm,
+      unidadeDimensao: entrada.unidadeDimensao,
       cores: entrada.cores,
       acabamento: entrada.acabamento,
       precoUnitario: resultado.precoUnitario,
@@ -332,6 +386,7 @@ export async function criarOrcamento(
           quantidade: item.quantidade,
           larguraCm: item.larguraCm,
           alturaCm: item.alturaCm,
+          unidadeDimensao: item.unidadeDimensao,
           cores: item.cores,
           acabamento: item.acabamento,
           precoUnitario: item.precoUnitario,

@@ -9,10 +9,12 @@ import { templateArteAlteracaoSolicitada, templateArteAprovada } from "@/lib/ema
 import { tentarRegistrarRespostaArte } from "@/lib/auth/rate-limit";
 import { obterIpRequisicao } from "@/lib/auth/ip";
 import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
+import { assinaturaEstaLiberada } from "@/lib/billing/status";
 
 export type ResponderArteResult = { ok: boolean; mensagem: string };
 
 const COMENTARIO_MAX = 2000;
+const NOME_MAX = 200;
 
 // Compartilhado pelos dois avisos que este arquivo dispara (aprovação e
 // pedido de alteração) — mesmo destinatário (DONO(s) da gráfica) nos dois
@@ -49,6 +51,19 @@ export async function responderArtePublica(
     return { ok: false, mensagem: "Ação inválida." };
   }
 
+  // Nome DECLARADO por quem responde — não verificado (ver comentário de
+  // Pedido.arteRespondidaPor no schema, mesmo princípio de
+  // o/[token]/actions.ts). Disputa de arte custa mais caro que disputa de
+  // preço ("eu nunca aprovei essa cor"), por isso obrigatório nos dois
+  // caminhos, não só na aprovação.
+  const nome = String(formData.get("nome") ?? "").trim();
+  if (!nome) {
+    return { ok: false, mensagem: "Informe seu nome pra confirmar." };
+  }
+  if (nome.length > NOME_MAX) {
+    return { ok: false, mensagem: "Nome muito longo — use até 200 caracteres." };
+  }
+
   const pedido = await prisma.pedido.findUnique({
     where: { arteLinkToken: token },
     include: {
@@ -66,6 +81,26 @@ export async function responderArtePublica(
   }
   if (pedido.arteAprovadaEm) {
     return { ok: false, mensagem: "Esta arte já foi aprovada." };
+  }
+
+  // Furo de paywall (achado de revisão de código): o link público é evergreen
+  // e nunca expira por design, então uma gráfica com assinatura cancelada
+  // (bloqueada no app autenticado) continuava deixando o cliente final
+  // aprovar arte por aqui, de graça. Mesmo padrão de confirmarEstagioPublico
+  // (src/app/p/[token]/actions.ts) e de responderOrcamentoPublico
+  // (src/app/o/[token]/actions.ts): sem sessão de usuário aqui, busca a
+  // assinatura da gráfica DONA do pedido pelo graficaId e aplica
+  // assinaturaEstaLiberada direto, devolvendo erro amigável sem detalhe de
+  // billing. Antes do rate limit e dos updateMany: falha rápido, sem gastar
+  // tentativa do rate limit nem escrever no banco à toa.
+  const assinatura = await prisma.assinaturaGrafica.findUnique({
+    where: { graficaId: pedido.graficaId },
+  });
+  if (!assinaturaEstaLiberada(assinatura)) {
+    return {
+      ok: false,
+      mensagem: "A assinatura desta gráfica não está ativa no momento — não é possível responder por aqui.",
+    };
   }
 
   // Rate limit (achado da auditoria de 2026-07-26): quem tem o link consegue
@@ -93,10 +128,12 @@ export async function responderArtePublica(
   if (decisao === "APROVADA") {
     // CAS: só aprova se ainda não tinha sido aprovada — evita duplo
     // processamento (duas abas, clique duplo), mesmo padrão de
-    // responderOrcamentoPublico.
+    // responderOrcamentoPublico. arteRespondidaPor grava na MESMA operação
+    // que arteAprovadaEm — nunca num update solto depois, senão dá pra ter
+    // arte aprovada sem nenhum nome associado.
     const resultado = await prisma.pedido.updateMany({
       where: { arteLinkToken: token, arteAprovadaEm: null },
-      data: { arteAprovadaEm: new Date() },
+      data: { arteAprovadaEm: new Date(), arteRespondidaPor: nome },
     });
     if (resultado.count === 0) {
       return { ok: false, mensagem: "Esta arte já foi respondida." };
@@ -124,7 +161,7 @@ export async function responderArtePublica(
 
     const resultado = await prisma.pedido.updateMany({
       where: { arteLinkToken: token, arteAprovadaEm: null },
-      data: { arteComentarioCliente: comentario },
+      data: { arteComentarioCliente: comentario, arteRespondidaPor: nome },
     });
     if (resultado.count === 0) {
       return { ok: false, mensagem: "Esta arte já foi respondida." };

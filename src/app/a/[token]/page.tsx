@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { formatoInstanteRealComHora } from "@/lib/data";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Logo } from "@/components/Logo";
@@ -58,10 +59,12 @@ export default async function ArtePublicaPage({
 
         {pedido.arteAprovadaEm ? (
           <p className="text-sm text-emerald-600 dark:text-emerald-400">
-            Você aprovou esta arte.
+            {pedido.arteRespondidaPor
+              ? `Aprovada por ${pedido.arteRespondidaPor} em ${formatoInstanteRealComHora.format(pedido.arteAprovadaEm)}.`
+              : "Esta arte foi aprovada."}
           </p>
         ) : (
-          <RespostaArtePublica token={token} />
+          <RespostaArtePublica token={token} nomeSugerido={pedido.orcamento.contatoNome} />
         )}
       </main>
     </div>

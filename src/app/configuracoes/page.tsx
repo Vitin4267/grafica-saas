@@ -25,6 +25,12 @@ export default async function ConfiguracoesPage() {
     where: { graficaId: usuario.graficaId },
     select: { comissaoVendedorBase: true, custoTintaPorMl: true },
   });
+  // unidadePadraoDimensao mora em Grafica (não em ParametrosGrafica): não é
+  // um parâmetro do motor de precificação, é só a unidade de entrada/exibição
+  // de medida (ver src/lib/unidade-dimensao.ts). usuario.grafica já vem
+  // carregado por exigirUsuarioAutenticado (include: usuario.grafica), então
+  // não precisa de outra query.
+  const unidadePadraoDimensao = usuario.grafica.unidadePadraoDimensao;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -52,6 +58,7 @@ export default async function ConfiguracoesPage() {
           parametros={parametros}
           comissaoVendedorBase={comissaoVendedorBase}
           custoTintaPorMl={custoTintaPorMl ? Number(custoTintaPorMl) : null}
+          unidadePadraoDimensao={unidadePadraoDimensao}
         />
       </main>
     </div>

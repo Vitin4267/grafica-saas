@@ -4,6 +4,11 @@ import { useActionState, useMemo, useState } from "react";
 import { calcularPreco } from "@/lib/orcamento";
 import { formatoMoeda } from "@/lib/moeda";
 import { gerarChave } from "@/lib/chave-local";
+import {
+  converterParaCm,
+  ROTULO_UNIDADE_DIMENSAO,
+  type UnidadeDimensao,
+} from "@/lib/unidade-dimensao";
 import { Card } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Select";
 import { Input } from "@/components/ui/Input";
@@ -111,8 +116,13 @@ type ItemCarrinho = {
   nome: string;
   categoria: string;
   quantidade: number;
-  larguraCm: number | null;
-  alturaCm: number | null;
+  // Valor DIGITADO na unidade `unidadeDimensao` abaixo — NÃO necessariamente
+  // centímetro (mesma convenção de CamposItemOrcamento.largura/altura). O
+  // servidor (precificarItem, criarOrcamento) converte pra cm de novo; isto
+  // aqui só existe pra reexibir a medida do jeito que foi digitada.
+  largura: number | null;
+  altura: number | null;
+  unidadeDimensao: CamposItemOrcamento["unidadeDimensao"];
   corFrente: number | null;
   corVerso: number | null;
   cores: string | null;
@@ -127,14 +137,22 @@ export function CalculadoraForm({
   itens,
   clientes,
   filiais,
+  unidadePadrao,
 }: {
   itens: ItemVenda[];
   clientes: Cliente[];
   filiais: Filial[];
+  // Grafica.unidadePadraoDimensao — o formulário de item nasce nessa unidade
+  // (mesmo contrato de AdicionarItemForm.tsx). Sem isto o seletor sempre
+  // começaria em cm e a configuração da gráfica não valeria de nada
+  // justamente no fluxo principal de montar orçamento.
+  unidadePadrao: UnidadeDimensao;
 }) {
   const [clienteId, setClienteId] = useState("");
   const [filialId, setFilialId] = useState("");
-  const [campos, setCampos] = useState<CamposItemOrcamento>(() => camposIniciais(itens));
+  const [campos, setCampos] = useState<CamposItemOrcamento>(() =>
+    camposIniciais(itens, unidadePadrao)
+  );
   const [itensCarrinho, setItensCarrinho] = useState<ItemCarrinho[]>([]);
   const [adicionando, setAdicionando] = useState(false);
   const [erroAdicionar, setErroAdicionar] = useState<string | null>(null);
@@ -155,13 +173,26 @@ export function CalculadoraForm({
   const previewSimples = useMemo(() => {
     if (!itemSelecionado || usaMotorAvancado) return null;
     const quantidade = Number(campos.quantidade);
+    // calcularPreco (src/lib/orcamento.ts) só entende centímetro — converte
+    // aqui o valor digitado (que pode estar em mm/cm/m) antes de chamar.
     return calcularPreco({
       precoBase: Number(itemSelecionado.precoVenda),
       quantidade: quantidade || 0,
-      larguraCm: campos.larguraCm ? Number(campos.larguraCm) : null,
-      alturaCm: campos.alturaCm ? Number(campos.alturaCm) : null,
+      larguraCm: campos.largura
+        ? converterParaCm(Number(campos.largura), campos.unidadeDimensao)
+        : null,
+      alturaCm: campos.altura
+        ? converterParaCm(Number(campos.altura), campos.unidadeDimensao)
+        : null,
     });
-  }, [itemSelecionado, usaMotorAvancado, campos.quantidade, campos.larguraCm, campos.alturaCm]);
+  }, [
+    itemSelecionado,
+    usaMotorAvancado,
+    campos.quantidade,
+    campos.largura,
+    campos.altura,
+    campos.unidadeDimensao,
+  ]);
 
   const totalCarrinho = itensCarrinho.reduce((soma, i) => soma + Number(i.precoTotal), 0);
 
@@ -173,8 +204,10 @@ export function CalculadoraForm({
       return;
     }
 
-    const larguraCm = campos.larguraCm ? Number(campos.larguraCm) : null;
-    const alturaCm = campos.alturaCm ? Number(campos.alturaCm) : null;
+    // Valor DIGITADO, na unidade escolhida — NUNCA cm direto. precificarItem
+    // converte pra cm no servidor (nunca confia no que vier do cliente).
+    const largura = campos.largura ? Number(campos.largura) : null;
+    const altura = campos.altura ? Number(campos.altura) : null;
     const corFrente = campos.corFrente !== "" ? Number(campos.corFrente) : null;
     const corVerso = campos.corVerso !== "" ? Number(campos.corVerso) : null;
 
@@ -182,8 +215,9 @@ export function CalculadoraForm({
     const resultado = await precificarItem({
       itemGraficaId: campos.itemGraficaId,
       quantidade,
-      larguraCm,
-      alturaCm,
+      largura,
+      altura,
+      unidadeDimensao: campos.unidadeDimensao,
       corFrente,
       corVerso,
     });
@@ -202,8 +236,9 @@ export function CalculadoraForm({
         nome: resultado.nome,
         categoria: resultado.categoria,
         quantidade,
-        larguraCm,
-        alturaCm,
+        largura,
+        altura,
+        unidadeDimensao: campos.unidadeDimensao,
         corFrente,
         corVerso,
         cores: campos.cores.trim() || null,
@@ -214,7 +249,7 @@ export function CalculadoraForm({
         etiqueta: campos.etiqueta,
       },
     ]);
-    setCampos(camposIniciais(itens));
+    setCampos(camposIniciais(itens, unidadePadrao));
   }
 
   function removerDoCarrinho(chave: string) {
@@ -225,8 +260,9 @@ export function CalculadoraForm({
     itensCarrinho.map((i) => ({
       itemGraficaId: i.itemGraficaId,
       quantidade: i.quantidade,
-      larguraCm: i.larguraCm,
-      alturaCm: i.alturaCm,
+      largura: i.largura,
+      altura: i.altura,
+      unidadeDimensao: i.unidadeDimensao,
       corFrente: i.corFrente,
       corVerso: i.corVerso,
       cores: i.cores,
@@ -373,8 +409,8 @@ export function CalculadoraForm({
                       </p>
                       <p className="text-xs text-slate-500">
                         Qtd: {item.quantidade}
-                        {item.larguraCm && item.alturaCm
-                          ? ` · ${item.larguraCm} × ${item.alturaCm} cm`
+                        {item.largura && item.altura
+                          ? ` · ${item.largura} × ${item.altura} ${ROTULO_UNIDADE_DIMENSAO[item.unidadeDimensao]}`
                           : ""}
                       </p>
                     </div>

@@ -1,12 +1,14 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { formatoMoeda } from "@/lib/moeda";
+import { formatoInstanteRealComHora } from "@/lib/data";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/Badge";
 import { Logo } from "@/components/Logo";
 import { RespostaPublica } from "./RespostaPublica";
 import { EtiquetaResumo } from "@/app/orcamento/[id]/EtiquetaResumo";
+import { converterDeCm, ROTULO_UNIDADE_DIMENSAO } from "@/lib/unidade-dimensao";
 
 const ROTULO_TIPO_PEDIDO: Record<string, string> = {
   MODELO_NOVO: "Modelo novo",
@@ -132,7 +134,9 @@ export default async function OrcamentoPublicoPage({
                 <span>Qtd: {item.quantidade}</span>
                 {item.larguraCm && item.alturaCm && (
                   <span>
-                    {Number(item.larguraCm)} × {Number(item.alturaCm)} cm
+                    {converterDeCm(Number(item.larguraCm), item.unidadeDimensao)} ×{" "}
+                    {converterDeCm(Number(item.alturaCm), item.unidadeDimensao)}{" "}
+                    {ROTULO_UNIDADE_DIMENSAO[item.unidadeDimensao]}
                   </span>
                 )}
                 {item.cores && <span>Cores: {item.cores}</span>}
@@ -157,19 +161,40 @@ export default async function OrcamentoPublicoPage({
           </Button>
         </a>
 
-        {orcamento.status === "ENVIADO" && <RespostaPublica token={token} />}
+        {orcamento.status === "ENVIADO" && (
+          <RespostaPublica token={token} nomeSugerido={orcamento.contatoNome} />
+        )}
         {orcamento.status === "APROVADO" && (
           <p className="text-sm text-emerald-600 dark:text-emerald-400">
-            Você aprovou este orçamento.
+            {orcamento.respostaPublicaNome
+              ? `Aprovado por ${orcamento.respostaPublicaNome}${
+                  orcamento.respostaPublicaEm
+                    ? ` em ${formatoInstanteRealComHora.format(orcamento.respostaPublicaEm)}`
+                    : ""
+                }.`
+              : "Este orçamento foi aprovado."}
           </p>
         )}
         {orcamento.status === "REJEITADO" && (
           <p className="text-sm text-rose-600 dark:text-rose-400">
-            Este orçamento foi recusado.
+            {orcamento.respostaPublicaNome
+              ? `Recusado por ${orcamento.respostaPublicaNome}${
+                  orcamento.respostaPublicaEm
+                    ? ` em ${formatoInstanteRealComHora.format(orcamento.respostaPublicaEm)}`
+                    : ""
+                }.`
+              : "Este orçamento foi recusado."}
           </p>
         )}
+        {/* RASCUNHO: existem links legados gerados antes desta correção (ver
+            gerarLinkPublico em orcamento/[id]/actions.ts, que agora
+            transiciona RASCUNHO→ENVIADO ao gerar o link) — sem esta
+            mensagem, quem abrisse um desses caía numa página sem nenhum
+            botão e nenhuma explicação. */}
         {orcamento.status === "RASCUNHO" && (
-          <p className="text-sm text-slate-500">Aguardando confirmação da gráfica.</p>
+          <p className="text-sm text-slate-500">
+            Este orçamento ainda não foi finalizado pela gráfica — volte a este link em instantes.
+          </p>
         )}
       </main>
     </div>

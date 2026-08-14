@@ -65,6 +65,20 @@ export async function calcularItemOrcamento(
   }
 
   if (itemGrafica.modeloCalculo === "SIMPLES") {
+    // Number(null) é 0, não erro — sem esta guarda, um produto que ficou sem
+    // preço no catálogo (ex: campo limpo por engano numa edição em lote)
+    // gravava o item a R$ 0,00 em silêncio. criarOrcamento/adicionarItem já
+    // filtram precoVenda:{not:null} na própria query antes de chegar aqui,
+    // mas editarOrcamento lê o item de um `include` já carregado (sem esse
+    // filtro) — este é o ponto único por onde os dois passam, então a guarda
+    // mora aqui, não em cada chamador.
+    if (itemGrafica.precoVenda === null) {
+      return {
+        ok: false,
+        mensagem:
+          "Este produto está sem preço de venda configurado no catálogo — configure o preço antes de usar em um orçamento.",
+      };
+    }
     const { precoUnitario, precoTotal } = calcularPreco({
       precoBase: Number(itemGrafica.precoVenda),
       quantidade,

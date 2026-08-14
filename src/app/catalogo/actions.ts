@@ -9,6 +9,18 @@ import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { parseJsonArray } from "@/lib/form-json";
+import { registrarAuditoria } from "@/lib/auditoria";
+import { formatoMoeda } from "@/lib/moeda";
+
+const formatoQuantidade = new Intl.NumberFormat("pt-BR");
+
+function formatarPreco(valor: unknown): string {
+  return valor === null || valor === undefined ? "—" : formatoMoeda.format(Number(valor));
+}
+
+function formatarQuantidade(valor: unknown): string {
+  return valor === null || valor === undefined ? "—" : formatoQuantidade.format(Number(valor));
+}
 
 export type SalvarCatalogoResult = {
   ok: boolean;
@@ -123,6 +135,16 @@ export async function criarItemCatalogo(
     throw erro;
   }
 
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "catalogo.criar_item",
+    entidade: "ItemCatalogo",
+    entidadeId: novoItem.id,
+    descricao: `Item "${nome}" (${categoria}) criado no catálogo`,
+  });
+
   revalidatePath("/catalogo");
   revalidatePath("/orcamento");
 
@@ -200,14 +222,28 @@ export async function salvarCatalogo(
   // linha já existia antes deste salvamento; linha nova não tem concorrência
   // possível, porque nada em produção pode ter baixado um estoque que ainda
   // nem existia).
+  // Campos de preço/estoque incluídos aqui (além de itemCatalogoId/variantes,
+  // já usados pelos sets abaixo) só pra servir de "antes" na auditoria de
+  // preço/estoque montada depois que a transação principal gravar — ver
+  // comentário perto de `resultados` mais abaixo.
   const itensGraficaAtuais = await prisma.itemGrafica.findMany({
     where: { graficaId: usuario.graficaId },
-    select: { itemCatalogoId: true, variantes: { where: { ativo: true }, select: { id: true } } },
+    select: {
+      id: true,
+      itemCatalogoId: true,
+      precoCompra: true,
+      precoVenda: true,
+      estoqueAtual: true,
+      estoqueMinimo: true,
+      perdaFixaPadrao: true,
+      variantes: { where: { ativo: true }, select: { id: true } },
+    },
   });
   const idsComVariante = new Set(
     itensGraficaAtuais.filter((i) => i.variantes.length > 0).map((i) => i.itemCatalogoId)
   );
   const idsComItemGrafica = new Set(itensGraficaAtuais.map((i) => i.itemCatalogoId));
+  const antesPorItemCatalogoId = new Map(itensGraficaAtuais.map((i) => [i.itemCatalogoId, i]));
 
   // Variantes cadastradas inline no próprio catálogo (item ainda não salvo,
   // ver VariantesInlineEditor em CatalogoForm.tsx) — deixa configurar sem
@@ -400,6 +436,63 @@ export async function salvarCatalogo(
   }
 
   const resultados = await prisma.$transaction(operacoes);
+
+  // Preço e estoque: registra o antes/depois de cada item que realmente
+  // mudou. Refeito com uma segunda leitura (em vez de threadar o valor novo
+  // pelo loop de `operacoes` acima) porque item novo, item existente e
+  // compare-and-swap de estoque têm três formatos de operação Prisma
+  // diferentes — comparar o estado final direto do banco cobre os três sem
+  // triplicar a lógica de diff. Melhor esforço, nunca derruba o salvamento
+  // (ver registrarAuditoria).
+  const itensGraficaDepois = await prisma.itemGrafica.findMany({
+    where: { graficaId: usuario.graficaId },
+    select: {
+      id: true,
+      itemCatalogoId: true,
+      precoCompra: true,
+      precoVenda: true,
+      estoqueAtual: true,
+      estoqueMinimo: true,
+      perdaFixaPadrao: true,
+    },
+  });
+  const depoisPorItemCatalogoId = new Map(itensGraficaDepois.map((i) => [i.itemCatalogoId, i]));
+  const CAMPOS_AUDITORIA_CATALOGO = [
+    { campo: "precoCompra" as const, rotulo: "Compra", formatar: formatarPreco },
+    { campo: "precoVenda" as const, rotulo: "Venda", formatar: formatarPreco },
+    { campo: "estoqueAtual" as const, rotulo: "Estoque atual", formatar: formatarQuantidade },
+    { campo: "estoqueMinimo" as const, rotulo: "Estoque mínimo", formatar: formatarQuantidade },
+    { campo: "perdaFixaPadrao" as const, rotulo: "Perda fixa", formatar: formatarQuantidade },
+  ];
+  for (const item of itensCatalogo) {
+    const depois = depoisPorItemCatalogoId.get(item.id);
+    if (!depois || idsComVariante.has(item.id)) continue; // sem ItemGrafica, ou preço/estoque vive na variante
+    const antes = antesPorItemCatalogoId.get(item.id);
+
+    const antesTextos: string[] = [];
+    const depoisTextos: string[] = [];
+    for (const { campo, rotulo, formatar } of CAMPOS_AUDITORIA_CATALOGO) {
+      const textoAntes = formatar(antes?.[campo] ?? null);
+      const textoDepois = formatar(depois[campo]);
+      if (textoAntes !== textoDepois) {
+        antesTextos.push(`${rotulo}: ${textoAntes}`);
+        depoisTextos.push(`${rotulo}: ${textoDepois}`);
+      }
+    }
+    if (antesTextos.length === 0) continue;
+
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "catalogo.editar_item",
+      entidade: "ItemGrafica",
+      entidadeId: depois.id,
+      descricao: `Preço/estoque de "${item.nome}" atualizado`,
+      valorAnterior: antesTextos.join(", "),
+      valorNovo: depoisTextos.join(", "),
+    });
+  }
 
   const itensComEstoqueDivergente = casPendentes
     .filter(({ opIndex }) => (resultados[opIndex] as { count: number }).count === 0)

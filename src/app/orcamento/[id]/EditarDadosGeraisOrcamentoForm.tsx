@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
@@ -46,6 +47,14 @@ export function EditarDadosGeraisOrcamentoForm({
 }) {
   const [state, formAction, isPending] = useActionState(editarDadosGeraisOrcamento, null);
   const [editando, setEditando] = useState(false);
+
+  // Fecha o modo de edição quando a action salva com sucesso: a própria
+  // troca pra visão-resumo (com os valores novos, já que os campos abaixo
+  // são não-controlados) é o sinal de sucesso. Em caso de erro, o form
+  // continua aberto e o Alert de erro logo abaixo aparece normalmente.
+  useAoMudar(state, (state) => {
+    if (state?.ok) setEditando(false);
+  });
 
   const linhas: [string, string][] = [
     dados.vendedor ? (["Vendedor", dados.vendedor] as [string, string]) : null,

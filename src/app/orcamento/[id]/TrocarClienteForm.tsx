@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
@@ -19,6 +20,13 @@ export function TrocarClienteForm({
 }) {
   const [state, formAction, isPending] = useActionState(alterarClienteOrcamento, null);
   const [editando, setEditando] = useState(false);
+
+  // Fecha o select quando a troca de cliente salva com sucesso — volta pro
+  // botão "Trocar cliente", que é o sinal de que a ação terminou. Em caso de
+  // erro, o form continua aberto e o Alert de erro logo abaixo aparece.
+  useAoMudar(state, (state) => {
+    if (state?.ok) setEditando(false);
+  });
 
   if (!editando) {
     return (

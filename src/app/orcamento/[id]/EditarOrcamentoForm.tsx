@@ -8,7 +8,36 @@ import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
 import { CamposEtiquetaOrcamento, type CamposEtiqueta } from "../CamposEtiquetaOrcamento";
+import {
+  converterDeCm,
+  converterParaCm,
+  passoInputDimensao,
+  ROTULO_UNIDADE_DIMENSAO,
+  type UnidadeDimensao,
+} from "@/lib/unidade-dimensao";
 import { editarOrcamento, removerItemOrcamento } from "./actions";
+
+// O banco guarda dimensão sempre em centímetro; a unidade é só entrada e
+// exibição. Aqui o campo visível fica na unidade em que o item FOI CRIADO
+// (OrcamentoItem.unidadeDimensao) e um campo escondido leva o valor já
+// convertido pra cm — assim a action editarOrcamento continua recebendo
+// centímetro puro, como sempre recebeu, sem precisar saber de unidade.
+// Diferente de SeletorItemOrcamento, aqui não há troca de unidade: o item
+// já existe e reabrir a edição tem que mostrar o número que a pessoa
+// digitou lá atrás, não um valor reinterpretado.
+function paraExibicao(valorCm: string, unidade: UnidadeDimensao): string {
+  if (!valorCm) return "";
+  const numero = Number(valorCm);
+  if (!Number.isFinite(numero)) return "";
+  return String(converterDeCm(numero, unidade));
+}
+
+function paraCm(valorExibido: string, unidade: UnidadeDimensao): string {
+  if (!valorExibido) return "";
+  const numero = Number(valorExibido);
+  if (!Number.isFinite(numero)) return "";
+  return String(converterParaCm(numero, unidade));
+}
 
 export function EditarOrcamentoForm({
   orcamentoId,
@@ -17,11 +46,15 @@ export function EditarOrcamentoForm({
   modeloCalculo,
   valoresIniciais,
   podeRemover,
+  unidadeDimensao,
 }: {
   orcamentoId: string;
   orcamentoItemId: string;
   itemNome: string;
   modeloCalculo: "SIMPLES" | "M2" | "OFFSET";
+  // Unidade congelada na criação do item — nunca a padrão atual da gráfica,
+  // pra trocar a configuração não mudar o que já foi orçado.
+  unidadeDimensao: UnidadeDimensao;
   valoresIniciais: {
     quantidade: number;
     larguraCm: string;
@@ -40,8 +73,12 @@ export function EditarOrcamentoForm({
     null
   );
   const usaMotorAvancado = modeloCalculo === "M2" || modeloCalculo === "OFFSET";
-  const [larguraCm, setLarguraCm] = useState(valoresIniciais.larguraCm);
-  const [alturaCm, setAlturaCm] = useState(valoresIniciais.alturaCm);
+  const [largura, setLargura] = useState(() =>
+    paraExibicao(valoresIniciais.larguraCm, unidadeDimensao)
+  );
+  const [altura, setAltura] = useState(() =>
+    paraExibicao(valoresIniciais.alturaCm, unidadeDimensao)
+  );
   const [etiqueta, setEtiqueta] = useState<CamposEtiqueta>(valoresIniciais.etiqueta);
   const [confirmandoRemocao, setConfirmandoRemocao] = useState(false);
 
@@ -103,21 +140,23 @@ export function EditarOrcamentoForm({
         {usaMotorAvancado && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Input
-              label="Largura (cm)"
-              name="larguraCm"
+              label={`Largura (${ROTULO_UNIDADE_DIMENSAO[unidadeDimensao]})`}
               type="number"
+              step={passoInputDimensao(unidadeDimensao)}
               required
-              value={larguraCm}
-              onChange={(e) => setLarguraCm(e.target.value)}
+              value={largura}
+              onChange={(e) => setLargura(e.target.value)}
             />
             <Input
-              label="Altura (cm)"
-              name="alturaCm"
+              label={`Altura (${ROTULO_UNIDADE_DIMENSAO[unidadeDimensao]})`}
               type="number"
+              step={passoInputDimensao(unidadeDimensao)}
               required
-              value={alturaCm}
-              onChange={(e) => setAlturaCm(e.target.value)}
+              value={altura}
+              onChange={(e) => setAltura(e.target.value)}
             />
+            <input type="hidden" name="larguraCm" value={paraCm(largura, unidadeDimensao)} />
+            <input type="hidden" name="alturaCm" value={paraCm(altura, unidadeDimensao)} />
           </div>
         )}
 

@@ -20,7 +20,13 @@ import {
   type StatusOrcamento,
 } from "@/lib/orcamento-status";
 import { verificarProntidaoFiscal } from "@/lib/nota-fiscal";
-import { emitirNfe, consultarNfe, ErroFocusNfe, type AmbienteFocusNfe } from "@/lib/focus-nfe";
+import {
+  emitirNfe,
+  consultarNfe,
+  ErroFocusNfe,
+  type AmbienteFocusNfe,
+  type RespostaFocusNfe,
+} from "@/lib/focus-nfe";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { formatoMoeda } from "@/lib/moeda";
 import { dataInputParaUTC, dataHoraInputParaUTC } from "@/lib/data";
@@ -39,6 +45,12 @@ import { parseJsonArray } from "@/lib/form-json";
 import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
 import { calcularValorBase, calcularComissao } from "@/lib/comissao";
 import { removerArquivo } from "@/lib/billing/armazenamento";
+import { UNIDADES_DIMENSAO, converterParaCm } from "@/lib/unidade-dimensao";
+
+// Nunca confia na unidade que vem do formulário — validada contra as únicas
+// 3 que existem (ver src/lib/unidade-dimensao.ts) antes de converter pra
+// centímetro na fronteira (usada por adicionarItemOrcamento).
+const unidadeDimensaoSchema = z.enum(UNIDADES_DIMENSAO);
 
 // Sinaliza, de dentro de uma transação Serializable, que o orçamento já está
 // no último item — usado só pra abortar a transação com uma mensagem amigável
@@ -725,8 +737,11 @@ export async function adicionarItemOrcamento(
   const orcamentoId = String(formData.get("orcamentoId"));
   const itemGraficaId = String(formData.get("itemGraficaId"));
   const quantidade = Number(formData.get("quantidade"));
-  const larguraCm = formData.get("larguraCm") ? Number(formData.get("larguraCm")) : null;
-  const alturaCm = formData.get("alturaCm") ? Number(formData.get("alturaCm")) : null;
+  // Valor DIGITADO na unidade abaixo — NÃO necessariamente centímetro (ver
+  // SeletorItemOrcamento.tsx). Validado e convertido pra cm mais abaixo,
+  // antes de calcularItemOrcamento.
+  const larguraBruta = formData.get("largura") ? Number(formData.get("largura")) : null;
+  const alturaBruta = formData.get("altura") ? Number(formData.get("altura")) : null;
   // Limites iguais aos de itemEntradaSchema (orcamento/actions.ts), que
   // criarOrcamento já aplica — editarOrcamento/adicionarItemOrcamento não
   // usavam zod aqui e aceitavam string de qualquer tamanho. Com
@@ -740,6 +755,16 @@ export async function adicionarItemOrcamento(
   if (!itemGraficaId || !quantidade || quantidade <= 0 || quantidade > 1_000_000) {
     return { ok: false, mensagem: "Escolha um produto e uma quantidade válida (até 1.000.000 unidades)." };
   }
+
+  // Nunca confia na unidade vinda do formulário — precisa ser uma das 3 que
+  // existem antes de converter pra cm.
+  const unidadeParsed = unidadeDimensaoSchema.safeParse(formData.get("unidadeDimensao"));
+  if (!unidadeParsed.success) {
+    return { ok: false, mensagem: "Unidade de medida inválida." };
+  }
+  const unidadeDimensao = unidadeParsed.data;
+  const larguraCm = larguraBruta !== null ? converterParaCm(larguraBruta, unidadeDimensao) : null;
+  const alturaCm = alturaBruta !== null ? converterParaCm(alturaBruta, unidadeDimensao) : null;
 
   const orcamento = await prisma.orcamento.findFirst({
     where: { id: orcamentoId, graficaId: usuario.graficaId },
@@ -795,6 +820,7 @@ export async function adicionarItemOrcamento(
             quantidade,
             larguraCm,
             alturaCm,
+            unidadeDimensao,
             cores: cores || null,
             acabamento: acabamento || null,
             precoUnitario: resultado.precoUnitario,
@@ -1028,6 +1054,26 @@ export async function gerarLinkPublico(
     });
   }
 
+  // Gerar (ou já ter gerado) o link é o próprio ato de "mandar pro cliente"
+  // nesta tela — o botão que chama esta action fica dentro do card
+  // "Compartilhar com o cliente", seguido de copiar/WhatsApp, nunca de um
+  // fluxo de pré-visualização separado. Sem isto, dava pra gerar o link,
+  // mandar de verdade pro cliente, e ele abrir um orçamento ainda em
+  // RASCUNHO — onde TRANSICOES_VALIDAS só libera responder a partir de
+  // ENVIADO, e a página pública não tinha nenhum botão nem explicação (ver
+  // o/[token]/page.tsx). Só transiciona a partir de RASCUNHO — se já estiver
+  // ENVIADO/APROVADO/REJEITADO, devolve o link sem mexer no status. CAS
+  // (mesmo padrão do resto do arquivo) pra não pisar numa transição
+  // concorrente, ex: vendedor gerando o link enquanto outra aba já avançou
+  // o status por outro caminho.
+  if (TRANSICOES_VALIDAS[orcamento.status as StatusOrcamento]?.includes("ENVIADO")) {
+    await prisma.orcamento.updateMany({
+      where: { id: orcamentoId, status: orcamento.status },
+      data: { status: "ENVIADO" },
+    });
+    revalidatePath("/orcamento");
+  }
+
   const url = `${await resolverOrigemPublica()}/o/${token}`;
 
   revalidatePath(`/orcamento/${orcamentoId}`);
@@ -1162,6 +1208,24 @@ const UNIDADE_FISCAL: Record<string, string> = {
 
 export type EmitirNotaFiscalResult = { ok: boolean; mensagem: string };
 
+// StatusNotaFiscal (schema.prisma) não tem um valor DENEGADO separado — tanto
+// erro_autorizacao (Focus NFe rejeitou os dados, HTTP 422) quanto denegado
+// (a SEFAZ negou a operação, ex.: destinatário com CNPJ irregular) caem em
+// REJEITADA no banco. São problemas diferentes: erro_autorizacao costuma ser
+// corrigível ajustando o cadastro; denegado é um bloqueio fiscal do
+// destinatário que pode exigir regularização fora do sistema antes de
+// reemitir. Prefixamos a mensagem guardada pra que o NotaFiscalCard consiga
+// mostrar esse aviso extra sem precisar de uma coluna nova.
+const PREFIXO_DENEGADO = "SEFAZ denegou:";
+
+function formatarMensagemErroNfe(resposta: RespostaFocusNfe): string | undefined {
+  const mensagem = resposta.mensagemErro ?? resposta.mensagemSefaz;
+  if (resposta.status === "denegado") {
+    return `${PREFIXO_DENEGADO} ${mensagem ?? "motivo não informado pela SEFAZ."}`;
+  }
+  return mensagem;
+}
+
 // Emite a nota fiscal (NF-e) do orçamento via Focus NFe — cada gráfica usa a
 // PRÓPRIA conta/token (ver Configurações → Dados fiscais), nunca uma conta
 // nossa. Só chega até aqui depois do usuário clicar "Emitir nota fiscal" no
@@ -1192,8 +1256,16 @@ export async function emitirNotaFiscal(
   if (orcamento.status !== "APROVADO") {
     return { ok: false, mensagem: "Só é possível emitir nota fiscal de um orçamento aprovado." };
   }
-  if (orcamento.notaFiscal) {
+  if (orcamento.notaFiscal && orcamento.notaFiscal.status !== "REJEITADA") {
     return { ok: false, mensagem: "Este orçamento já tem uma nota fiscal emitida." };
+  }
+  if (orcamento.notaFiscal) {
+    // Nota anterior foi rejeitada (dados inválidos) ou denegada (bloqueio
+    // fiscal do destinatário na SEFAZ) — nos dois casos a Focus NFe nunca
+    // autorizou a nota, então não sobrou nada fiscal pra preservar aqui.
+    // `referencia` é UNIQUE e sempre igual a orcamentoId (ver criação
+    // abaixo), então a nota antiga precisa sair antes de tentarmos de novo.
+    await prisma.notaFiscal.delete({ where: { id: orcamento.notaFiscal.id } });
   }
 
   const dadosFiscais = await prisma.dadosFiscaisGrafica.findUnique({
@@ -1272,7 +1344,7 @@ export async function emitirNotaFiscal(
         chaveAcesso: resposta.chaveNfe,
         xmlUrl: resposta.caminhoXml,
         danfeUrl: resposta.caminhoDanfe,
-        mensagemErro: resposta.mensagemErro ?? resposta.mensagemSefaz,
+        mensagemErro: formatarMensagemErroNfe(resposta),
       },
     });
   } catch (erro) {
@@ -1334,7 +1406,7 @@ export async function atualizarStatusNotaFiscal(
         chaveAcesso: resposta.chaveNfe,
         xmlUrl: resposta.caminhoXml,
         danfeUrl: resposta.caminhoDanfe,
-        mensagemErro: resposta.mensagemErro ?? resposta.mensagemSefaz,
+        mensagemErro: formatarMensagemErroNfe(resposta),
       },
     });
   } catch (erro) {

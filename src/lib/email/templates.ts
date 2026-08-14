@@ -246,6 +246,94 @@ export function templateEstagioResponsavel(
   };
 }
 
+function formatarValorBRL(valor: number): string {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(valor);
+}
+
+// Disparado por responderOrcamentoPublico (src/app/o/[token]/actions.ts)
+// quando o cliente APROVA o orçamento pelo link público. Diferente de
+// templateArteAprovada/templateArteAlteracaoSolicitada (que vão só pro(s)
+// DONO(s) da gráfica), este vai pro VENDEDOR (Orcamento.usuarioId) +
+// DONO(s), deduplicados — decisão do dono do produto: venda fechada é mais
+// urgente que venda perdida, mas o vendedor é quem precisa agir e quem
+// ganha comissão, então ele entra como destinatário principal; donos são
+// garantia de que alguém vê, mesmo com o vendedor fora. respondidoPor é o
+// nome DECLARADO por quem respondeu (Orcamento.respostaPublicaNome — não
+// verificado, ver comentário no schema), por isso escapado como qualquer
+// texto livre vindo de fora. linkOrcamento é a tela AUTENTICADA
+// (/orcamento/[id]), não o link público — quem recebe isto já loga na
+// gráfica.
+export function templateOrcamentoAprovado(
+  graficaNome: string,
+  clienteNome: string,
+  respondidoPor: string,
+  valorTotal: number,
+  linkOrcamento: string
+): { assunto: string; html: string; texto: string } {
+  const valorFormatado = formatarValorBRL(valorTotal);
+  return {
+    assunto: `Orçamento aprovado — ${removerQuebrasDeLinha(clienteNome)} — ${removerQuebrasDeLinha(graficaNome)}`,
+    texto: `${respondidoPor} aprovou o orçamento de ${clienteNome} (${valorFormatado}) pelo link público.\n\nVeja o orçamento em: ${linkOrcamento}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2 style="color: #0f172a;">Orçamento aprovado</h2>
+        <p style="color: #334155;"><strong>${escapeHtml(respondidoPor)}</strong> aprovou o orçamento de <strong>${escapeHtml(clienteNome)}</strong> pelo link público.</p>
+        <p style="color: #0f172a; font-size: 22px; font-weight: 700;">${valorFormatado}</p>
+        <p>
+          <a href="${linkOrcamento}" style="display: inline-block; background: #0d9488; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px;">
+            Ver orçamento
+          </a>
+        </p>
+      </div>
+    `,
+  };
+}
+
+// Disparado por responderOrcamentoPublico quando o cliente RECUSA o
+// orçamento pelo link público. Mesmo destinatário de
+// templateOrcamentoAprovado (vendedor + donos). motivo é
+// Orcamento.respostaPublicaMotivo — texto livre e OPCIONAL preenchido pelo
+// cliente no próprio formulário público (ver comentário do campo no
+// schema); quando vazio, o e-mail precisa dizer isso explicitamente ("não
+// informado") em vez de simplesmente omitir a seção, senão o vendedor não
+// sabe se o cliente não quis dizer o motivo ou se o e-mail perdeu a
+// informação.
+export function templateOrcamentoRecusado(
+  graficaNome: string,
+  clienteNome: string,
+  respondidoPor: string,
+  valorTotal: number,
+  motivo: string,
+  linkOrcamento: string
+): { assunto: string; html: string; texto: string } {
+  const valorFormatado = formatarValorBRL(valorTotal);
+  const motivoTexto = motivo ? motivo : "Não informado.";
+  const motivoHtml = motivo
+    ? escapeHtml(motivo)
+    : `<em style="color: #64748b;">Não informado.</em>`;
+
+  return {
+    assunto: `Orçamento recusado — ${removerQuebrasDeLinha(clienteNome)} — ${removerQuebrasDeLinha(graficaNome)}`,
+    texto: `${respondidoPor} recusou o orçamento de ${clienteNome} (${valorFormatado}) pelo link público.\n\nMotivo informado pelo cliente:\n${motivoTexto}\n\nVeja o orçamento em: ${linkOrcamento}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2 style="color: #0f172a;">Orçamento recusado</h2>
+        <p style="color: #334155;"><strong>${escapeHtml(respondidoPor)}</strong> recusou o orçamento de <strong>${escapeHtml(clienteNome)}</strong> pelo link público.</p>
+        <p style="color: #0f172a; font-size: 22px; font-weight: 700;">${valorFormatado}</p>
+        <p style="color: #334155; margin-bottom: 4px;">Motivo informado pelo cliente:</p>
+        <blockquote style="margin: 0; padding: 12px 16px; border-left: 3px solid #dc2626; background: #fef2f2; color: #0f172a;">
+          ${motivoHtml}
+        </blockquote>
+        <p>
+          <a href="${linkOrcamento}" style="display: inline-block; background: #0d9488; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px;">
+            Ver orçamento
+          </a>
+        </p>
+      </div>
+    `,
+  };
+}
+
 export function templateVerificacaoEmail(codigo: string): {
   assunto: string;
   html: string;

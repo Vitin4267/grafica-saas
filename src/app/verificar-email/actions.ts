@@ -108,7 +108,24 @@ export async function reenviarCodigo(
     return { ok: false, mensagem: MENSAGEM_BLOQUEIO };
   }
 
-  await gerarEEnviarCodigoVerificacao(usuario);
+  // aguardarEnvio: true — diferente do cadastro (que dispara via after() e
+  // não espera o resultado), aqui o usuário já está autenticado, parado na
+  // tela de verificação, e o e-mail é comprovadamente o dele mesmo (sem o
+  // risco de enumeração do "esqueci minha senha", que é genérico de
+  // propósito) — então dá pra esperar o envio de verdade e contar pra ele
+  // se funcionou ou não, em vez de prometer um código que
+  // pode nunca chegar (achado de 2026-08-13: antes disso, essa mensagem
+  // dizia "enviamos" mesmo quando o webhook falhava, e a conta ficava
+  // travada pra sempre na verificação sem nenhuma pista do que houve).
+  const enviado = await gerarEEnviarCodigoVerificacao(usuario, { aguardarEnvio: true });
+
+  if (enviado === false) {
+    return {
+      ok: false,
+      mensagem:
+        "Não conseguimos enviar o e-mail agora. Tente de novo em alguns minutos ou fale com o suporte.",
+    };
+  }
 
   return {
     ok: true,

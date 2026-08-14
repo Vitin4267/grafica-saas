@@ -109,6 +109,7 @@ export default async function OrcamentoPage() {
             }))}
             clientes={clientes}
             filiais={filiais}
+            unidadePadrao={usuario.grafica.unidadePadraoDimensao}
           />
         )}
 

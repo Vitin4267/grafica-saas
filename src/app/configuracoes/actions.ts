@@ -6,6 +6,8 @@ import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
+import { registrarAuditoria } from "@/lib/auditoria";
+import { formatoMoeda } from "@/lib/moeda";
 
 export type SalvarParametrosResult = { ok: boolean; mensagem: string };
 
@@ -22,6 +24,49 @@ const CAMPOS_DECIMAL = [
 ] as const;
 
 const CAMPOS_INTEIRO = [] as const;
+
+// Muda qualquer um destes muda TODO preço futuro da gráfica (ver missão) —
+// por isso o log registra antes/depois de CADA campo alterado, não só "os
+// parâmetros foram salvos".
+const ROTULO_CAMPO_PARAMETRO: Record<(typeof CAMPOS_DECIMAL)[number], string> = {
+  overheadPercent: "Overhead",
+  margemPadrao: "Margem",
+  impostoPercent: "Imposto",
+  comissaoPercent: "Comissão (markup de preço)",
+  taxaFinanceiraPercent: "Taxa financeira",
+  pedidoMinimo: "Pedido mínimo",
+  incrementoArredondamento: "Incremento de arredondamento",
+  margemSegurancaPadrao: "Margem de segurança (nesting)",
+  gapPecasPadrao: "Gap entre peças (nesting)",
+};
+const CAMPOS_PERCENTUAL_PARAMETRO = new Set<(typeof CAMPOS_DECIMAL)[number]>([
+  "overheadPercent",
+  "margemPadrao",
+  "impostoPercent",
+  "comissaoPercent",
+  "taxaFinanceiraPercent",
+  "margemSegurancaPadrao",
+  "gapPecasPadrao",
+]);
+const formatoPercentualParametro = new Intl.NumberFormat("pt-BR", {
+  style: "percent",
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 2,
+});
+function formatarCampoParametro(campo: (typeof CAMPOS_DECIMAL)[number], valor: number): string {
+  return CAMPOS_PERCENTUAL_PARAMETRO.has(campo)
+    ? formatoPercentualParametro.format(valor)
+    : formatoMoeda.format(valor);
+}
+const ROTULO_BASE_COMISSAO: Record<"VALOR" | "LUCRO", string> = {
+  VALOR: "Valor do orçamento",
+  LUCRO: "Lucro (total − custo)",
+};
+const ROTULO_UNIDADE_DIMENSAO: Record<"MM" | "CM" | "M", string> = {
+  MM: "Milímetro",
+  CM: "Centímetro",
+  M: "Metro",
+};
 
 export async function salvarParametros(
   _estadoAnterior: SalvarParametrosResult | null,
@@ -56,6 +101,19 @@ export async function salvarParametros(
   const comissaoVendedorBase = formData.get("comissaoVendedorBase");
   if (comissaoVendedorBase !== "VALOR" && comissaoVendedorBase !== "LUCRO") {
     return { ok: false, mensagem: "Base de cálculo de comissão inválida." };
+  }
+
+  // Unidade de entrada/exibição de medida (ver src/lib/unidade-dimensao.ts)
+  // — mora em Grafica, não em ParametrosGrafica, porque não é um parâmetro
+  // do motor de precificação. Nunca reconverte/altera orçamentos já salvos:
+  // OrcamentoItem.larguraCm/alturaCm continuam sempre em centímetros.
+  const unidadePadraoDimensao = formData.get("unidadePadraoDimensao");
+  if (
+    unidadePadraoDimensao !== "MM" &&
+    unidadePadraoDimensao !== "CM" &&
+    unidadePadraoDimensao !== "M"
+  ) {
+    return { ok: false, mensagem: "Unidade padrão de dimensão inválida." };
   }
 
   for (const campo of CAMPOS_INTEIRO) {
@@ -96,10 +154,65 @@ export async function salvarParametros(
     };
   }
 
+  const [parametrosAntes, graficaAntes] = await Promise.all([
+    prisma.parametrosGrafica.findUnique({ where: { graficaId: usuario.graficaId } }),
+    prisma.grafica.findUnique({
+      where: { id: usuario.graficaId },
+      select: { unidadePadraoDimensao: true },
+    }),
+  ]);
+
   await prisma.parametrosGrafica.update({
     where: { graficaId: usuario.graficaId },
     data: { ...dados, comissaoVendedorBase, custoTintaPorMl },
   });
+
+  await prisma.grafica.update({
+    where: { id: usuario.graficaId },
+    data: { unidadePadraoDimensao },
+  });
+
+  const antesTextos: string[] = [];
+  const depoisTextos: string[] = [];
+
+  for (const campo of CAMPOS_DECIMAL) {
+    const antes = parametrosAntes ? Number(parametrosAntes[campo]) : null;
+    const depois = dados[campo];
+    if (antes === null || antes !== depois) {
+      antesTextos.push(`${ROTULO_CAMPO_PARAMETRO[campo]}: ${antes === null ? "—" : formatarCampoParametro(campo, antes)}`);
+      depoisTextos.push(`${ROTULO_CAMPO_PARAMETRO[campo]}: ${formatarCampoParametro(campo, depois)}`);
+    }
+  }
+
+  if ((parametrosAntes?.comissaoVendedorBase ?? "VALOR") !== comissaoVendedorBase) {
+    antesTextos.push(`Base de comissão: ${ROTULO_BASE_COMISSAO[parametrosAntes?.comissaoVendedorBase ?? "VALOR"]}`);
+    depoisTextos.push(`Base de comissão: ${ROTULO_BASE_COMISSAO[comissaoVendedorBase]}`);
+  }
+
+  const custoTintaAntes = parametrosAntes?.custoTintaPorMl != null ? Number(parametrosAntes.custoTintaPorMl) : null;
+  if (custoTintaAntes !== custoTintaPorMl) {
+    antesTextos.push(`Custo do ml de tinta: ${custoTintaAntes === null ? "—" : formatoMoeda.format(custoTintaAntes)}`);
+    depoisTextos.push(`Custo do ml de tinta: ${custoTintaPorMl === null ? "—" : formatoMoeda.format(custoTintaPorMl)}`);
+  }
+
+  if ((graficaAntes?.unidadePadraoDimensao ?? "CM") !== unidadePadraoDimensao) {
+    antesTextos.push(`Unidade padrão: ${ROTULO_UNIDADE_DIMENSAO[graficaAntes?.unidadePadraoDimensao ?? "CM"]}`);
+    depoisTextos.push(`Unidade padrão: ${ROTULO_UNIDADE_DIMENSAO[unidadePadraoDimensao]}`);
+  }
+
+  if (antesTextos.length > 0) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "configuracoes.salvar_parametros",
+      entidade: "ParametrosGrafica",
+      entidadeId: usuario.graficaId,
+      descricao: "Parâmetros de precificação atualizados",
+      valorAnterior: antesTextos.join("; "),
+      valorNovo: depoisTextos.join("; "),
+    });
+  }
 
   revalidatePath("/configuracoes");
   return { ok: true, mensagem: "Parâmetros salvos com sucesso!" };

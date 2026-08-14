@@ -8,7 +8,7 @@ Multi-tenant quoting and management SaaS for Brazilian print shops (gráficas) �
 
 ## What the product does
 
-A print shop signs up, configures its catalog (simple products, offset printing, raw-material pricing tables by weight), and builds quotes with automatically calculated pricing. An approved quote becomes a production order, with inventory control, salesperson commission, invoice issuance, and recurring billing via Stripe. True multi-tenancy: each shop only ever sees its own data, with multiple users and granular per-module permissions.
+A print shop signs up, configures its catalog (simple products, offset printing, raw-material pricing tables by weight), and builds quotes with automatically calculated pricing. An approved quote becomes a production order, with inventory control, salesperson commission, invoice issuance, and recurring billing via Stripe. Each production stage can have an assigned staff member, notified by email and confirming with a one-click link — no login required. True multi-tenancy: each shop only ever sees its own data, with multiple users and granular per-module permissions.
 
 ## Stack
 
@@ -26,7 +26,8 @@ A print shop signs up, configures its catalog (simple products, offset printing,
 - **Audited multi-tenant isolation** — every authenticated query is scoped by `graficaId`; a dedicated code audit confirmed no mutation escapes that pattern.
 - **Resilient billing** — subscription state synced via idempotent Stripe webhooks, guarded against concurrent double-subscription, plus a manual courtesy override that no billing event can overwrite.
 - **Layered security** — per-IP/email rate limiting across the entire auth flow, argon2id hashing, constant-time comparison against user enumeration, CSP/HSTS, and Origin-checked Server Actions (CSRF). A full whitebox security audit (Jul 2026) covering multi-tenant isolation, auth, authorization, billing, and injection surfaces found and fixed several real issues — including a genuine concurrency gap in the brute-force counter that an earlier fix had only partially closed — each one verified with real concurrency tests against the database and a passive OWASP ZAP scan, not just code review.
-- **213 automated tests**: pure business logic (pricing, permissions, validation, status) plus targeted integration tests against a real database for the concurrency-sensitive paths (rate limiting, checkout deduplication, tenant isolation).
+- **Reliability under real concurrency** — a follow-up multi-agent audit (Aug 2026) targeted at production-usage failure modes, not just attacks, found and fixed several silent-corruption paths: stock validation that checked each order line independently instead of aggregating shared raw materials (could drive inventory negative with a single request, no race required), a catalog save that could overwrite a concurrent production stock deduction, and a commission that was never generated on one of the two quote-approval paths. Also hardened webhook dispatch against the serverless instance freezing mid-request, and gave Postgres Serializable transactions an explicit timeout instead of the driver default.
+- **328 automated tests**: pure business logic (pricing, permissions, validation, status) plus targeted integration tests against a real database for the concurrency-sensitive paths (rate limiting, checkout deduplication, tenant isolation, stock compare-and-swap).
 
 ## Running locally
 
