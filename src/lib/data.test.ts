@@ -10,6 +10,7 @@ import {
   inicioMesAtualBrasilia,
   formatoInstanteReal,
   formatoInstanteRealComHora,
+  hojeBrasiliaInputValue,
 } from "./data";
 
 describe("dataInputParaUTC", () => {
@@ -122,5 +123,21 @@ describe("formatoInstanteRealComHora", () => {
     const formatado = formatoInstanteRealComHora.format(instante);
     expect(formatado).toContain("31/07/2026");
     expect(formatado).toContain("22:00");
+  });
+});
+
+describe("hojeBrasiliaInputValue", () => {
+  it("já virou o dia seguinte em Brasília (madrugada) mesmo sem ter virado em UTC", () => {
+    // 2026-08-01T02:30:00Z = 2026-07-31T23:30 em Brasília — ainda dia 31.
+    expect(hojeBrasiliaInputValue(new Date("2026-08-01T02:30:00.000Z"))).toBe("2026-07-31");
+  });
+
+  it("madrugada em Brasília já é o novo dia mesmo que UTC ainda esteja no dia anterior", () => {
+    // 2026-07-31T04:00:00Z = 2026-07-31T01:00 em Brasília — já dia 31, não 30.
+    expect(hojeBrasiliaInputValue(new Date("2026-07-31T04:00:00.000Z"))).toBe("2026-07-31");
+  });
+
+  it("formato bate com o que dataInputParaUTC/dataParaInputValue esperam (AAAA-MM-DD)", () => {
+    expect(hojeBrasiliaInputValue(new Date("2026-12-31T14:00:00.000Z"))).toBe("2026-12-31");
   });
 });

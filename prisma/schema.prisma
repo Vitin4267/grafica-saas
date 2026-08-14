@@ -67,6 +67,8 @@ model Grafica {
   comissoes             Comissao[]
   filiais               Filial[]
   arquivos              ArquivoArmazenado[]
+  categoriasCusto       CategoriaCusto[]
+  custosPedido          CustoPedido[]
 
   @@map("graficas")
 }
@@ -1465,9 +1467,65 @@ model Pedido {
   orcamento Orcamento @relation(fields: [orcamentoId], references: [id])
 
   movimentacoes MovimentacaoEstoque[]
+  custos        CustoPedido[]
 
   @@index([graficaId])
   @@map("pedidos")
+}
+
+// Categoria de custo configurável por gráfica, usada pra lançar custos reais
+// de produção num pedido específico (papel, ferramental/faca, laminação,
+// clichê, impressão, frete, mão de obra, retrabalho etc — inspirado na
+// planilha real de controle de uma gráfica cliente). NUNCA fixo no código —
+// mesmo princípio já aplicado a UnidadeDimensao: cada gráfica tem seu
+// próprio jeito de separar custo, então isto é só um rótulo configurável,
+// com um conjunto padrão sugerido na primeira vez que a gráfica abre a tela
+// (ver bootstrapCategoriasCustoPadrao), nunca um enum travado.
+model CategoriaCusto {
+  id        String   @id @default(cuid())
+  graficaId String
+  nome      String
+  ordem     Int      @default(0)
+  ativa     Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  grafica Grafica       @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  custos  CustoPedido[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("categorias_custo")
+}
+
+// Um lançamento de custo REAL incorrido num pedido específico — diferente do
+// custo ESTIMADO pelo motor de precificação (OrcamentoItem.breakdown), que é
+// uma previsão feita na hora do orçamento. Isto aqui é o gasto de verdade,
+// lançado manualmente durante/depois da produção (ex: "paguei R$ 60 de faca
+// nova pra este pedido"). Alimenta lucro por pedido (receita do orçamento
+// aprovado − soma destes custos) e o gráfico de custos por categoria do Meu
+// Negócio. graficaId duplicado de pedido.graficaId de propósito — mesmo
+// padrão usado em Comissao/MovimentacaoEstoque, evita join extra pra
+// escopar por tenant em toda query de relatório.
+model CustoPedido {
+  id               String   @id @default(cuid())
+  graficaId        String
+  pedidoId         String
+  categoriaCustoId String
+  valor            Decimal  @db.Decimal(12, 2)
+  observacao       String?
+  createdAt        DateTime @default(now())
+
+  grafica        Grafica        @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  pedido         Pedido         @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  // Restrict: não deixa apagar uma categoria ainda referenciada por um
+  // lançamento de custo — a gráfica precisa desativar (ativa=false) em vez
+  // de excluir, preservando o histórico de custos já lançados.
+  categoriaCusto CategoriaCusto @relation(fields: [categoriaCustoId], references: [id], onDelete: Restrict)
+
+  @@index([graficaId])
+  @@index([pedidoId])
+  @@index([categoriaCustoId])
+  @@map("custos_pedido")
 }
 
 // Atribuição gráfica-wide (não por Pedido individual) de quem é responsável

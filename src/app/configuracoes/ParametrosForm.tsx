@@ -191,6 +191,24 @@ export function ParametrosForm({
       <Card className="flex items-center justify-between gap-4 p-6">
         <div>
           <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Categorias de custo
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            As categorias (papel, laminação, mão de obra...) usadas pra
+            lançar o custo real de cada pedido em Produção e calcular o
+            lucro por pedido.
+          </p>
+        </div>
+        <Link href="/configuracoes/categorias-custo">
+          <Button type="button" variant="outline">
+            Gerenciar categorias
+          </Button>
+        </Link>
+      </Card>
+
+      <Card className="flex items-center justify-between gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
             Dados fiscais
           </h2>
           <p className="mt-1 text-sm text-slate-500">

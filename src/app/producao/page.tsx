@@ -74,8 +74,22 @@ export default async function ProducaoPage() {
           itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
         },
       },
+      custos: {
+        include: { categoriaCusto: true },
+        orderBy: { createdAt: "desc" },
+      },
     },
     orderBy: { createdAt: "asc" },
+  });
+
+  // Buscada UMA VEZ fora do loop de pedidos (evita N+1) — só as ATIVAS, pra
+  // popular o select de "lançar custo" de cada linha. Categorias inativas
+  // continuam aparecendo nos custos já lançados (join via categoriaCusto
+  // acima), só somem da lista de opções pra lançar um custo NOVO.
+  const categoriasCustoAtivas = await prisma.categoriaCusto.findMany({
+    where: { graficaId: usuario.graficaId, ativa: true },
+    orderBy: { ordem: "asc" },
+    select: { id: true, nome: true },
   });
 
   // Quem só entrou aqui pela responsabilidade de etapa (sem PRODUCAO.podeVer
@@ -117,26 +131,52 @@ export default async function ProducaoPage() {
           />
         ) : (
           <Card className="divide-y divide-slate-100 dark:divide-slate-800">
-            {pedidos.map((pedido) => (
-              <PedidoLinha
-                key={pedido.id}
-                pedidoId={pedido.id}
-                orcamentoId={pedido.orcamentoId}
-                clienteNome={pedido.orcamento.cliente.nome}
-                itensResumo={pedido.orcamento.itens
-                  .map((i) => i.itemGrafica.itemCatalogo.nome)
-                  .join(", ")}
-                status={pedido.status}
-                podeEditar={podeEditar}
-                souResponsavelDesteStatus={etapasResponsavel.has(pedido.status)}
-                chipAtraso={chipAtraso(pedido.prazoEntrega, pedido.status)}
-                arteUrl={pedido.arteUrl}
-                arteAprovadaEm={pedido.arteAprovadaEm}
-                arteRespondidaPor={pedido.arteRespondidaPor}
-                arteComentarioCliente={pedido.arteComentarioCliente}
-                linkArtePublico={pedido.arteLinkToken ? `${origem}/a/${pedido.arteLinkToken}` : null}
-              />
-            ))}
+            {pedidos.map((pedido) => {
+              // Mesma fórmula de lucroDoPedido (src/lib/custo-pedido.ts):
+              // receita = total do orçamento aprovado, custo = soma dos
+              // custos REAIS já lançados. Calculado aqui (reaproveitando os
+              // dados já trazidos pelo findMany acima) em vez de chamar
+              // lucroDoPedido por pedido — isso evitaria N+1 queries (uma
+              // por pedido) já que o mesmo dado já está carregado.
+              const custoTotalPedido = pedido.custos.reduce(
+                (soma, custo) => soma + Number(custo.valor),
+                0
+              );
+              const lucroPedido =
+                pedido.custos.length > 0
+                  ? Number(pedido.orcamento.total) - custoTotalPedido
+                  : null;
+
+              return (
+                <PedidoLinha
+                  key={pedido.id}
+                  pedidoId={pedido.id}
+                  orcamentoId={pedido.orcamentoId}
+                  clienteNome={pedido.orcamento.cliente.nome}
+                  itensResumo={pedido.orcamento.itens
+                    .map((i) => i.itemGrafica.itemCatalogo.nome)
+                    .join(", ")}
+                  status={pedido.status}
+                  podeEditar={podeEditar}
+                  souResponsavelDesteStatus={etapasResponsavel.has(pedido.status)}
+                  chipAtraso={chipAtraso(pedido.prazoEntrega, pedido.status)}
+                  arteUrl={pedido.arteUrl}
+                  arteAprovadaEm={pedido.arteAprovadaEm}
+                  arteRespondidaPor={pedido.arteRespondidaPor}
+                  arteComentarioCliente={pedido.arteComentarioCliente}
+                  linkArtePublico={pedido.arteLinkToken ? `${origem}/a/${pedido.arteLinkToken}` : null}
+                  categoriasCustoAtivas={categoriasCustoAtivas}
+                  custos={pedido.custos.map((custo) => ({
+                    id: custo.id,
+                    categoriaNome: custo.categoriaCusto.nome,
+                    valor: Number(custo.valor),
+                    observacao: custo.observacao,
+                    createdAt: custo.createdAt.toISOString(),
+                  }))}
+                  lucro={lucroPedido}
+                />
+              );
+            })}
           </Card>
         )}
       </main>

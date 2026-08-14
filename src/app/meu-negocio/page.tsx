@@ -96,12 +96,21 @@ export default async function MeuNegocioPage() {
       />
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-10">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Meu Negócio</h1>
-          <p className="mt-1 text-slate-500">
-            Um resumo rápido de como sua gráfica está indo, com atalhos pra cada
-            área.
-          </p>
+        <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Meu Negócio</h1>
+            <p className="mt-1 text-slate-500">
+              Um resumo rápido de como sua gráfica está indo, com atalhos pra cada
+              área.
+            </p>
+          </div>
+          <Link
+            href="/meu-negocio/relatorios"
+            className="flex items-center gap-1 text-sm font-medium text-teal-700 hover:underline dark:text-teal-400"
+          >
+            Ver relatórios completos
+            <ArrowRightIcon className="h-3.5 w-3.5" />
+          </Link>
         </div>
 
         {/* Hero: faturamento do mês */}

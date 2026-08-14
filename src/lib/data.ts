@@ -158,3 +158,16 @@ export const formatoInstanteRealComHora = new Intl.DateTimeFormat("pt-BR", {
   dateStyle: "short",
   timeStyle: "medium",
 });
+
+// "Hoje" no calendário de Brasília, já no formato "AAAA-MM-DD" que um <input
+// type="date"> espera como defaultValue — pra pré-preencher filtro de período
+// (ex: relatórios de Meu Negócio) sem herdar o fuso do processo (ver
+// explicação de INSTANTE REAL acima: `new Date().toISOString()` seria UTC e,
+// nas ~3h finais de cada dia em Brasília, mostraria o dia seguinte como
+// "hoje"). en-CA formata datas como AAAA-MM-DD nativamente.
+const FORMATO_HOJE_BRASILIA = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Sao_Paulo",
+});
+export function hojeBrasiliaInputValue(agora: Date = new Date()): string {
+  return FORMATO_HOJE_BRASILIA.format(agora);
+}

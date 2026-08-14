@@ -275,6 +275,91 @@ export async function cancelarPedido(
   };
 }
 
+export type CustoPedidoResult = { ok: boolean; mensagem: string };
+
+// Lança um custo REAL (não estimado) num pedido — alimenta lucroDoPedido
+// (src/lib/custo-pedido.ts) e o card de custos em PedidoLinha. Confere
+// isolamento de tenant duas vezes: o pedido precisa pertencer à gráfica do
+// usuário logado E a categoria também, senão um pedidoId/categoriaCustoId
+// de outra gráfica vindo direto do form (sem passar pela UI) seria aceito.
+export async function lancarCustoPedido(
+  _estadoAnterior: CustoPedidoResult | null,
+  formData: FormData
+): Promise<CustoPedidoResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "PRODUCAO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar a produção." };
+  }
+
+  const pedidoId = String(formData.get("pedidoId"));
+  const categoriaCustoId = String(formData.get("categoriaCustoId"));
+  const valor = Number(formData.get("valor"));
+  const observacao = String(formData.get("observacao") || "").trim().slice(0, 500) || null;
+
+  if (!Number.isFinite(valor) || valor <= 0) {
+    return { ok: false, mensagem: "Informe um valor maior que zero." };
+  }
+
+  const pedido = await prisma.pedido.findFirst({
+    where: { id: pedidoId, graficaId: usuario.graficaId },
+  });
+  if (!pedido) {
+    return { ok: false, mensagem: "Pedido não encontrado." };
+  }
+
+  const categoria = await prisma.categoriaCusto.findFirst({
+    where: { id: categoriaCustoId, graficaId: usuario.graficaId },
+  });
+  if (!categoria) {
+    return { ok: false, mensagem: "Categoria de custo não encontrada." };
+  }
+
+  await prisma.custoPedido.create({
+    data: {
+      graficaId: usuario.graficaId,
+      pedidoId,
+      categoriaCustoId,
+      valor,
+      observacao,
+    },
+  });
+
+  revalidatePath("/producao");
+  revalidatePath("/meu-negocio");
+  return { ok: true, mensagem: "Custo lançado." };
+}
+
+// Exclui um lançamento de custo real — mesma checagem de isolamento de
+// tenant de lancarCustoPedido, agora sobre o próprio CustoPedido (que já
+// guarda graficaId direto, ver comentário no schema).
+export async function excluirCustoPedido(
+  _estadoAnterior: CustoPedidoResult | null,
+  formData: FormData
+): Promise<CustoPedidoResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "PRODUCAO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar a produção." };
+  }
+
+  const custoId = String(formData.get("custoId"));
+  const custo = await prisma.custoPedido.findFirst({
+    where: { id: custoId, graficaId: usuario.graficaId },
+  });
+  if (!custo) {
+    return { ok: false, mensagem: "Custo não encontrado." };
+  }
+
+  await prisma.custoPedido.delete({ where: { id: custoId } });
+
+  revalidatePath("/producao");
+  revalidatePath("/meu-negocio");
+  return { ok: true, mensagem: "Custo removido." };
+}
+
 export type EnviarArteResult = { ok: boolean; mensagem: string };
 
 // Sobe o arquivo de arte de um pedido pro Blob (access "public" — a arte é

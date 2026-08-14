@@ -16,7 +16,16 @@ import {
   PainelConfirmacaoImpressao,
 } from "./IniciarImpressaoConfirm";
 import { EnviarArteForm } from "./EnviarArteForm";
+import { CustosPedidoSecao } from "./CustosPedidoSecao";
 import { cancelarPedido, avancarPedido } from "./actions";
+
+type Custo = {
+  id: string;
+  categoriaNome: string;
+  valor: number;
+  observacao: string | null;
+  createdAt: string;
+};
 
 // Linha inteira é um client component (não só o botão de cancelar) pra poder
 // colocar o ConfirmarExclusao como bloco abaixo da linha inteira quando
@@ -36,6 +45,9 @@ export function PedidoLinha({
   arteComentarioCliente,
   arteRespondidaPor = null,
   linkArtePublico,
+  categoriasCustoAtivas,
+  custos,
+  lucro,
 }: {
   pedidoId: string;
   orcamentoId: string;
@@ -59,6 +71,11 @@ export function PedidoLinha({
   // ainda não passa esta prop — ver relatório final.
   arteRespondidaPor?: string | null;
   linkArtePublico: string | null;
+  // Só as categorias ATIVAS da gráfica (buscadas uma vez em producao/page.tsx,
+  // fora do loop de pedidos) — populam o select de "lançar custo" abaixo.
+  categoriasCustoAtivas: { id: string; nome: string }[];
+  custos: Custo[];
+  lucro: number | null;
 }) {
   const [state, formAction, isPending] = useActionState(cancelarPedido, null);
   const [confirmando, setConfirmando] = useState(false);
@@ -141,6 +158,14 @@ export function PedidoLinha({
           Arte aprovada por {arteRespondidaPor} em {formatoInstanteRealComHora.format(arteAprovadaEm)}
         </p>
       )}
+
+      <CustosPedidoSecao
+        pedidoId={pedidoId}
+        categoriasCustoAtivas={categoriasCustoAtivas}
+        custos={custos}
+        lucro={lucro}
+        podeEditar={podeEditar}
+      />
 
       {iniciarImpressao.estado.tipo === "confirmando" && (
         <PainelConfirmacaoImpressao
