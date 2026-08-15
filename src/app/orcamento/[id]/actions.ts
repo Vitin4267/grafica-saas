@@ -628,7 +628,13 @@ export async function enviarArteOrcamento(
     });
   } catch (erro) {
     await cancelarReserva(reserva.arquivoId);
-    throw erro;
+    // console.error sempre roda, mesmo sem SENTRY_DSN configurado (ver
+    // src/lib/auditoria.ts) — mesmo cuidado de enviarArte (producao/actions.ts).
+    console.error("[enviarArteOrcamento] falha ao subir arquivo no Vercel Blob", { graficaId: usuario.graficaId, orcamentoId }, erro);
+    return {
+      ok: false,
+      mensagem: "Não foi possível enviar o arquivo agora. Tente de novo em instantes.",
+    };
   }
   await confirmarArquivo(reserva.arquivoId, { url: blob.url, pathname: blob.pathname });
 

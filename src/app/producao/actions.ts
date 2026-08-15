@@ -553,7 +553,17 @@ export async function enviarArte(
     });
   } catch (erro) {
     await cancelarReserva(reserva.arquivoId);
-    throw erro;
+    // console.error sempre roda, mesmo sem SENTRY_DSN configurado (ver
+    // src/lib/auditoria.ts) — sem isso, uma falha aqui (ex: token do store
+    // público do Blob ausente/errado em produção, ver .env.example) só
+    // aparecia pro usuário como a tela genérica de erro do Next, sem
+    // NENHUM rastro de qual foi o erro real, nem pra quem olhasse os logs
+    // da Vercel depois.
+    console.error("[enviarArte] falha ao subir arquivo no Vercel Blob", { graficaId: usuario.graficaId, pedidoId }, erro);
+    return {
+      ok: false,
+      mensagem: "Não foi possível enviar o arquivo agora. Tente de novo em instantes.",
+    };
   }
   await confirmarArquivo(reserva.arquivoId, { url: blob.url, pathname: blob.pathname });
 
