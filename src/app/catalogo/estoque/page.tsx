@@ -13,6 +13,8 @@ import { Card } from "@/components/ui/Card";
 import { ArrowLeftIcon, BoxIcon } from "@/components/icons";
 import { formatoInstanteReal } from "@/lib/data";
 
+const formatoQuantidadeAbs = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 4 });
+
 function chipUrgencia(diasRestantes: number | null, abaixoDoMinimo: boolean) {
   if (diasRestantes !== null && diasRestantes <= 7) {
     return (
@@ -105,6 +107,8 @@ export default async function PrevisaoEstoquePage() {
                   <p className="font-medium text-slate-900 dark:text-white">{item.nome}</p>
                   <p className="mt-0.5 text-xs text-slate-500">
                     {item.categoria} · {item.estoqueAtual} {item.unidade} em estoque
+                    {item.quantidadePorEmbalagem !== null &&
+                      ` (≈ ${formatoQuantidadeAbs.format(item.estoqueAtual * item.quantidadePorEmbalagem)} unidades)`}
                     {item.consumoMedioDiario !== null &&
                       ` · consome ~${item.consumoMedioDiario.toFixed(2)} ${item.unidade}/dia`}
                   </p>

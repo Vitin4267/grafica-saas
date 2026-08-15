@@ -58,6 +58,11 @@ export type PrevisaoMateriaPrima = PrevisaoCalculada & {
   estoqueAtual: number;
   estoqueMinimo: number | null;
   abaixoDoMinimo: boolean;
+  // Fator de conversão informativo (quantas unidades individuais tem em cada
+  // unidade cadastrada) — só existe a nível de item, nunca de variante (ver
+  // ItemGrafica.quantidadePorEmbalagem no schema). null quando não
+  // cadastrado ou quando esta linha é uma variante.
+  quantidadePorEmbalagem: number | null;
 };
 
 // Previsão disponível vem primeiro, ordenada por urgência; abaixo do mínimo

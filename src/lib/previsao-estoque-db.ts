@@ -45,7 +45,8 @@ export async function calcularPrevisaoEstoque(graficaId: string): Promise<Previs
     unidade: string,
     estoqueAtualBruto: number,
     estoqueMinimoBruto: number | null,
-    movimentacoes: { quantidade: unknown; createdAt: Date }[]
+    movimentacoes: { quantidade: unknown; createdAt: Date }[],
+    quantidadePorEmbalagem: number | null = null
   ): PrevisaoMateriaPrima => {
     const previsao = calcularPrevisaoItem(
       estoqueAtualBruto,
@@ -60,6 +61,7 @@ export async function calcularPrevisaoEstoque(graficaId: string): Promise<Previs
       estoqueAtual: estoqueAtualBruto,
       estoqueMinimo: estoqueMinimoBruto,
       abaixoDoMinimo: estoqueMinimoBruto !== null && estoqueAtualBruto <= estoqueMinimoBruto,
+      quantidadePorEmbalagem,
       ...previsao,
     };
   };
@@ -97,7 +99,8 @@ export async function calcularPrevisaoEstoque(graficaId: string): Promise<Previs
         item.itemCatalogo.unidade ?? "",
         Number(item.estoqueAtual),
         item.estoqueMinimo !== null ? Number(item.estoqueMinimo) : null,
-        item.movimentacoes
+        item.movimentacoes,
+        item.quantidadePorEmbalagem !== null ? Number(item.quantidadePorEmbalagem) : null
       )
     );
   }

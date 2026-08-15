@@ -29,6 +29,7 @@ import { CustoProducaoCard } from "./CustoProducaoCard";
 import { NotaFiscalCard } from "./NotaFiscalCard";
 import { PrimeiroOrcamentoCelebracao } from "./PrimeiroOrcamentoCelebracao";
 import { EditarDadosGeraisOrcamentoForm } from "./EditarDadosGeraisOrcamentoForm";
+import { OrcamentoEnviarArteForm } from "./OrcamentoEnviarArteForm";
 import { EtapasOrcamentoForm } from "./EtapasOrcamentoForm";
 import { ETAPAS_ORCAMENTO, type ChaveEtapaOrcamento } from "@/lib/orcamento-etapas";
 import { EtiquetaResumo } from "./EtiquetaResumo";
@@ -254,6 +255,13 @@ export default async function OrcamentoDetalhePage({
             }}
           />
         </Card>
+
+        {orcamento.status === "RASCUNHO" && (
+          <Card className="mb-6 p-5">
+            <p className="mb-3 text-sm font-medium text-slate-500">Arte do orçamento</p>
+            <OrcamentoEnviarArteForm orcamentoId={orcamento.id} arteUrl={orcamento.arteUrl} />
+          </Card>
+        )}
 
         {orcamento.status === "RASCUNHO" ? (
           <div className="mb-6 flex flex-col gap-4">

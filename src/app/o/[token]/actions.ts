@@ -228,6 +228,11 @@ export async function responderOrcamentoPublico(
           orcamentoId: orcamento.id,
           status: "FILA",
           producaoLinkToken: randomBytes(20).toString("base64url"),
+          // Copia a URL como referência (mesmo comportamento do caminho
+          // autenticado em src/app/orcamento/[id]/actions.ts) — o arquivo
+          // continua "pertencendo" contabilmente ao orçamento, nunca cria
+          // uma linha nova de razão pro Pedido.
+          arteUrl: orcamento.arteUrl,
         },
       });
 

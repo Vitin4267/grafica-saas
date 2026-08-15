@@ -43,6 +43,8 @@ export default async function OrcamentoPublicoPage({
     notFound();
   }
 
+  const ehPdf = orcamento.arteUrl?.toLowerCase().endsWith(".pdf") ?? false;
+
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 dark:bg-slate-950">
       <header className="border-b border-slate-200 bg-white px-6 py-4 dark:border-slate-800 dark:bg-slate-900">
@@ -147,6 +149,26 @@ export default async function OrcamentoPublicoPage({
             </div>
           ))}
         </Card>
+
+        {orcamento.arteUrl && (
+          <Card className="mb-6 flex flex-col items-center gap-4 p-5">
+            <p className="self-start text-sm font-medium text-slate-500">Arte</p>
+            {ehPdf ? (
+              <a href={orcamento.arteUrl} target="_blank" rel="noopener noreferrer" className="w-full">
+                <Button type="button" variant="outline" className="w-full">
+                  Abrir arte (PDF)
+                </Button>
+              </a>
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element -- arquivo vem de URL externa (Vercel Blob), fora do domínio otimizável pelo next/image
+              <img
+                src={orcamento.arteUrl}
+                alt="Arte do orçamento"
+                className="max-h-[70vh] w-full rounded-lg object-contain"
+              />
+            )}
+          </Card>
+        )}
 
         <Card className="mb-6 flex items-center justify-between p-5">
           <p className="text-sm font-medium text-slate-500">Total</p>

@@ -728,6 +728,14 @@ model ItemGrafica {
   precoVenda             Decimal?  @db.Decimal(12, 2)
   estoqueAtual           Decimal?  @db.Decimal(12, 4)
   estoqueMinimo          Decimal?  @db.Decimal(12, 4)
+  // Quantas unidades individuais tem em cada "unidade cadastrada" deste item
+  // (ex: unidade=PACOTE, quantidadePorEmbalagem=500 → 1 pacote = 500
+  // etiquetas). Puramente informativo: mostra a conversão ao lado do estoque
+  // nas telas de catálogo, mas NÃO muda a unidade em que
+  // entrada/saída/ajuste são lançados nem como ficha técnica/custo calculam
+  // (estoqueAtual continua sendo "quantas unidades cadastradas", igual hoje).
+  // null = sem conversão configurada (comportamento atual, sem mudança).
+  quantidadePorEmbalagem Decimal?  @db.Decimal(12, 4)
   // Quanto desse material é perdido por CALIBRAGEM toda vez que uma produção
   // entra em impressão (FILA→IMPRESSAO) — fixo, não escala com a quantidade
   // do pedido (1 unidade ou 1000 = mesma perda). Diferente de
@@ -1131,6 +1139,15 @@ model Orcamento {
   // Nota interna — nunca aparece no PDF nem no link público (ver
   // src/lib/pdf/mapear-dados.ts), só na tela autenticada da gráfica.
   observacoes        String?
+
+  // Arte anexada já na criação do orçamento, pro cliente ver junto da
+  // proposta (ver /o/[token]). Só visualização — a APROVAÇÃO de arte de
+  // verdade continua em Pedido.arteUrl/arteAprovadaEm, sem mudança nenhuma
+  // nesse fluxo. Editável só enquanto o orçamento está em RASCUNHO (mesma
+  // regra dos outros campos editáveis desta tela). Quando o orçamento vira
+  // Pedido, este valor é copiado pra Pedido.arteUrl automaticamente (ver
+  // orcamento/[id]/actions.ts e o/[token]/actions.ts).
+  arteUrl String?
 
   // Rastreamento de etapas de produção (data+hora combinados, mesmo padrão
   // de arteAprovadaEm) + nome de quem é responsável — não precisa ser o
@@ -1841,6 +1858,7 @@ model TentativaRespostaOrcamento {
 
 enum TipoArquivoArmazenado {
   ARTE_PEDIDO
+  ARTE_ORCAMENTO
   LOGO_GRAFICA
   ANALISE_TINTA // reservado pra Cálculo de gasto de tinta com IA
 }

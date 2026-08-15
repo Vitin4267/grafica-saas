@@ -317,6 +317,53 @@ export async function salvarNcm(
   return { ok: true, mensagem: "NCM salvo com sucesso!" };
 }
 
+export type SalvarQuantidadePorEmbalagemResult = SalvarConfigResult;
+
+const quantidadePorEmbalagemSchema = z.coerce
+  .number()
+  .min(0, "Quantidade por embalagem não pode ser negativa.")
+  .optional();
+
+// Puramente informativo (ver AGENTS.md do módulo/plano da feature): esse
+// fator de conversão nunca é lido por lançamento de estoque, ficha técnica
+// ou custo — só multiplica estoqueAtual na exibição. estoqueAtual continua
+// significando exatamente "quantas unidades cadastradas" como hoje.
+export async function salvarQuantidadePorEmbalagem(
+  _estadoAnterior: SalvarQuantidadePorEmbalagemResult | null,
+  formData: FormData
+): Promise<SalvarQuantidadePorEmbalagemResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CATALOGO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar o catálogo." };
+  }
+  const itemGraficaId = String(formData.get("itemGraficaId"));
+
+  const itemGrafica = await prisma.itemGrafica.findFirst({
+    where: { id: itemGraficaId, graficaId: usuario.graficaId },
+  });
+  if (!itemGrafica) {
+    return { ok: false, mensagem: "Item não encontrado." };
+  }
+
+  // String vazia = "sem conversão configurada" (null), não erro de validação.
+  const bruto = formData.get("quantidadePorEmbalagem");
+  const brutoLimpo = typeof bruto === "string" && bruto.trim() === "" ? undefined : bruto;
+  const parsed = quantidadePorEmbalagemSchema.safeParse(brutoLimpo);
+  if (!parsed.success) {
+    return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Valor inválido." };
+  }
+
+  await prisma.itemGrafica.update({
+    where: { id: itemGraficaId },
+    data: { quantidadePorEmbalagem: parsed.data ?? null },
+  });
+
+  revalidatePath(`/catalogo/${itemGraficaId}`);
+  return { ok: true, mensagem: "Salvo." };
+}
+
 export async function salvarConfiguracaoAcabamento(
   _estadoAnterior: SalvarConfigResult | null,
   formData: FormData

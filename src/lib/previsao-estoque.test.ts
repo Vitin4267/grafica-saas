@@ -52,6 +52,7 @@ describe("ordenarPorUrgencia", () => {
       estoqueAtual: 10,
       estoqueMinimo: null,
       abaixoDoMinimo: false,
+      quantidadePorEmbalagem: null,
       consumoMedioDiario: null,
       diasRestantes: null,
       dataPrevistaEsgotamento: null,

@@ -19,6 +19,7 @@ import { TabelaGramaturaForm } from "./TabelaGramaturaForm";
 import { VariantesMateriaPrimaForm } from "./VariantesMateriaPrimaForm";
 import { NcmForm } from "./NcmForm";
 import { LancarMovimentacaoForm } from "./LancarMovimentacaoForm";
+import { QuantidadePorEmbalagemForm } from "./QuantidadePorEmbalagemForm";
 import { ROTULOS_TIPO_MOVIMENTACAO } from "@/lib/estoque-manual";
 import { ROTULO_UNIDADE } from "@/lib/unidade";
 import { formatoMoeda } from "@/lib/moeda";
@@ -120,6 +121,17 @@ export default async function ConfiguracaoItemPage({
         })
       : [];
   const nomePorCriadorId = new Map(criadores.map((c) => [c.id, c.nome]));
+
+  // Rótulo da unidade cadastrada (ex: "pacote") e a conversão pra unidades
+  // individuais quando o fator de conversão está cadastrado — puramente
+  // informativo, ver QuantidadePorEmbalagemForm.
+  const unidadeRotulo = itemGrafica.itemCatalogo.unidade
+    ? (ROTULO_UNIDADE[itemGrafica.itemCatalogo.unidade] ?? "")
+    : "";
+  const conversaoEmbalagem =
+    itemGrafica.quantidadePorEmbalagem !== null && itemGrafica.estoqueAtual !== null
+      ? Number(itemGrafica.estoqueAtual) * Number(itemGrafica.quantidadePorEmbalagem)
+      : null;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -247,12 +259,21 @@ export default async function ConfiguracaoItemPage({
               />
             )}
 
+            <QuantidadePorEmbalagemForm
+              itemGraficaId={itemGrafica.id}
+              unidadeRotulo={unidadeRotulo}
+              valorAtual={itemGrafica.quantidadePorEmbalagem?.toString() ?? ""}
+            />
+            {conversaoEmbalagem !== null && (
+              <p className="-mt-3 text-sm text-slate-500">
+                ≈ {formatoQuantidadeAbs.format(conversaoEmbalagem)} unidades em estoque
+              </p>
+            )}
+
             <LancarMovimentacaoForm
               itemGraficaId={itemGrafica.id}
               nomeItem={itemGrafica.itemCatalogo.nome}
-              unidadeRotulo={
-                itemGrafica.itemCatalogo.unidade ? (ROTULO_UNIDADE[itemGrafica.itemCatalogo.unidade] ?? "") : ""
-              }
+              unidadeRotulo={unidadeRotulo}
               precoCompraAtual={itemGrafica.precoCompra?.toString() ?? ""}
               estoqueAtual={itemGrafica.estoqueAtual?.toString() ?? ""}
               variantes={itemGrafica.variantes.map((v) => ({
