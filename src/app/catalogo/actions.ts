@@ -1,5 +1,6 @@
 "use server";
 
+import * as Sentry from "@sentry/nextjs";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -11,6 +12,7 @@ import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { parseJsonArray } from "@/lib/form-json";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { formatoMoeda } from "@/lib/moeda";
+import { calcularDeltaAjusteInventario } from "@/lib/estoque-manual";
 
 const formatoQuantidade = new Intl.NumberFormat("pt-BR");
 
@@ -318,7 +320,12 @@ export async function salvarCatalogo(
   // estoque caiu, pra conferir o resultado depois que a transação roda e
   // avisar o usuário se algum ficou de fora.
   const operacoes: Prisma.PrismaPromise<unknown>[] = [];
-  const casPendentes: { nome: string; opIndex: number }[] = [];
+  // itemGraficaId/original/novo guardados aqui pra, depois que a transação
+  // rodar, gerar a MovimentacaoEstoque de AJUSTE_INVENTARIO só pros CAS que
+  // de fato aplicaram (ver bloco depois de `resultados` mais abaixo) — sem
+  // isso, editar "estoque atual" aqui sobrescrevia o número sem deixar
+  // rastro (ver fase-custo-real.md §4.3).
+  const casPendentes: { nome: string; opIndex: number; itemGraficaId: string; original: number | null; novo: number | null }[] = [];
 
   for (const item of itensCatalogo) {
     const selecionado = formData.get(`sel_${item.id}`) === "on";
@@ -422,7 +429,13 @@ export async function salvarCatalogo(
     // que aconteceu no meio-tempo (e, se aquele pedido for cancelado depois,
     // o estorno soma em cima do estoque real, não de um valor "resetado").
     const original = numeroOriginalOuNulo(formData.get(`estoqueAtualOriginal_${item.id}`));
-    casPendentes.push({ nome: item.nome, opIndex: operacoes.length });
+    casPendentes.push({
+      nome: item.nome,
+      opIndex: operacoes.length,
+      itemGraficaId: antesPorItemCatalogoId.get(item.id)!.id,
+      original,
+      novo: novoEstoqueAtual,
+    });
     operacoes.push(
       prisma.itemGrafica.updateMany({
         where: {
@@ -497,6 +510,36 @@ export async function salvarCatalogo(
   const itensComEstoqueDivergente = casPendentes
     .filter(({ opIndex }) => (resultados[opIndex] as { count: number }).count === 0)
     .map(({ nome }) => nome);
+
+  // Editar "estoque atual" aqui (fora da tela de lançamento manual em
+  // catalogo/[itemGraficaId]) passa a gerar AJUSTE_INVENTARIO em vez de só
+  // sobrescrever o campo silenciosamente (fase-custo-real.md §4.3) — mesma
+  // conta de delta usada no lançamento manual (calcularDeltaAjusteInventario).
+  // Só gera pros CAS que de fato aplicaram (count > 0) e cujo antes/depois
+  // são ambos números reais: original null (item nunca teve controle
+  // numérico) ou novo null (usuário desligou o controle) não são "ajuste",
+  // são liga/desliga de controle de estoque. Melhor-esforço, igual
+  // registrarAuditoria acima: nunca derruba um salvamento que já commitou.
+  for (const pendente of casPendentes) {
+    const sucesso = (resultados[pendente.opIndex] as { count: number }).count > 0;
+    if (!sucesso || pendente.original === null || pendente.novo === null) continue;
+    const delta = calcularDeltaAjusteInventario(pendente.original, pendente.novo);
+    if (delta === 0) continue;
+    try {
+      await prisma.movimentacaoEstoque.create({
+        data: {
+          itemGraficaId: pendente.itemGraficaId,
+          tipo: "AJUSTE_INVENTARIO",
+          quantidade: delta,
+          motivo: "Ajuste de contagem física via cadastro do catálogo",
+          criadoPorId: usuario.id,
+        },
+      });
+    } catch (erro) {
+      Sentry.captureException(erro, { extra: { itemGraficaId: pendente.itemGraficaId } });
+      console.error("[catalogo] falha ao registrar ajuste de inventário", pendente.itemGraficaId, erro);
+    }
+  }
 
   revalidatePath("/catalogo");
   revalidatePath("/orcamento");

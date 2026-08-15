@@ -14,7 +14,10 @@ import { lancarCustoPedido, excluirCustoPedido } from "./actions";
 type Custo = {
   id: string;
   categoriaNome: string;
-  valor: number;
+  // null quando o usuário não tem CUSTOS.podeVer (ver prop podeVer abaixo) —
+  // producao/page.tsx já nem envia o valor real pro client nesse caso, isso
+  // aqui é a segunda trava (renderização), não a única.
+  valor: number | null;
   observacao: string | null;
   createdAt: string;
 };
@@ -22,7 +25,18 @@ type Custo = {
 // Mesmo padrão de LinhaPagamento (src/app/orcamento/[id]/PagamentosCard.tsx):
 // linha própria com seu useActionState de exclusão, pra cada item poder
 // confirmar/excluir sem afetar o estado dos irmãos.
-function LinhaCusto({ custo, podeEditar }: { custo: Custo; podeEditar: boolean }) {
+function LinhaCusto({
+  custo,
+  podeEditarCustos,
+  podeVer,
+}: {
+  custo: Custo;
+  podeEditarCustos: boolean;
+  // Controla só a EXIBIÇÃO do valor/categoria — quem lança custo sem
+  // CUSTOS.podeVer continua podendo excluir o que ELE lançou (podeEditarCustos
+  // já garante isso), só não vê quanto os outros lançamentos valem.
+  podeVer: boolean;
+}) {
   const [state, formAction, isPending] = useActionState(excluirCustoPedido, null);
   const [confirmando, setConfirmando] = useState(false);
 
@@ -30,15 +44,23 @@ function LinhaCusto({ custo, podeEditar }: { custo: Custo; podeEditar: boolean }
     if (state && !state.ok) setConfirmando(false);
   });
 
+  const valorVisivel = podeVer && custo.valor !== null;
+
   return (
     <div className="flex flex-col gap-2 p-3">
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-slate-800 dark:text-slate-100">
-            {formatoMoeda.format(custo.valor)}
-            <span className="ml-2 text-xs font-normal text-slate-500">
-              {custo.categoriaNome}
-            </span>
+            {valorVisivel ? (
+              <>
+                {formatoMoeda.format(custo.valor as number)}
+                <span className="ml-2 text-xs font-normal text-slate-500">
+                  {custo.categoriaNome}
+                </span>
+              </>
+            ) : (
+              custo.categoriaNome
+            )}
           </p>
           <p className="text-xs text-slate-500">
             {new Date(custo.createdAt).toLocaleDateString("pt-BR")}
@@ -46,7 +68,7 @@ function LinhaCusto({ custo, podeEditar }: { custo: Custo; podeEditar: boolean }
           </p>
           {state && !state.ok && <p className="mt-1 text-xs text-rose-600">{state.mensagem}</p>}
         </div>
-        {podeEditar && !confirmando && (
+        {podeEditarCustos && !confirmando && (
           <button
             type="button"
             onClick={() => setConfirmando(true)}
@@ -58,7 +80,11 @@ function LinhaCusto({ custo, podeEditar }: { custo: Custo; podeEditar: boolean }
       </div>
       {confirmando && (
         <ConfirmarExclusao
-          pergunta={`Remover o custo de ${formatoMoeda.format(custo.valor)} (${custo.categoriaNome})? Essa ação não pode ser desfeita.`}
+          pergunta={
+            valorVisivel
+              ? `Remover o custo de ${formatoMoeda.format(custo.valor as number)} (${custo.categoriaNome})? Essa ação não pode ser desfeita.`
+              : `Remover este lançamento de ${custo.categoriaNome}? Essa ação não pode ser desfeita.`
+          }
           onCancelar={() => setConfirmando(false)}
           formAction={formAction}
           campos={{ custoId: custo.id }}
@@ -80,7 +106,8 @@ export function CustosPedidoSecao({
   categoriasCustoAtivas,
   custos,
   lucro,
-  podeEditar,
+  podeEditarCustos,
+  podeVer,
 }: {
   pedidoId: string;
   categoriasCustoAtivas: { id: string; nome: string }[];
@@ -88,9 +115,15 @@ export function CustosPedidoSecao({
   // Lucro já calculado do lado do servidor (receita do orçamento − soma dos
   // custos), ver producao/page.tsx — nunca recalculado aqui, pra não
   // duplicar a lógica de src/lib/custo-pedido.ts em dois lugares. Vem null
-  // quando ainda não há nenhum custo lançado (nada a calcular ainda).
+  // quando ainda não há nenhum custo lançado OU quando o usuário não tem
+  // CUSTOS.podeVer (producao/page.tsx já não envia o valor real no 2º caso).
   lucro: number | null;
-  podeEditar: boolean;
+  // Lançar/excluir custo (CUSTOS.podeEditar). Renomeado de "podeEditar" pra
+  // deixar explícito que não é mais sobre PRODUCAO (ver fase-custo-real.md
+  // §2.6 / PR-1) — quem só tem isso lança retrabalho sem ver valores.
+  podeEditarCustos: boolean;
+  // Ver valor de cada custo + lucro do pedido (CUSTOS.podeVer).
+  podeVer: boolean;
 }) {
   const [state, formAction, isPending] = useActionState(lancarCustoPedido, null);
 
@@ -98,7 +131,7 @@ export function CustosPedidoSecao({
     <details className="group rounded-xl border border-slate-200 dark:border-slate-800">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-600 marker:content-none hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800/50">
         <span>Custos{custos.length > 0 && ` (${custos.length})`}</span>
-        {lucro !== null && (
+        {podeVer && lucro !== null && (
           <span
             className={`text-sm font-semibold ${
               lucro >= 0
@@ -115,12 +148,12 @@ export function CustosPedidoSecao({
         {custos.length > 0 && (
           <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
             {custos.map((custo) => (
-              <LinhaCusto key={custo.id} custo={custo} podeEditar={podeEditar} />
+              <LinhaCusto key={custo.id} custo={custo} podeEditarCustos={podeEditarCustos} podeVer={podeVer} />
             ))}
           </div>
         )}
 
-        {podeEditar &&
+        {podeEditarCustos &&
           (categoriasCustoAtivas.length > 0 ? (
             <form action={formAction} className="flex flex-col gap-3">
               <input type="hidden" name="pedidoId" value={pedidoId} />

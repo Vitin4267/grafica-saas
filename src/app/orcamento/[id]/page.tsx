@@ -20,6 +20,7 @@ import { StatusBadge } from "@/components/ui/Badge";
 import { ArrowLeftIcon } from "@/components/icons";
 import { OrcamentoAcoes } from "./OrcamentoAcoes";
 import { EditarOrcamentoForm } from "./EditarOrcamentoForm";
+import { DescontoItemForm } from "./DescontoItemForm";
 import { AdicionarItemForm } from "./AdicionarItemForm";
 import { TrocarClienteForm } from "./TrocarClienteForm";
 import { CompartilharOrcamento } from "./CompartilharOrcamento";
@@ -275,6 +276,15 @@ export default async function OrcamentoDetalhePage({
                     corVerso: item.corVerso?.toString() ?? "",
                     etiqueta: etiquetaParaCampos(item.etiqueta),
                   }}
+                />
+                <DescontoItemForm
+                  orcamentoItemId={item.id}
+                  precoSugeridoUnitario={item.precoSugeridoUnitario?.toString() ?? null}
+                  precoUnitarioAtual={item.precoUnitario.toString()}
+                  descontoTipo={item.descontoTipo}
+                  descontoValor={item.descontoValor?.toString() ?? null}
+                  motivoDesconto={item.motivoDesconto}
+                  aprovadoPorId={item.aprovadoPorId}
                 />
                 <AnaliseTintaCard
                   orcamentoItemId={item.id}

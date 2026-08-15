@@ -9,6 +9,7 @@ export const MODULOS_PERMISSAO: { valor: ModuloPermissao; rotulo: string }[] = [
   { valor: "CLIENTES", rotulo: "Clientes" },
   { valor: "CATALOGO", rotulo: "Catálogo" },
   { valor: "PRODUCAO", rotulo: "Produção" },
+  { valor: "CUSTOS", rotulo: "Custos (lançar e ver lucro do pedido)" },
   { valor: "FINANCEIRO", rotulo: "Financeiro" },
   { valor: "CONFIGURACOES", rotulo: "Configurações" },
 ];

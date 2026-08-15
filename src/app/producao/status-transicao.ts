@@ -5,6 +5,7 @@ import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import type { StatusPedido } from "@/generated/prisma/enums";
+import { D } from "@/lib/pricing/decimal";
 import { buscarWebhookAutomacao, dispararEventoAutomacao } from "@/lib/webhook-automacao";
 import { normalizarTelefone } from "@/lib/telefone";
 import { cruzouLimiteMinimo } from "@/lib/estoque-critico";
@@ -88,6 +89,26 @@ export function buscarOrcamentoParaBaixa(orcamentoId: string) {
               },
             },
           },
+          // Acabamentos anexados ao item (ex: laminação) — mesma forma de
+          // include que itemGrafica.fichaTecnica acima, só que agora pela
+          // ficha técnica do SERVIÇO (ItemGrafica tipo SERVICO), não do
+          // produto. Aditivo: um acabamento sem ficha técnica cadastrada
+          // (o caso mais comum ainda) vem com `fichaTecnica: []` e não
+          // participa de nenhuma baixa (ver fase-custo-real.md, PR-7).
+          acabamentos: {
+            include: {
+              itemGrafica: {
+                include: {
+                  fichaTecnica: {
+                    include: {
+                      materiaPrima: { include: { itemCatalogo: true } },
+                      variante: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -98,6 +119,107 @@ export function buscarOrcamentoParaBaixa(orcamentoId: string) {
 // de calibragem de verdade chega perto disso, então ele só existe pra pegar
 // erro de digitação grosseiro (ex: um zero a mais) sem incomodar o uso normal.
 const PERDA_MAXIMA = 1_000_000;
+
+// Snapshot de custo no momento da baixa (fase "custo real", §1.1 do plano):
+// lê o preço de compra vigente da matéria-prima (ou da variante, se
+// varianteId estiver setado) e o congela na MovimentacaoEstoque — nunca
+// recalculado depois, mesmo que o preço do cadastro mude. `null` quando o
+// preço de compra não está cadastrado: a UI mostra "—", nunca R$0,00 (zero
+// mentiria que o custo foi apurado como zero). VarianteMateriaPrima não tem
+// `updatedAt` no schema, então precoReferenciaEm só é preenchido pro caminho
+// sem variante.
+function snapshotCustoFicha(
+  ficha: {
+    varianteId: string | null;
+    materiaPrima: { precoCompra: Prisma.Decimal | null; updatedAt: Date };
+    variante: { precoCompra: Prisma.Decimal } | null;
+  },
+  quantidade: number
+): { custoUnitario: string | null; custoTotal: string | null; precoReferenciaEm: Date | null } {
+  const precoCompra = ficha.varianteId ? (ficha.variante?.precoCompra ?? null) : ficha.materiaPrima.precoCompra;
+  if (precoCompra === null) {
+    return { custoUnitario: null, custoTotal: null, precoReferenciaEm: null };
+  }
+  const custoUnitarioDec = new D(precoCompra.toString());
+  const custoTotalDec = custoUnitarioDec.times(quantidade);
+  return {
+    custoUnitario: custoUnitarioDec.toFixed(4),
+    custoTotal: custoTotalDec.toFixed(2),
+    precoReferenciaEm: ficha.varianteId ? null : ficha.materiaPrima.updatedAt,
+  };
+}
+
+// Custo automático da baixa de produção (fase "custo real", §1.4/§3.2 do
+// plano): cria um CustoPedido origem=CONSUMO_ESTOQUE atrelado 1:1 à
+// MovimentacaoEstoque recém-criada — movimentacaoEstoqueId é @unique no
+// schema, e é isso que garante idempotência (nunca duas vezes pra mesma
+// movimentação, porque cada MovimentacaoEstoque nasce com id novo a cada
+// chamada; um duplo clique nem chega até aqui, é barrado antes pelo CAS de
+// status). Resolve a categoria em cascata (matéria-prima → padrão da
+// gráfica → primeira categoria ativa, com cache pra não repetir a query de
+// fallback a cada material do mesmo pedido) e nunca soma em cima de um
+// custo manual já lançado na mesma categoria — só marca
+// possivelDuplicidade=true pra UI avisar depois. Defensivo: se a gráfica
+// não tiver NENHUMA categoria de custo (não deveria acontecer —
+// garantirCategoriasCustoPadrao roda no bootstrap), loga e desiste sem
+// lançar exceção — a baixa de estoque em si NUNCA pode falhar por causa
+// disto.
+async function criarCustoAutomaticoConsumo(
+  tx: Prisma.TransactionClient,
+  params: {
+    graficaId: string;
+    pedidoId: string;
+    movimentacaoId: string;
+    custoTotal: Prisma.Decimal | null;
+    categoriaCustoIdMaterial: string | null;
+    categoriaCustoConsumoPadraoId: string | null;
+    categoriaFallbackCache: { valor: string | null | undefined };
+  }
+): Promise<void> {
+  // Movimentação sem preço de custo cadastrado (precoCompra null na
+  // matéria-prima/variante) não gera custo automático — nada a lançar, e
+  // nada de inventar R$0,00 (zero mentiria que o custo foi apurado).
+  if (params.custoTotal === null) return;
+
+  let categoriaCustoId = params.categoriaCustoIdMaterial ?? params.categoriaCustoConsumoPadraoId;
+  if (!categoriaCustoId) {
+    if (params.categoriaFallbackCache.valor === undefined) {
+      const categoria = await tx.categoriaCusto.findFirst({
+        where: { graficaId: params.graficaId, ativa: true },
+        orderBy: { ordem: "asc" },
+        select: { id: true },
+      });
+      params.categoriaFallbackCache.valor = categoria?.id ?? null;
+    }
+    categoriaCustoId = params.categoriaFallbackCache.valor;
+  }
+  if (!categoriaCustoId) {
+    console.error(
+      `[custo-automatico] Gráfica ${params.graficaId} sem nenhuma CategoriaCusto ativa — CustoPedido automático da movimentação ${params.movimentacaoId} (pedido ${params.pedidoId}) não foi criado.`
+    );
+    return;
+  }
+
+  // §1.4: custo automático nunca sobrescreve/soma calado em cima de custo
+  // humano — só marca possivelDuplicidade pra UI resolver.
+  const existeManualMesmaCategoria = await tx.custoPedido.findFirst({
+    where: { pedidoId: params.pedidoId, categoriaCustoId, origem: "MANUAL" },
+    select: { id: true },
+  });
+
+  await tx.custoPedido.create({
+    data: {
+      graficaId: params.graficaId,
+      pedidoId: params.pedidoId,
+      categoriaCustoId,
+      origem: "CONSUMO_ESTOQUE",
+      movimentacaoEstoqueId: params.movimentacaoId,
+      valor: params.custoTotal,
+      valorCalculado: params.custoTotal,
+      possivelDuplicidade: existeManualMesmaCategoria !== null,
+    },
+  });
+}
 
 const linhaPerdaSchema = z.object({
   chave: z.string().min(1),
@@ -149,14 +271,30 @@ export async function avancarStatusPedido(
     if (pedido.status === "FILA" && proximoStatus === "IMPRESSAO") {
       // Leitura só-consulta (ficha técnica não muda por causa de uma corrida
       // desta função) — fica FORA da transação de propósito, pra manter a
-      // transação curta e reduzir chance de conflito de serialização.
-      const orcamentoComItens = await buscarOrcamentoParaBaixa(pedido.orcamentoId);
+      // transação curta e reduzir chance de conflito de serialização. O
+      // mesmo vale pra ParametrosGrafica: os dois flags da fase "custo
+      // real" (custoAutomaticoConsumo/categoriaCustoConsumoPadraoId) não
+      // mudam por causa desta transição.
+      const [orcamentoComItens, parametrosGrafica] = await Promise.all([
+        buscarOrcamentoParaBaixa(pedido.orcamentoId),
+        prisma.parametrosGrafica.findUnique({ where: { graficaId: pedido.graficaId } }),
+      ]);
+      // Sem linha em ParametrosGrafica ainda (gráfica nunca abriu
+      // Configurações): trata como default do schema (true) — nunca como
+      // "desligado por omissão".
+      const custoAutomaticoConsumo = parametrosGrafica?.custoAutomaticoConsumo ?? true;
+      const categoriaCustoConsumoPadraoId = parametrosGrafica?.categoriaCustoConsumoPadraoId ?? null;
+      // Cache do fallback "primeira categoria ativa da gráfica" — compartilhado
+      // entre todas as chamadas de criarCustoAutomaticoConsumo desta transição,
+      // pra não repetir a mesma query por material quando nem o material nem a
+      // gráfica têm categoria configurada.
+      const categoriaFallbackCache: { valor: string | null | undefined } = { valor: undefined };
 
       // Mesma granularidade (item do orçamento × item da ficha técnica) que
       // previsaoBaixaEstoque mostra na tela de confirmação — precisa bater
       // exatamente pra validar que a confirmação enviada cobre tudo que vai
       // ser descontado.
-      const itensParaBaixa = (orcamentoComItens?.itens ?? []).flatMap((item) =>
+      const itensParaBaixaProduto = (orcamentoComItens?.itens ?? []).flatMap((item) =>
         item.itemGrafica.fichaTecnica
           .filter(
             (ficha) =>
@@ -182,6 +320,41 @@ export async function avancarStatusPedido(
             };
           })
       );
+
+      // Mesma lógica acima, mas pela ficha técnica dos SERVIÇOS anexados
+      // como acabamento (ex: laminação consumindo BOPP) — a chave usa o id
+      // do OrcamentoItemAcabamento (não do OrcamentoItem "pai") porque um
+      // mesmo item de orçamento pode ter mais de um acabamento, e o
+      // multiplicador é `acabamento.qtdBase` (o snapshot da base de cobrança
+      // do acabamento, ex: folhas impressas que passaram pela laminação),
+      // não `item.quantidade`. Aditivo: acabamento sem ficha técnica
+      // cadastrada gera `[]` e não entra aqui.
+      const itensParaBaixaAcabamento = (orcamentoComItens?.itens ?? []).flatMap((item) =>
+        item.acabamentos.flatMap((acabamento) =>
+          acabamento.itemGrafica.fichaTecnica
+            .filter(
+              (ficha) =>
+                (ficha.variante ? ficha.variante.estoqueAtual : ficha.materiaPrima.estoqueAtual) !== null
+            )
+            .map((ficha) => {
+              const perdaPadrao = ficha.variante
+                ? ficha.variante.perdaFixaPadrao
+                : ficha.materiaPrima.perdaFixaPadrao;
+              const estoqueAtual = ficha.variante ? ficha.variante.estoqueAtual : ficha.materiaPrima.estoqueAtual;
+              return {
+                chave: montarChavePerda(acabamento.id, ficha.id),
+                quantidadeConsumida: Number(ficha.quantidadePorUnidade) * Number(acabamento.qtdBase),
+                perdaPadrao: perdaPadrao !== null ? Number(perdaPadrao) : 0,
+                estoqueAtual: Number(estoqueAtual),
+                materiaPrimaNome: ficha.materiaPrima.itemCatalogo.nome,
+                materiaPrimaId: ficha.materiaPrimaId,
+                varianteId: ficha.varianteId,
+              };
+            })
+        )
+      );
+
+      const itensParaBaixa = [...itensParaBaixaProduto, ...itensParaBaixaAcabamento];
 
       // Teto de tamanho: não é o pedido que dita quantas linhas cabem aqui (ver
       // itensParaBaixa acima), é só uma trava contra um POST forjado com
@@ -266,16 +439,28 @@ export async function avancarStatusPedido(
                   data: { estoqueAtual: { decrement: quantidadeConsumida } },
                 });
               }
-              await tx.movimentacaoEstoque.create({
+              const movimentacaoConsumo = await tx.movimentacaoEstoque.create({
                 data: {
                   itemGraficaId: ficha.materiaPrimaId,
                   varianteId: ficha.varianteId,
                   pedidoId: pedido.id,
-                  tipo: "SAIDA",
+                  tipo: "SAIDA_PRODUCAO",
                   quantidade: quantidadeConsumida,
                   motivo: `Produção do pedido ${pedido.id} (orçamento ${pedido.orcamentoId})`,
+                  ...snapshotCustoFicha(ficha, quantidadeConsumida),
                 },
               });
+              if (custoAutomaticoConsumo) {
+                await criarCustoAutomaticoConsumo(tx, {
+                  graficaId: pedido.graficaId,
+                  pedidoId: pedido.id,
+                  movimentacaoId: movimentacaoConsumo.id,
+                  custoTotal: movimentacaoConsumo.custoTotal,
+                  categoriaCustoIdMaterial: ficha.materiaPrima.categoriaCustoId,
+                  categoriaCustoConsumoPadraoId,
+                  categoriaFallbackCache,
+                });
+              }
 
               // Movimentação SEPARADA da baixa por ficha técnica acima (não soma
               // no mesmo registro) — assim cancelarPedido, que já reverte TODA
@@ -293,16 +478,28 @@ export async function avancarStatusPedido(
                     data: { estoqueAtual: { decrement: perdaAplicada } },
                   });
                 }
-                await tx.movimentacaoEstoque.create({
+                const movimentacaoPerda = await tx.movimentacaoEstoque.create({
                   data: {
                     itemGraficaId: ficha.materiaPrimaId,
                     varianteId: ficha.varianteId,
                     pedidoId: pedido.id,
-                    tipo: "SAIDA",
+                    tipo: "SAIDA_PRODUCAO",
                     quantidade: perdaAplicada,
                     motivo: `Perda fixa de calibragem — pedido ${pedido.id} (orçamento ${pedido.orcamentoId})`,
+                    ...snapshotCustoFicha(ficha, perdaAplicada),
                   },
                 });
+                if (custoAutomaticoConsumo) {
+                  await criarCustoAutomaticoConsumo(tx, {
+                    graficaId: pedido.graficaId,
+                    pedidoId: pedido.id,
+                    movimentacaoId: movimentacaoPerda.id,
+                    custoTotal: movimentacaoPerda.custoTotal,
+                    categoriaCustoIdMaterial: ficha.materiaPrima.categoriaCustoId,
+                    categoriaCustoConsumoPadraoId,
+                    categoriaFallbackCache,
+                  });
+                }
               }
 
               const estoqueMinimo = ficha.variante ? ficha.variante.estoqueMinimo : ficha.materiaPrima.estoqueMinimo;
@@ -318,6 +515,122 @@ export async function avancarStatusPedido(
                   materiaPrimaNome: ficha.materiaPrima.itemCatalogo.nome,
                   totalDecremento: decrementoLinha,
                 });
+              }
+            }
+
+            // Mesma baixa acima, agora pela ficha técnica dos SERVIÇOS
+            // anexados como acabamento (ex: laminação consumindo BOPP) — ver
+            // comentário no schema de FichaTecnicaItem e fase-custo-real.md
+            // §item 2. Único ponto de diferença real: o multiplicador é
+            // `acabamento.qtdBase` (snapshot da base de cobrança do
+            // acabamento — ex: folhas impressas que passaram pela
+            // laminação), não `item.quantidade`. Aditivo: acabamento sem
+            // ficha técnica cadastrada tem `fichaTecnica: []` e este loop
+            // não faz nada pra ele — nenhuma baixa, nenhum CustoPedido,
+            // comportamento idêntico ao de hoje.
+            for (const acabamento of item.acabamentos) {
+              for (const ficha of acabamento.itemGrafica.fichaTecnica) {
+                const estoqueAtual = ficha.variante ? ficha.variante.estoqueAtual : ficha.materiaPrima.estoqueAtual;
+                if (estoqueAtual === null) continue; // sem controle de estoque
+
+                const quantidadeConsumida = Number(ficha.quantidadePorUnidade) * Number(acabamento.qtdBase);
+                // Validado antes da transação (resolverPerdasConfirmadas) —
+                // toda chave esperada aqui já tem confirmação, o "!" é
+                // seguro (mesmo raciocínio do loop de produto acima).
+                const chave = montarChavePerda(acabamento.id, ficha.id);
+                const perdaAplicada = perdasPorChave.get(chave)!;
+
+                if (ficha.varianteId) {
+                  await tx.varianteMateriaPrima.update({
+                    where: { id: ficha.varianteId },
+                    data: { estoqueAtual: { decrement: quantidadeConsumida } },
+                  });
+                } else {
+                  await tx.itemGrafica.update({
+                    where: { id: ficha.materiaPrimaId },
+                    data: { estoqueAtual: { decrement: quantidadeConsumida } },
+                  });
+                }
+                const movimentacaoConsumo = await tx.movimentacaoEstoque.create({
+                  data: {
+                    itemGraficaId: ficha.materiaPrimaId,
+                    varianteId: ficha.varianteId,
+                    pedidoId: pedido.id,
+                    tipo: "SAIDA_PRODUCAO",
+                    motivo: `Acabamento do pedido ${pedido.id} (orçamento ${pedido.orcamentoId})`,
+                    quantidade: quantidadeConsumida,
+                    ...snapshotCustoFicha(ficha, quantidadeConsumida),
+                  },
+                });
+                if (custoAutomaticoConsumo) {
+                  await criarCustoAutomaticoConsumo(tx, {
+                    graficaId: pedido.graficaId,
+                    pedidoId: pedido.id,
+                    movimentacaoId: movimentacaoConsumo.id,
+                    custoTotal: movimentacaoConsumo.custoTotal,
+                    categoriaCustoIdMaterial: ficha.materiaPrima.categoriaCustoId,
+                    categoriaCustoConsumoPadraoId,
+                    categoriaFallbackCache,
+                  });
+                }
+
+                // Movimentação SEPARADA da baixa por ficha técnica acima —
+                // mesmo motivo do loop de produto: cancelarPedido reverte
+                // TODA saída pelo pedidoId sem filtrar por motivo.
+                if (perdaAplicada > 0) {
+                  if (ficha.varianteId) {
+                    await tx.varianteMateriaPrima.update({
+                      where: { id: ficha.varianteId },
+                      data: { estoqueAtual: { decrement: perdaAplicada } },
+                    });
+                  } else {
+                    await tx.itemGrafica.update({
+                      where: { id: ficha.materiaPrimaId },
+                      data: { estoqueAtual: { decrement: perdaAplicada } },
+                    });
+                  }
+                  const movimentacaoPerda = await tx.movimentacaoEstoque.create({
+                    data: {
+                      itemGraficaId: ficha.materiaPrimaId,
+                      varianteId: ficha.varianteId,
+                      pedidoId: pedido.id,
+                      tipo: "SAIDA_PRODUCAO",
+                      quantidade: perdaAplicada,
+                      motivo: `Perda fixa de calibragem (acabamento) — pedido ${pedido.id} (orçamento ${pedido.orcamentoId})`,
+                      ...snapshotCustoFicha(ficha, perdaAplicada),
+                    },
+                  });
+                  if (custoAutomaticoConsumo) {
+                    await criarCustoAutomaticoConsumo(tx, {
+                      graficaId: pedido.graficaId,
+                      pedidoId: pedido.id,
+                      movimentacaoId: movimentacaoPerda.id,
+                      custoTotal: movimentacaoPerda.custoTotal,
+                      categoriaCustoIdMaterial: ficha.materiaPrima.categoriaCustoId,
+                      categoriaCustoConsumoPadraoId,
+                      categoriaFallbackCache,
+                    });
+                  }
+                }
+
+                // Mesmo acumulador FÍSICO do loop de produto acima — um
+                // material usado tanto na ficha técnica do produto quanto na
+                // do acabamento (ex: os dois na mesma matéria-prima) precisa
+                // somar no mesmo balde antes de avaliar cruzouLimiteMinimo.
+                const estoqueMinimo = ficha.variante ? ficha.variante.estoqueMinimo : ficha.materiaPrima.estoqueMinimo;
+                const chaveFisica = chaveFisicaMaterial(ficha);
+                const decrementoLinha = quantidadeConsumida + perdaAplicada;
+                const existente = acumuladoPorMaterial.get(chaveFisica);
+                if (existente) {
+                  existente.totalDecremento += decrementoLinha;
+                } else {
+                  acumuladoPorMaterial.set(chaveFisica, {
+                    estoqueAtual: Number(estoqueAtual),
+                    estoqueMinimo: estoqueMinimo === null ? null : Number(estoqueMinimo),
+                    materiaPrimaNome: ficha.materiaPrima.itemCatalogo.nome,
+                    totalDecremento: decrementoLinha,
+                  });
+                }
               }
             }
           }

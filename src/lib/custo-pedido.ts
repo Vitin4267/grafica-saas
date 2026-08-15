@@ -63,7 +63,11 @@ export async function lucroDoPedido(pedidoId: string): Promise<LucroPedido | nul
     where: { id: pedidoId },
     select: {
       orcamento: { select: { total: true } },
+      // estornadoEm: null — custo automático estornado no cancelamento do
+      // pedido (fase "custo real" §3.3) some da soma de lucro sem nunca ser
+      // apagado do banco (histórico preservado, só sai da conta).
       custos: {
+        where: { estornadoEm: null },
         select: {
           valor: true,
           categoriaCusto: { select: { id: true, nome: true } },
@@ -118,6 +122,10 @@ export async function custosPorCategoriaNoPeriodo(
     where: {
       graficaId,
       createdAt: { gte: inicio, lt: fim },
+      // Custo estornado (cancelamento de pedido, §3.3) não entra no gráfico
+      // de custos por categoria do Meu Negócio — histórico preservado no
+      // banco, só excluído da soma.
+      estornadoEm: null,
       ...(clienteId ? { pedido: { orcamento: { clienteId } } } : {}),
     },
     _sum: { valor: true },

@@ -23,14 +23,14 @@ export async function calcularPrevisaoEstoque(graficaId: string): Promise<Previs
     include: {
       itemCatalogo: true,
       movimentacoes: {
-        where: { tipo: "SAIDA", createdAt: { gte: desde } },
+        where: { tipo: "SAIDA_PRODUCAO", createdAt: { gte: desde } },
         orderBy: { createdAt: "asc" },
       },
       variantes: {
         where: { ativo: true },
         include: {
           movimentacoes: {
-            where: { tipo: "SAIDA", createdAt: { gte: desde } },
+            where: { tipo: "SAIDA_PRODUCAO", createdAt: { gte: desde } },
             orderBy: { createdAt: "asc" },
           },
         },

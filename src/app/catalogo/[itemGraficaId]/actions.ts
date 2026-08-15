@@ -12,6 +12,8 @@ import { parseJsonArray } from "@/lib/form-json";
 import { resolverItemParaNcm } from "@/lib/catalogo-ncm";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { formatoMoeda } from "@/lib/moeda";
+import { D } from "@/lib/pricing/decimal";
+import { calcularDeltaAjusteInventario } from "@/lib/estoque-manual";
 
 const formatoQuantidade = new Intl.NumberFormat("pt-BR");
 
@@ -429,7 +431,14 @@ export async function salvarFichaTecnica(
     where: { id: itemGraficaId, graficaId: usuario.graficaId },
     include: { itemCatalogo: true },
   });
-  if (!itemGrafica || itemGrafica.itemCatalogo.tipo !== "PRODUTO") {
+  // Ficha técnica vale tanto pra PRODUTO quanto pra SERVICO (fase "custo
+  // real" — ver comentário no schema de FichaTecnicaItem): um acabamento
+  // como laminação também pode consumir material próprio (ex: BOPP). Não é
+  // constraint de banco, só a checagem de aplicação abaixo.
+  if (
+    !itemGrafica ||
+    (itemGrafica.itemCatalogo.tipo !== "PRODUTO" && itemGrafica.itemCatalogo.tipo !== "SERVICO")
+  ) {
     return { ok: false, mensagem: "Item não encontrado." };
   }
 
@@ -768,4 +777,288 @@ export async function salvarVariantesMateriaPrima(
     };
   }
   return { ok: true, mensagem: "Variantes salvas com sucesso!" };
+}
+
+// ─── Movimentação de estoque: histórico + lançamento manual (fase "custo
+// real", §4.3) ───────────────────────────────────────────────────────────
+//
+// Três Server Actions, uma por tipo de lançamento manual — cada uma tem
+// campos obrigatórios bem diferentes (custo unitário vs. motivo vs. nova
+// contagem), então schemas e validação separados ficam mais claros que um
+// parâmetro `tipo` genérico. Todas operam só sobre matéria-prima (é onde
+// estoque é controlado hoje — ver teste manual do plano), com ou sem
+// variante.
+
+export type LancarMovimentacaoResult = SalvarConfigResult;
+
+// Resolve e valida (tenant + tipo + variante) o alvo de um lançamento manual
+// de estoque — mesma dupla checagem de tenant (id + graficaId) das outras
+// actions deste arquivo. Devolve null pra qualquer coisa que não bata
+// (item de outra gráfica, item que não é matéria-prima, variante que não
+// pertence a este item ou já foi desativada).
+async function resolverItemMateriaPrima(itemGraficaId: string, varianteId: string | undefined, graficaId: string) {
+  const itemGrafica = await prisma.itemGrafica.findFirst({
+    where: { id: itemGraficaId, graficaId, itemCatalogo: { tipo: "MATERIA_PRIMA" } },
+    include: { itemCatalogo: true, variantes: { where: { ativo: true } } },
+  });
+  if (!itemGrafica) return null;
+  if (varianteId) {
+    const variante = itemGrafica.variantes.find((v) => v.id === varianteId);
+    if (!variante) return null;
+    return { itemGrafica, variante };
+  }
+  return { itemGrafica, variante: null as (typeof itemGrafica.variantes)[number] | null };
+}
+
+const entradaCompraSchema = z.object({
+  itemGraficaId: z.string().min(1),
+  varianteId: z.string().min(1).optional(),
+  quantidade: z.coerce.number().positive("Quantidade deve ser maior que zero."),
+  custoUnitario: z.coerce.number().positive("Custo unitário deve ser maior que zero."),
+  documento: z
+    .string()
+    .trim()
+    .max(60)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+});
+
+// Entrada de compra: além de registrar a movimentação, atualiza o preço de
+// custo cadastrado do material (ou da variante) pro valor informado — é o
+// único ponto do sistema onde o preço de custo "envelhecido" se atualiza
+// (ver fase-custo-real.md §6, risco "Preço de insumo desatualizado"). Por
+// isso é o único dos três lançamentos manuais que gera auditoria: os outros
+// dois (saída manual, ajuste de inventário) não tocam em preço, só em
+// quantidade.
+export async function lancarEntradaCompra(
+  _estadoAnterior: LancarMovimentacaoResult | null,
+  formData: FormData
+): Promise<LancarMovimentacaoResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CATALOGO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar o catálogo." };
+  }
+
+  const parsed = entradaCompraSchema.safeParse({
+    itemGraficaId: formData.get("itemGraficaId"),
+    varianteId: formData.get("varianteId") || undefined,
+    quantidade: formData.get("quantidade"),
+    custoUnitario: formData.get("custoUnitario"),
+    documento: formData.get("documento") ?? undefined,
+  });
+  if (!parsed.success) {
+    return { ok: false, mensagem: parsed.error.issues[0].message };
+  }
+  const { itemGraficaId, varianteId, quantidade, custoUnitario, documento } = parsed.data;
+
+  const resolvido = await resolverItemMateriaPrima(itemGraficaId, varianteId, usuario.graficaId);
+  if (!resolvido) {
+    return { ok: false, mensagem: "Item não encontrado." };
+  }
+  const { itemGrafica, variante } = resolvido;
+  const nomeItem = `${itemGrafica.itemCatalogo.nome}${variante ? ` (${variante.rotulo})` : ""}`;
+
+  const precoAnterior = variante ? variante.precoCompra : itemGrafica.precoCompra;
+  const estoqueAnterior = variante ? variante.estoqueAtual : itemGrafica.estoqueAtual;
+
+  const quantidadeDec = new D(quantidade);
+  const custoUnitarioDec = new D(custoUnitario);
+  const custoTotalDec = quantidadeDec.times(custoUnitarioDec);
+  const novoEstoque = new D(estoqueAnterior ?? 0).plus(quantidadeDec).toFixed(4);
+  const agora = new Date();
+
+  await prisma.$transaction(async (tx) => {
+    if (variante) {
+      await tx.varianteMateriaPrima.update({
+        where: { id: variante.id },
+        data: { estoqueAtual: novoEstoque, precoCompra: custoUnitarioDec.toFixed(4) },
+      });
+    } else {
+      await tx.itemGrafica.update({
+        where: { id: itemGrafica.id },
+        data: { estoqueAtual: novoEstoque, precoCompra: custoUnitarioDec.toFixed(4) },
+      });
+    }
+    await tx.movimentacaoEstoque.create({
+      data: {
+        itemGraficaId: itemGrafica.id,
+        varianteId: variante?.id ?? null,
+        tipo: "ENTRADA_COMPRA",
+        quantidade: quantidadeDec.toFixed(4),
+        custoUnitario: custoUnitarioDec.toFixed(4),
+        custoTotal: custoTotalDec.toFixed(2),
+        precoReferenciaEm: agora,
+        documento: documento ?? null,
+        criadoPorId: usuario.id,
+      },
+    });
+  });
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "catalogo.entrada_compra",
+    entidade: variante ? "VarianteMateriaPrima" : "ItemGrafica",
+    entidadeId: variante ? variante.id : itemGrafica.id,
+    descricao: `Entrada de compra de "${nomeItem}" atualizou o preço de custo cadastrado`,
+    valorAnterior: formatarPreco(precoAnterior),
+    valorNovo: formatarPreco(custoUnitario),
+  });
+
+  revalidatePath(`/catalogo/${itemGraficaId}`);
+  revalidatePath("/catalogo");
+  revalidatePath("/meu-negocio");
+  return { ok: true, mensagem: "Entrada de compra registrada e preço de custo atualizado." };
+}
+
+const saidaManualSchema = z.object({
+  itemGraficaId: z.string().min(1),
+  varianteId: z.string().min(1).optional(),
+  quantidade: z.coerce.number().positive("Quantidade deve ser maior que zero."),
+  motivo: z.string().trim().min(1, "Informe o motivo da saída.").max(300),
+});
+
+// Saída manual: perda, quebra, uso avulso — qualquer baixa que não veio da
+// produção nem é uma correção de contagem. Motivo é obrigatório de
+// propósito (ver fase-custo-real.md §4.3): sem ele o histórico vira uma
+// lista de números sem explicação.
+export async function lancarSaidaManual(
+  _estadoAnterior: LancarMovimentacaoResult | null,
+  formData: FormData
+): Promise<LancarMovimentacaoResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CATALOGO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar o catálogo." };
+  }
+
+  const parsed = saidaManualSchema.safeParse({
+    itemGraficaId: formData.get("itemGraficaId"),
+    varianteId: formData.get("varianteId") || undefined,
+    quantidade: formData.get("quantidade"),
+    motivo: formData.get("motivo"),
+  });
+  if (!parsed.success) {
+    return { ok: false, mensagem: parsed.error.issues[0].message };
+  }
+  const { itemGraficaId, varianteId, quantidade, motivo } = parsed.data;
+
+  const resolvido = await resolverItemMateriaPrima(itemGraficaId, varianteId, usuario.graficaId);
+  if (!resolvido) {
+    return { ok: false, mensagem: "Item não encontrado." };
+  }
+  const { itemGrafica, variante } = resolvido;
+  const estoqueAnterior = variante ? variante.estoqueAtual : itemGrafica.estoqueAtual;
+  const quantidadeDec = new D(quantidade);
+
+  await prisma.$transaction(async (tx) => {
+    // Sem controle de estoque (estoqueAtual null) — grava o histórico da
+    // saída mesmo assim, só não mexe num número que não existe (mesmo
+    // princípio de "sem controle de estoque" já usado na baixa automática).
+    if (estoqueAnterior !== null) {
+      const novoEstoque = new D(estoqueAnterior).minus(quantidadeDec).toFixed(4);
+      if (variante) {
+        await tx.varianteMateriaPrima.update({ where: { id: variante.id }, data: { estoqueAtual: novoEstoque } });
+      } else {
+        await tx.itemGrafica.update({ where: { id: itemGrafica.id }, data: { estoqueAtual: novoEstoque } });
+      }
+    }
+    await tx.movimentacaoEstoque.create({
+      data: {
+        itemGraficaId: itemGrafica.id,
+        varianteId: variante?.id ?? null,
+        tipo: "SAIDA_MANUAL",
+        quantidade: quantidadeDec.toFixed(4),
+        motivo,
+        criadoPorId: usuario.id,
+      },
+    });
+  });
+
+  revalidatePath(`/catalogo/${itemGraficaId}`);
+  revalidatePath("/catalogo");
+  revalidatePath("/meu-negocio");
+  return { ok: true, mensagem: "Saída manual registrada." };
+}
+
+const ajusteInventarioSchema = z.object({
+  itemGraficaId: z.string().min(1),
+  varianteId: z.string().min(1).optional(),
+  novoEstoque: z.coerce.number().min(0, "Estoque não pode ser negativo."),
+  observacao: z
+    .string()
+    .trim()
+    .max(300)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+});
+
+// Ajuste de inventário: contagem física. A TELA manda o novo valor total
+// (o que o operador contou no chão de fábrica), não a diferença — é aqui,
+// não na tela, que o delta vira a `quantidade` gravada na movimentação (ver
+// calcularDeltaAjusteInventario). Mesma lógica reaproveitada por
+// catalogo/actions.ts quando "estoque atual" é editado direto no cadastro.
+export async function lancarAjusteInventario(
+  _estadoAnterior: LancarMovimentacaoResult | null,
+  formData: FormData
+): Promise<LancarMovimentacaoResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CATALOGO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar o catálogo." };
+  }
+
+  const parsed = ajusteInventarioSchema.safeParse({
+    itemGraficaId: formData.get("itemGraficaId"),
+    varianteId: formData.get("varianteId") || undefined,
+    novoEstoque: formData.get("novoEstoque"),
+    observacao: formData.get("observacao") ?? undefined,
+  });
+  if (!parsed.success) {
+    return { ok: false, mensagem: parsed.error.issues[0].message };
+  }
+  const { itemGraficaId, varianteId, novoEstoque, observacao } = parsed.data;
+
+  const resolvido = await resolverItemMateriaPrima(itemGraficaId, varianteId, usuario.graficaId);
+  if (!resolvido) {
+    return { ok: false, mensagem: "Item não encontrado." };
+  }
+  const { itemGrafica, variante } = resolvido;
+  const estoqueAnterior = variante ? variante.estoqueAtual : itemGrafica.estoqueAtual;
+  const delta = calcularDeltaAjusteInventario(
+    estoqueAnterior !== null ? Number(estoqueAnterior) : null,
+    novoEstoque
+  );
+
+  if (delta === 0) {
+    return { ok: false, mensagem: "O novo estoque informado é igual ao atual — nada para ajustar." };
+  }
+
+  await prisma.$transaction(async (tx) => {
+    if (variante) {
+      await tx.varianteMateriaPrima.update({ where: { id: variante.id }, data: { estoqueAtual: novoEstoque } });
+    } else {
+      await tx.itemGrafica.update({ where: { id: itemGrafica.id }, data: { estoqueAtual: novoEstoque } });
+    }
+    await tx.movimentacaoEstoque.create({
+      data: {
+        itemGraficaId: itemGrafica.id,
+        varianteId: variante?.id ?? null,
+        tipo: "AJUSTE_INVENTARIO",
+        quantidade: delta,
+        motivo: observacao ?? "Ajuste de contagem física",
+        criadoPorId: usuario.id,
+      },
+    });
+  });
+
+  revalidatePath(`/catalogo/${itemGraficaId}`);
+  revalidatePath("/catalogo");
+  revalidatePath("/meu-negocio");
+  return { ok: true, mensagem: "Ajuste de inventário registrado." };
 }

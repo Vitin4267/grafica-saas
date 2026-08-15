@@ -18,6 +18,35 @@ import { FichaTecnicaForm } from "./FichaTecnicaForm";
 import { TabelaGramaturaForm } from "./TabelaGramaturaForm";
 import { VariantesMateriaPrimaForm } from "./VariantesMateriaPrimaForm";
 import { NcmForm } from "./NcmForm";
+import { LancarMovimentacaoForm } from "./LancarMovimentacaoForm";
+import { ROTULOS_TIPO_MOVIMENTACAO } from "@/lib/estoque-manual";
+import { ROTULO_UNIDADE } from "@/lib/unidade";
+import { formatoMoeda } from "@/lib/moeda";
+import { formatoInstanteRealComHora } from "@/lib/data";
+import type { TipoMovimentacao } from "@/generated/prisma/enums";
+
+const LIMITE_HISTORICO_MOVIMENTACAO = 100;
+
+const formatoQuantidadeAbs = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 4 });
+
+// SAIDA_PRODUCAO/SAIDA_MANUAL sempre gravam `quantidade` positiva (magnitude
+// da baixa) — o sinal exibido vem do TIPO, não do valor no banco.
+// ESTORNO_CANCELAMENTO/ENTRADA_COMPRA idem, na direção contrária.
+// AJUSTE_INVENTARIO é o único que já grava um delta com sinal (ver
+// calcularDeltaAjusteInventario) — nesse caso o sinal exibido é o do valor.
+const TIPOS_SAIDA: TipoMovimentacao[] = ["SAIDA_PRODUCAO", "SAIDA_MANUAL"];
+const TIPOS_ENTRADA: TipoMovimentacao[] = ["ESTORNO_CANCELAMENTO", "ENTRADA_COMPRA"];
+
+function formatarQuantidadeMovimentacao(tipo: TipoMovimentacao, valor: unknown): string {
+  const texto = formatoQuantidadeAbs.format(Math.abs(Number(valor)));
+  if (TIPOS_SAIDA.includes(tipo)) return `-${texto}`;
+  if (TIPOS_ENTRADA.includes(tipo)) return `+${texto}`;
+  return Number(valor) < 0 ? `-${texto}` : `+${texto}`;
+}
+
+function formatarCustoUnitario(valor: unknown): string {
+  return valor === null || valor === undefined ? "—" : formatoMoeda.format(Number(valor));
+}
 
 export default async function ConfiguracaoItemPage({
   params,
@@ -41,6 +70,11 @@ export default async function ConfiguracaoItemPage({
         fichaTecnica: true,
         tabelaPrecoPapel: { orderBy: { gramatura: "asc" } },
         variantes: { where: { ativo: true }, orderBy: { rotulo: "asc" } },
+        movimentacoes: {
+          orderBy: { createdAt: "desc" },
+          take: LIMITE_HISTORICO_MOVIMENTACAO,
+          include: { variante: { select: { rotulo: true } } },
+        },
       },
     }),
     prisma.itemGrafica.findMany({
@@ -65,6 +99,22 @@ export default async function ConfiguracaoItemPage({
   if (!itemGrafica) {
     notFound();
   }
+
+  // Resolve criadoPorId -> nome pro histórico de movimentação (a tabela não
+  // tem relação direta com Usuario — ver comentário do campo no schema).
+  // Batch numa única query, não uma por linha do histórico. null =
+  // movimentação gerada pelo sistema, vira "Sistema" na tela.
+  const idsCriadores = [
+    ...new Set(itemGrafica.movimentacoes.map((m) => m.criadoPorId).filter((id): id is string => id !== null)),
+  ];
+  const criadores =
+    idsCriadores.length > 0
+      ? await prisma.usuario.findMany({
+          where: { id: { in: idsCriadores }, graficaId: usuario.graficaId },
+          select: { id: true, nome: true },
+        })
+      : [];
+  const nomePorCriadorId = new Map(criadores.map((c) => [c.id, c.nome]));
 
   return (
     <div className="flex flex-1 flex-col">
@@ -169,44 +219,133 @@ export default async function ConfiguracaoItemPage({
             />
           </div>
         ) : itemGrafica.itemCatalogo.tipo === "MATERIA_PRIMA" ? (
-          itemGrafica.itemCatalogo.categoria === "Papéis" ? (
-            <TabelaGramaturaForm
+          <div className="flex flex-col gap-6">
+            {itemGrafica.itemCatalogo.categoria === "Papéis" ? (
+              <TabelaGramaturaForm
+                itemGraficaId={itemGrafica.id}
+                linhasIniciais={itemGrafica.tabelaPrecoPapel.map((l) => ({
+                  gramatura: l.gramatura.toString(),
+                  precoKg: l.precoKg.toString(),
+                }))}
+              />
+            ) : (
+              <VariantesMateriaPrimaForm
+                itemGraficaId={itemGrafica.id}
+                linhasIniciais={itemGrafica.variantes.map((v) => ({
+                  id: v.id,
+                  rotulo: v.rotulo,
+                  precoCompra: v.precoCompra.toString(),
+                  estoqueAtual: v.estoqueAtual?.toString() ?? "",
+                  estoqueMinimo: v.estoqueMinimo?.toString() ?? "",
+                  perdaFixaPadrao: v.perdaFixaPadrao?.toString() ?? "",
+                }))}
+              />
+            )}
+
+            <LancarMovimentacaoForm
               itemGraficaId={itemGrafica.id}
-              linhasIniciais={itemGrafica.tabelaPrecoPapel.map((l) => ({
-                gramatura: l.gramatura.toString(),
-                precoKg: l.precoKg.toString(),
-              }))}
-            />
-          ) : (
-            <VariantesMateriaPrimaForm
-              itemGraficaId={itemGrafica.id}
-              linhasIniciais={itemGrafica.variantes.map((v) => ({
+              nomeItem={itemGrafica.itemCatalogo.nome}
+              unidadeRotulo={
+                itemGrafica.itemCatalogo.unidade ? (ROTULO_UNIDADE[itemGrafica.itemCatalogo.unidade] ?? "") : ""
+              }
+              precoCompraAtual={itemGrafica.precoCompra?.toString() ?? ""}
+              estoqueAtual={itemGrafica.estoqueAtual?.toString() ?? ""}
+              variantes={itemGrafica.variantes.map((v) => ({
                 id: v.id,
                 rotulo: v.rotulo,
                 precoCompra: v.precoCompra.toString(),
                 estoqueAtual: v.estoqueAtual?.toString() ?? "",
-                estoqueMinimo: v.estoqueMinimo?.toString() ?? "",
-                perdaFixaPadrao: v.perdaFixaPadrao?.toString() ?? "",
               }))}
             />
-          )
+
+            <Card className="flex flex-col gap-1 p-6">
+              <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+                Histórico de movimentação
+              </h2>
+              <p className="mb-3 text-sm text-slate-500">
+                Últimas {LIMITE_HISTORICO_MOVIMENTACAO} movimentações deste material, mais recente
+                primeiro.
+              </p>
+              {itemGrafica.movimentacoes.length === 0 ? (
+                <p className="py-6 text-center text-sm text-slate-500">
+                  Nenhuma movimentação registrada ainda.
+                </p>
+              ) : (
+                <div className="-mx-6 divide-y divide-slate-100 dark:divide-slate-800">
+                  {itemGrafica.movimentacoes.map((m) => (
+                    <div key={m.id} className="flex items-start justify-between gap-4 px-6 py-4">
+                      <div>
+                        <p className="text-sm text-slate-900 dark:text-white">
+                          {ROTULOS_TIPO_MOVIMENTACAO[m.tipo]}
+                          {m.variante ? ` · ${m.variante.rotulo}` : ""}
+                          {m.motivo ? ` — ${m.motivo}` : ""}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {formatoInstanteRealComHora.format(m.createdAt)} ·{" "}
+                          {m.criadoPorId ? (nomePorCriadorId.get(m.criadoPorId) ?? "Usuário removido") : "Sistema"}
+                          {m.documento ? ` · NF ${m.documento}` : ""}
+                          {m.pedidoId && (
+                            <>
+                              {" · "}
+                              <Link href="/producao" className="underline">
+                                Ver pedido
+                              </Link>
+                            </>
+                          )}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-sm font-medium text-slate-900 dark:text-white">
+                          {formatarQuantidadeMovimentacao(m.tipo, m.quantidade)}
+                        </p>
+                        <p className="text-xs text-slate-500">{formatarCustoUnitario(m.custoUnitario)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
         ) : (
-          <ConfiguracaoAcabamentoForm
-            itemGraficaId={itemGrafica.id}
-            precoCompra={itemGrafica.precoCompra?.toString() ?? ""}
-            configuracao={
-              itemGrafica.configuracaoAcabamento
-                ? {
-                    baseCobranca: itemGrafica.configuracaoAcabamento.baseCobranca,
-                    estagio: itemGrafica.configuracaoAcabamento.estagio,
-                    custoSetup: itemGrafica.configuracaoAcabamento.custoSetup.toString(),
-                    custoMinimo: itemGrafica.configuracaoAcabamento.custoMinimo.toString(),
-                    custoFerramental:
-                      itemGrafica.configuracaoAcabamento.custoFerramental?.toString() ?? "",
-                  }
-                : null
-            }
-          />
+          <div className="flex flex-col gap-6">
+            <ConfiguracaoAcabamentoForm
+              itemGraficaId={itemGrafica.id}
+              precoCompra={itemGrafica.precoCompra?.toString() ?? ""}
+              configuracao={
+                itemGrafica.configuracaoAcabamento
+                  ? {
+                      baseCobranca: itemGrafica.configuracaoAcabamento.baseCobranca,
+                      estagio: itemGrafica.configuracaoAcabamento.estagio,
+                      custoSetup: itemGrafica.configuracaoAcabamento.custoSetup.toString(),
+                      custoMinimo: itemGrafica.configuracaoAcabamento.custoMinimo.toString(),
+                      custoFerramental:
+                        itemGrafica.configuracaoAcabamento.custoFerramental?.toString() ?? "",
+                    }
+                  : null
+              }
+            />
+            {/* Ficha técnica de SERVIÇO (fase "custo real" — ver comentário no
+                schema de FichaTecnicaItem): acabamentos que consomem material
+                próprio (ex: BOPP na laminação) agora também podem declarar
+                consumo, exatamente como um PRODUTO — mesmo componente, mesma
+                Server Action. A baixa automática (status-transicao.ts) usa
+                OrcamentoItemAcabamento.qtdBase como multiplicador em vez de
+                item.quantidade. */}
+            <FichaTecnicaForm
+              itemGraficaId={itemGrafica.id}
+              materiasPrimas={materiasPrimas.map((m) => ({
+                id: m.id,
+                nome: m.itemCatalogo.nome,
+                unidade: m.itemCatalogo.unidade,
+                variantes: m.variantes.map((v) => ({ id: v.id, rotulo: v.rotulo })),
+              }))}
+              fichaAtual={itemGrafica.fichaTecnica.map((f) => ({
+                materiaPrimaId: f.materiaPrimaId,
+                varianteId: f.varianteId ?? "",
+                quantidadePorUnidade: f.quantidadePorUnidade.toString(),
+              }))}
+            />
+          </div>
         )}
       </main>
     </div>

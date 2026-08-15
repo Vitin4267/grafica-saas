@@ -70,6 +70,9 @@ export async function buscarRelatorioNegocio(filtro: FiltroRelatorio): Promise<R
       where: {
         graficaId,
         createdAt: { gte: inicio, lt: fim },
+        // Custo estornado (cancelamento de pedido, §3.3 da fase "custo
+        // real") não pode continuar contando contra o lucro do período.
+        estornadoEm: null,
         ...(clienteId ? { pedido: { orcamento: { clienteId } } } : {}),
       },
       _sum: { valor: true },

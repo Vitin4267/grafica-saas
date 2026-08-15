@@ -45,7 +45,9 @@ import { parseJsonArray } from "@/lib/form-json";
 import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
 import { calcularValorBase, calcularComissao } from "@/lib/comissao";
 import { removerArquivo } from "@/lib/billing/armazenamento";
+import { calcularPrevisaoAprovacaoPedido, gravarPrevisaoAprovacaoPedido } from "@/lib/pedido-aprovacao";
 import { UNIDADES_DIMENSAO, converterParaCm } from "@/lib/unidade-dimensao";
+import { paraDecimal, type Dec } from "@/lib/pricing/decimal";
 
 // Nunca confia na unidade que vem do formulário — validada contra as únicas
 // 3 que existem (ver src/lib/unidade-dimensao.ts) antes de converter pra
@@ -109,8 +111,10 @@ export async function atualizarStatusOrcamento(
     // Leitura fora da transação de propósito (mesmo cuidado de avancarPedido
     // em src/app/producao/actions.ts): ficha de custo/comissão não muda por
     // causa de uma corrida de atualizarStatusOrcamento, então não precisa
-    // fazer parte da transação — mantém ela curta.
-    const [orcamentoComItens, usuarioVendedor, parametros] = await Promise.all([
+    // fazer parte da transação — mantém ela curta. Mesmo cuidado vale pra
+    // previsaoCusto (fase "custo real", §3.1): a leitura de breakdown/ficha
+    // técnica também não muda por causa desta corrida.
+    const [orcamentoComItens, usuarioVendedor, parametros, previsaoCusto] = await Promise.all([
       prisma.orcamentoItem.findMany({
         where: { orcamentoId },
         include: { itemGrafica: { select: { precoCompra: true } } },
@@ -123,6 +127,7 @@ export async function atualizarStatusOrcamento(
         where: { graficaId: usuario.graficaId },
         select: { comissaoVendedorBase: true },
       }),
+      calcularPrevisaoAprovacaoPedido(orcamentoId, usuario.graficaId),
     ]);
 
     const percentualVendedor = usuarioVendedor?.comissaoPercent
@@ -175,6 +180,15 @@ export async function atualizarStatusOrcamento(
           prazoEntrega,
           producaoLinkToken: randomBytes(20).toString("base64url"),
         },
+      });
+
+      // Congela aprovadoEm + os três snapshots + a previsão de custo por
+      // categoria (PedidoCustoPrevisto) — ver fase-custo-real.md §2.3, §3.1
+      // e src/lib/pedido-aprovacao.ts.
+      await gravarPrevisaoAprovacaoPedido(tx, {
+        graficaId: usuario.graficaId,
+        orcamentoId,
+        previsao: previsaoCusto,
       });
 
       if (dadosComissao) {
@@ -825,6 +839,11 @@ export async function adicionarItemOrcamento(
             acabamento: acabamento || null,
             precoUnitario: resultado.precoUnitario,
             precoTotal: resultado.precoTotal,
+            // Preço sugerido pelo motor no momento da criação — nunca editado
+            // depois de gravado (ver fase-custo-real.md §2.4). Igual a
+            // precoUnitario nesta primeira gravação; só diverge quando um
+            // desconto é aplicado depois via aplicarDescontoItemOrcamento.
+            precoSugeridoUnitario: resultado.precoUnitario,
             modeloCalculo: resultado.modeloCalculo,
             corFrente: resultado.corFrente,
             corVerso: resultado.corVerso,
@@ -973,6 +992,223 @@ export async function removerItemOrcamento(
   revalidatePath("/orcamento");
 
   return { ok: true, mensagem: "Item removido." };
+}
+
+const tipoDescontoFormSchema = z.enum(["PERCENTUAL", "VALOR_ABSOLUTO", "PRECO_FINAL"]);
+
+export type AplicarDescontoResult = { ok: boolean; mensagem: string };
+
+// Aplica (tipo+valor+motivo) ou remove (remover=true) um desconto negociado
+// sobre o preço sugerido pelo motor num item já adicionado ao orçamento (ver
+// fase-custo-real.md §2.4, §4.2). precoUnitario/precoTotal continuam sendo
+// o VALOR VENDIDO de sempre — esta action só os recalcula a partir de
+// precoSugeridoUnitario (gravado uma única vez em adicionarItemOrcamento,
+// nunca mexido depois) + o desconto pedido aqui. Duas travas inegociáveis:
+// preço negociado nunca fica abaixo do custo direto do item (mesma
+// checagem/mensagem da trava que o motor já usa pro preço SUGERIDO, ver
+// ErroPrecificacao "PRECO_ABAIXO_DO_CUSTO" em src/lib/pricing/compor.ts), e
+// desconto acima de ParametrosGrafica.descontoMaxSemAprovacao só um
+// DONO/ADMIN aplica (grava aprovadoPorId).
+export async function aplicarDescontoItemOrcamento(
+  _estadoAnterior: AplicarDescontoResult | null,
+  formData: FormData
+): Promise<AplicarDescontoResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
+  }
+
+  const orcamentoItemId = String(formData.get("orcamentoItemId"));
+  const remover = formData.get("remover") === "true";
+  const motivo = String(formData.get("motivo") || "").trim().slice(0, 300);
+
+  const item = await prisma.orcamentoItem.findFirst({
+    where: { id: orcamentoItemId, orcamento: { graficaId: usuario.graficaId } },
+    include: {
+      orcamento: { select: { status: true } },
+      itemGrafica: { select: { precoCompra: true } },
+    },
+  });
+  if (!item) {
+    return { ok: false, mensagem: "Item não encontrado." };
+  }
+  if (item.orcamento.status !== "RASCUNHO") {
+    return {
+      ok: false,
+      mensagem: "Só é possível alterar o preço negociado de um item em um orçamento em rascunho.",
+    };
+  }
+  // Item criado antes desta funcionalidade (precoSugeridoUnitario nasceu
+  // nulo pra tudo que já existia) — sem uma baseline sugerida não dá pra
+  // calcular desconto algum. Renderiza normalmente (ver EditarOrcamentoForm),
+  // só não deixa aplicar aqui.
+  if (item.precoSugeridoUnitario === null) {
+    return {
+      ok: false,
+      mensagem:
+        "Este item não tem preço sugerido registrado (foi criado antes desta funcionalidade) — remova e adicione o item novamente para negociar o preço.",
+    };
+  }
+
+  const precoSugerido = paraDecimal(item.precoSugeridoUnitario.toString());
+  const quantidade = item.quantidade;
+  const precoUnitarioAnterior = item.precoUnitario.toString();
+
+  let novoPrecoUnitario: Dec;
+  let descontoTipoGravar: z.infer<typeof tipoDescontoFormSchema> | null = null;
+  let descontoValorGravar: Dec | null = null;
+
+  if (remover) {
+    novoPrecoUnitario = precoSugerido.toDecimalPlaces(2);
+  } else {
+    const tipoParsed = tipoDescontoFormSchema.safeParse(formData.get("tipo"));
+    if (!tipoParsed.success) {
+      return { ok: false, mensagem: "Tipo de desconto inválido." };
+    }
+    if (!motivo) {
+      return { ok: false, mensagem: "Informe o motivo do desconto." };
+    }
+    const valorNumero = Number(formData.get("valor"));
+    if (!Number.isFinite(valorNumero)) {
+      return { ok: false, mensagem: "Informe um valor de desconto válido." };
+    }
+
+    if (tipoParsed.data === "PERCENTUAL") {
+      if (valorNumero < 0 || valorNumero >= 100) {
+        return { ok: false, mensagem: "Informe um percentual de desconto entre 0 e 100." };
+      }
+      novoPrecoUnitario = precoSugerido
+        .times(paraDecimal(1).minus(paraDecimal(valorNumero).div(100)))
+        .toDecimalPlaces(2);
+      descontoValorGravar = paraDecimal(valorNumero);
+    } else if (tipoParsed.data === "VALOR_ABSOLUTO") {
+      if (valorNumero < 0) {
+        return { ok: false, mensagem: "Informe um valor de desconto maior ou igual a zero." };
+      }
+      novoPrecoUnitario = precoSugerido.minus(paraDecimal(valorNumero)).toDecimalPlaces(2);
+      descontoValorGravar = paraDecimal(valorNumero);
+    } else {
+      if (valorNumero < 0) {
+        return { ok: false, mensagem: "Informe um preço final válido." };
+      }
+      novoPrecoUnitario = paraDecimal(valorNumero).toDecimalPlaces(2);
+      descontoValorGravar = precoSugerido.minus(novoPrecoUnitario);
+    }
+    descontoTipoGravar = tipoParsed.data;
+
+    if (novoPrecoUnitario.lte(0)) {
+      return { ok: false, mensagem: "O preço negociado precisa ser maior que zero." };
+    }
+  }
+
+  const novoPrecoTotal = novoPrecoUnitario.times(quantidade);
+
+  // Trava de preço mínimo — mesma checagem/mensagem que o motor já usa pra
+  // travar o preço SUGERIDO, aplicada agora ao preço NEGOCIADO. Custo direto
+  // calculado do mesmo jeito que o bloco de comissão logo acima neste mesmo
+  // arquivo (breakdown.custoTotal pra M2/OFFSET, precoCompra × quantidade
+  // pra SIMPLES) — nunca inventa um número novo pra "custo". Remover
+  // desconto sempre volta pro preço que o motor já validou na criação, então
+  // não precisa passar por esta checagem de novo.
+  if (!remover) {
+    const breakdown = item.breakdown as { custoTotal?: string } | null;
+    const custoDiretoNumero = breakdown?.custoTotal
+      ? Number(breakdown.custoTotal)
+      : item.itemGrafica.precoCompra
+        ? Number(item.itemGrafica.precoCompra) * quantidade
+        : 0;
+    const custoDireto = paraDecimal(custoDiretoNumero);
+
+    if (novoPrecoTotal.lt(custoDireto)) {
+      return {
+        ok: false,
+        mensagem:
+          "O preço final calculado ficou abaixo do custo direto — configuração de margem/encargos provavelmente incorreta. Orçamento abortado por segurança.",
+      };
+    }
+  }
+
+  // Trava de aprovação — desconto efetivo sobre o preço SUGERIDO (baseline
+  // fixa, não sobre o preço vendido anterior, que já poderia ter outro
+  // desconto embutido). Só entra em jogo aplicando desconto: remover volta
+  // ao sugerido = 0% de desconto, sem checagem.
+  let aprovadoPorId: string | null = null;
+  let descontoPercentualEfetivo: Dec | null = null;
+  if (!remover) {
+    descontoPercentualEfetivo = precoSugerido.gt(0)
+      ? paraDecimal(1).minus(novoPrecoUnitario.div(precoSugerido)).times(100)
+      : paraDecimal(0);
+
+    const parametros = await prisma.parametrosGrafica.findUnique({
+      where: { graficaId: usuario.graficaId },
+      select: { descontoMaxSemAprovacao: true },
+    });
+    const limite = parametros
+      ? paraDecimal(parametros.descontoMaxSemAprovacao.toString())
+      : paraDecimal(100);
+
+    if (descontoPercentualEfetivo.gt(limite)) {
+      const podeAprovar = usuario.papel === "DONO" || usuario.papel === "ADMIN";
+      if (!podeAprovar) {
+        return {
+          ok: false,
+          mensagem: `Desconto acima de ${limite.toFixed(1)}% precisa ser aplicado por um dono ou administrador.`,
+        };
+      }
+      aprovadoPorId = usuario.id;
+    }
+  }
+
+  try {
+    await prisma.$transaction(
+      async (tx) => {
+        await tx.orcamentoItem.update({
+          where: { id: orcamentoItemId },
+          data: {
+            precoUnitario: novoPrecoUnitario.toFixed(2),
+            precoTotal: novoPrecoTotal.toFixed(2),
+            descontoTipo: descontoTipoGravar,
+            descontoValor: descontoValorGravar ? descontoValorGravar.toFixed(4) : null,
+            motivoDesconto: remover ? null : motivo,
+            aprovadoPorId,
+          },
+        });
+        const agregado = await tx.orcamentoItem.aggregate({
+          where: { orcamentoId: item.orcamentoId },
+          _sum: { precoTotal: true },
+        });
+        await tx.orcamento.update({
+          where: { id: item.orcamentoId },
+          data: { total: agregado._sum.precoTotal ?? 0 },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
+  } catch (erro) {
+    if (ehConflitoDeSerializacao(erro)) {
+      return { ok: false, mensagem: MENSAGEM_CONFLITO_CONCORRENTE };
+    }
+    throw erro;
+  }
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: remover ? "orcamento_item.remover_desconto" : "orcamento_item.aplicar_desconto",
+    entidade: "OrcamentoItem",
+    entidadeId: orcamentoItemId,
+    descricao: remover
+      ? `Removeu o desconto do item #${orcamentoItemId.slice(-6)} — preço restaurado para ${formatoMoeda.format(novoPrecoUnitario.toNumber())}/un.`
+      : `Aplicou desconto de ${descontoPercentualEfetivo!.toFixed(1)}% no item #${orcamentoItemId.slice(-6)}, de ${formatoMoeda.format(Number(precoUnitarioAnterior))} para ${formatoMoeda.format(novoPrecoUnitario.toNumber())}/un — motivo: ${motivo}`,
+  });
+
+  revalidatePath(`/orcamento/${item.orcamentoId}`);
+  revalidatePath("/orcamento");
+
+  return { ok: true, mensagem: remover ? "Desconto removido." : "Desconto aplicado." };
 }
 
 export type CancelarOrcamentoResult = { ok: boolean; mensagem: string };

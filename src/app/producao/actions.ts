@@ -8,11 +8,14 @@ import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
-import { podeEditarModulo, podeConfirmarEstagio } from "@/lib/auth/permissoes";
+import { podeEditarModulo, podeVerModulo, podeConfirmarEstagio } from "@/lib/auth/permissoes";
 import { Prisma } from "@/generated/prisma/client";
 import { buscarWebhookAutomacao, dispararEventoAutomacao } from "@/lib/webhook-automacao";
 import { normalizarTelefone } from "@/lib/telefone";
 import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
+import { registrarAuditoria } from "@/lib/auditoria";
+import { formatoMoeda } from "@/lib/moeda";
+import { D } from "@/lib/pricing/decimal";
 import { montarChavePerda } from "@/lib/perda-fixa-producao";
 import { avancarStatusPedido, buscarOrcamentoParaBaixa } from "./status-transicao";
 import {
@@ -37,6 +40,13 @@ type ItemPrevisaoBaixa = {
   varianteRotulo: string | null;
   quantidadeConsumida: number;
   perdaPadrao: number;
+  // Prévia em R$ do custo automático que esta linha vai gerar (fase "custo
+  // real" §3.2) — quantidadeConsumida × precoCompra vigente do material/
+  // variante. null quando o material não tem preço de custo cadastrado: a
+  // tela não mostra valor nesse caso, nunca inventa R$0,00. Não inclui a
+  // perda fixa (editável nesta mesma tela) de propósito — o valor aqui é só
+  // uma prévia informativa, não precisa recalcular a cada tecla digitada.
+  custoEstimado: number | null;
 };
 
 export type PrevisaoBaixaEstoqueResult =
@@ -73,6 +83,16 @@ export async function previsaoBaixaEstoque(pedidoId: string): Promise<PrevisaoBa
 
   const orcamentoComItens = await buscarOrcamentoParaBaixa(pedido.orcamentoId);
 
+  // custoEstimado só viaja pro client quando o usuário tem CUSTOS.podeVer —
+  // achado da revisão de segurança da fase "custo real": esta tela é
+  // acessível com só PRODUCAO.podeEditar (ver gate acima), e um operador de
+  // chão de fábrica com PRODUCAO mas sem CUSTOS.podeVer não pode ver o
+  // valor de venda/custo em NENHUMA tela (mesmo critério já aplicado em
+  // producao/page.tsx e CustosPedidoSecao.tsx) — sem isso, "Iniciar
+  // impressão" vazava o custo estimado da baixa pra quem só lança
+  // retrabalho.
+  const podeVerCustos = await podeVerModulo(usuario, "CUSTOS");
+
   const itens: ItemPrevisaoBaixa[] = [];
   for (const item of orcamentoComItens?.itens ?? []) {
     for (const ficha of item.itemGrafica.fichaTecnica) {
@@ -82,13 +102,52 @@ export async function previsaoBaixaEstoque(pedidoId: string): Promise<PrevisaoBa
       if (estoqueAtual === null) continue;
 
       const perdaPadrao = ficha.variante ? ficha.variante.perdaFixaPadrao : ficha.materiaPrima.perdaFixaPadrao;
+      const quantidadeConsumida = Number(ficha.quantidadePorUnidade) * item.quantidade;
+      // Mesmo preço que snapshotCustoFicha (status-transicao.ts) vai
+      // congelar na baixa de verdade — variante sobrepõe o preço da
+      // matéria-prima "pai" quando a ficha aponta uma variante específica.
+      const precoCompra = ficha.varianteId ? (ficha.variante?.precoCompra ?? null) : ficha.materiaPrima.precoCompra;
       itens.push({
         chave: montarChavePerda(item.id, ficha.id),
         materiaPrimaNome: ficha.materiaPrima.itemCatalogo.nome,
         varianteRotulo: ficha.variante?.rotulo ?? null,
-        quantidadeConsumida: Number(ficha.quantidadePorUnidade) * item.quantidade,
+        quantidadeConsumida,
         perdaPadrao: perdaPadrao !== null ? Number(perdaPadrao) : 0,
+        custoEstimado:
+          podeVerCustos && precoCompra !== null
+            ? new D(precoCompra.toString()).times(quantidadeConsumida).toNumber()
+            : null,
       });
+    }
+
+    // Mesma prévia acima, agora pela ficha técnica dos SERVIÇOS anexados
+    // como acabamento (ex: laminação consumindo BOPP) — precisa bater
+    // EXATAMENTE com o loop equivalente em avancarStatusPedido
+    // (status-transicao.ts), mesmo cuidado do comentário de
+    // buscarOrcamentoParaBaixa: a tela de confirmação não pode mostrar algo
+    // diferente do que de fato vai ser descontado. Multiplicador é
+    // `acabamento.qtdBase`, não `item.quantidade`. Aditivo: acabamento sem
+    // ficha técnica cadastrada não gera nenhuma linha aqui.
+    for (const acabamento of item.acabamentos) {
+      for (const ficha of acabamento.itemGrafica.fichaTecnica) {
+        const estoqueAtual = ficha.variante ? ficha.variante.estoqueAtual : ficha.materiaPrima.estoqueAtual;
+        if (estoqueAtual === null) continue;
+
+        const perdaPadrao = ficha.variante ? ficha.variante.perdaFixaPadrao : ficha.materiaPrima.perdaFixaPadrao;
+        const quantidadeConsumida = Number(ficha.quantidadePorUnidade) * Number(acabamento.qtdBase);
+        const precoCompra = ficha.varianteId ? (ficha.variante?.precoCompra ?? null) : ficha.materiaPrima.precoCompra;
+        itens.push({
+          chave: montarChavePerda(acabamento.id, ficha.id),
+          materiaPrimaNome: ficha.materiaPrima.itemCatalogo.nome,
+          varianteRotulo: ficha.variante?.rotulo ?? null,
+          quantidadeConsumida,
+          perdaPadrao: perdaPadrao !== null ? Number(perdaPadrao) : 0,
+          custoEstimado:
+            podeVerCustos && precoCompra !== null
+              ? new D(precoCompra.toString()).times(quantidadeConsumida).toNumber()
+              : null,
+        });
+      }
     }
   }
 
@@ -204,7 +263,7 @@ export async function cancelarPedido(
         // do que de fato foi decrementado. Se o pedido nunca saiu de FILA,
         // não existe nenhuma SAIDA pra este pedidoId e o loop não faz nada.
         const saidas = await tx.movimentacaoEstoque.findMany({
-          where: { pedidoId, tipo: "SAIDA" },
+          where: { pedidoId, tipo: "SAIDA_PRODUCAO" },
         });
         itensEstornados = saidas.length;
 
@@ -225,10 +284,31 @@ export async function cancelarPedido(
               itemGraficaId: saida.itemGraficaId,
               varianteId: saida.varianteId,
               pedidoId: pedido.id,
-              tipo: "ENTRADA",
+              tipo: "ESTORNO_CANCELAMENTO",
               quantidade: saida.quantidade,
               motivo: `Estorno por cancelamento do pedido ${pedido.id} (orçamento ${pedido.orcamentoId})`,
+              // Copiado da SAIDA_PRODUCAO original sendo revertida, não
+              // recalculado pelo preço atual do cadastro (mesmo princípio de
+              // usar o histórico real, não a ficha técnica de agora, que já
+              // rege o resto deste estorno). Fica null se a saída original
+              // também não tinha custo — não inventa valor.
+              custoUnitario: saida.custoUnitario,
+              custoTotal: saida.custoTotal,
+              precoReferenciaEm: saida.precoReferenciaEm,
             },
+          });
+        }
+
+        // Marca (nunca apaga) o CustoPedido automático atrelado a cada saída
+        // que acabou de ser estornada — fase "custo real" §3.3: histórico
+        // preservado, só sai da soma de lucro/relatórios (ver
+        // lucroDoPedido/custosPorCategoriaNoPeriodo, que filtram
+        // estornadoEm: null). Custos MANUAIS não são tocados aqui de
+        // propósito — frete pago é frete pago, ver comentário no schema.
+        if (saidas.length > 0) {
+          await tx.custoPedido.updateMany({
+            where: { movimentacaoEstoqueId: { in: saidas.map((s) => s.id) }, estornadoEm: null },
+            data: { estornadoEm: new Date() },
           });
         }
       },
@@ -266,13 +346,22 @@ export async function cancelarPedido(
   revalidatePath("/catalogo");
   revalidatePath("/meu-negocio");
 
-  return {
-    ok: true,
-    mensagem:
-      itensEstornados > 0
-        ? "Pedido cancelado e estoque estornado."
-        : "Pedido cancelado.",
-  };
+  let mensagem = itensEstornados > 0 ? "Pedido cancelado e estoque estornado." : "Pedido cancelado.";
+
+  // Aviso "nice to have" do plano (§3.3): custo manual não é estornado
+  // automaticamente, então avisa quando sobrou algum neste pedido cancelado
+  // — sem isso, a diferença some dentro do texto genérico acima. Leitura
+  // fora da transação (melhor esforço, não crítica ao cancelamento em si).
+  const custosManuaisRestantes = await prisma.custoPedido.findMany({
+    where: { pedidoId, origem: "MANUAL", estornadoEm: null },
+    select: { valor: true },
+  });
+  if (custosManuaisRestantes.length > 0) {
+    const totalManual = custosManuaisRestantes.reduce((soma, c) => soma + Number(c.valor), 0);
+    mensagem += ` ${custosManuaisRestantes.length} custo${custosManuaisRestantes.length > 1 ? "s" : ""} manual${custosManuaisRestantes.length > 1 ? "is" : ""} de ${formatoMoeda.format(totalManual)} permanece${custosManuaisRestantes.length > 1 ? "m" : ""} neste pedido cancelado.`;
+  }
+
+  return { ok: true, mensagem };
 }
 
 export type CustoPedidoResult = { ok: boolean; mensagem: string };
@@ -282,6 +371,11 @@ export type CustoPedidoResult = { ok: boolean; mensagem: string };
 // isolamento de tenant duas vezes: o pedido precisa pertencer à gráfica do
 // usuário logado E a categoria também, senão um pedidoId/categoriaCustoId
 // de outra gráfica vindo direto do form (sem passar pela UI) seria aceito.
+//
+// Gate é CUSTOS, não PRODUCAO (ver fase-custo-real.md §2.6 / PR-1): o
+// operador de chão de fábrica precisa lançar retrabalho sem enxergar
+// valor de venda, custo total nem margem — isso é responsabilidade de
+// CUSTOS.podeVer, checado na leitura (producao/page.tsx), não aqui.
 export async function lancarCustoPedido(
   _estadoAnterior: CustoPedidoResult | null,
   formData: FormData
@@ -289,8 +383,8 @@ export async function lancarCustoPedido(
   const usuario = await exigirUsuarioAutenticado();
   await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
-  if (!(await podeEditarModulo(usuario, "PRODUCAO"))) {
-    return { ok: false, mensagem: "Você não tem permissão pra editar a produção." };
+  if (!(await podeEditarModulo(usuario, "CUSTOS"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra lançar custo." };
   }
 
   const pedidoId = String(formData.get("pedidoId"));
@@ -316,14 +410,25 @@ export async function lancarCustoPedido(
     return { ok: false, mensagem: "Categoria de custo não encontrada." };
   }
 
-  await prisma.custoPedido.create({
+  const custo = await prisma.custoPedido.create({
     data: {
       graficaId: usuario.graficaId,
       pedidoId,
       categoriaCustoId,
       valor,
       observacao,
+      criadoPorId: usuario.id,
     },
+  });
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "custo_pedido.criar",
+    entidade: "CustoPedido",
+    entidadeId: custo.id,
+    descricao: `Lançou custo de ${formatoMoeda.format(valor)} em ${categoria.nome} no pedido ${pedidoId}`,
   });
 
   revalidatePath("/producao");
@@ -333,7 +438,8 @@ export async function lancarCustoPedido(
 
 // Exclui um lançamento de custo real — mesma checagem de isolamento de
 // tenant de lancarCustoPedido, agora sobre o próprio CustoPedido (que já
-// guarda graficaId direto, ver comentário no schema).
+// guarda graficaId direto, ver comentário no schema). Gate CUSTOS, mesmo
+// motivo do comentário acima.
 export async function excluirCustoPedido(
   _estadoAnterior: CustoPedidoResult | null,
   formData: FormData
@@ -341,19 +447,30 @@ export async function excluirCustoPedido(
   const usuario = await exigirUsuarioAutenticado();
   await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
-  if (!(await podeEditarModulo(usuario, "PRODUCAO"))) {
-    return { ok: false, mensagem: "Você não tem permissão pra editar a produção." };
+  if (!(await podeEditarModulo(usuario, "CUSTOS"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra lançar custo." };
   }
 
   const custoId = String(formData.get("custoId"));
   const custo = await prisma.custoPedido.findFirst({
     where: { id: custoId, graficaId: usuario.graficaId },
+    include: { categoriaCusto: true },
   });
   if (!custo) {
     return { ok: false, mensagem: "Custo não encontrado." };
   }
 
   await prisma.custoPedido.delete({ where: { id: custoId } });
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "custo_pedido.excluir",
+    entidade: "CustoPedido",
+    entidadeId: custo.id,
+    descricao: `Removeu custo de ${formatoMoeda.format(Number(custo.valor))} em ${custo.categoriaCusto.nome} do pedido ${custo.pedidoId}`,
+  });
 
   revalidatePath("/producao");
   revalidatePath("/meu-negocio");

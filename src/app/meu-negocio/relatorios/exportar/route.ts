@@ -63,7 +63,10 @@ export async function GET(request: NextRequest) {
       select: {
         id: true,
         orcamento: { select: { createdAt: true, total: true, cliente: { select: { nome: true } } } },
-        custos: { select: { valor: true } },
+        // estornadoEm: null — mesmo motivo de buscarRelatorioNegocio (fase
+        // "custo real" §3.3): custo automático estornado no cancelamento do
+        // pedido não pode continuar contando contra o lucro exportado.
+        custos: { where: { estornadoEm: null }, select: { valor: true } },
       },
       orderBy: { orcamento: { createdAt: "asc" } },
     }),

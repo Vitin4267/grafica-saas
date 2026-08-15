@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { formatoMoeda } from "@/lib/moeda";
 import { previsaoBaixaEstoque, type PrevisaoBaixaEstoqueResult } from "./actions";
 
 type ItemPrevisao = Extract<PrevisaoBaixaEstoqueResult, { ok: true }>["itens"][number];
@@ -83,6 +84,18 @@ export function PainelConfirmacaoImpressao({
     return acc;
   }, {});
 
+  // Total agregado em vez de linha por item (fase "custo real" §3.2) — o
+  // objetivo é o operador perceber o dinheiro saindo antes de confirmar, sem
+  // poluir cada linha com mais uma coluna. Ignora itens sem preço de custo
+  // cadastrado (não inventa valor); se algum ficou de fora, um aviso avisa
+  // que a soma é parcial.
+  const itensComCusto = itens.filter((item) => item.custoEstimado !== null);
+  const custoEstimadoTotal =
+    itensComCusto.length > 0
+      ? itensComCusto.reduce((soma, item) => soma + (item.custoEstimado as number), 0)
+      : null;
+  const algumSemPreco = itens.length > 0 && itensComCusto.length < itens.length;
+
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-800/30">
       <div>
@@ -147,6 +160,20 @@ export function PainelConfirmacaoImpressao({
             );
           })}
         </div>
+      )}
+
+      {custoEstimadoTotal !== null && (
+        <p className="text-sm text-slate-700 dark:text-slate-200">
+          Custo estimado desta baixa:{" "}
+          <span className="font-semibold text-slate-900 dark:text-white">
+            {formatoMoeda.format(custoEstimadoTotal)}
+          </span>
+          {algumSemPreco && (
+            <span className="ml-1 text-xs font-normal text-slate-500">
+              (alguns materiais sem preço de custo cadastrado não entram nesta soma)
+            </span>
+          )}
+        </p>
       )}
 
       <form action={formAction} className="flex flex-wrap items-center gap-3">

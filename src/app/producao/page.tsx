@@ -62,6 +62,14 @@ export default async function ProducaoPage() {
   }
   const podeEditar = await podeEditarModulo(usuario, "PRODUCAO");
 
+  // Permissão separada da PRODUCAO acima (ver fase-custo-real.md §2.6 /
+  // PR-1): lançar custo (retrabalho, frete) não implica poder ver valor de
+  // venda, custo total nem margem — é o que separa o chão de fábrica do
+  // dono/gerente. podeEditarCustos e podeVerCustos são repassados até
+  // CustosPedidoSecao (via PedidoLinha) pra controlar exatamente isso.
+  const podeEditarCustos = await podeEditarModulo(usuario, "CUSTOS");
+  const podeVerCustos = await podeVerModulo(usuario, "CUSTOS");
+
   await verificarEDispararAlertasAtraso(usuario.graficaId, usuario.grafica.nome);
   const origem = await resolverOrigemPublica();
 
@@ -138,14 +146,15 @@ export default async function ProducaoPage() {
               // dados já trazidos pelo findMany acima) em vez de chamar
               // lucroDoPedido por pedido — isso evitaria N+1 queries (uma
               // por pedido) já que o mesmo dado já está carregado.
-              const custoTotalPedido = pedido.custos.reduce(
-                (soma, custo) => soma + Number(custo.valor),
-                0
-              );
+              //
+              // custosAtivos filtra estornadoEm (fase "custo real" §3.3):
+              // um custo automático estornado no cancelamento continua na
+              // lista `custos` (histórico, mostrado em CustosPedidoSecao),
+              // mas não pode contar contra o lucro do pedido.
+              const custosAtivos = pedido.custos.filter((custo) => custo.estornadoEm === null);
+              const custoTotalPedido = custosAtivos.reduce((soma, custo) => soma + Number(custo.valor), 0);
               const lucroPedido =
-                pedido.custos.length > 0
-                  ? Number(pedido.orcamento.total) - custoTotalPedido
-                  : null;
+                custosAtivos.length > 0 ? Number(pedido.orcamento.total) - custoTotalPedido : null;
 
               return (
                 <PedidoLinha
@@ -158,6 +167,8 @@ export default async function ProducaoPage() {
                     .join(", ")}
                   status={pedido.status}
                   podeEditar={podeEditar}
+                  podeEditarCustos={podeEditarCustos}
+                  podeVerCustos={podeVerCustos}
                   souResponsavelDesteStatus={etapasResponsavel.has(pedido.status)}
                   chipAtraso={chipAtraso(pedido.prazoEntrega, pedido.status)}
                   arteUrl={pedido.arteUrl}
@@ -166,14 +177,18 @@ export default async function ProducaoPage() {
                   arteComentarioCliente={pedido.arteComentarioCliente}
                   linkArtePublico={pedido.arteLinkToken ? `${origem}/a/${pedido.arteLinkToken}` : null}
                   categoriasCustoAtivas={categoriasCustoAtivas}
+                  // valor/lucro só viajam pro client quando podeVerCustos:
+                  // nunca deixar quem só tem CUSTOS.podeEditar (lança
+                  // retrabalho) receber o número no payload da página, nem
+                  // que escondido por CSS — ver critério de aceite do PR-1.
                   custos={pedido.custos.map((custo) => ({
                     id: custo.id,
                     categoriaNome: custo.categoriaCusto.nome,
-                    valor: Number(custo.valor),
+                    valor: podeVerCustos ? Number(custo.valor) : null,
                     observacao: custo.observacao,
                     createdAt: custo.createdAt.toISOString(),
                   }))}
-                  lucro={lucroPedido}
+                  lucro={podeVerCustos ? lucroPedido : null}
                 />
               );
             })}

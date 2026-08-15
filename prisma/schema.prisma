@@ -69,6 +69,7 @@ model Grafica {
   arquivos              ArquivoArmazenado[]
   categoriasCusto       CategoriaCusto[]
   custosPedido          CustoPedido[]
+  custosPrevisto        PedidoCustoPrevisto[]
 
   @@map("graficas")
 }
@@ -105,6 +106,17 @@ model ParametrosGrafica {
   // nunca pago a ninguém. Esta aqui decide se o valor-base da comissão de
   // cada vendedor é o total do orçamento ou o lucro (total - custo).
   comissaoVendedorBase BaseComissao @default(VALOR)
+
+  // Flags da fase "custo real" (fase-custo-real.md §1.5) — tudo que varia
+  // entre gráficas nasce aqui, nunca hardcoded.
+  custoAutomaticoConsumo        Boolean @default(true) // gerar CustoPedido automático na baixa Fila→Impressão
+  categoriaCustoConsumoPadraoId String? // categoria pra matéria-prima sem categoriaCustoId própria
+  comissaoEntraNoCustoPedido    Boolean @default(false)
+  perdaEhCustoDoPedido          Boolean @default(true)
+  margemFaixaBaixa              Decimal @default(10) @db.Decimal(5, 2) // % — abaixo disso o medidor mostra vermelho
+  margemFaixaBoa                Decimal @default(25) @db.Decimal(5, 2) // % — acima disso o medidor mostra verde
+  descontoMaxSemAprovacao       Decimal @default(100) @db.Decimal(5, 2) // % — 100 = sem trava (comportamento de hoje)
+  diasPrecoInsumoDesatualizado  Int     @default(90)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -204,7 +216,7 @@ model DadosFiscaisGrafica {
 
   naturezaOperacaoPadrao String @default("Venda de mercadoria")
   cfopPadrao             String @default("5102") // venda dentro do estado, mercadoria de terceiros
-  csosnPadrao            String @default("102")  // Simples Nacional, tributada sem permissão de crédito
+  csosnPadrao            String @default("102") // Simples Nacional, tributada sem permissão de crédito
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -361,13 +373,13 @@ enum PapelUsuario {
 }
 
 model Usuario {
-  id           String       @id @default(cuid())
-  graficaId    String
-  nome         String
-  email        String       @unique
-  senhaHash    String
-  papel        PapelUsuario @default(OPERADOR)
-  createdAt    DateTime     @default(now())
+  id        String       @id @default(cuid())
+  graficaId String
+  nome      String
+  email     String       @unique
+  senhaHash String
+  papel     PapelUsuario @default(OPERADOR)
+  createdAt DateTime     @default(now())
 
   // Concedido individualmente pelo DONO em /usuarios. Só tem efeito se
   // Grafica.compartilharMeuNegocio também estiver ligado — ver podeVerMeuNegocio.
@@ -409,7 +421,7 @@ model Usuario {
   // reativa.
   desativadoEm DateTime?
 
-  grafica                Grafica                  @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  grafica                Grafica                 @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   orcamentos             Orcamento[]
   sessoes                Sessao[]
   permissoes             PermissaoUsuario[]
@@ -433,6 +445,11 @@ enum ModuloPermissao {
   PRODUCAO
   FINANCEIRO
   CONFIGURACOES
+  // Lançar custo real de pedido (podeEditar) e ver lucro/margem (podeVer) —
+  // separado de PRODUCAO de propósito: um operador de chão de fábrica pode
+  // precisar lançar retrabalho sem enxergar o P&L do pedido (ver fase
+  // "custo real", fase-custo-real.md §2.6).
+  CUSTOS
 }
 
 model PermissaoUsuario {
@@ -610,12 +627,12 @@ model Cliente {
   grafica    Grafica     @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   orcamentos Orcamento[]
 
-  @@index([graficaId])
   // NULL não colide com NULL em unique index do Postgres — várias gráficas
   // podem ter clientes sem documento cadastrado sem problema. Escopado por
   // graficaId (não global) porque CPF/CNPJ é único no mundo real, mas nada
   // impede duas gráficas diferentes atenderem o mesmo cliente.
   @@unique([graficaId, documento])
+  @@index([graficaId])
   @@map("clientes")
 }
 
@@ -629,6 +646,7 @@ enum UnidadeMedida {
   ROLO
   PACOTE
   CENTO
+  MILHEIRO
   HORA
 }
 
@@ -700,14 +718,14 @@ model ItemCatalogo {
 // venda = quanto cobra do cliente). ativo=false "desliga" o item sem apagar
 // histórico (orçamentos e movimentações de estoque continuam íntegros).
 model ItemGrafica {
-  id             String   @id @default(cuid())
-  graficaId      String
-  itemCatalogoId String
-  ativo          Boolean  @default(true)
-  precoCompra    Decimal? @db.Decimal(12, 4)
-  precoVenda     Decimal? @db.Decimal(12, 2)
-  estoqueAtual   Decimal? @db.Decimal(12, 4)
-  estoqueMinimo  Decimal? @db.Decimal(12, 4)
+  id                     String    @id @default(cuid())
+  graficaId              String
+  itemCatalogoId         String
+  ativo                  Boolean   @default(true)
+  precoCompra            Decimal?  @db.Decimal(12, 4)
+  precoVenda             Decimal?  @db.Decimal(12, 2)
+  estoqueAtual           Decimal?  @db.Decimal(12, 4)
+  estoqueMinimo          Decimal?  @db.Decimal(12, 4)
   // Quanto desse material é perdido por CALIBRAGEM toda vez que uma produção
   // entra em impressão (FILA→IMPRESSAO) — fixo, não escala com a quantidade
   // do pedido (1 unidade ou 1000 = mesma perda). Diferente de
@@ -718,14 +736,14 @@ model ItemGrafica {
   // ItemGrafica é matéria-prima (itemCatalogo.tipo=MATERIA_PRIMA); é o
   // padrão sugerido na tela de confirmação de avancarPedido — editável por
   // pedido lá, sem alterar este valor.
-  perdaFixaPadrao Decimal? @db.Decimal(12, 4)
+  perdaFixaPadrao        Decimal?  @db.Decimal(12, 4)
   // Dedup do alerta de estoque baixo por e-mail (ver src/lib/alerta-estoque.ts)
   // — preenchido quando o e-mail/aviso é disparado, limpo de volta pra null
   // assim que o estoque volta a ficar acima do mínimo (self-healing: cai nunca
   // avisado → avisa; sobe → limpa; cai de novo → avisa de novo).
   alertaEstoqueEnviadoEm DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   // Motor avançado — só relevante quando tipo=PRODUTO no ItemCatalogo relacionado.
   modeloCalculo ModeloCalculo @default(SIMPLES)
@@ -754,10 +772,28 @@ model ItemGrafica {
   custoImpressaoM2    Decimal? @db.Decimal(12, 4)
   areaMinimaFaturavel Decimal? @db.Decimal(8, 4)
 
-  grafica      Grafica      @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  itemCatalogo ItemCatalogo @relation(fields: [itemCatalogoId], references: [id])
-  prensa       Prensa?      @relation(fields: [prensaId], references: [id], onDelete: Restrict)
-  papel        ItemGrafica? @relation("PapelDoProdutoOffset", fields: [papelId], references: [id], onDelete: Restrict)
+  // Em qual CategoriaCusto a baixa automática desta matéria-prima cai (ver
+  // fase-custo-real.md §1.5, §3.2) — só relevante quando tipo=MATERIA_PRIMA.
+  // Nulo cai na categoria padrão configurada em
+  // ParametrosGrafica.categoriaCustoConsumoPadraoId.
+  categoriaCustoId String?
+
+  // Unidade em que a gráfica RACIOCINA e VENDE este produto (ex: rótulo por
+  // milheiro), separada da UnidadeMedida de ItemCatalogo (que descreve o
+  // item em si) — só relevante quando tipo=PRODUTO. fatorConversao converte
+  // pra a unidade base do motor de preço (ex: 1 milheiro = 1000). Nula = usa
+  // UNIDADE/1, comportamento de hoje. Camada de exibição/métrica derivada —
+  // nunca mexe no motor de preço em si.
+  unidadeContagem UnidadeMedida?
+  fatorConversao  Decimal?       @db.Decimal(12, 4)
+
+  grafica        Grafica         @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  itemCatalogo   ItemCatalogo    @relation(fields: [itemCatalogoId], references: [id])
+  prensa         Prensa?         @relation(fields: [prensaId], references: [id], onDelete: Restrict)
+  papel          ItemGrafica?    @relation("PapelDoProdutoOffset", fields: [papelId], references: [id], onDelete: Restrict)
+  // SetNull: desativar/remover a categoria de custo não pode travar a
+  // matéria-prima — ela só volta a cair na categoria padrão da gráfica.
+  categoriaCusto CategoriaCusto? @relation(fields: [categoriaCustoId], references: [id], onDelete: SetNull)
 
   itensOrcamento OrcamentoItem[]
   movimentacoes  MovimentacaoEstoque[]
@@ -770,8 +806,8 @@ model ItemGrafica {
   // Ficha técnica (spec de baixa automática de estoque): só relevante quando
   // tipo=PRODUTO. fichaTecnica = quais matérias-primas este produto consome;
   // usadoComoMateriaPrima = em quais fichas técnicas esta matéria-prima aparece.
-  fichaTecnica           FichaTecnicaItem[] @relation("FichaTecnicaDoProduto")
-  usadoComoMateriaPrima  FichaTecnicaItem[] @relation("MateriaPrimaConsumida")
+  fichaTecnica          FichaTecnicaItem[] @relation("FichaTecnicaDoProduto")
+  usadoComoMateriaPrima FichaTecnicaItem[] @relation("MateriaPrimaConsumida")
 
   // Papel: produtos Offset que usam este item como papel, e a tabela de
   // preço por gramatura deste item quando ELE é o papel (tipo=MATERIA_PRIMA).
@@ -784,6 +820,7 @@ model ItemGrafica {
 
   @@unique([graficaId, itemCatalogoId])
   @@index([graficaId])
+  @@index([categoriaCustoId])
   @@map("itens_grafica")
 }
 
@@ -843,20 +880,20 @@ model FichaTecnicaItem {
 // apaga uma variante que já foi referenciada por ficha técnica ou
 // movimentação de estoque, só se desativa (some da tela, histórico intacto).
 model VarianteMateriaPrima {
-  id            String   @id @default(cuid())
-  itemGraficaId String // a matéria-prima "pai" (ItemGrafica tipo=MATERIA_PRIMA)
-  rotulo        String // ex: "2mm", "3mm", "5mm"
-  ativo         Boolean  @default(true)
-  precoCompra   Decimal  @db.Decimal(12, 4)
-  estoqueAtual  Decimal? @db.Decimal(12, 4)
-  estoqueMinimo Decimal? @db.Decimal(12, 4)
+  id                     String    @id @default(cuid())
+  itemGraficaId          String // a matéria-prima "pai" (ItemGrafica tipo=MATERIA_PRIMA)
+  rotulo                 String // ex: "2mm", "3mm", "5mm"
+  ativo                  Boolean   @default(true)
+  precoCompra            Decimal   @db.Decimal(12, 4)
+  estoqueAtual           Decimal?  @db.Decimal(12, 4)
+  estoqueMinimo          Decimal?  @db.Decimal(12, 4)
   // Mesma ideia de ItemGrafica.perdaFixaPadrao, só que por variante (ex: uma
   // espessura de chapa pode ter perda de calibragem diferente de outra).
-  perdaFixaPadrao Decimal? @db.Decimal(12, 4)
+  perdaFixaPadrao        Decimal?  @db.Decimal(12, 4)
   // Mesmo dedup self-healing de ItemGrafica.alertaEstoqueEnviadoEm, só que por
   // variante (cada uma tem saldo próprio).
   alertaEstoqueEnviadoEm DateTime?
-  createdAt     DateTime @default(now())
+  createdAt              DateTime  @default(now())
 
   itemGrafica ItemGrafica @relation("VariantesDaMateriaPrima", fields: [itemGraficaId], references: [id], onDelete: Cascade)
 
@@ -916,9 +953,28 @@ model ConfiguracaoAcabamento {
   @@map("configuracoes_acabamento")
 }
 
+// SAIDA_PRODUCAO e ESTORNO_CANCELAMENTO substituem os antigos valores
+// genéricos SAIDA/ENTRADA (renomeados na migration desta fase — eram os
+// únicos dois tipos que existiam: SAIDA = baixa automática Fila→Impressão,
+// ENTRADA = estorno de cancelamento de pedido). Os três novos cobrem o que
+// a fase "custo real" precisa: compra registrada, baixa manual (perda/
+// quebra/uso avulso) e ajuste de contagem física.
 enum TipoMovimentacao {
-  ENTRADA
-  SAIDA
+  SAIDA_PRODUCAO
+  ESTORNO_CANCELAMENTO
+  ENTRADA_COMPRA
+  SAIDA_MANUAL
+  AJUSTE_INVENTARIO
+}
+
+// Como o custo unitário snapshotado numa MovimentacaoEstoque foi obtido —
+// hoje só PRECO_CADASTRO existe (lê ItemGrafica.precoCompra no momento da
+// baixa); os outros dois entram quando houver disciplina de compra
+// lançada o suficiente pra sustentar um cálculo melhor (ver fase-custo-real.md §1.1).
+enum MetodoCusteio {
+  PRECO_CADASTRO
+  ULTIMA_COMPRA
+  MEDIO_PONDERADO
 }
 
 model MovimentacaoEstoque {
@@ -940,6 +996,22 @@ model MovimentacaoEstoque {
   // um dia for desativada/apagada.
   varianteId String?
 
+  // Snapshot de custo no momento da baixa — nunca recalculado retroativamente
+  // (mesmo princípio do preço travado do orçamento). Nulo em movimentações
+  // anteriores a esta fase: a UI mostra "—", nunca zero (zero mentiria que o
+  // custo foi apurado como R$ 0). 4 casas em custoUnitario porque insumo
+  // cotado por m²/milheiro tem preço fracionário — arredondar em 2 casas na
+  // origem gera desvio acumulado visível em tiragem grande.
+  custoUnitario     Decimal?      @db.Decimal(12, 4)
+  custoTotal        Decimal?      @db.Decimal(12, 2)
+  metodoCusteio     MetodoCusteio @default(PRECO_CADASTRO)
+  // Quando o preço usado no snapshot foi atualizado pela última vez — base
+  // do alerta "preço de custo não atualizado há N dias".
+  precoReferenciaEm DateTime?
+
+  documento   String? // nº da nota fiscal, só usado em ENTRADA_COMPRA
+  criadoPorId String? // null quando a movimentação foi gerada pelo sistema (baixa automática)
+
   // Restrict (não Cascade) porque isso é o histórico de movimentação de
   // estoque em si — apagar o ItemGrafica junto apagaria o próprio registro
   // que a movimentação existe pra preservar. Não é SetNull (como pedido/
@@ -951,6 +1023,7 @@ model MovimentacaoEstoque {
   itemGrafica ItemGrafica           @relation(fields: [itemGraficaId], references: [id], onDelete: Restrict)
   pedido      Pedido?               @relation(fields: [pedidoId], references: [id], onDelete: SetNull)
   variante    VarianteMateriaPrima? @relation(fields: [varianteId], references: [id], onDelete: SetNull)
+  custoPedido CustoPedido?
 
   @@index([itemGraficaId])
   @@index([pedidoId])
@@ -993,15 +1066,15 @@ model Orcamento {
   // FUNCIONÁRIO mexeu", este responde "qual pessoa do CLIENTE respondeu",
   // e misturar os dois exigiria usuarioId nulo lá, enfraquecendo o log
   // interno justamente onde ele precisa ser firme.
-  respostaPublicaNome String?
-  respostaPublicaEm   DateTime?
+  respostaPublicaNome   String?
+  respostaPublicaEm     DateTime?
   // Motivo escrito PELO CLIENTE ao recusar, no próprio link público.
   // Diferente de `observacoes` (nota interna da gráfica, logo abaixo): este
   // texto veio de fora e é o que o vendedor precisa ler pra saber se perdeu
   // por preço, por prazo ou por arte. Vai junto no e-mail de recusa.
   respostaPublicaMotivo String?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   // Opcional de propósito — gráfica sem filial cadastrada nunca vê esse
   // campo no formulário. Filiais COMPARTILHAM catálogo/estoque/financeiro
@@ -1044,12 +1117,12 @@ model Orcamento {
   etapaEntregaEm                           DateTime?
   etapaEntregaResponsavel                  String?
 
-  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  cliente Cliente @relation(fields: [clienteId], references: [id])
-  usuario Usuario @relation(fields: [usuarioId], references: [id])
-  filial  Filial? @relation(fields: [filialId], references: [id], onDelete: SetNull)
-  itens   OrcamentoItem[]
-  pedido  Pedido?
+  grafica    Grafica         @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  cliente    Cliente         @relation(fields: [clienteId], references: [id])
+  usuario    Usuario         @relation(fields: [usuarioId], references: [id])
+  filial     Filial?         @relation(fields: [filialId], references: [id], onDelete: SetNull)
+  itens      OrcamentoItem[]
+  pedido     Pedido?
   notaFiscal NotaFiscal?
   comissao   Comissao?
 
@@ -1219,13 +1292,19 @@ model LogAuditoria {
   @@map("logs_auditoria")
 }
 
+enum TipoDesconto {
+  PERCENTUAL
+  VALOR_ABSOLUTO
+  PRECO_FINAL // usuário digita o preço fechado, sistema deriva o desconto
+}
+
 model OrcamentoItem {
-  id            String   @id @default(cuid())
-  orcamentoId   String
-  itemGraficaId String
-  quantidade    Int
-  larguraCm     Decimal? @db.Decimal(8, 2)
-  alturaCm      Decimal? @db.Decimal(8, 2)
+  id              String          @id @default(cuid())
+  orcamentoId     String
+  itemGraficaId   String
+  quantidade      Int
+  larguraCm       Decimal?        @db.Decimal(8, 2)
+  alturaCm        Decimal?        @db.Decimal(8, 2)
   // Unidade em que o usuário efetivamente DIGITOU largura/altura deste item
   // (mm/cm/m — ver src/lib/unidade-dimensao.ts) — congelada no momento da
   // criação do item, nunca lida dinamicamente de Grafica.unidadePadraoDimensao
@@ -1234,11 +1313,26 @@ model OrcamentoItem {
   // unidade de ENTRADA/EXIBIÇÃO. Default CM preserva o comportamento de toda
   // linha existente (nunca teve outra unidade).
   unidadeDimensao UnidadeDimensao @default(CM)
-  cores         String? // ex: "4x0", "4x4" — snapshot legível, sempre preenchido
-  acabamento    String? // texto livre, modo SIMPLES apenas
+  cores           String? // ex: "4x0", "4x4" — snapshot legível, sempre preenchido
+  acabamento      String? // texto livre, modo SIMPLES apenas
 
+  // precoUnitario/precoTotal continuam sendo o VALOR VENDIDO (deliberado —
+  // PDF, link público, pagamentos e relatórios já leem estes campos). O
+  // preço sugerido pelo motor vira campo paralelo, nunca substitui estes.
   precoUnitario Decimal @db.Decimal(12, 2)
   precoTotal    Decimal @db.Decimal(12, 2)
+
+  // Preço sugerido vs. negociado (ver fase-custo-real.md §2.4, §4.2) — nulo em
+  // item sem desconto registrado, o que inclui todo item criado antes desta
+  // fase (renderiza normalmente, sem "erosão por desconto" pra mostrar).
+  precoSugeridoUnitario Decimal?      @db.Decimal(12, 4)
+  descontoTipo          TipoDesconto?
+  descontoValor         Decimal?      @db.Decimal(12, 4)
+  motivoDesconto        String?       @db.VarChar(300)
+  // Preenchido quando o desconto passa de ParametrosGrafica.descontoMaxSemAprovacao
+  // e um DONO/ADMIN aprova — texto livre de "quem", não FK (mesmo padrão de
+  // LogAuditoria.usuarioNome: sobrevive à remoção do usuário).
+  aprovadoPorId         String?
 
   // Motor avançado (M2/OFFSET): snapshot do modelo usado + árvore de custo auditável
   // (spec §0d). Fica null pra itens SIMPLES — nada muda no caminho existente.
@@ -1429,7 +1523,7 @@ model Pedido {
   // Data pura (meia-noite UTC, mesmo padrão de Despesa.vencimento — ver
   // src/lib/data.ts), definida na aprovação do orçamento. Opcional: nem todo
   // pedido tem prazo prometido, e sem prazo nunca gera alerta de atraso.
-  prazoEntrega DateTime?
+  prazoEntrega          DateTime?
   // Dedup do evento pedido_atrasado (webhook-automacao.ts): uma vez enviado
   // o alerta pra este pedido, nunca reenviar — evita spam a cada
   // carregamento de /producao enquanto o pedido continua atrasado.
@@ -1463,11 +1557,31 @@ model Pedido {
   // isso como "nada pra confirmar agora", não como link inválido.
   producaoLinkToken String? @unique
 
+  // Data da aprovação do orçamento (autenticada ou pelo link público) — até
+  // esta fase, o dashboard somava faturamento por createdAt do orçamento
+  // porque este campo não existia. Também é o gatilho que congela
+  // PedidoCustoPrevisto e os três snapshots abaixo (ver fase-custo-real.md §1.2, §3.1).
+  aprovadoEm DateTime?
+
+  // Snapshots tirados no momento de aprovadoEm — nunca recalculados depois,
+  // mesmo que o motor de precificação ou o preço de matéria-prima mudem.
+  precoSugeridoTotal  Decimal? @db.Decimal(12, 2)
+  valorNegociadoTotal Decimal? @db.Decimal(12, 2)
+  custoPrevistoTotal  Decimal? @db.Decimal(12, 2)
+
+  // Fechamento é ato explícito (tela /pedidos/{id}/fechamento), não
+  // automático ao entrar em Entregue — custo atrasado (frete que chega na
+  // semana seguinte) é regra, não exceção. Reabrir exige permissão
+  // custosVerLucro e gera auditoria.
+  fechadoEm    DateTime?
+  fechadoPorId String?
+
   grafica   Grafica   @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   orcamento Orcamento @relation(fields: [orcamentoId], references: [id])
 
-  movimentacoes MovimentacaoEstoque[]
-  custos        CustoPedido[]
+  movimentacoes  MovimentacaoEstoque[]
+  custos         CustoPedido[]
+  custosPrevisto PedidoCustoPrevisto[]
 
   @@index([graficaId])
   @@map("pedidos")
@@ -1489,12 +1603,21 @@ model CategoriaCusto {
   ativa     Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  grafica Grafica       @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  custos  CustoPedido[]
+  grafica         Grafica               @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  custos          CustoPedido[]
+  custosPrevistos PedidoCustoPrevisto[]
+  itensGrafica    ItemGrafica[]
 
   @@unique([graficaId, nome])
   @@index([graficaId])
   @@map("categorias_custo")
+}
+
+enum OrigemCusto {
+  MANUAL
+  CONSUMO_ESTOQUE
+  COMISSAO
+  SERVICO_INSUMO
 }
 
 // Um lançamento de custo REAL incorrido num pedido específico — diferente do
@@ -1515,17 +1638,67 @@ model CustoPedido {
   observacao       String?
   createdAt        DateTime @default(now())
 
-  grafica        Grafica        @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  pedido         Pedido         @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  // De onde veio este lançamento (ver fase-custo-real.md §1.4). CONSUMO_ESTOQUE
+  // é gerado automaticamente na baixa Fila→Impressão e nunca duplicado
+  // (movimentacaoEstoqueId é único). Se já existir custo MANUAL na mesma
+  // categoria/pedido quando o automático nasce, ele vem com
+  // possivelDuplicidade=true em vez de somar calado.
+  origem                OrigemCusto @default(MANUAL)
+  movimentacaoEstoqueId String?     @unique
+  valorCalculado        Decimal?    @db.Decimal(12, 2) // o que o sistema apurou, antes de qualquer edição manual
+  editadoManualmente    Boolean     @default(false)
+  possivelDuplicidade   Boolean     @default(false)
+
+  criadoPorId String?
+  // Cancelamento de pedido: nunca deleta custo de origem automática, só
+  // marca estornadoEm e exclui da soma (mesmo princípio do estorno de
+  // estoque, que já usa histórico real em vez de recalcular). Custo manual
+  // não é estornado automaticamente (frete pago é frete pago).
+  estornadoEm DateTime?
+
+  grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  pedido              Pedido               @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
   // Restrict: não deixa apagar uma categoria ainda referenciada por um
   // lançamento de custo — a gráfica precisa desativar (ativa=false) em vez
   // de excluir, preservando o histórico de custos já lançados.
-  categoriaCusto CategoriaCusto @relation(fields: [categoriaCustoId], references: [id], onDelete: Restrict)
+  categoriaCusto      CategoriaCusto       @relation(fields: [categoriaCustoId], references: [id], onDelete: Restrict)
+  movimentacaoEstoque MovimentacaoEstoque? @relation(fields: [movimentacaoEstoqueId], references: [id], onDelete: SetNull)
 
   @@index([graficaId])
   @@index([pedidoId])
   @@index([categoriaCustoId])
   @@map("custos_pedido")
+}
+
+enum OrigemPrevisao {
+  MOTOR_PRECIFICACAO
+  FICHA_TECNICA
+  MANUAL
+}
+
+// Previsão de custo por categoria, congelada no momento em que o orçamento
+// é aprovado (ver fase-custo-real.md §2.3, §3.1). Existe pra responder
+// "orçado vs. realizado" por categoria — não um total só, porque um total
+// diz "estourei R$ 780" e por categoria diz "o papel veio 34% acima do
+// previsto e apareceu um frete não orçado". Nunca recalculada depois: se o
+// preço da matéria-prima mudar após a aprovação, esta linha não se altera.
+model PedidoCustoPrevisto {
+  id               String         @id @default(cuid())
+  graficaId        String
+  pedidoId         String
+  categoriaCustoId String
+  valor            Decimal        @db.Decimal(12, 2)
+  origem           OrigemPrevisao
+  detalhe          String? // ex: "Papel Couché 150g — 420 folhas"
+  createdAt        DateTime       @default(now())
+
+  grafica        Grafica        @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  pedido         Pedido         @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  categoriaCusto CategoriaCusto @relation(fields: [categoriaCustoId], references: [id], onDelete: Restrict)
+
+  @@index([graficaId, pedidoId])
+  @@index([categoriaCustoId])
+  @@map("pedido_custo_previsto")
 }
 
 // Atribuição gráfica-wide (não por Pedido individual) de quem é responsável

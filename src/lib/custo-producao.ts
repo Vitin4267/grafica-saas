@@ -87,7 +87,7 @@ export async function buscarCustoRealVsOrcado(
   }
 
   const movimentacoes = await prisma.movimentacaoEstoque.findMany({
-    where: { pedidoId, tipo: "SAIDA" },
+    where: { pedidoId, tipo: "SAIDA_PRODUCAO" },
     include: { itemGrafica: { include: { itemCatalogo: true } }, variante: true },
   });
 

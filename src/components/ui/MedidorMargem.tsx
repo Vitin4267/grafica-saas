@@ -9,11 +9,12 @@ import { CheckCircleIcon, AlertTriangleIcon, TrendingUpIcon } from "@/components
 // espírito artesanal do Sparkline/ProportionBar já usados no projeto (sem
 // lib de gráfico nova).
 //
-// Limiares (10% / 25%) são um ponto de partida de referência do setor
-// gráfico, não uma regra de negócio configurável — se o dono achar que
-// deveriam ser outros números, é ajuste de UI, não dado de nenhuma tabela.
-const LIMIAR_RUIM = 10;
-const LIMIAR_BOM = 25;
+// Limiares (10% / 25%) são só o DEFAULT — desde a fase "custo real" (PR-5),
+// vêm configuráveis por gráfica (ParametrosGrafica.margemFaixaBaixa/
+// margemFaixaBoa, ver schema). Continuam opcionais aqui pra não quebrar quem
+// já chama <MedidorMargem margem={...} /> sem passar faixa nenhuma.
+const LIMIAR_RUIM_PADRAO = 10;
+const LIMIAR_BOM_PADRAO = 25;
 const ESCALA_MIN = -20;
 const ESCALA_MAX = 50;
 
@@ -25,13 +26,17 @@ function paraPercentualNaEscala(valor: number): number {
   return ((clamp(valor, ESCALA_MIN, ESCALA_MAX) - ESCALA_MIN) / (ESCALA_MAX - ESCALA_MIN)) * 100;
 }
 
-function classificar(margem: number): {
+function classificar(
+  margem: number,
+  limiarRuim: number,
+  limiarBom: number
+): {
   rotulo: string;
   corTexto: string;
   corMarcador: string;
   icone: React.ReactNode;
 } {
-  if (margem < LIMIAR_RUIM) {
+  if (margem < limiarRuim) {
     return {
       rotulo: "Margem baixa",
       corTexto: "text-rose-600 dark:text-rose-400",
@@ -39,7 +44,7 @@ function classificar(margem: number): {
       icone: <AlertTriangleIcon className="h-4 w-4" />,
     };
   }
-  if (margem < LIMIAR_BOM) {
+  if (margem < limiarBom) {
     return {
       rotulo: "Margem média",
       corTexto: "text-amber-600 dark:text-amber-400",
@@ -55,9 +60,19 @@ function classificar(margem: number): {
   };
 }
 
-export function MedidorMargem({ margem }: { margem: number | null }) {
-  const inicioMedio = paraPercentualNaEscala(LIMIAR_RUIM);
-  const inicioBom = paraPercentualNaEscala(LIMIAR_BOM);
+export function MedidorMargem({
+  margem,
+  limiarRuim = LIMIAR_RUIM_PADRAO,
+  limiarBom = LIMIAR_BOM_PADRAO,
+}: {
+  margem: number | null;
+  // ParametrosGrafica.margemFaixaBaixa/margemFaixaBoa da gráfica — quem
+  // chamar sem passar nada continua vendo o default 10/25 de sempre.
+  limiarRuim?: number;
+  limiarBom?: number;
+}) {
+  const inicioMedio = paraPercentualNaEscala(limiarRuim);
+  const inicioBom = paraPercentualNaEscala(limiarBom);
 
   if (margem === null) {
     return (
@@ -70,7 +85,7 @@ export function MedidorMargem({ margem }: { margem: number | null }) {
     );
   }
 
-  const classificacao = classificar(margem);
+  const classificacao = classificar(margem, limiarRuim, limiarBom);
   const posicaoMarcador = paraPercentualNaEscala(margem);
 
   return (
@@ -102,9 +117,9 @@ export function MedidorMargem({ margem }: { margem: number | null }) {
         />
       </div>
       <div className="flex justify-between text-[11px] text-slate-400">
-        <span>Ruim (abaixo de {LIMIAR_RUIM}%)</span>
+        <span>Ruim (abaixo de {limiarRuim}%)</span>
         <span>Média</span>
-        <span>Boa (acima de {LIMIAR_BOM}%)</span>
+        <span>Boa (acima de {limiarBom}%)</span>
       </div>
     </div>
   );

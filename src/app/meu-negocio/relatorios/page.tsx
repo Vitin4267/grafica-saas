@@ -65,7 +65,7 @@ export default async function RelatoriosNegocioPage({
   const fim = limitesDiaBrasilia(ateInput).fim;
   const clienteIdFiltro = clienteId || undefined;
 
-  const [relatorio, ranking, clientes] = await Promise.all([
+  const [relatorio, ranking, clientes, parametrosGrafica] = await Promise.all([
     buscarRelatorioNegocio({ graficaId: usuario.graficaId, inicio, fim, clienteId: clienteIdFiltro }),
     buscarRankingGeral(usuario.graficaId),
     prisma.cliente.findMany({
@@ -73,7 +73,16 @@ export default async function RelatoriosNegocioPage({
       select: { id: true, nome: true },
       orderBy: { nome: "asc" },
     }),
+    // Faixas do medidor de margem (fase "custo real" §1.5/PR-5) — configuráveis
+    // por gráfica, com o mesmo default 10/25 do componente se a gráfica nunca
+    // abriu Configurações (sem linha em ParametrosGrafica ainda).
+    prisma.parametrosGrafica.findUnique({
+      where: { graficaId: usuario.graficaId },
+      select: { margemFaixaBaixa: true, margemFaixaBoa: true },
+    }),
   ]);
+  const margemFaixaBaixa = parametrosGrafica ? Number(parametrosGrafica.margemFaixaBaixa) : 10;
+  const margemFaixaBoa = parametrosGrafica ? Number(parametrosGrafica.margemFaixaBoa) : 25;
 
   const queryString = new URLSearchParams({
     de: deInput,
@@ -244,7 +253,7 @@ export default async function RelatoriosNegocioPage({
         <div className="mt-6">
           <SecaoHeader titulo="Margem de faturamento" nota="Lucro ÷ Faturado, no período filtrado" />
           <Card className="p-6">
-            <MedidorMargem margem={metricas.margem} />
+            <MedidorMargem margem={metricas.margem} limiarRuim={margemFaixaBaixa} limiarBom={margemFaixaBoa} />
           </Card>
         </div>
 

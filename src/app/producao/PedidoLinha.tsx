@@ -22,7 +22,9 @@ import { cancelarPedido, avancarPedido } from "./actions";
 type Custo = {
   id: string;
   categoriaNome: string;
-  valor: number;
+  // null quando o usuário não tem CUSTOS.podeVer — ver producao/page.tsx,
+  // que já nem envia o valor real pro client nesse caso.
+  valor: number | null;
   observacao: string | null;
   createdAt: string;
 };
@@ -38,6 +40,8 @@ export function PedidoLinha({
   itensResumo,
   status,
   podeEditar,
+  podeEditarCustos,
+  podeVerCustos,
   souResponsavelDesteStatus,
   chipAtraso,
   arteUrl,
@@ -55,6 +59,12 @@ export function PedidoLinha({
   itensResumo: string;
   status: string;
   podeEditar: boolean;
+  // Permissões de CUSTOS (não PRODUCAO) — separadas de podeEditar acima
+  // porque lançar custo/retrabalho e ver valor/margem são coisas
+  // diferentes (ver fase-custo-real.md §2.6). Repassadas pra
+  // CustosPedidoSecao abaixo.
+  podeEditarCustos: boolean;
+  podeVerCustos: boolean;
   // Responsável atribuído (ver ResponsavelEstagio) pela etapa ATUAL deste
   // pedido — libera o botão de avançar mesmo sem PRODUCAO.podeEditar
   // completo. Nunca true pra FILA (não é uma etapa atribuível, ver
@@ -114,6 +124,20 @@ export function PedidoLinha({
             >
               Ver orçamento
             </Link>
+            {/* CUSTOS.podeVer (não PRODUCAO) — mesma prop já usada pra
+                controlar valor/lucro nesta linha (ver fase-custo-real.md
+                §2.6 / PR-5). Link pra /producao/[pedidoId]/fechamento. */}
+            {podeVerCustos && (
+              <>
+                {" · "}
+                <Link
+                  href={`/producao/${pedidoId}/fechamento`}
+                  className="text-xs text-teal-700 hover:underline dark:text-teal-400"
+                >
+                  Ver fechamento
+                </Link>
+              </>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -164,7 +188,8 @@ export function PedidoLinha({
         categoriasCustoAtivas={categoriasCustoAtivas}
         custos={custos}
         lucro={lucro}
-        podeEditar={podeEditar}
+        podeEditarCustos={podeEditarCustos}
+        podeVer={podeVerCustos}
       />
 
       {iniciarImpressao.estado.tipo === "confirmando" && (

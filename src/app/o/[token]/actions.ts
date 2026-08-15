@@ -13,6 +13,7 @@ import { resolverOrigemPublica } from "@/lib/url-publica";
 import { dispararEventoEmail, type EventoEmail } from "@/lib/email/webhook-email";
 import { templateOrcamentoAprovado, templateOrcamentoRecusado } from "@/lib/email/templates";
 import { assinaturaEstaLiberada } from "@/lib/billing/status";
+import { calcularPrevisaoAprovacaoPedido, gravarPrevisaoAprovacaoPedido } from "@/lib/pedido-aprovacao";
 
 export type ResponderPublicoResult = { ok: boolean; mensagem: string };
 
@@ -161,7 +162,7 @@ export async function responderOrcamentoPublico(
     // mantém ela curta. Sem usuário autenticado aqui (link público), o
     // vendedor vem de orcamento.usuarioId e os parâmetros da própria gráfica
     // do orçamento.
-    const [orcamentoComItens, usuarioVendedor, parametros] = await Promise.all([
+    const [orcamentoComItens, usuarioVendedor, parametros, previsaoCusto] = await Promise.all([
       prisma.orcamentoItem.findMany({
         where: { orcamentoId: orcamento.id },
         include: { itemGrafica: { select: { precoCompra: true } } },
@@ -174,6 +175,11 @@ export async function responderOrcamentoPublico(
         where: { graficaId: orcamento.graficaId },
         select: { comissaoVendedorBase: true },
       }),
+      // Mesmo cuidado do bloco de comissão acima: leitura de breakdown/ficha
+      // técnica fica FORA da transação (ver fase-custo-real.md §3.1 e
+      // src/lib/pedido-aprovacao.ts). Reaproveita o mesmo `agora` desta
+      // resposta pra aprovadoEm bater com respostaPublicaEm.
+      calcularPrevisaoAprovacaoPedido(orcamento.id, orcamento.graficaId, agora),
     ]);
 
     const percentualVendedor = usuarioVendedor?.comissaoPercent
@@ -223,6 +229,16 @@ export async function responderOrcamentoPublico(
           status: "FILA",
           producaoLinkToken: randomBytes(20).toString("base64url"),
         },
+      });
+
+      // Congela aprovadoEm + os três snapshots + a previsão de custo por
+      // categoria (PedidoCustoPrevisto) — ver fase-custo-real.md §2.3, §3.1
+      // e src/lib/pedido-aprovacao.ts. Mesmo comportamento do caminho
+      // autenticado (src/app/orcamento/[id]/actions.ts), nunca duplicado.
+      await gravarPrevisaoAprovacaoPedido(tx, {
+        graficaId: orcamento.graficaId,
+        orcamentoId: orcamento.id,
+        previsao: previsaoCusto,
       });
 
       if (dadosComissao) {
