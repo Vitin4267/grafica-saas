@@ -70,6 +70,16 @@ export async function login(
     return { ok: false, mensagem: MENSAGEM_GENERICA };
   }
 
+  // Funcionário removido (ver desativarUsuario em src/app/usuarios/actions.ts)
+  // ainda sabe a senha antiga — sem este check, criarSessao abaixo geraria uma
+  // sessão válida por um instante, só barrada na PRÓXIMA requisição por
+  // obterUsuarioAtual (ver src/lib/auth/session.ts). Rejeitar aqui, antes de
+  // criar a sessão, evita esse round-trip confuso de "login funciona, depois
+  // expulsa sozinho".
+  if (usuario.desativadoEm) {
+    return { ok: false, mensagem: "Esta conta foi removida. Fale com o dono da gráfica pra recuperar o acesso." };
+  }
+
   await confirmarTentativaLoginBemSucedida(tentativa.id);
   await criarSessao(usuario.id);
 
