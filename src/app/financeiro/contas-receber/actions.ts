@@ -15,6 +15,14 @@ export type ContaReceberResult = { ok: boolean; mensagem: string };
 
 const MENSAGEM_SEM_PERMISSAO = "Você não tem permissão pra editar o Financeiro.";
 
+const FORMAS_PAGAMENTO = ["DINHEIRO", "PIX", "CARTAO", "BOLETO", "TRANSFERENCIA", "OUTRO"] as const;
+
+// Sinaliza, de dentro da transação, que a conta já foi marcada como recebida
+// entre a leitura inicial e a escrita — usado só pra abortar a transação
+// inteira (sem criar o Pagamento) com mensagem amigável. Mesmo padrão de
+// ErroComissaoJaPaga em comissoes/actions.ts.
+class ErroContaJaRecebida extends Error {}
+
 function revalidarContasReceber(orcamentoId?: string) {
   revalidatePath("/financeiro/contas-receber");
   revalidatePath("/financeiro");
@@ -92,12 +100,33 @@ export async function criarContaReceber(
 
 const idSchema = z.object({ id: z.string().min(1) });
 
+const marcarComoRecebidoSchema = z.object({
+  id: z.string().min(1),
+  forma: z.enum(FORMAS_PAGAMENTO),
+  // Só usado quando forma = OUTRO — mesmo par de Pagamento.formaDetalhe.
+  formaDetalhe: z
+    .string()
+    .trim()
+    .max(120)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+});
+
 // Compare-and-swap via updateMany (where status: PENDENTE) pra evitar dupla
 // marcação concorrente — mesmo cuidado usado em outros lugares deste sistema
 // pra evitar corrida (ex: increment/decrement atômico em
 // lancarMovimentacaoContaPrepaga). O findFirst antes só serve pra buscar os
 // dados pra mensagem/auditoria — quem decide se a marcação vale é o
 // updateMany, checando count > 0.
+//
+// Também cria um Pagamento vinculado (achado de auditoria pré-lançamento,
+// 2026-08-15): até então, marcar aqui como recebido só mudava o status desta
+// tabela — o CSV pro contador (financeiro/exportar/route.ts, que só lê o
+// model Pagamento) subestimava receita sempre que o recebimento era
+// registrado por este botão em vez de um Pagamento lançado manualmente na
+// tela do orçamento. Mesmo padrão de marcarComissaoPaga (comissoes/actions.ts).
+// Risco aceito, sem deduplicação automática: se alguém lançar os dois pro
+// mesmo dinheiro, ele conta 2x no relatório.
 export async function marcarComoRecebido(
   _estadoAnterior: ContaReceberResult | null,
   formData: FormData
@@ -109,11 +138,15 @@ export async function marcarComoRecebido(
     return { ok: false, mensagem: MENSAGEM_SEM_PERMISSAO };
   }
 
-  const parsed = idSchema.safeParse({ id: formData.get("id") });
+  const parsed = marcarComoRecebidoSchema.safeParse({
+    id: formData.get("id"),
+    forma: formData.get("forma"),
+    formaDetalhe: formData.get("formaDetalhe") ?? undefined,
+  });
   if (!parsed.success) {
-    return { ok: false, mensagem: "Dados inválidos." };
+    return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   }
-  const { id } = parsed.data;
+  const { id, forma, formaDetalhe } = parsed.data;
 
   const conta = await prisma.contaReceber.findFirst({
     where: { id, graficaId: usuario.graficaId },
@@ -122,12 +155,36 @@ export async function marcarComoRecebido(
     return { ok: false, mensagem: "Conta a receber não encontrada." };
   }
 
-  const { count } = await prisma.contaReceber.updateMany({
-    where: { id, graficaId: usuario.graficaId, status: "PENDENTE" },
-    data: { status: "RECEBIDO", recebidoEm: new Date() },
-  });
-  if (count === 0) {
-    return { ok: false, mensagem: "Essa conta já foi recebida ou cancelada." };
+  const agora = new Date();
+  try {
+    await prisma.$transaction(async (tx) => {
+      const cas = await tx.contaReceber.updateMany({
+        where: { id, graficaId: usuario.graficaId, status: "PENDENTE" },
+        data: { status: "RECEBIDO", recebidoEm: agora },
+      });
+      if (cas.count === 0) {
+        throw new ErroContaJaRecebida();
+      }
+
+      const pagamento = await tx.pagamento.create({
+        data: {
+          orcamentoId: conta.orcamentoId,
+          valor: conta.valor,
+          forma,
+          formaDetalhe: formaDetalhe ?? null,
+          observacao: `Gerado ao marcar "${conta.descricao}" como recebida`,
+        },
+      });
+      await tx.contaReceber.update({
+        where: { id },
+        data: { pagamentoId: pagamento.id },
+      });
+    });
+  } catch (erro) {
+    if (erro instanceof ErroContaJaRecebida) {
+      return { ok: false, mensagem: "Essa conta já foi recebida ou cancelada." };
+    }
+    throw erro;
   }
 
   await registrarAuditoria({

@@ -1243,6 +1243,18 @@ model Pagamento {
 
   orcamento Orcamento @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
 
+  // Presente quando este pagamento foi gerado a partir de "marcar conta a
+  // receber como recebida" (ver marcarComoRecebido em
+  // src/app/financeiro/contas-receber/actions.ts) — decisão revista em
+  // 2026-08-15: o comentário original de ContaReceber (acima) dizia que os
+  // dois conviviam sem se referenciar, mas isso deixava a exportação
+  // financeira subestimando receita sempre que alguém usava o botão
+  // "Marcar como recebido" em vez de lançar Pagamento manual na tela do
+  // orçamento. Mesmo padrão de Despesa.comissao. Risco aceito: se alguém
+  // fizer as duas coisas pro mesmo dinheiro, ele conta 2x — não há
+  // deduplicação automática entre os dois caminhos.
+  contaReceber ContaReceber?
+
   @@index([orcamentoId])
   @@map("pagamentos")
 }
@@ -1309,6 +1321,13 @@ model Despesa {
   // sem duplicar os campos de Comissao aqui.
   comissao Comissao?
 
+  // Presente quando esta despesa foi gerada a partir de uma RECARGA de conta
+  // prepaga (ver lancarMovimentacaoContaPrepaga em
+  // src/app/financeiro/contas-prepagas/actions.ts) — mesmo padrão de
+  // Despesa.comissao acima, pra recarga de carteira (ex: Lalamove) não ficar
+  // de fora do relatório/exportação financeira.
+  movimentacaoContaPrepaga MovimentacaoContaPrepaga?
+
   // Trava contra duplicata em `gerarDespesasRecorrentesPendentes`: duas
   // requisições concorrentes (duas abas, dois usuários abrindo /financeiro
   // ao mesmo tempo) podem ambas decidir gerar a ocorrência do mesmo mês
@@ -1358,7 +1377,13 @@ model MovimentacaoContaPrepaga {
   criadoPorId String?
   createdAt   DateTime                     @default(now())
 
-  conta ContaPrepaga @relation(fields: [contaId], references: [id], onDelete: Cascade)
+  // Despesa gerada quando tipo=RECARGA (só recarga é dinheiro saindo da
+  // gráfica de verdade; débito só consome saldo já lançado antes) — ver
+  // comentário em Despesa.movimentacaoContaPrepaga acima. Null pra DEBITO.
+  despesaId String? @unique
+
+  conta   ContaPrepaga @relation(fields: [contaId], references: [id], onDelete: Cascade)
+  despesa Despesa?     @relation(fields: [despesaId], references: [id], onDelete: SetNull)
 
   @@index([contaId, createdAt])
   @@map("movimentacoes_conta_prepaga")
@@ -1379,8 +1404,12 @@ enum StatusContaReceber {
 //
 // Diferente de Pagamento (que registra dinheiro JÁ recebido, sem noção de
 // "esperado"/"vencimento"): ContaReceber é o lado da EXPECTATIVA — o que
-// ainda falta cobrar e quando. Os dois convivem sem se referenciar; nada
-// aqui marca automaticamente um Pagamento como quitação de uma parcela.
+// ainda falta cobrar e quando. Até 2026-08-15 os dois conviviam sem se
+// referenciar; revisto porque isso deixava a exportação financeira (ver
+// src/app/financeiro/exportar/route.ts, que só lê Pagamento) subestimando
+// receita sempre que o recebimento era registrado por aqui (marcarComoRecebido)
+// em vez de um Pagamento lançado manualmente na tela do orçamento. Agora
+// marcarComoRecebido cria o Pagamento espelhado — ver pagamentoId abaixo.
 //
 // status/recebidoEm nunca são editados por um form genérico — só pelas
 // actions marcarComoRecebido/cancelarContaReceber (ver
@@ -1398,8 +1427,13 @@ model ContaReceber {
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
 
-  grafica   Grafica   @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  orcamento Orcamento @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+  // Pagamento gerado quando marcada como recebida (opcional — só existe
+  // depois do recebimento) — ver comentário em Pagamento.contaReceber acima.
+  pagamentoId String? @unique
+
+  grafica   Grafica    @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamento Orcamento  @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+  pagamento Pagamento? @relation(fields: [pagamentoId], references: [id], onDelete: SetNull)
 
   @@index([graficaId, status, vencimento])
   @@index([orcamentoId])

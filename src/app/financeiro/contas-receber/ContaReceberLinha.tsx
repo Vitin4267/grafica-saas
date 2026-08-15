@@ -5,10 +5,20 @@ import { useActionState, useState } from "react";
 import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { Select } from "@/components/ui/Select";
 import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
 import { formatoMoeda } from "@/lib/moeda";
 import { formatoData, dataEhPassado } from "@/lib/data";
 import { marcarComoRecebido, cancelarContaReceber } from "./actions";
+
+const ROTULO_FORMA: Record<string, string> = {
+  DINHEIRO: "Dinheiro",
+  PIX: "Pix",
+  CARTAO: "Cartão",
+  BOLETO: "Boleto",
+  TRANSFERENCIA: "Transferência",
+  OUTRO: "Outro",
+};
 
 type ContaReceber = {
   id: string;
@@ -87,9 +97,16 @@ export function ContaReceberLinha({ conta, podeEditar }: { conta: ContaReceber; 
       </div>
 
       {podeEditar && conta.status === "PENDENTE" && !confirmandoCancelamento && (
-        <div className="flex gap-4 border-t border-slate-100 pt-3 dark:border-slate-800">
-          <form action={acaoRecebido}>
+        <div className="flex flex-wrap items-end gap-4 border-t border-slate-100 pt-3 dark:border-slate-800">
+          <form action={acaoRecebido} className="flex items-end gap-2">
             <input type="hidden" name="id" value={conta.id} />
+            <Select label="Forma" name="forma" defaultValue="PIX" className="!py-1.5 text-xs">
+              {Object.entries(ROTULO_FORMA).map(([valor, rotulo]) => (
+                <option key={valor} value={valor}>
+                  {rotulo}
+                </option>
+              ))}
+            </Select>
             <Button type="submit" variant="outline" loading={marcandoRecebido}>
               {marcandoRecebido ? "Marcando..." : "Marcar como recebido"}
             </Button>

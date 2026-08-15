@@ -12,10 +12,13 @@ import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { formatoMoeda } from "@/lib/moeda";
 import { D } from "@/lib/pricing/decimal";
+import { dataInputParaUTC } from "@/lib/data";
 
 export type ContaPrepagaResult = { ok: boolean; mensagem: string };
 
 const MENSAGEM_SEM_PERMISSAO = "Você não tem permissão pra editar o Financeiro.";
+
+const FORMAS_PAGAMENTO = ["DINHEIRO", "PIX", "CARTAO", "BOLETO", "TRANSFERENCIA", "OUTRO"] as const;
 
 // Cria uma nova "carteira" prepaga (ex: Lalamove) pra gráfica — saldo nasce
 // zerado, a primeira recarga é lançada depois na tela de detalhe (mesmo
@@ -69,6 +72,9 @@ const movimentacaoSchema = z.object({
   contaId: z.string().min(1),
   tipo: z.enum(["RECARGA", "DEBITO"]),
   valor: z.coerce.number().positive("Informe um valor maior que zero."),
+  // Só usado quando tipo=RECARGA (vira a Despesa espelhada, ver abaixo) —
+  // sempre presente no form mesmo pra DEBITO, só ignorado nesse caso.
+  formaPagamento: z.enum(FORMAS_PAGAMENTO),
   motivo: z
     .string()
     .trim()
@@ -87,6 +93,15 @@ const movimentacaoSchema = z.object({
 // createMovimentacao + updateSaldo sempre na MESMA transação, pra nunca
 // ficar dessincronizado (saldoAtual é cache redundante da soma das
 // movimentações, ver comentário no schema).
+//
+// RECARGA também cria uma Despesa vinculada (achado de auditoria
+// pré-lançamento, 2026-08-15): é dinheiro saindo de verdade da conta
+// bancária da gráfica pra abastecer a carteira prepaga, mas antes disso
+// nunca virava Despesa — o CSV pro contador (financeiro/exportar/route.ts,
+// que só lê o model Despesa) subestimava gasto sempre que uma recarga
+// acontecia. DEBITO não cria Despesa: é só consumo do saldo já lançado na
+// recarga, a saída de caixa já foi contabilizada ali. Mesmo padrão de
+// marcarComissaoPaga (comissoes/actions.ts).
 export async function lancarMovimentacaoContaPrepaga(
   _estadoAnterior: ContaPrepagaResult | null,
   formData: FormData
@@ -102,12 +117,13 @@ export async function lancarMovimentacaoContaPrepaga(
     contaId: formData.get("contaId"),
     tipo: formData.get("tipo"),
     valor: formData.get("valor"),
+    formaPagamento: formData.get("formaPagamento"),
     motivo: formData.get("motivo") ?? undefined,
   });
   if (!parsed.success) {
     return { ok: false, mensagem: parsed.error.issues[0].message };
   }
-  const { contaId, tipo, valor, motivo } = parsed.data;
+  const { contaId, tipo, valor, formaPagamento, motivo } = parsed.data;
 
   // Isolamento de tenant: a conta precisa pertencer à gráfica do usuário
   // logado, nunca confiar só no contaId vindo do form.
@@ -119,6 +135,7 @@ export async function lancarMovimentacaoContaPrepaga(
   }
 
   const valorDec = new D(valor);
+  const agora = new Date();
 
   const movimentacao = await prisma.$transaction(async (tx) => {
     const mov = await tx.movimentacaoContaPrepaga.create({
@@ -143,6 +160,29 @@ export async function lancarMovimentacaoContaPrepaga(
           ? { saldoAtual: { increment: valorDec.toFixed(2) } }
           : { saldoAtual: { decrement: valorDec.toFixed(2) } },
     });
+
+    // Despesa espelhada — só pra RECARGA, ver comentário acima de
+    // movimentacaoSchema. A Despesa nasce já PAGA (vencimento = hoje, sem
+    // sentido "vencimento futuro" pra dinheiro que já saiu agora).
+    if (tipo === "RECARGA") {
+      const despesa = await tx.despesa.create({
+        data: {
+          graficaId: usuario.graficaId,
+          descricao: `Recarga da conta prepaga "${conta.nome}"${motivo ? ` — ${motivo}` : ""}`,
+          categoria: "Conta prepaga",
+          valor: valorDec.toFixed(2),
+          vencimento: dataInputParaUTC(agora.toISOString().slice(0, 10)),
+          status: "PAGA",
+          formaPagamento,
+          pagoEm: agora,
+        },
+      });
+      await tx.movimentacaoContaPrepaga.update({
+        where: { id: mov.id },
+        data: { despesaId: despesa.id },
+      });
+    }
+
     return mov;
   });
 
