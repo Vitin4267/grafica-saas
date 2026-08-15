@@ -1,7 +1,7 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { calcularPreco } from "@/lib/orcamento";
 import { precificar, ErroPrecificacao, type PedidoPrecificacao } from "@/lib/pricing";
-import { carregarContextoPrecificacao } from "@/lib/pricing/carregar";
+import { carregarContextoPrecificacao, resolverConfigAcabamentos } from "@/lib/pricing/carregar";
 
 type ItemGraficaParaPrecificacao = {
   id: string;
@@ -15,6 +15,15 @@ export type DadosItemOrcamento = {
   alturaCm: number | null;
   corFrente: number | null;
   corVerso: number | null;
+  // Só usado pelo motor avançado (M2/OFFSET) — SIMPLES continua com o campo de
+  // texto livre OrcamentoItem.acabamento, sem custo (ver src/lib/orcamento.ts).
+  acabamentoIds: string[];
+};
+
+export type AcabamentoParaGravar = {
+  itemGraficaId: string;
+  qtdBase: string;
+  custoCalculado: string;
 };
 
 export type ResultadoItemOrcamento =
@@ -26,6 +35,7 @@ export type ResultadoItemOrcamento =
       corFrente: number | null;
       corVerso: number | null;
       breakdown: Prisma.InputJsonValue | null;
+      acabamentos: AcabamentoParaGravar[];
     }
   | { ok: false; mensagem: string };
 
@@ -94,6 +104,7 @@ export async function calcularItemOrcamento(
       corFrente: null,
       corVerso: null,
       breakdown: null,
+      acabamentos: [],
     };
   }
 
@@ -119,6 +130,10 @@ export async function calcularItemOrcamento(
 
   try {
     const contexto = await carregarContextoPrecificacao(itemGrafica.id, graficaId);
+    const acabamentos =
+      dados.acabamentoIds.length > 0
+        ? await resolverConfigAcabamentos(dados.acabamentoIds, graficaId)
+        : [];
 
     const pedido: PedidoPrecificacao =
       itemGrafica.modeloCalculo === "OFFSET"
@@ -131,7 +146,7 @@ export async function calcularItemOrcamento(
               corFrente: corFrente!,
               corVerso: corVerso!,
             },
-            acabamentos: [],
+            acabamentos,
           }
         : {
             tipo: "M2",
@@ -140,7 +155,7 @@ export async function calcularItemOrcamento(
               alturaM: alturaCm / 100,
               quantidade,
             },
-            acabamentos: [],
+            acabamentos,
           };
 
     const resultado = precificar(pedido, contexto);
@@ -156,6 +171,11 @@ export async function calcularItemOrcamento(
       corFrente: itemGrafica.modeloCalculo === "OFFSET" ? corFrente! : null,
       corVerso: itemGrafica.modeloCalculo === "OFFSET" ? corVerso! : null,
       breakdown,
+      acabamentos: resultado.detalhes.acabamentos.map((a) => ({
+        itemGraficaId: a.itemGraficaId,
+        qtdBase: a.qtdBase.toString(),
+        custoCalculado: a.custo.toString(),
+      })),
     };
   } catch (erro) {
     if (erro instanceof ErroPrecificacao) {

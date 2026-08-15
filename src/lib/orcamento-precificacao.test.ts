@@ -20,6 +20,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       alturaCm: null,
       corFrente: null,
       corVerso: null,
+      acabamentoIds: [],
     });
     expect(resultado.ok).toBe(true);
     if (resultado.ok) {
@@ -34,6 +35,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       alturaCm: null,
       corFrente: null,
       corVerso: null,
+      acabamentoIds: [],
     });
     expect(resultado.ok).toBe(false);
   });
@@ -45,6 +47,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       alturaCm: null,
       corFrente: null,
       corVerso: null,
+      acabamentoIds: [],
     });
     expect(resultado.ok).toBe(false);
   });
@@ -56,6 +59,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       alturaCm: null,
       corFrente: null,
       corVerso: null,
+      acabamentoIds: [],
     });
     expect(resultado.ok).toBe(false);
   });
@@ -67,6 +71,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       alturaCm: null,
       corFrente: null,
       corVerso: null,
+      acabamentoIds: [],
     });
     expect(resultado.ok).toBe(false);
   });
@@ -78,6 +83,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       alturaCm: null,
       corFrente: null,
       corVerso: null,
+      acabamentoIds: [],
     });
     expect(resultado.ok).toBe(false);
   });
@@ -89,6 +95,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       alturaCm: Infinity,
       corFrente: null,
       corVerso: null,
+      acabamentoIds: [],
     });
     expect(resultado.ok).toBe(false);
   });
@@ -100,6 +107,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       alturaCm: 10,
       corFrente: null,
       corVerso: null,
+      acabamentoIds: [],
     });
     expect(resultado.ok).toBe(false);
   });

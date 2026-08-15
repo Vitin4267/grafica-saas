@@ -25,12 +25,22 @@ export default async function OrcamentoPage() {
   await exigirVerModulo(usuario, "ORCAMENTO");
   const podeEditar = await podeEditarModulo(usuario, "ORCAMENTO");
 
-  const [itensVendaveis, clientes, filiais, orcamentosRecentes] = await Promise.all([
+  const [itensVendaveis, acabamentosDisponiveis, clientes, filiais, orcamentosRecentes] = await Promise.all([
     prisma.itemGrafica.findMany({
       where: {
         graficaId: usuario.graficaId,
         ativo: true,
         precoVenda: { not: null },
+      },
+      include: { itemCatalogo: true },
+      orderBy: { itemCatalogo: { nome: "asc" } },
+    }),
+    prisma.itemGrafica.findMany({
+      where: {
+        graficaId: usuario.graficaId,
+        ativo: true,
+        itemCatalogo: { tipo: "SERVICO" },
+        configuracaoAcabamento: { isNot: null },
       },
       include: { itemCatalogo: true },
       orderBy: { itemCatalogo: { nome: "asc" } },
@@ -106,6 +116,10 @@ export default async function OrcamentoPage() {
               categoria: ig.itemCatalogo.categoria,
               precoVenda: ig.precoVenda!.toString(),
               modeloCalculo: ig.modeloCalculo,
+            }))}
+            acabamentosDisponiveis={acabamentosDisponiveis.map((ig) => ({
+              id: ig.id,
+              nome: ig.itemCatalogo.nome,
             }))}
             clientes={clientes}
             filiais={filiais}

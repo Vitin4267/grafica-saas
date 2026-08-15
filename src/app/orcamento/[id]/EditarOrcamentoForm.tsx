@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
 import { CamposEtiquetaOrcamento, type CamposEtiqueta } from "../CamposEtiquetaOrcamento";
+import type { ItemAcabamentoDisponivel } from "../SeletorItemOrcamento";
 import {
   converterDeCm,
   converterParaCm,
@@ -47,6 +48,7 @@ export function EditarOrcamentoForm({
   valoresIniciais,
   podeRemover,
   unidadeDimensao,
+  acabamentosDisponiveis,
 }: {
   orcamentoId: string;
   orcamentoItemId: string;
@@ -61,11 +63,13 @@ export function EditarOrcamentoForm({
     alturaCm: string;
     cores: string;
     acabamento: string;
+    acabamentoIds: string[];
     corFrente: string;
     corVerso: string;
     etiqueta: CamposEtiqueta;
   };
   podeRemover: boolean;
+  acabamentosDisponiveis: ItemAcabamentoDisponivel[];
 }) {
   const [state, formAction, isPending] = useActionState(editarOrcamento, null);
   const [estadoRemocao, acaoRemover, removendoPending] = useActionState(
@@ -186,12 +190,46 @@ export function EditarOrcamentoForm({
           defaultValue={valoresIniciais.cores}
           placeholder="ex: 4x0, 4x4"
         />
-        <Input
-          label="Acabamento"
-          name="acabamento"
-          defaultValue={valoresIniciais.acabamento}
-          placeholder="ex: laminação fosca, corte reto"
-        />
+        {usaMotorAvancado ? (
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Acabamentos</span>
+            {acabamentosDisponiveis.length === 0 ? (
+              <span className="text-xs text-slate-500">
+                Nenhum serviço de acabamento configurado ainda — cadastre em Catálogo.
+              </span>
+            ) : (
+              <>
+                <div className="flex flex-col gap-1.5 rounded-xl border border-slate-300 p-3 dark:border-slate-700">
+                  {acabamentosDisponiveis.map((a) => (
+                    <label
+                      key={a.id}
+                      className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200"
+                    >
+                      <input
+                        type="checkbox"
+                        name="acabamentoIds"
+                        value={a.id}
+                        defaultChecked={valoresIniciais.acabamentoIds.includes(a.id)}
+                        className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                      />
+                      {a.nome}
+                    </label>
+                  ))}
+                </div>
+                <span className="text-xs text-slate-500">
+                  Opcional — soma o custo configurado no catálogo ao preço deste item.
+                </span>
+              </>
+            )}
+          </div>
+        ) : (
+          <Input
+            label="Acabamento"
+            name="acabamento"
+            defaultValue={valoresIniciais.acabamento}
+            placeholder="ex: laminação fosca, corte reto"
+          />
+        )}
 
         {modeloCalculo === "M2" && (
           <>

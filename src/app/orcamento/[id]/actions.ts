@@ -309,12 +309,21 @@ export async function editarOrcamento(
     return { ok: false, mensagem: "Item do orçamento não encontrado." };
   }
 
+  // Produto não muda em editarOrcamento, então dá pra saber se o motor é
+  // avançado (M2/OFFSET, único caso em que acabamentoIds se aplica) antes de
+  // chamar calcularItemOrcamento.
+  const acabamentoIds =
+    item.modeloCalculo !== "SIMPLES"
+      ? formData.getAll("acabamentoIds").map(String).filter(Boolean).slice(0, 20)
+      : [];
+
   const resultado = await calcularItemOrcamento(item.itemGrafica, usuario.graficaId, {
     quantidade,
     larguraCm,
     alturaCm,
     corFrente,
     corVerso,
+    acabamentoIds,
   });
   if (!resultado.ok) {
     return { ok: false, mensagem: resultado.mensagem };
@@ -354,6 +363,24 @@ export async function editarOrcamento(
             breakdown: resultado.breakdown ?? undefined,
           },
         });
+
+        // Lista pequena, sem histórico a preservar — mesmo padrão de
+        // orcamentoItemHotStamping logo abaixo: mais simples apagar tudo e
+        // recriar do zero a partir do resultado recalculado do que diffar
+        // item a item.
+        if (item.modeloCalculo !== "SIMPLES") {
+          await tx.orcamentoItemAcabamento.deleteMany({ where: { orcamentoItemId } });
+          if (resultado.acabamentos.length > 0) {
+            await tx.orcamentoItemAcabamento.createMany({
+              data: resultado.acabamentos.map((a) => ({
+                orcamentoItemId,
+                itemGraficaId: a.itemGraficaId,
+                qtdBase: a.qtdBase,
+                custoCalculado: a.custoCalculado,
+              })),
+            });
+          }
+        }
 
         // upsert (não create) porque um item M2 criado antes desta feature
         // pode ainda não ter linha de etiqueta.
@@ -1024,6 +1051,7 @@ export async function adicionarItemOrcamento(
   // permitia gravar dezenas de MB de texto numa única linha de orçamento.
   const cores = String(formData.get("cores") || "").slice(0, 60);
   const acabamento = String(formData.get("acabamento") || "").slice(0, 200);
+  const acabamentoIds = formData.getAll("acabamentoIds").map(String).filter(Boolean).slice(0, 20);
   const corFrente = formData.get("corFrente") ? Number(formData.get("corFrente")) : null;
   const corVerso = formData.get("corVerso") ? Number(formData.get("corVerso")) : null;
 
@@ -1069,6 +1097,7 @@ export async function adicionarItemOrcamento(
     alturaCm,
     corFrente,
     corVerso,
+    acabamentoIds,
   });
   if (!resultado.ok) {
     return { ok: false, mensagem: resultado.mensagem };
@@ -1150,6 +1179,16 @@ export async function adicionarItemOrcamento(
                         })),
                       },
                     },
+                  }
+                : undefined,
+            acabamentos:
+              resultado.acabamentos.length > 0
+                ? {
+                    create: resultado.acabamentos.map((a) => ({
+                      itemGraficaId: a.itemGraficaId,
+                      qtdBase: a.qtdBase,
+                      custoCalculado: a.custoCalculado,
+                    })),
                   }
                 : undefined,
           },

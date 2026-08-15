@@ -11,6 +11,7 @@ export type ItemPdfOrcamento = {
   medidas: string | null;
   cores: string | null;
   acabamento: string | null;
+  acabamentosEstruturados: string[];
   precoUnitario: string;
   precoTotal: string;
   etiquetaLinhas: [string, string][];
@@ -273,6 +274,9 @@ export function OrcamentoDocumento({ dados }: { dados: DadosPdfOrcamento }) {
               item.medidas,
               item.cores ? `Cores: ${item.cores}` : null,
               item.acabamento ? `Acabamento: ${item.acabamento}` : null,
+              item.acabamentosEstruturados.length > 0
+                ? `Acabamento: ${item.acabamentosEstruturados.join(", ")}`
+                : null,
             ].filter(Boolean);
 
             return (

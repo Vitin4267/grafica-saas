@@ -20,6 +20,14 @@ export type ItemVenda = {
   modeloCalculo: "SIMPLES" | "M2" | "OFFSET";
 };
 
+// Serviço do catálogo (ItemGrafica tipo SERVICO) já configurado como acabamento
+// (ver ConfiguracaoAcabamentoForm.tsx em catalogo/[itemGraficaId]) — só esses
+// entram na lista, senão o motor de preço não sabe cobrar.
+export type ItemAcabamentoDisponivel = {
+  id: string;
+  nome: string;
+};
+
 export type CamposItemOrcamento = {
   itemGraficaId: string;
   quantidade: string;
@@ -32,7 +40,10 @@ export type CamposItemOrcamento = {
   corFrente: string;
   corVerso: string;
   cores: string;
+  // Texto livre — só usado quando o item é SIMPLES (ver comentário em
+  // OrcamentoItem.acabamento no schema). M2/OFFSET usam acabamentoIds abaixo.
   acabamento: string;
+  acabamentoIds: string[];
   etiqueta: CamposEtiqueta;
 };
 
@@ -65,6 +76,7 @@ export function camposIniciais(
     corVerso: "0",
     cores: "",
     acabamento: "",
+    acabamentoIds: [],
     etiqueta: etiquetaInicial(),
   };
 }
@@ -76,10 +88,12 @@ export function camposIniciais(
 // resetar os campos depois de adicionar um item.
 export function SeletorItemOrcamento({
   itens,
+  acabamentosDisponiveis,
   valores,
   onChange,
 }: {
   itens: ItemVenda[];
+  acabamentosDisponiveis: ItemAcabamentoDisponivel[];
   valores: CamposItemOrcamento;
   onChange: (novo: CamposItemOrcamento) => void;
 }) {
@@ -112,6 +126,7 @@ export function SeletorItemOrcamento({
       corVerso: "0",
       cores: "",
       acabamento: "",
+      acabamentoIds: [],
       etiqueta: etiquetaInicial(),
     });
   };
@@ -223,18 +238,74 @@ export function SeletorItemOrcamento({
         hint="Deixe em branco se não se aplica."
       />
 
-      <Input
-        label="Acabamento"
-        value={valores.acabamento}
-        onChange={set("acabamento")}
-        placeholder="ex: laminação fosca, corte reto"
-      />
+      {usaMotorAvancado ? (
+        <SeletorAcabamentos
+          acabamentosDisponiveis={acabamentosDisponiveis}
+          selecionados={valores.acabamentoIds}
+          onChange={(acabamentoIds) => onChange({ ...valores, acabamentoIds })}
+        />
+      ) : (
+        <Input
+          label="Acabamento"
+          value={valores.acabamento}
+          onChange={set("acabamento")}
+          placeholder="ex: laminação fosca, corte reto"
+        />
+      )}
 
       {usaModeloM2 && (
         <CamposEtiquetaOrcamento
           valores={valores.etiqueta}
           onChange={(etiqueta) => onChange({ ...valores, etiqueta })}
         />
+      )}
+    </div>
+  );
+}
+
+// Substitui o texto livre "Acabamento" pra itens M2/OFFSET: em vez de descrever
+// o acabamento numa frase solta, escolhe entre os serviços do catálogo já
+// configurados como acabamento (ConfiguracaoAcabamento) — só assim o motor de
+// preço sabe somar o custo (ver src/lib/pricing/acabamento.ts).
+function SeletorAcabamentos({
+  acabamentosDisponiveis,
+  selecionados,
+  onChange,
+}: {
+  acabamentosDisponiveis: ItemAcabamentoDisponivel[];
+  selecionados: string[];
+  onChange: (novo: string[]) => void;
+}) {
+  const alternar = (id: string, marcado: boolean) => {
+    onChange(marcado ? [...selecionados, id] : selecionados.filter((s) => s !== id));
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Acabamentos</span>
+      {acabamentosDisponiveis.length === 0 ? (
+        <span className="text-xs text-slate-500">
+          Nenhum serviço de acabamento configurado ainda — cadastre em Catálogo.
+        </span>
+      ) : (
+        <>
+          <div className="flex flex-col gap-1.5 rounded-xl border border-slate-300 p-3 dark:border-slate-700">
+            {acabamentosDisponiveis.map((a) => (
+              <label key={a.id} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={selecionados.includes(a.id)}
+                  onChange={(e) => alternar(a.id, e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                />
+                {a.nome}
+              </label>
+            ))}
+          </div>
+          <span className="text-xs text-slate-500">
+            Opcional — soma o custo configurado no catálogo ao preço deste item.
+          </span>
+        </>
       )}
     </div>
   );

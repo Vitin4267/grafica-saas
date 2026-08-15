@@ -158,6 +158,7 @@ const itemEntradaSchema = z.object({
   corVerso: z.number().int().nullable(),
   cores: z.string().max(60).nullable(),
   acabamento: z.string().max(200).nullable(),
+  acabamentoIds: z.array(z.string().min(1)).max(20).default([]),
   etiqueta: etiquetaEntradaSchema.nullable(),
 });
 
@@ -188,6 +189,7 @@ export async function precificarItem(input: {
   unidadeDimensao: string;
   corFrente: number | null;
   corVerso: number | null;
+  acabamentoIds: string[];
 }): Promise<PrecificarItemResult> {
   const usuario = await exigirUsuarioAutenticado();
   await exigirEmailVerificado(usuario);
@@ -239,6 +241,7 @@ export async function precificarItem(input: {
     alturaCm,
     corFrente: input.corFrente,
     corVerso: input.corVerso,
+    acabamentoIds: input.acabamentoIds,
   });
   if (!resultado.ok) {
     return { ok: false, mensagem: resultado.mensagem };
@@ -345,6 +348,7 @@ export async function criarOrcamento(
     corVerso: number | null;
     breakdown: Prisma.InputJsonValue | null;
     etiqueta: z.infer<typeof etiquetaEntradaSchema> | null;
+    acabamentos: { itemGraficaId: string; qtdBase: string; custoCalculado: string }[];
   }[] = [];
 
   // Recalcula cada item no servidor — nunca confia no preço que veio do carrinho
@@ -387,6 +391,7 @@ export async function criarOrcamento(
       alturaCm,
       corFrente: entrada.corFrente,
       corVerso: entrada.corVerso,
+      acabamentoIds: entrada.acabamentoIds,
     });
     if (!resultado.ok) {
       return { ok: false, mensagem: `Item ${indice + 1}: ${resultado.mensagem}` };
@@ -408,6 +413,7 @@ export async function criarOrcamento(
       corVerso: resultado.corVerso,
       breakdown: resultado.breakdown,
       etiqueta: entrada.etiqueta,
+      acabamentos: resultado.acabamentos,
     });
   }
 
@@ -478,6 +484,16 @@ export async function criarOrcamento(
                       })),
                     },
                   },
+                }
+              : undefined,
+          acabamentos:
+            item.acabamentos.length > 0
+              ? {
+                  create: item.acabamentos.map((a) => ({
+                    itemGraficaId: a.itemGraficaId,
+                    qtdBase: a.qtdBase,
+                    custoCalculado: a.custoCalculado,
+                  })),
                 }
               : undefined,
         })),

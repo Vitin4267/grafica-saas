@@ -76,7 +76,7 @@ export default async function OrcamentoDetalhePage({
   const origem = await resolverOrigemPublica();
   const podeEditarFinanceiro = await podeEditarModulo(usuario, "FINANCEIRO");
 
-  const [orcamento, clientes, itensVendaveis, parametrosGrafica] = await Promise.all([
+  const [orcamento, clientes, itensVendaveis, parametrosGrafica, acabamentosDisponiveisRaw] = await Promise.all([
     prisma.orcamento.findFirst({
       where: { id, graficaId: usuario.graficaId },
       include: {
@@ -88,6 +88,7 @@ export default async function OrcamentoDetalhePage({
             itemGrafica: { include: { itemCatalogo: true } },
             etiqueta: { include: { hotStampings: true } },
             tinta: true,
+            acabamentos: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
           },
         },
         pagamentos: { orderBy: { createdAt: "desc" } },
@@ -107,8 +108,22 @@ export default async function OrcamentoDetalhePage({
       where: { graficaId: usuario.graficaId },
       select: { custoTintaPorMl: true },
     }),
+    prisma.itemGrafica.findMany({
+      where: {
+        graficaId: usuario.graficaId,
+        ativo: true,
+        itemCatalogo: { tipo: "SERVICO" },
+        configuracaoAcabamento: { isNot: null },
+      },
+      include: { itemCatalogo: true },
+      orderBy: { itemCatalogo: { nome: "asc" } },
+    }),
   ]);
   const custoTintaPorMl = parametrosGrafica?.custoTintaPorMl ? Number(parametrosGrafica.custoTintaPorMl) : null;
+  const acabamentosDisponiveis = acabamentosDisponiveisRaw.map((ig) => ({
+    id: ig.id,
+    nome: ig.itemCatalogo.nome,
+  }));
 
   if (!orcamento) {
     notFound();
@@ -316,12 +331,14 @@ export default async function OrcamentoDetalhePage({
                   modeloCalculo={item.modeloCalculo}
                   unidadeDimensao={item.unidadeDimensao}
                   podeRemover={orcamento.itens.length > 1}
+                  acabamentosDisponiveis={acabamentosDisponiveis}
                   valoresIniciais={{
                     quantidade: item.quantidade,
                     larguraCm: item.larguraCm?.toString() ?? "",
                     alturaCm: item.alturaCm?.toString() ?? "",
                     cores: item.cores ?? "",
                     acabamento: item.acabamento ?? "",
+                    acabamentoIds: item.acabamentos.map((a) => a.itemGraficaId),
                     corFrente: item.corFrente?.toString() ?? "",
                     corVerso: item.corVerso?.toString() ?? "",
                     etiqueta: etiquetaParaCampos(item.etiqueta),
@@ -372,6 +389,7 @@ export default async function OrcamentoDetalhePage({
                 modeloCalculo: ig.modeloCalculo,
               }))}
               unidadePadrao={usuario.grafica.unidadePadraoDimensao}
+              acabamentosDisponiveis={acabamentosDisponiveis}
             />
           </div>
         ) : (
@@ -402,6 +420,11 @@ export default async function OrcamentoDetalhePage({
                     </span>
                   )}
                   {item.acabamento && <span>Acabamento: {item.acabamento}</span>}
+                  {item.acabamentos.length > 0 && (
+                    <span>
+                      Acabamentos: {item.acabamentos.map((a) => a.itemGrafica.itemCatalogo.nome).join(", ")}
+                    </span>
+                  )}
                   <span>Unitário: {formatoMoeda.format(Number(item.precoUnitario))}</span>
                 </div>
                 {item.etiqueta && <EtiquetaResumo etiqueta={item.etiqueta} />}

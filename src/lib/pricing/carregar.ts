@@ -3,7 +3,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { ErroPrecificacao } from "./erros";
 import { resolverPrecoPapel } from "./papel";
-import type { ContextoPrecificacao, ParametrosPrensa, ParametrosTenant } from "./index";
+import type { ConfigAcabamento, ContextoPrecificacao, ParametrosPrensa, ParametrosTenant } from "./index";
 
 // Único arquivo do motor que toca Prisma. Cruza Decimal do Prisma → number sempre
 // aqui (via toString()/Number()), nunca dentro de src/lib/pricing/*.ts puro.
@@ -131,4 +131,51 @@ export async function carregarContextoPrecificacao(
   }
 
   return contexto;
+}
+
+// Traduz os ItemGrafica escolhidos como acabamento (motor M2/OFFSET, ver
+// calcularItemOrcamento) pro shape que o motor de custo entende. Cada um precisa
+// ser um SERVICO do catálogo da própria gráfica com ConfiguracaoAcabamento
+// cadastrada — sem isso não tem como saber base de cobrança/custo.
+export async function resolverConfigAcabamentos(
+  itemGraficaIds: string[],
+  graficaId: string
+): Promise<ConfigAcabamento[]> {
+  const itens = await prisma.itemGrafica.findMany({
+    where: { id: { in: itemGraficaIds }, graficaId },
+    include: { itemCatalogo: true, configuracaoAcabamento: true },
+  });
+
+  if (itens.length !== itemGraficaIds.length) {
+    throw new ErroPrecificacao(
+      "CUSTO_INVALIDO",
+      "Um ou mais acabamentos selecionados não foram encontrados."
+    );
+  }
+
+  return itemGraficaIds.map((id) => {
+    // findMany não garante ordem == itemGraficaIds; busca item a item pra manter
+    // a mensagem de erro e o resultado alinhados com o que o usuário escolheu.
+    const item = itens.find((i) => i.id === id)!;
+    if (item.itemCatalogo.tipo !== "SERVICO" || !item.configuracaoAcabamento) {
+      throw new ErroPrecificacao(
+        "CUSTO_INVALIDO",
+        `"${item.itemCatalogo.nome}" não está configurado como acabamento — configure em Catálogo antes de usar.`
+      );
+    }
+
+    return {
+      itemGraficaId: item.id,
+      nome: item.itemCatalogo.nome,
+      baseCobranca: item.configuracaoAcabamento.baseCobranca,
+      estagio: item.configuracaoAcabamento.estagio,
+      custoUnitario: Number(item.precoCompra ?? 0),
+      custoSetup: Number(item.configuracaoAcabamento.custoSetup),
+      custoMinimo: Number(item.configuracaoAcabamento.custoMinimo),
+      custoFerramental:
+        item.configuracaoAcabamento.custoFerramental !== null
+          ? Number(item.configuracaoAcabamento.custoFerramental)
+          : null,
+    };
+  });
 }

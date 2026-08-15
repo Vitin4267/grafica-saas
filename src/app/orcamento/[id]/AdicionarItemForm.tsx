@@ -10,6 +10,7 @@ import {
   camposIniciais,
   type ItemVenda,
   type CamposItemOrcamento,
+  type ItemAcabamentoDisponivel,
 } from "../SeletorItemOrcamento";
 import type { UnidadeDimensao } from "@/lib/unidade-dimensao";
 
@@ -17,12 +18,14 @@ export function AdicionarItemForm({
   orcamentoId,
   itens,
   unidadePadrao,
+  acabamentosDisponiveis,
 }: {
   orcamentoId: string;
   itens: ItemVenda[];
   // Grafica.unidadePadraoDimensao — o formulário nasce nessa unidade (ver
   // camposIniciais em SeletorItemOrcamento.tsx).
   unidadePadrao: UnidadeDimensao;
+  acabamentosDisponiveis: ItemAcabamentoDisponivel[];
 }) {
   const [campos, setCampos] = useState<CamposItemOrcamento>(() =>
     camposIniciais(itens, unidadePadrao)
@@ -55,6 +58,9 @@ export function AdicionarItemForm({
         <input type="hidden" name="corVerso" value={campos.corVerso} />
         <input type="hidden" name="cores" value={campos.cores} />
         <input type="hidden" name="acabamento" value={campos.acabamento} />
+        {campos.acabamentoIds.map((id) => (
+          <input key={id} type="hidden" name="acabamentoIds" value={id} />
+        ))}
         <input type="hidden" name="materialSubstrato" value={campos.etiqueta.materialSubstrato} />
         <input type="hidden" name="materialSubstratoOutro" value={campos.etiqueta.materialSubstratoOutro} />
         <input type="hidden" name="tipoAdesivo" value={campos.etiqueta.tipoAdesivo} />
@@ -116,7 +122,12 @@ export function AdicionarItemForm({
           )}
         />
 
-        <SeletorItemOrcamento itens={itens} valores={campos} onChange={setCampos} />
+        <SeletorItemOrcamento
+          itens={itens}
+          acabamentosDisponiveis={acabamentosDisponiveis}
+          valores={campos}
+          onChange={setCampos}
+        />
 
         {state && <Alert variant={state.ok ? "success" : "error"}>{state.mensagem}</Alert>}
 

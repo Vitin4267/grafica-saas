@@ -43,6 +43,7 @@ export type OrcamentoParaPdf = {
     unidadeDimensao: UnidadeDimensao;
     cores: string | null;
     acabamento: string | null;
+    acabamentos: { itemGrafica: { itemCatalogo: { nome: string } } }[];
     precoUnitario: Prisma.Decimal;
     precoTotal: Prisma.Decimal;
     itemGrafica: { itemCatalogo: { nome: string } };
@@ -116,6 +117,7 @@ export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
           : null,
       cores: item.cores,
       acabamento: item.acabamento,
+      acabamentosEstruturados: item.acabamentos.map((a) => a.itemGrafica.itemCatalogo.nome),
       precoUnitario: formatoMoeda.format(Number(item.precoUnitario)),
       precoTotal: formatoMoeda.format(Number(item.precoTotal)),
       etiquetaLinhas: item.etiqueta ? linhasEtiqueta(item.etiqueta) : [],

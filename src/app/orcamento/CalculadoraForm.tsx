@@ -22,6 +22,7 @@ import {
   camposIniciais,
   type ItemVenda,
   type CamposItemOrcamento,
+  type ItemAcabamentoDisponivel,
 } from "./SeletorItemOrcamento";
 import type { CamposEtiqueta } from "./CamposEtiquetaOrcamento";
 
@@ -135,6 +136,7 @@ type ItemCarrinho = {
   corVerso: number | null;
   cores: string | null;
   acabamento: string | null;
+  acabamentoIds: string[];
   precoUnitario: string;
   precoTotal: string;
   modeloCalculo: "SIMPLES" | "M2" | "OFFSET";
@@ -143,11 +145,13 @@ type ItemCarrinho = {
 
 export function CalculadoraForm({
   itens,
+  acabamentosDisponiveis,
   clientes,
   filiais,
   unidadePadrao,
 }: {
   itens: ItemVenda[];
+  acabamentosDisponiveis: ItemAcabamentoDisponivel[];
   clientes: Cliente[];
   filiais: Filial[];
   // Grafica.unidadePadraoDimensao — o formulário de item nasce nessa unidade
@@ -228,6 +232,7 @@ export function CalculadoraForm({
       unidadeDimensao: campos.unidadeDimensao,
       corFrente,
       corVerso,
+      acabamentoIds: campos.acabamentoIds,
     });
     setAdicionando(false);
 
@@ -251,6 +256,7 @@ export function CalculadoraForm({
         corVerso,
         cores: campos.cores.trim() || null,
         acabamento: campos.acabamento.trim() || null,
+        acabamentoIds: campos.acabamentoIds,
         precoUnitario: resultado.precoUnitario,
         precoTotal: resultado.precoTotal,
         modeloCalculo: resultado.modeloCalculo,
@@ -275,6 +281,7 @@ export function CalculadoraForm({
       corVerso: i.corVerso,
       cores: i.cores,
       acabamento: i.acabamento,
+      acabamentoIds: i.acabamentoIds,
       etiqueta: etiquetaParaEntrada(i.etiqueta),
     }))
   );
@@ -384,7 +391,12 @@ export function CalculadoraForm({
           )}
 
           <div className="border-t border-slate-100 pt-5 dark:border-slate-800">
-            <SeletorItemOrcamento itens={itens} valores={campos} onChange={setCampos} />
+            <SeletorItemOrcamento
+              itens={itens}
+              acabamentosDisponiveis={acabamentosDisponiveis}
+              valores={campos}
+              onChange={setCampos}
+            />
 
             {erroAdicionar && (
               <div className="mt-4">

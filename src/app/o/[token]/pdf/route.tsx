@@ -21,6 +21,7 @@ export async function GET(
         include: {
           itemGrafica: { include: { itemCatalogo: true } },
           etiqueta: { include: { hotStampings: true } },
+          acabamentos: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
         },
       },
     },
