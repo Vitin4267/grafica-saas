@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
@@ -10,13 +11,26 @@ import {
   obterModulosVisiveis,
 } from "@/lib/auth/permissoes";
 import { verificarEDispararAlertasAtraso } from "@/lib/alerta-atraso";
-import { dataEhPassado } from "@/lib/data";
+import { dataEhPassado, limitesDiaBrasilia } from "@/lib/data";
 import { resolverOrigemPublica } from "@/lib/url-publica";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import { Button } from "@/components/ui/Button";
 import { PrinterIcon } from "@/components/icons";
 import { PedidoLinha } from "./PedidoLinha";
+import type { StatusPedido } from "@/generated/prisma/enums";
+
+const REGEX_DATA = /^\d{4}-\d{2}-\d{2}$/;
+
+// Terminal — pedido já concluído (entregue ou cancelado) não precisa mais de
+// ação de ninguém. Fica visualmente separado do resto da fila, não misturado
+// entre os pedidos que ainda estão em andamento (era a fonte da confusão:
+// ordenar tudo só por "mais antigo primeiro" colocava pedido antigo já
+// entregue acima de pedido novo ainda na fila).
+const STATUS_FINALIZADOS = new Set<StatusPedido>(["ENTREGUE", "CANCELADO"]);
 
 function chipAtraso(prazoEntrega: Date | null, status: string) {
   if (
@@ -38,10 +52,20 @@ function chipAtraso(prazoEntrega: Date | null, status: string) {
   );
 }
 
-export default async function ProducaoPage() {
+export default async function ProducaoPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ clienteId?: string; de?: string; ate?: string }>;
+}) {
   const usuario = await exigirUsuarioAutenticado();
   await exigirEmailVerificado(usuario);
   await exigirAssinaturaAtiva(usuario);
+
+  const { clienteId, de, ate } = await searchParams;
+  const clienteIdFiltro = clienteId || undefined;
+  const inicio = de && REGEX_DATA.test(de) ? limitesDiaBrasilia(de).inicio : undefined;
+  const fim = ate && REGEX_DATA.test(ate) ? limitesDiaBrasilia(ate).fim : undefined;
+  const filtrosAtivos = Boolean(clienteIdFiltro || inicio || fim);
 
   // Responsabilidades por etapa (ver ResponsavelEstagio) dão acesso a
   // /producao mesmo sem PRODUCAO.podeVer completo — precisa ler isso ANTES
@@ -73,22 +97,35 @@ export default async function ProducaoPage() {
   await verificarEDispararAlertasAtraso(usuario.graficaId, usuario.grafica.nome);
   const origem = await resolverOrigemPublica();
 
-  const todosPedidos = await prisma.pedido.findMany({
-    where: { graficaId: usuario.graficaId },
-    include: {
-      orcamento: {
-        include: {
-          cliente: true,
-          itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
+  const [todosPedidos, clientes] = await Promise.all([
+    prisma.pedido.findMany({
+      where: {
+        graficaId: usuario.graficaId,
+        ...(clienteIdFiltro ? { orcamento: { clienteId: clienteIdFiltro } } : {}),
+        ...(inicio || fim
+          ? { createdAt: { ...(inicio ? { gte: inicio } : {}), ...(fim ? { lte: fim } : {}) } }
+          : {}),
+      },
+      include: {
+        orcamento: {
+          include: {
+            cliente: true,
+            itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
+          },
+        },
+        custos: {
+          include: { categoriaCusto: true },
+          orderBy: { createdAt: "desc" },
         },
       },
-      custos: {
-        include: { categoriaCusto: true },
-        orderBy: { createdAt: "desc" },
-      },
-    },
-    orderBy: { createdAt: "asc" },
-  });
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.cliente.findMany({
+      where: { graficaId: usuario.graficaId },
+      select: { id: true, nome: true },
+      orderBy: { nome: "asc" },
+    }),
+  ]);
 
   // Buscada UMA VEZ fora do loop de pedidos (evita N+1) — só as ATIVAS, pra
   // popular o select de "lançar custo" de cada linha. Categorias inativas
@@ -104,9 +141,19 @@ export default async function ProducaoPage() {
   // de verdade) não deveria ver a fila inteira — só os pedidos que estão
   // numa das etapas dele. Quem tem podeVer completo continua vendo tudo,
   // sem filtro (inclui DONO/ADMIN, que nunca dependem de etapasResponsavel).
-  const pedidos = podeVer
+  const pedidosVisiveis = podeVer
     ? todosPedidos
     : todosPedidos.filter((pedido) => etapasResponsavel.has(pedido.status));
+
+  // Ativos (ainda precisam de ação) continuam do mais antigo pro mais novo —
+  // é a ordem de prioridade real de uma fila de produção. Finalizados vão
+  // pro fim da lista, ordenados pelo mais recente primeiro (o que a gráfica
+  // mais provavelmente quer conferir é uma entrega recente, não a mais antiga).
+  const pedidosAtivos = pedidosVisiveis.filter((p) => !STATUS_FINALIZADOS.has(p.status));
+  const pedidosFinalizados = [...pedidosVisiveis]
+    .filter((p) => STATUS_FINALIZADOS.has(p.status))
+    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+  const pedidos = [...pedidosAtivos, ...pedidosFinalizados];
 
   return (
     <div className="flex flex-1 flex-col">
@@ -125,21 +172,52 @@ export default async function ProducaoPage() {
             Fila de produção
           </h1>
           <p className="mt-1 text-slate-500">
-            Pedidos gerados a partir de orçamentos aprovados, do mais antigo
-            para o mais novo.
+            Pedidos em andamento primeiro (do mais antigo pro mais novo).
+            Entregues e cancelados ficam no fim da lista.
           </p>
         </div>
+
+        <form className="mb-6 flex flex-wrap items-end gap-3">
+          <div className="min-w-[220px] flex-1">
+            <Select label="Cliente" name="clienteId" defaultValue={clienteIdFiltro ?? ""}>
+              <option value="">Todos os clientes</option>
+              {clientes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nome}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="w-40">
+            <Input label="De" type="date" name="de" defaultValue={de ?? ""} />
+          </div>
+          <div className="w-40">
+            <Input label="Até" type="date" name="ate" defaultValue={ate ?? ""} />
+          </div>
+          <Button type="submit" variant="outline">
+            Filtrar
+          </Button>
+          {filtrosAtivos && (
+            <Link href="/producao" className="text-sm text-slate-500 underline decoration-dotted underline-offset-2 hover:text-slate-700 dark:hover:text-slate-300">
+              Limpar filtros
+            </Link>
+          )}
+        </form>
 
         {pedidos.length === 0 ? (
           <EmptyState
             icone={<PrinterIcon className="h-6 w-6" />}
-            texto="Nenhum pedido em produção ainda. Pedidos aparecem aqui automaticamente quando um orçamento é aprovado."
+            texto={
+              filtrosAtivos
+                ? "Nenhum pedido encontrado com esse filtro."
+                : "Nenhum pedido em produção ainda. Pedidos aparecem aqui automaticamente quando um orçamento é aprovado."
+            }
             href="/orcamento"
             rotuloCta="Ir para Orçamento"
           />
         ) : (
           <Card className="divide-y divide-slate-100 dark:divide-slate-800">
-            {pedidos.map((pedido) => {
+            {pedidos.map((pedido, indice) => {
               // Mesma fórmula de lucroDoPedido (src/lib/custo-pedido.ts):
               // receita = total do orçamento aprovado, custo = soma dos
               // custos REAIS já lançados. Calculado aqui (reaproveitando os
@@ -156,9 +234,18 @@ export default async function ProducaoPage() {
               const lucroPedido =
                 custosAtivos.length > 0 ? Number(pedido.orcamento.total) - custoTotalPedido : null;
 
+              // Divisor visual só na virada de ativos pra finalizados (nunca
+              // no topo, mesmo se a lista inteira for só finalizados).
+              const inicioFinalizados = indice === pedidosAtivos.length && pedidosAtivos.length > 0;
+
               return (
-                <PedidoLinha
-                  key={pedido.id}
+                <div key={pedido.id}>
+                  {inicioFinalizados && (
+                    <p className="bg-slate-50 px-6 py-2 text-xs font-medium text-slate-500 dark:bg-slate-900/50">
+                      Finalizados
+                    </p>
+                  )}
+                  <PedidoLinha
                   pedidoId={pedido.id}
                   orcamentoId={pedido.orcamentoId}
                   clienteNome={pedido.orcamento.cliente.nome}
@@ -189,7 +276,8 @@ export default async function ProducaoPage() {
                     createdAt: custo.createdAt.toISOString(),
                   }))}
                   lucro={podeVerCustos ? lucroPedido : null}
-                />
+                  />
+                </div>
               );
             })}
           </Card>
