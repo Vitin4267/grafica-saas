@@ -24,7 +24,9 @@ export type EventoEmail = {
     | "arte_aprovada"
     | "estagio_responsavel"
     | "orcamento_aprovado"
-    | "orcamento_recusado";
+    | "orcamento_recusado"
+    | "pedido_prazo_proximo"
+    | "pedido_prazo_atrasado";
   destinatario: string;
   assunto: string;
   html: string;

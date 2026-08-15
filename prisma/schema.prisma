@@ -70,6 +70,8 @@ model Grafica {
   categoriasCusto       CategoriaCusto[]
   custosPedido          CustoPedido[]
   custosPrevisto        PedidoCustoPrevisto[]
+  fornecedores          Fornecedor[]
+  contasPrepagas        ContaPrepaga[]
 
   @@map("graficas")
 }
@@ -1009,8 +1011,12 @@ model MovimentacaoEstoque {
   // do alerta "preço de custo não atualizado há N dias".
   precoReferenciaEm DateTime?
 
-  documento   String? // nº da nota fiscal, só usado em ENTRADA_COMPRA
-  criadoPorId String? // null quando a movimentação foi gerada pelo sistema (baixa automática)
+  documento    String? // nº da nota fiscal, só usado em ENTRADA_COMPRA
+  criadoPorId  String? // null quando a movimentação foi gerada pelo sistema (baixa automática)
+  // De qual fornecedor veio a compra — só relevante/preenchido em
+  // ENTRADA_COMPRA. Opcional: nem toda gráfica cadastra fornecedor pra
+  // toda compra, e histórico de compras sem fornecedor continua válido.
+  fornecedorId String?
 
   // Restrict (não Cascade) porque isso é o histórico de movimentação de
   // estoque em si — apagar o ItemGrafica junto apagaria o próprio registro
@@ -1024,11 +1030,38 @@ model MovimentacaoEstoque {
   pedido      Pedido?               @relation(fields: [pedidoId], references: [id], onDelete: SetNull)
   variante    VarianteMateriaPrima? @relation(fields: [varianteId], references: [id], onDelete: SetNull)
   custoPedido CustoPedido?
+  // SetNull: desativar/apagar um fornecedor não pode apagar o histórico de
+  // compra em si, só perde a referência de quem vendeu.
+  fornecedor  Fornecedor?           @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
 
   @@index([itemGraficaId])
   @@index([pedidoId])
   @@index([varianteId])
+  @@index([fornecedorId])
   @@map("movimentacoes_estoque")
+}
+
+// Fornecedor de matéria-prima/serviço — cadastro simples pra permitir
+// vincular uma entrada de compra (MovimentacaoEstoque tipo ENTRADA_COMPRA)
+// a quem vendeu, e comparar preço entre fornecedores do mesmo item ao
+// longo do tempo (via o histórico de movimentações já existente). Sem
+// workflow de cotação/aprovação de propósito — isso é feature maior,
+// separada; aqui é só "quem vendeu isto", espelhando o que a gráfica já
+// controla manualmente numa planilha de lista de compras.
+model Fornecedor {
+  id        String   @id @default(cuid())
+  graficaId String
+  nome      String
+  contato   String? // telefone/e-mail/observação livre
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  grafica       Grafica               @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  movimentacoes MovimentacaoEstoque[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("fornecedores")
 }
 
 enum StatusOrcamento {
@@ -1218,6 +1251,49 @@ model Despesa {
   @@index([graficaId, status, vencimento])
   @@index([graficaId, serieRecorrenciaId])
   @@map("despesas")
+}
+
+// Saldo prepago tipo "vale" (ex: carteira de um serviço de entrega como
+// Lalamove) — diferente de Despesa, que é conta a pagar; aqui o dinheiro já
+// saiu antes, numa recarga, e cada uso (corrida, envio) só debita de um
+// saldo que a gráfica precisa monitorar pra não ficar negativo/zerado.
+// saldoAtual é cache redundante da soma de MovimentacaoContaPrepaga — existe
+// só pra não recalcular a soma inteira em toda leitura da tela; sempre
+// atualizado na MESMA transação que cria a movimentação.
+model ContaPrepaga {
+  id         String   @id @default(cuid())
+  graficaId  String
+  nome       String // ex: "Lalamove"
+  saldoAtual Decimal  @default(0) @db.Decimal(12, 2)
+  ativa      Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  grafica       Grafica                    @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  movimentacoes MovimentacaoContaPrepaga[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("contas_prepagas")
+}
+
+enum TipoMovimentacaoContaPrepaga {
+  RECARGA
+  DEBITO
+}
+
+model MovimentacaoContaPrepaga {
+  id          String                       @id @default(cuid())
+  contaId     String
+  tipo        TipoMovimentacaoContaPrepaga
+  valor       Decimal                      @db.Decimal(12, 2)
+  motivo      String?
+  criadoPorId String?
+  createdAt   DateTime                     @default(now())
+
+  conta ContaPrepaga @relation(fields: [contaId], references: [id], onDelete: Cascade)
+
+  @@index([contaId, createdAt])
+  @@map("movimentacoes_conta_prepaga")
 }
 
 enum StatusComissao {
@@ -1526,8 +1602,19 @@ model Pedido {
   prazoEntrega          DateTime?
   // Dedup do evento pedido_atrasado (webhook-automacao.ts): uma vez enviado
   // o alerta pra este pedido, nunca reenviar — evita spam a cada
-  // carregamento de /producao enquanto o pedido continua atrasado.
+  // carregamento de /producao enquanto o pedido continua atrasado. Canal
+  // separado do campo abaixo: este dispara pro webhook de AUTOMAÇÃO da
+  // própria gráfica (n8n), só depois do prazo já vencido.
   alertaAtrasoEnviadoEm DateTime?
+
+  // Limiar mais urgente (5, 3 ou 0 dias até o prazo) já avisado por E-MAIL
+  // ao vendedor do orçamento + DONO da gráfica (ver
+  // src/lib/alerta-prazo-email.ts, rodando no cron diário). Cascata que só
+  // anda pra frente — 5 → 3 → 0 — nunca reenvia um limiar já ultrapassado,
+  // mas pula direto pro mais urgente ainda não avisado se o cron perder um
+  // dia (ex: de "não avisado" direto pra 0 se o pedido já venceu no
+  // primeiro run). Null = nenhum alerta de prazo ainda enviado por e-mail.
+  alertaPrazoUltimoLimiarDias Int?
 
   // Aprovação de arte: opt-in por pedido — se a gráfica nunca envia uma
   // arte (arteUrl null), o pedido avança normalmente sem nenhum gate. Uma

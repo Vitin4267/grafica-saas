@@ -209,6 +209,23 @@ export function ParametrosForm({
       <Card className="flex items-center justify-between gap-4 p-6">
         <div>
           <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Fornecedores
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Quem vendeu cada material — aparece como opção ao registrar uma
+            entrada de compra no Catálogo.
+          </p>
+        </div>
+        <Link href="/configuracoes/fornecedores">
+          <Button type="button" variant="outline">
+            Gerenciar fornecedores
+          </Button>
+        </Link>
+      </Card>
+
+      <Card className="flex items-center justify-between gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
             Dados fiscais
           </h2>
           <p className="mt-1 text-sm text-slate-500">

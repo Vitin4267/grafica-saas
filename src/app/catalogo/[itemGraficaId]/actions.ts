@@ -821,6 +821,12 @@ const entradaCompraSchema = z.object({
     .max(60)
     .optional()
     .transform((v) => (v ? v : undefined)),
+  fornecedorId: z
+    .string()
+    .trim()
+    .min(1)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
 });
 
 // Entrada de compra: além de registrar a movimentação, atualiza o preço de
@@ -847,11 +853,12 @@ export async function lancarEntradaCompra(
     quantidade: formData.get("quantidade"),
     custoUnitario: formData.get("custoUnitario"),
     documento: formData.get("documento") ?? undefined,
+    fornecedorId: formData.get("fornecedorId") ?? undefined,
   });
   if (!parsed.success) {
     return { ok: false, mensagem: parsed.error.issues[0].message };
   }
-  const { itemGraficaId, varianteId, quantidade, custoUnitario, documento } = parsed.data;
+  const { itemGraficaId, varianteId, quantidade, custoUnitario, documento, fornecedorId } = parsed.data;
 
   const resolvido = await resolverItemMateriaPrima(itemGraficaId, varianteId, usuario.graficaId);
   if (!resolvido) {
@@ -859,6 +866,21 @@ export async function lancarEntradaCompra(
   }
   const { itemGrafica, variante } = resolvido;
   const nomeItem = `${itemGrafica.itemCatalogo.nome}${variante ? ` (${variante.rotulo})` : ""}`;
+
+  // Mesma dupla checagem de tenant do restante deste arquivo — fornecedor
+  // precisa pertencer à graficaId do usuário, senão o id é ignorado (não
+  // falha o lançamento, só não vincula um fornecedor inválido/forjado).
+  let fornecedorValidoId: string | null = null;
+  if (fornecedorId) {
+    const fornecedorValido = await prisma.fornecedor.findFirst({
+      where: { id: fornecedorId, graficaId: usuario.graficaId },
+      select: { id: true },
+    });
+    if (!fornecedorValido) {
+      return { ok: false, mensagem: "Fornecedor selecionado é inválido." };
+    }
+    fornecedorValidoId = fornecedorValido.id;
+  }
 
   const precoAnterior = variante ? variante.precoCompra : itemGrafica.precoCompra;
   const estoqueAnterior = variante ? variante.estoqueAtual : itemGrafica.estoqueAtual;
@@ -891,6 +913,7 @@ export async function lancarEntradaCompra(
         custoTotal: custoTotalDec.toFixed(2),
         precoReferenciaEm: agora,
         documento: documento ?? null,
+        fornecedorId: fornecedorValidoId,
         criadoPorId: usuario.id,
       },
     });

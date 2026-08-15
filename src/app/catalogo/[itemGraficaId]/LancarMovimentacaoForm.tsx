@@ -31,6 +31,7 @@ export function LancarMovimentacaoForm({
   precoCompraAtual,
   estoqueAtual,
   variantes,
+  fornecedores,
 }: {
   itemGraficaId: string;
   nomeItem: string;
@@ -41,6 +42,10 @@ export function LancarMovimentacaoForm({
   precoCompraAtual: string;
   estoqueAtual: string;
   variantes: Variante[];
+  // Fornecedores ativos da gráfica, ordenados por nome — opção "Nenhum" é
+  // sempre válida (nem toda compra tem fornecedor cadastrado ainda, ver
+  // src/app/configuracoes/fornecedores).
+  fornecedores: { id: string; nome: string }[];
 }) {
   const [tipo, setTipo] = useState<Tipo>("ENTRADA_COMPRA");
   const [varianteId, setVarianteId] = useState(variantes[0]?.id ?? "");
@@ -150,6 +155,16 @@ export function LancarMovimentacaoForm({
             </div>
             <div className="w-40">
               <Input label="Nº da nota (opcional)" name="documento" type="text" maxLength={60} />
+            </div>
+            <div className="w-48">
+              <Select label="Fornecedor (opcional)" name="fornecedorId" defaultValue="">
+                <option value="">Nenhum / não informado</option>
+                {fornecedores.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.nome}
+                  </option>
+                ))}
+              </Select>
             </div>
           </div>
           {estadoEntrada && (

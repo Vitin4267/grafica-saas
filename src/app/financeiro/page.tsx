@@ -98,6 +98,9 @@ export default async function FinanceiroPage() {
             <Link href="/financeiro/comissoes" className="font-medium text-teal-700 hover:underline dark:text-teal-400">
               Ver comissões →
             </Link>
+            <Link href="/financeiro/contas-prepagas" className="font-medium text-teal-700 hover:underline dark:text-teal-400">
+              Ver contas prepagas →
+            </Link>
             <Link href="/financeiro/auditoria" className="font-medium text-teal-700 hover:underline dark:text-teal-400">
               Ver trilha de auditoria →
             </Link>

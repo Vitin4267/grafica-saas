@@ -334,6 +334,92 @@ export function templateOrcamentoRecusado(
   };
 }
 
+// Disparado pelo cron diário (enviarAlertasPrazoEmail, src/lib/alerta-prazo-email.ts)
+// quando um pedido chega a 5 ou 3 dias do prazo de entrega — canal SEPARADO
+// do alerta_atraso antigo (webhook de automação da própria gráfica, dispara
+// sob demanda só depois do prazo já vencido). Vai pro vendedor do orçamento
+// + DONO(s) da gráfica, mesmo destinatário de templateOrcamentoAprovado.
+// diasRestantes é sempre 5 ou 3 na prática (os dois limiares "com
+// antecedência" da cascata em alerta-prazo-email.ts), mas fica genérico
+// (number) em vez de união de literais — não vale a pena travar o tipo por
+// só 2 valores possíveis.
+export function templatePedidoPrazoProximo(
+  graficaNome: string,
+  clienteNome: string,
+  itens: ItemPedidoResumo[],
+  diasRestantes: number,
+  prazoFormatado: string,
+  linkProducao: string
+): { assunto: string; html: string; texto: string } {
+  const linhaTexto = (i: ItemPedidoResumo) => `- ${i.nome} (qtd: ${i.quantidade})`;
+  const linhaHtml = (i: ItemPedidoResumo) => `
+        <li style="margin-bottom: 4px;">
+          ${escapeHtml(i.nome)} <span style="color: #64748b;">(qtd: ${i.quantidade})</span>
+        </li>`;
+  const diasTexto = diasRestantes === 1 ? "1 dia" : `${diasRestantes} dias`;
+
+  return {
+    assunto: `Faltam ${diasTexto} pro prazo — pedido de ${removerQuebrasDeLinha(clienteNome)} — ${removerQuebrasDeLinha(graficaNome)}`,
+    texto: `Faltam ${diasTexto} pro prazo de entrega prometido do pedido de ${clienteNome} (prazo: ${prazoFormatado}).\n\nItens:\n${itens.map(linhaTexto).join("\n")}\n\nAcompanhe em: ${linkProducao}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2 style="color: #0f172a;">Faltam ${diasTexto} pro prazo de entrega</h2>
+        <p style="color: #334155;">O pedido de <strong>${escapeHtml(clienteNome)}</strong> tem prazo prometido pra <strong>${prazoFormatado}</strong>.</p>
+        <ul style="color: #0f172a; padding-left: 20px;">${itens.map(linhaHtml).join("")}
+        </ul>
+        <p>
+          <a href="${linkProducao}" style="display: inline-block; background: #0d9488; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px;">
+            Ver fila de produção
+          </a>
+        </p>
+      </div>
+    `,
+  };
+}
+
+// Disparado pelo mesmo cron, quando o prazo de um pedido chega (diasAtraso=0,
+// vence hoje) ou já passou (diasAtraso>0) sem o pedido ter sido concluído —
+// limiar 0 da cascata, o mais urgente, e o único que nunca reenvia depois
+// (ver comentário de Pedido.alertaPrazoUltimoLimiarDias no schema).
+export function templatePedidoPrazoAtrasado(
+  graficaNome: string,
+  clienteNome: string,
+  itens: ItemPedidoResumo[],
+  diasAtraso: number,
+  prazoFormatado: string,
+  linkProducao: string
+): { assunto: string; html: string; texto: string } {
+  const linhaTexto = (i: ItemPedidoResumo) => `- ${i.nome} (qtd: ${i.quantidade})`;
+  const linhaHtml = (i: ItemPedidoResumo) => `
+        <li style="margin-bottom: 4px;">
+          ${escapeHtml(i.nome)} <span style="color: #64748b;">(qtd: ${i.quantidade})</span>
+        </li>`;
+  const situacaoTexto =
+    diasAtraso <= 0
+      ? "O prazo de entrega vence hoje"
+      : diasAtraso === 1
+        ? "O prazo de entrega venceu há 1 dia"
+        : `O prazo de entrega venceu há ${diasAtraso} dias`;
+
+  return {
+    assunto: `${diasAtraso <= 0 ? "Prazo vence hoje" : "Prazo vencido"} — pedido de ${removerQuebrasDeLinha(clienteNome)} — ${removerQuebrasDeLinha(graficaNome)}`,
+    texto: `${situacaoTexto} — pedido de ${clienteNome} (prazo: ${prazoFormatado}), ainda não concluído.\n\nItens:\n${itens.map(linhaTexto).join("\n")}\n\nAcompanhe em: ${linkProducao}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2 style="color: #b91c1c;">${situacaoTexto}</h2>
+        <p style="color: #334155;">O pedido de <strong>${escapeHtml(clienteNome)}</strong> (prazo: <strong>${prazoFormatado}</strong>) ainda não foi concluído.</p>
+        <ul style="color: #0f172a; padding-left: 20px;">${itens.map(linhaHtml).join("")}
+        </ul>
+        <p>
+          <a href="${linkProducao}" style="display: inline-block; background: #0d9488; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px;">
+            Ver fila de produção
+          </a>
+        </p>
+      </div>
+    `,
+  };
+}
+
 export function templateVerificacaoEmail(codigo: string): {
   assunto: string;
   html: string;

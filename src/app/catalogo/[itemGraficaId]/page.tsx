@@ -59,7 +59,7 @@ export default async function ConfiguracaoItemPage({
   await exigirAssinaturaAtiva(usuario);
   await exigirVerModulo(usuario, "CATALOGO");
 
-  const [itemGrafica, materiasPrimas, prensas] = await Promise.all([
+  const [itemGrafica, materiasPrimas, prensas, fornecedores] = await Promise.all([
     prisma.itemGrafica.findFirst({
       where: { id: itemGraficaId, graficaId: usuario.graficaId },
       include: {
@@ -73,7 +73,7 @@ export default async function ConfiguracaoItemPage({
         movimentacoes: {
           orderBy: { createdAt: "desc" },
           take: LIMITE_HISTORICO_MOVIMENTACAO,
-          include: { variante: { select: { rotulo: true } } },
+          include: { variante: { select: { rotulo: true } }, fornecedor: { select: { nome: true } } },
         },
       },
     }),
@@ -93,6 +93,11 @@ export default async function ConfiguracaoItemPage({
     prisma.prensa.findMany({
       where: { graficaId: usuario.graficaId, ativa: true },
       orderBy: { nome: "asc" },
+    }),
+    prisma.fornecedor.findMany({
+      where: { graficaId: usuario.graficaId, ativo: true },
+      orderBy: { nome: "asc" },
+      select: { id: true, nome: true },
     }),
   ]);
 
@@ -256,6 +261,7 @@ export default async function ConfiguracaoItemPage({
                 precoCompra: v.precoCompra.toString(),
                 estoqueAtual: v.estoqueAtual?.toString() ?? "",
               }))}
+              fornecedores={fornecedores}
             />
 
             <Card className="flex flex-col gap-1 p-6">
@@ -278,6 +284,7 @@ export default async function ConfiguracaoItemPage({
                         <p className="text-sm text-slate-900 dark:text-white">
                           {ROTULOS_TIPO_MOVIMENTACAO[m.tipo]}
                           {m.variante ? ` · ${m.variante.rotulo}` : ""}
+                          {m.fornecedor ? ` · ${m.fornecedor.nome}` : ""}
                           {m.motivo ? ` — ${m.motivo}` : ""}
                         </p>
                         <p className="mt-1 text-xs text-slate-500">
