@@ -14,6 +14,20 @@ export function escapeHtml(texto: string): string {
     .replace(/'/g, "&#39;");
 }
 
+// Teal padrão da plataforma — usado em todo e-mail quando a gráfica não
+// configurou Grafica.corPrimaria (ver /configuracoes/identidade) ou
+// configurou um valor em formato inválido. Nunca confia cegamente num valor
+// vindo do banco pra dentro de um `style` de e-mail: mesmo já validado no
+// salvamento (actions.ts da tela de identidade), HEX_REGEX_COR roda de novo
+// aqui como defesa em profundidade — um e-mail nunca pode sair sem cor
+// nenhuma ou com uma string arbitrária interpolada no HTML.
+const COR_PADRAO = "#0d9488";
+const HEX_REGEX_COR = /^#[0-9A-Fa-f]{6}$/;
+
+function resolverCorPrimaria(corPrimaria?: string | null): string {
+  return corPrimaria && HEX_REGEX_COR.test(corPrimaria) ? corPrimaria : COR_PADRAO;
+}
+
 // Nome de cliente/gráfica só faz `.trim()` na validação de entrada (remove
 // quebra de linha só das BORDAS, ver src/lib/clientes.ts e
 // src/lib/auth/validation.ts) — uma quebra de linha no MEIO do nome
@@ -25,7 +39,11 @@ export function escapeHtml(texto: string): string {
 function removerQuebrasDeLinha(texto: string): string {
   return texto.replace(/[\r\n]+/g, " ");
 }
-export function templateResetSenha(link: string): { assunto: string; html: string; texto: string } {
+export function templateResetSenha(
+  link: string,
+  corPrimaria?: string | null
+): { assunto: string; html: string; texto: string } {
+  const cor = resolverCorPrimaria(corPrimaria);
   return {
     assunto: "Redefinir sua senha — Gráfica+",
     texto: `Recebemos um pedido pra redefinir sua senha.\n\nAcesse o link abaixo (válido por 1 hora):\n${link}\n\nSe você não pediu isso, pode ignorar este e-mail — sua senha continua a mesma.`,
@@ -34,7 +52,7 @@ export function templateResetSenha(link: string): { assunto: string; html: strin
         <h2 style="color: #0f172a;">Redefinir sua senha</h2>
         <p style="color: #334155;">Recebemos um pedido pra redefinir a senha da sua conta no Gráfica+.</p>
         <p>
-          <a href="${link}" style="display: inline-block; background: #0d9488; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600;">
+          <a href="${link}" style="display: inline-block; background: ${cor}; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600;">
             Redefinir senha
           </a>
         </p>
@@ -91,8 +109,10 @@ export function templateEstoqueBaixo(
 // src/lib/billing/uso.ts, que é mensal e serve a outro propósito).
 export function templateTrialExpirando(
   orcamentosGerados: number,
-  linkAssinatura: string
+  linkAssinatura: string,
+  corPrimaria?: string | null
 ): { assunto: string; html: string; texto: string } {
+  const cor = resolverCorPrimaria(corPrimaria);
   const orcamentosTexto =
     orcamentosGerados === 1 ? "1 orçamento" : `${orcamentosGerados} orçamentos`;
 
@@ -110,7 +130,7 @@ export function templateTrialExpirando(
           Pra não perder o acesso ao seu painel e ao histórico dos seus clientes, escolha um plano:
         </p>
         <p>
-          <a href="${linkAssinatura}" style="display: inline-block; background: #0d9488; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600;">
+          <a href="${linkAssinatura}" style="display: inline-block; background: ${cor}; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600;">
             Escolher plano a partir de R$ 110,00
           </a>
         </p>
@@ -130,8 +150,10 @@ export function templateArteAlteracaoSolicitada(
   graficaNome: string,
   clienteNome: string,
   comentario: string,
-  linkProducao: string
+  linkProducao: string,
+  corPrimaria?: string | null
 ): { assunto: string; html: string; texto: string } {
+  const cor = resolverCorPrimaria(corPrimaria);
   return {
     assunto: `${removerQuebrasDeLinha(clienteNome)} pediu alteração na arte — ${removerQuebrasDeLinha(graficaNome)}`,
     texto: `${clienteNome} pediu uma alteração na arte de um pedido.\n\nComentário do cliente:\n"${comentario}"\n\nVeja o pedido em: ${linkProducao}`,
@@ -139,11 +161,11 @@ export function templateArteAlteracaoSolicitada(
       <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
         <h2 style="color: #0f172a;">Alteração de arte solicitada</h2>
         <p style="color: #334155;"><strong>${escapeHtml(clienteNome)}</strong> pediu uma alteração na arte de um pedido.</p>
-        <blockquote style="margin: 0; padding: 12px 16px; border-left: 3px solid #0d9488; background: #f0fdfa; color: #0f172a;">
+        <blockquote style="margin: 0; padding: 12px 16px; border-left: 3px solid ${cor}; background: #f0fdfa; color: #0f172a;">
           ${escapeHtml(comentario)}
         </blockquote>
         <p>
-          <a href="${linkProducao}" style="display: inline-block; background: #0d9488; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px;">
+          <a href="${linkProducao}" style="display: inline-block; background: ${cor}; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px;">
             Ver pedido
           </a>
         </p>
@@ -162,8 +184,10 @@ export function templateArteAprovada(
   graficaNome: string,
   clienteNome: string,
   itens: ItemPedidoResumo[],
-  linkProducao: string
+  linkProducao: string,
+  corPrimaria?: string | null
 ): { assunto: string; html: string; texto: string } {
+  const cor = resolverCorPrimaria(corPrimaria);
   const linhaTexto = (i: ItemPedidoResumo) => `- ${i.nome} (qtd: ${i.quantidade})`;
   const linhaHtml = (i: ItemPedidoResumo) => `
         <li style="margin-bottom: 4px;">
@@ -180,7 +204,7 @@ export function templateArteAprovada(
         <ul style="color: #0f172a; padding-left: 20px;">${itens.map(linhaHtml).join("")}
         </ul>
         <p>
-          <a href="${linkProducao}" style="display: inline-block; background: #0d9488; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px;">
+          <a href="${linkProducao}" style="display: inline-block; background: ${cor}; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px;">
             Ver pedido
           </a>
         </p>
@@ -216,8 +240,10 @@ export function templateEstagioResponsavel(
   clienteNome: string,
   rotuloEtapa: string,
   itens: ItemPedidoResumo[],
-  linkConfirmar: string
+  linkConfirmar: string,
+  corPrimaria?: string | null
 ): { assunto: string; html: string; texto: string } {
+  const cor = resolverCorPrimaria(corPrimaria);
   const linhaTexto = (i: ItemPedidoResumo) => `- ${i.nome} (qtd: ${i.quantidade})`;
   const linhaHtml = (i: ItemPedidoResumo) => `
         <li style="margin-bottom: 4px;">
@@ -236,7 +262,7 @@ export function templateEstagioResponsavel(
         <ul style="color: #0f172a; padding-left: 20px;">${itens.map(linhaHtml).join("")}
         </ul>
         <p>
-          <a href="${linkConfirmar}" style="display: inline-block; background: #0d9488; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px;">
+          <a href="${linkConfirmar}" style="display: inline-block; background: ${cor}; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px;">
             ${escapeHtml(fraseConfirmacao)}
           </a>
         </p>
@@ -268,8 +294,10 @@ export function templateOrcamentoAprovado(
   clienteNome: string,
   respondidoPor: string,
   valorTotal: number,
-  linkOrcamento: string
+  linkOrcamento: string,
+  corPrimaria?: string | null
 ): { assunto: string; html: string; texto: string } {
+  const cor = resolverCorPrimaria(corPrimaria);
   const valorFormatado = formatarValorBRL(valorTotal);
   return {
     assunto: `Orçamento aprovado — ${removerQuebrasDeLinha(clienteNome)} — ${removerQuebrasDeLinha(graficaNome)}`,
@@ -280,7 +308,7 @@ export function templateOrcamentoAprovado(
         <p style="color: #334155;"><strong>${escapeHtml(respondidoPor)}</strong> aprovou o orçamento de <strong>${escapeHtml(clienteNome)}</strong> pelo link público.</p>
         <p style="color: #0f172a; font-size: 22px; font-weight: 700;">${valorFormatado}</p>
         <p>
-          <a href="${linkOrcamento}" style="display: inline-block; background: #0d9488; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px;">
+          <a href="${linkOrcamento}" style="display: inline-block; background: ${cor}; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px;">
             Ver orçamento
           </a>
         </p>
@@ -304,8 +332,10 @@ export function templateOrcamentoRecusado(
   respondidoPor: string,
   valorTotal: number,
   motivo: string,
-  linkOrcamento: string
+  linkOrcamento: string,
+  corPrimaria?: string | null
 ): { assunto: string; html: string; texto: string } {
+  const cor = resolverCorPrimaria(corPrimaria);
   const valorFormatado = formatarValorBRL(valorTotal);
   const motivoTexto = motivo ? motivo : "Não informado.";
   const motivoHtml = motivo
@@ -325,7 +355,7 @@ export function templateOrcamentoRecusado(
           ${motivoHtml}
         </blockquote>
         <p>
-          <a href="${linkOrcamento}" style="display: inline-block; background: #0d9488; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px;">
+          <a href="${linkOrcamento}" style="display: inline-block; background: ${cor}; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px;">
             Ver orçamento
           </a>
         </p>
@@ -349,8 +379,10 @@ export function templatePedidoPrazoProximo(
   itens: ItemPedidoResumo[],
   diasRestantes: number,
   prazoFormatado: string,
-  linkProducao: string
+  linkProducao: string,
+  corPrimaria?: string | null
 ): { assunto: string; html: string; texto: string } {
+  const cor = resolverCorPrimaria(corPrimaria);
   const linhaTexto = (i: ItemPedidoResumo) => `- ${i.nome} (qtd: ${i.quantidade})`;
   const linhaHtml = (i: ItemPedidoResumo) => `
         <li style="margin-bottom: 4px;">
@@ -368,7 +400,7 @@ export function templatePedidoPrazoProximo(
         <ul style="color: #0f172a; padding-left: 20px;">${itens.map(linhaHtml).join("")}
         </ul>
         <p>
-          <a href="${linkProducao}" style="display: inline-block; background: #0d9488; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px;">
+          <a href="${linkProducao}" style="display: inline-block; background: ${cor}; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px;">
             Ver fila de produção
           </a>
         </p>
@@ -387,8 +419,10 @@ export function templatePedidoPrazoAtrasado(
   itens: ItemPedidoResumo[],
   diasAtraso: number,
   prazoFormatado: string,
-  linkProducao: string
+  linkProducao: string,
+  corPrimaria?: string | null
 ): { assunto: string; html: string; texto: string } {
+  const cor = resolverCorPrimaria(corPrimaria);
   const linhaTexto = (i: ItemPedidoResumo) => `- ${i.nome} (qtd: ${i.quantidade})`;
   const linhaHtml = (i: ItemPedidoResumo) => `
         <li style="margin-bottom: 4px;">
@@ -411,7 +445,7 @@ export function templatePedidoPrazoAtrasado(
         <ul style="color: #0f172a; padding-left: 20px;">${itens.map(linhaHtml).join("")}
         </ul>
         <p>
-          <a href="${linkProducao}" style="display: inline-block; background: #0d9488; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px;">
+          <a href="${linkProducao}" style="display: inline-block; background: ${cor}; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px;">
             Ver fila de produção
           </a>
         </p>
@@ -420,11 +454,15 @@ export function templatePedidoPrazoAtrasado(
   };
 }
 
-export function templateVerificacaoEmail(codigo: string): {
+export function templateVerificacaoEmail(
+  codigo: string,
+  corPrimaria?: string | null
+): {
   assunto: string;
   html: string;
   texto: string;
 } {
+  const cor = resolverCorPrimaria(corPrimaria);
   return {
     assunto: "Seu código de confirmação — Gráfica+",
     texto: `Seu código de confirmação é: ${codigo}\n\nEsse código vale por 15 minutos. Se você não pediu isso, pode ignorar este e-mail.`,
@@ -432,7 +470,7 @@ export function templateVerificacaoEmail(codigo: string): {
       <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
         <h2 style="color: #0f172a;">Confirme seu e-mail</h2>
         <p style="color: #334155;">Use o código abaixo pra confirmar seu e-mail e liberar o acesso à sua conta no Gráfica+.</p>
-        <p style="font-family: monospace; font-size: 32px; font-weight: 700; letter-spacing: 8px; color: #0d9488; text-align: center; padding: 16px 0;">
+        <p style="font-family: monospace; font-size: 32px; font-weight: 700; letter-spacing: 8px; color: ${cor}; text-align: center; padding: 16px 0;">
           ${codigo}
         </p>
         <p style="color: #64748b; font-size: 14px;">Esse código vale por 15 minutos. Se você não pediu isso, pode ignorar este e-mail.</p>

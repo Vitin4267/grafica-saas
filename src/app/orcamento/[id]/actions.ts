@@ -46,6 +46,7 @@ import {
   validarContagemCor,
   normalizarRebobinamento,
   validarMaterialSubstratoOutro,
+  validarCampoOutro,
 } from "@/lib/orcamento-etiqueta";
 import { parseJsonArray } from "@/lib/form-json";
 import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
@@ -361,7 +362,9 @@ export async function editarOrcamento(
             materialSubstrato: etiqueta.materialSubstrato,
             materialSubstratoOutro: etiqueta.materialSubstratoOutro,
             tipoAdesivo: etiqueta.tipoAdesivo,
+            tipoAdesivoOutro: etiqueta.tipoAdesivoOutro,
             superficieAplicacao: etiqueta.superficieAplicacao,
+            superficieAplicacaoOutro: etiqueta.superficieAplicacaoOutro,
             formatoEtiqueta: etiqueta.formatoEtiqueta,
             coresRotulo: etiqueta.coresRotulo,
             coresContraRotulo: etiqueta.coresContraRotulo,
@@ -369,14 +372,19 @@ export async function editarOrcamento(
             tubeteMedida: etiqueta.tubeteMedida,
             rotulagem: etiqueta.rotulagem,
             serrilha: etiqueta.serrilha,
+            serrilhaOutro: etiqueta.serrilhaOutro,
             vernizRotuloTotal: etiqueta.vernizRotuloTotal,
             vernizRotuloReserva: etiqueta.vernizRotuloReserva,
             vernizRotuloTipo: etiqueta.vernizRotuloTipo,
+            vernizRotuloTipoOutro: etiqueta.vernizRotuloTipoOutro,
             vernizContraRotuloTotal: etiqueta.vernizContraRotuloTotal,
             vernizContraRotuloReserva: etiqueta.vernizContraRotuloReserva,
             vernizContraRotuloTipo: etiqueta.vernizContraRotuloTipo,
+            vernizContraRotuloTipoOutro: etiqueta.vernizContraRotuloTipoOutro,
             laminacaoRotulo: etiqueta.laminacaoRotulo,
+            laminacaoRotuloOutro: etiqueta.laminacaoRotuloOutro,
             laminacaoContraRotulo: etiqueta.laminacaoContraRotulo,
+            laminacaoContraRotuloOutro: etiqueta.laminacaoContraRotuloOutro,
             rebobinamento: etiqueta.rebobinamento,
           };
           const etiquetaRow = await tx.orcamentoItemEtiqueta.upsert({
@@ -397,6 +405,7 @@ export async function editarOrcamento(
                 orcamentoItemEtiquetaId: etiquetaRow.id,
                 lado: h.lado,
                 tipo: h.tipo,
+                tipoOutro: h.tipoOutro,
                 medida: h.medida,
                 cor: h.cor,
               })),
@@ -799,25 +808,33 @@ const TIPO_ADESIVO_VALORES = [
   "BORRACHA_25G",
   "BORRACHA_30G",
   "BORRACHA_50G",
+  "OUTRO",
 ] as const;
 const SUPERFICIE_APLICACAO_VALORES = ["VIDRO", "PLASTICO", "METAL", "PAPEL", "PAPELAO", "OUTROS"] as const;
 const TIPO_ROTULAGEM_VALORES = ["MANUAL", "AUTOMATICA"] as const;
-const TIPO_SERRILHA_VALORES = ["SERRILHA", "MICRO_SERRILHA", "GAP"] as const;
-const TIPO_LAMINACAO_VALORES = ["BRILHO", "FOSCO"] as const;
-const TIPO_VERNIZ_VALORES = ["BRILHO", "FOSCO", "RIBBON"] as const;
+const TIPO_SERRILHA_VALORES = ["SERRILHA", "MICRO_SERRILHA", "GAP", "OUTRO"] as const;
+const TIPO_LAMINACAO_VALORES = ["BRILHO", "FOSCO", "OUTRO"] as const;
+const TIPO_VERNIZ_VALORES = ["BRILHO", "FOSCO", "RIBBON", "OUTRO"] as const;
 
-const hotStampingFormSchema = z.object({
-  lado: z.enum(["ROTULO", "CONTRA_ROTULO"]),
-  tipo: z.enum(["HOT", "COLD"]),
-  medida: z.string().max(60).nullable(),
-  cor: z.string().max(60).nullable(),
-});
+const hotStampingFormSchema = z
+  .object({
+    lado: z.enum(["ROTULO", "CONTRA_ROTULO"]),
+    tipo: z.enum(["HOT", "COLD", "OUTRO"]),
+    tipoOutro: z.string().max(60).nullable(),
+    medida: z.string().max(60).nullable(),
+    cor: z.string().max(60).nullable(),
+  })
+  .refine((dados) => dados.tipo !== "OUTRO" || Boolean(dados.tipoOutro?.trim()), {
+    message: 'Descreva o tipo quando escolher "Outro" como tipo de hot/cold stamping.',
+  });
 
 type EtiquetaParaGravar = {
   materialSubstrato: (typeof MATERIAL_SUBSTRATO_VALORES)[number] | null;
   materialSubstratoOutro: string | null;
   tipoAdesivo: (typeof TIPO_ADESIVO_VALORES)[number] | null;
+  tipoAdesivoOutro: string | null;
   superficieAplicacao: (typeof SUPERFICIE_APLICACAO_VALORES)[number] | null;
+  superficieAplicacaoOutro: string | null;
   formatoEtiqueta: string | null;
   coresRotulo: number | null;
   coresContraRotulo: number | null;
@@ -825,14 +842,19 @@ type EtiquetaParaGravar = {
   tubeteMedida: string | null;
   rotulagem: (typeof TIPO_ROTULAGEM_VALORES)[number] | null;
   serrilha: (typeof TIPO_SERRILHA_VALORES)[number] | null;
+  serrilhaOutro: string | null;
   vernizRotuloTotal: boolean;
   vernizRotuloReserva: boolean;
   vernizRotuloTipo: (typeof TIPO_VERNIZ_VALORES)[number] | null;
+  vernizRotuloTipoOutro: string | null;
   vernizContraRotuloTotal: boolean;
   vernizContraRotuloReserva: boolean;
   vernizContraRotuloTipo: (typeof TIPO_VERNIZ_VALORES)[number] | null;
+  vernizContraRotuloTipoOutro: string | null;
   laminacaoRotulo: (typeof TIPO_LAMINACAO_VALORES)[number] | null;
+  laminacaoRotuloOutro: string | null;
   laminacaoContraRotulo: (typeof TIPO_LAMINACAO_VALORES)[number] | null;
+  laminacaoContraRotuloOutro: string | null;
   rebobinamento: number | null;
   hotStampings: z.infer<typeof hotStampingFormSchema>[];
 };
@@ -861,6 +883,71 @@ function lerEtiquetaDoFormData(formData: FormData): ResultadoEtiquetaFormData {
   const validacaoOutro = validarMaterialSubstratoOutro(materialSubstrato, materialSubstratoOutro);
   if (!validacaoOutro.ok) return { ok: false, mensagem: validacaoOutro.mensagem };
 
+  const tipoAdesivo = campoEnum("tipoAdesivo", TIPO_ADESIVO_VALORES);
+  const tipoAdesivoOutro = campoTexto("tipoAdesivoOutro", 120);
+  const validacaoTipoAdesivo = validarCampoOutro(
+    tipoAdesivo,
+    tipoAdesivoOutro,
+    'Descreva o adesivo quando escolher "Outro" como tipo de adesivo.'
+  );
+  if (!validacaoTipoAdesivo.ok) return { ok: false, mensagem: validacaoTipoAdesivo.mensagem };
+
+  const superficieAplicacao = campoEnum("superficieAplicacao", SUPERFICIE_APLICACAO_VALORES);
+  const superficieAplicacaoOutro = campoTexto("superficieAplicacaoOutro", 120);
+  const validacaoSuperficie = validarCampoOutro(
+    superficieAplicacao,
+    superficieAplicacaoOutro,
+    'Descreva a superfície quando escolher "Outros" como superfície de aplicação.',
+    "OUTROS"
+  );
+  if (!validacaoSuperficie.ok) return { ok: false, mensagem: validacaoSuperficie.mensagem };
+
+  const serrilha = campoEnum("serrilha", TIPO_SERRILHA_VALORES);
+  const serrilhaOutro = campoTexto("serrilhaOutro", 120);
+  const validacaoSerrilha = validarCampoOutro(
+    serrilha,
+    serrilhaOutro,
+    'Descreva a serrilha quando escolher "Outro" como serrilha.'
+  );
+  if (!validacaoSerrilha.ok) return { ok: false, mensagem: validacaoSerrilha.mensagem };
+
+  const vernizRotuloTipo = campoEnum("vernizRotuloTipo", TIPO_VERNIZ_VALORES);
+  const vernizRotuloTipoOutro = campoTexto("vernizRotuloTipoOutro", 120);
+  const validacaoVernizRotulo = validarCampoOutro(
+    vernizRotuloTipo,
+    vernizRotuloTipoOutro,
+    'Descreva o acabamento de verniz do rótulo quando escolher "Outro".'
+  );
+  if (!validacaoVernizRotulo.ok) return { ok: false, mensagem: validacaoVernizRotulo.mensagem };
+
+  const vernizContraRotuloTipo = campoEnum("vernizContraRotuloTipo", TIPO_VERNIZ_VALORES);
+  const vernizContraRotuloTipoOutro = campoTexto("vernizContraRotuloTipoOutro", 120);
+  const validacaoVernizContraRotulo = validarCampoOutro(
+    vernizContraRotuloTipo,
+    vernizContraRotuloTipoOutro,
+    'Descreva o acabamento de verniz do contra-rótulo quando escolher "Outro".'
+  );
+  if (!validacaoVernizContraRotulo.ok) return { ok: false, mensagem: validacaoVernizContraRotulo.mensagem };
+
+  const laminacaoRotulo = campoEnum("laminacaoRotulo", TIPO_LAMINACAO_VALORES);
+  const laminacaoRotuloOutro = campoTexto("laminacaoRotuloOutro", 120);
+  const validacaoLaminacaoRotulo = validarCampoOutro(
+    laminacaoRotulo,
+    laminacaoRotuloOutro,
+    'Descreva a laminação do rótulo quando escolher "Outro".'
+  );
+  if (!validacaoLaminacaoRotulo.ok) return { ok: false, mensagem: validacaoLaminacaoRotulo.mensagem };
+
+  const laminacaoContraRotulo = campoEnum("laminacaoContraRotulo", TIPO_LAMINACAO_VALORES);
+  const laminacaoContraRotuloOutro = campoTexto("laminacaoContraRotuloOutro", 120);
+  const validacaoLaminacaoContraRotulo = validarCampoOutro(
+    laminacaoContraRotulo,
+    laminacaoContraRotuloOutro,
+    'Descreva a laminação do contra-rótulo quando escolher "Outro".'
+  );
+  if (!validacaoLaminacaoContraRotulo.ok)
+    return { ok: false, mensagem: validacaoLaminacaoContraRotulo.mensagem };
+
   const coresRotuloResult = validarContagemCor(campoString("coresRotulo"), "Cores rótulo");
   if (!coresRotuloResult.ok) return { ok: false, mensagem: coresRotuloResult.mensagem };
   const coresContraRotuloResult = validarContagemCor(campoString("coresContraRotulo"), "Cores contra-rótulo");
@@ -880,23 +967,30 @@ function lerEtiquetaDoFormData(formData: FormData): ResultadoEtiquetaFormData {
     etiqueta: {
       materialSubstrato,
       materialSubstratoOutro,
-      tipoAdesivo: campoEnum("tipoAdesivo", TIPO_ADESIVO_VALORES),
-      superficieAplicacao: campoEnum("superficieAplicacao", SUPERFICIE_APLICACAO_VALORES),
+      tipoAdesivo,
+      tipoAdesivoOutro,
+      superficieAplicacao,
+      superficieAplicacaoOutro,
       formatoEtiqueta: campoTexto("formatoEtiqueta", 120),
       coresRotulo: coresRotuloResult.valor,
       coresContraRotulo: coresContraRotuloResult.valor,
       embalagemQtdPorRolo: embalagemQtdResult.valor,
       tubeteMedida: campoTexto("tubeteMedida", 60),
       rotulagem: campoEnum("rotulagem", TIPO_ROTULAGEM_VALORES),
-      serrilha: campoEnum("serrilha", TIPO_SERRILHA_VALORES),
+      serrilha,
+      serrilhaOutro,
       vernizRotuloTotal: campoBooleano("vernizRotuloTotal"),
       vernizRotuloReserva: campoBooleano("vernizRotuloReserva"),
-      vernizRotuloTipo: campoEnum("vernizRotuloTipo", TIPO_VERNIZ_VALORES),
+      vernizRotuloTipo,
+      vernizRotuloTipoOutro,
       vernizContraRotuloTotal: campoBooleano("vernizContraRotuloTotal"),
       vernizContraRotuloReserva: campoBooleano("vernizContraRotuloReserva"),
-      vernizContraRotuloTipo: campoEnum("vernizContraRotuloTipo", TIPO_VERNIZ_VALORES),
-      laminacaoRotulo: campoEnum("laminacaoRotulo", TIPO_LAMINACAO_VALORES),
-      laminacaoContraRotulo: campoEnum("laminacaoContraRotulo", TIPO_LAMINACAO_VALORES),
+      vernizContraRotuloTipo,
+      vernizContraRotuloTipoOutro,
+      laminacaoRotulo,
+      laminacaoRotuloOutro,
+      laminacaoContraRotulo,
+      laminacaoContraRotuloOutro,
       rebobinamento: rebobinamentoResult.valor,
       hotStampings: hotStampingsParsed.data,
     },
@@ -1022,7 +1116,9 @@ export async function adicionarItemOrcamento(
                       materialSubstrato: etiqueta?.materialSubstrato ?? null,
                       materialSubstratoOutro: etiqueta?.materialSubstratoOutro ?? null,
                       tipoAdesivo: etiqueta?.tipoAdesivo ?? null,
+                      tipoAdesivoOutro: etiqueta?.tipoAdesivoOutro ?? null,
                       superficieAplicacao: etiqueta?.superficieAplicacao ?? null,
+                      superficieAplicacaoOutro: etiqueta?.superficieAplicacaoOutro ?? null,
                       formatoEtiqueta: etiqueta?.formatoEtiqueta ?? null,
                       coresRotulo: etiqueta?.coresRotulo ?? null,
                       coresContraRotulo: etiqueta?.coresContraRotulo ?? null,
@@ -1030,19 +1126,25 @@ export async function adicionarItemOrcamento(
                       tubeteMedida: etiqueta?.tubeteMedida ?? null,
                       rotulagem: etiqueta?.rotulagem ?? null,
                       serrilha: etiqueta?.serrilha ?? null,
+                      serrilhaOutro: etiqueta?.serrilhaOutro ?? null,
                       vernizRotuloTotal: etiqueta?.vernizRotuloTotal ?? false,
                       vernizRotuloReserva: etiqueta?.vernizRotuloReserva ?? false,
                       vernizRotuloTipo: etiqueta?.vernizRotuloTipo ?? null,
+                      vernizRotuloTipoOutro: etiqueta?.vernizRotuloTipoOutro ?? null,
                       vernizContraRotuloTotal: etiqueta?.vernizContraRotuloTotal ?? false,
                       vernizContraRotuloReserva: etiqueta?.vernizContraRotuloReserva ?? false,
                       vernizContraRotuloTipo: etiqueta?.vernizContraRotuloTipo ?? null,
+                      vernizContraRotuloTipoOutro: etiqueta?.vernizContraRotuloTipoOutro ?? null,
                       laminacaoRotulo: etiqueta?.laminacaoRotulo ?? null,
+                      laminacaoRotuloOutro: etiqueta?.laminacaoRotuloOutro ?? null,
                       laminacaoContraRotulo: etiqueta?.laminacaoContraRotulo ?? null,
+                      laminacaoContraRotuloOutro: etiqueta?.laminacaoContraRotuloOutro ?? null,
                       rebobinamento: etiqueta?.rebobinamento ?? null,
                       hotStampings: {
                         create: (etiqueta?.hotStampings ?? []).map((h) => ({
                           lado: h.lado,
                           tipo: h.tipo,
+                          tipoOutro: h.tipoOutro,
                           medida: h.medida,
                           cor: h.cor,
                         })),
@@ -1555,6 +1657,14 @@ export async function registrarPagamento(
   const valor = Number(formData.get("valor"));
   const formaParsed = formaPagamentoSchema.safeParse(formData.get("forma"));
   const observacao = String(formData.get("observacao") || "").trim().slice(0, 500) || null;
+  // Só guarda o detalhe quando a forma é OUTRO — nunca deixa texto órfão de
+  // uma forma antiga sobrar se o usuário escolher outra forma (mesma
+  // disciplina de src/app/financeiro/actions.ts pro formaPagamentoDetalhe
+  // da Despesa).
+  const formaDetalhe =
+    formaParsed.success && formaParsed.data === "OUTRO"
+      ? String(formData.get("formaDetalhe") || "").trim().slice(0, 160) || null
+      : null;
 
   if (!Number.isFinite(valor) || valor <= 0) {
     return { ok: false, mensagem: "Informe um valor maior que zero." };
@@ -1577,7 +1687,7 @@ export async function registrarPagamento(
   }
 
   const pagamento = await prisma.pagamento.create({
-    data: { orcamentoId, valor, forma: formaParsed.data, observacao },
+    data: { orcamentoId, valor, forma: formaParsed.data, formaDetalhe, observacao },
   });
 
   await registrarAuditoria({

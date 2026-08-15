@@ -142,3 +142,60 @@ export async function removerLogo(
   revalidatePath("/configuracoes/identidade");
   return { ok: true, mensagem: "Logo removida." };
 }
+
+export type SalvarCorResult = { ok: boolean; mensagem: string };
+
+// Mesmo formato que src/lib/email/templates.ts e src/lib/pdf/OrcamentoDocumento.tsx
+// exigem de Grafica.corPrimaria antes de confiar nela dentro de um `style`
+// de e-mail/PDF — validado aqui ANTES de salvar (defesa em profundidade: os
+// dois consumidores validam de novo na leitura, mas salvar algo fora do
+// formato já seria um dado corrompido no banco à toa).
+const HEX_REGEX_COR = /^#[0-9A-Fa-f]{6}$/;
+
+export async function salvarCorPrimaria(
+  _estadoAnterior: SalvarCorResult | null,
+  formData: FormData
+): Promise<SalvarCorResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CONFIGURACOES"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar configurações." };
+  }
+
+  const cor = String(formData.get("corPrimaria") ?? "").trim();
+  if (!HEX_REGEX_COR.test(cor)) {
+    return {
+      ok: false,
+      mensagem: "Cor inválida — use o formato hexadecimal #RRGGBB (ex: #0d9488).",
+    };
+  }
+
+  await prisma.grafica.update({
+    where: { id: usuario.graficaId },
+    data: { corPrimaria: cor },
+  });
+
+  revalidatePath("/configuracoes/identidade");
+  return { ok: true, mensagem: "Cor salva com sucesso!" };
+}
+
+export async function restaurarCorPadrao(
+  _estadoAnterior: SalvarCorResult | null,
+  _formData: FormData
+): Promise<SalvarCorResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CONFIGURACOES"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar configurações." };
+  }
+
+  await prisma.grafica.update({
+    where: { id: usuario.graficaId },
+    data: { corPrimaria: null },
+  });
+
+  revalidatePath("/configuracoes/identidade");
+  return { ok: true, mensagem: "Cor padrão restaurada." };
+}

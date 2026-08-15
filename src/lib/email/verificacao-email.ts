@@ -25,6 +25,7 @@ export async function gerarEEnviarCodigoVerificacao(
   usuario: {
     id: string;
     email: string;
+    graficaId: string;
   },
   opcoes?: { aguardarEnvio?: boolean }
 ): Promise<boolean | null> {
@@ -32,6 +33,15 @@ export async function gerarEEnviarCodigoVerificacao(
   // gerarTokenBruto já tem pro token de reset de senha.
   const codigo = randomInt(0, 1_000_000).toString().padStart(6, "0");
   const codigoHash = hashToken(codigo);
+
+  // Cor da marca da gráfica pro e-mail (ver templateVerificacaoEmail) — só o
+  // campo corPrimaria, nada mais; graficaId já veio no `usuario` que o
+  // chamador passou (sempre um registro completo de Usuario, ver
+  // src/app/registro/actions.ts e src/app/verificar-email/actions.ts).
+  const grafica = await prisma.grafica.findUnique({
+    where: { id: usuario.graficaId },
+    select: { corPrimaria: true },
+  });
 
   await prisma.$transaction([
     // Invalida qualquer código anterior ainda não usado — só o mais
@@ -50,7 +60,7 @@ export async function gerarEEnviarCodigoVerificacao(
     }),
   ]);
 
-  const { assunto, html, texto } = templateVerificacaoEmail(codigo);
+  const { assunto, html, texto } = templateVerificacaoEmail(codigo, grafica?.corPrimaria);
   const evento = {
     tipo: "verificacao_email_codigo" as const,
     destinatario: usuario.email,

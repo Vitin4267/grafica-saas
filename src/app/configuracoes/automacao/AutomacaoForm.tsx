@@ -9,8 +9,14 @@ import { salvarAutomacao } from "./actions";
 
 export function AutomacaoForm({
   webhookUrlMascarada,
+  notificarStatusMudou,
+  notificarEstoqueCritico,
+  notificarPedidoAtrasado,
 }: {
   webhookUrlMascarada: string | null;
+  notificarStatusMudou: boolean;
+  notificarEstoqueCritico: boolean;
+  notificarPedidoAtrasado: boolean;
 }) {
   const [state, formAction, isPending] = useActionState(salvarAutomacao, null);
 
@@ -31,6 +37,64 @@ export function AutomacaoForm({
           }
           hint="Precisa ser https. Nunca reexibimos a URL salva por completo — só o domínio."
         />
+      </Card>
+
+      <Card className="flex flex-col gap-4 p-6">
+        <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+          Quais eventos avisar
+        </h2>
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          Desmarque o que não faz sentido pro seu workflow — o webhook só
+          dispara os tipos marcados aqui.
+        </p>
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            name="notificarStatusMudou"
+            defaultChecked={notificarStatusMudou}
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+          />
+          <span>
+            <span className="block font-medium text-slate-700 dark:text-slate-200">
+              Pedido mudou de status
+            </span>
+            <span className="block text-xs text-slate-500">
+              Um pedido avançou de status em Produção.
+            </span>
+          </span>
+        </label>
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            name="notificarEstoqueCritico"
+            defaultChecked={notificarEstoqueCritico}
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+          />
+          <span>
+            <span className="block font-medium text-slate-700 dark:text-slate-200">
+              Estoque crítico
+            </span>
+            <span className="block text-xs text-slate-500">
+              Um material cruzou o estoque mínimo cadastrado.
+            </span>
+          </span>
+        </label>
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            name="notificarPedidoAtrasado"
+            defaultChecked={notificarPedidoAtrasado}
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+          />
+          <span>
+            <span className="block font-medium text-slate-700 dark:text-slate-200">
+              Pedido atrasado
+            </span>
+            <span className="block text-xs text-slate-500">
+              Um pedido passou do prazo de entrega e ainda não foi entregue.
+            </span>
+          </span>
+        </label>
       </Card>
 
       <Card className="flex flex-col gap-4 p-6">

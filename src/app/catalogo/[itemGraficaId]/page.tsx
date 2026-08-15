@@ -21,7 +21,7 @@ import { NcmForm } from "./NcmForm";
 import { LancarMovimentacaoForm } from "./LancarMovimentacaoForm";
 import { QuantidadePorEmbalagemForm } from "./QuantidadePorEmbalagemForm";
 import { ROTULOS_TIPO_MOVIMENTACAO } from "@/lib/estoque-manual";
-import { ROTULO_UNIDADE } from "@/lib/unidade";
+import { rotuloUnidade } from "@/lib/unidade";
 import { formatoMoeda } from "@/lib/moeda";
 import { formatoInstanteRealComHora } from "@/lib/data";
 import type { TipoMovimentacao } from "@/generated/prisma/enums";
@@ -125,9 +125,10 @@ export default async function ConfiguracaoItemPage({
   // Rótulo da unidade cadastrada (ex: "pacote") e a conversão pra unidades
   // individuais quando o fator de conversão está cadastrado — puramente
   // informativo, ver QuantidadePorEmbalagemForm.
-  const unidadeRotulo = itemGrafica.itemCatalogo.unidade
-    ? (ROTULO_UNIDADE[itemGrafica.itemCatalogo.unidade] ?? "")
-    : "";
+  const unidadeRotulo = rotuloUnidade(
+    itemGrafica.itemCatalogo.unidade,
+    itemGrafica.itemCatalogo.unidadeOutro
+  );
   const conversaoEmbalagem =
     itemGrafica.quantidadePorEmbalagem !== null && itemGrafica.estoqueAtual !== null
       ? Number(itemGrafica.estoqueAtual) * Number(itemGrafica.quantidadePorEmbalagem)
@@ -226,6 +227,7 @@ export default async function ConfiguracaoItemPage({
                 id: m.id,
                 nome: m.itemCatalogo.nome,
                 unidade: m.itemCatalogo.unidade,
+                unidadeOutro: m.itemCatalogo.unidadeOutro,
                 variantes: m.variantes.map((v) => ({ id: v.id, rotulo: v.rotulo })),
               }))}
               fichaAtual={itemGrafica.fichaTecnica.map((f) => ({
@@ -365,6 +367,7 @@ export default async function ConfiguracaoItemPage({
                 id: m.id,
                 nome: m.itemCatalogo.nome,
                 unidade: m.itemCatalogo.unidade,
+                unidadeOutro: m.itemCatalogo.unidadeOutro,
                 variantes: m.variantes.map((v) => ({ id: v.id, rotulo: v.rotulo })),
               }))}
               fichaAtual={itemGrafica.fichaTecnica.map((f) => ({

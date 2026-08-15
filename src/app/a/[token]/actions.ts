@@ -147,7 +147,8 @@ export async function responderArtePublica(
         nome: item.itemGrafica.itemCatalogo.nome,
         quantidade: item.quantidade,
       })),
-      `${origem}/producao`
+      `${origem}/producao`,
+      pedido.orcamento.grafica.corPrimaria
     );
     await notificarDonos(pedido.graficaId, "arte_aprovada", template);
   } else {
@@ -172,7 +173,8 @@ export async function responderArtePublica(
       pedido.orcamento.grafica.nome,
       pedido.orcamento.cliente.nome,
       comentario,
-      `${origem}/producao`
+      `${origem}/producao`,
+      pedido.orcamento.grafica.corPrimaria
     );
     await notificarDonos(pedido.graficaId, "arte_alteracao_solicitada", template);
   }

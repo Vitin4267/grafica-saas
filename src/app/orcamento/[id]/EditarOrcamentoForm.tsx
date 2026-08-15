@@ -199,7 +199,13 @@ export function EditarOrcamentoForm({
             <input type="hidden" name="materialSubstrato" value={etiqueta.materialSubstrato} />
             <input type="hidden" name="materialSubstratoOutro" value={etiqueta.materialSubstratoOutro} />
             <input type="hidden" name="tipoAdesivo" value={etiqueta.tipoAdesivo} />
+            <input type="hidden" name="tipoAdesivoOutro" value={etiqueta.tipoAdesivoOutro} />
             <input type="hidden" name="superficieAplicacao" value={etiqueta.superficieAplicacao} />
+            <input
+              type="hidden"
+              name="superficieAplicacaoOutro"
+              value={etiqueta.superficieAplicacaoOutro}
+            />
             <input type="hidden" name="formatoEtiqueta" value={etiqueta.formatoEtiqueta} />
             <input type="hidden" name="coresRotulo" value={etiqueta.coresRotulo} />
             <input type="hidden" name="coresContraRotulo" value={etiqueta.coresContraRotulo} />
@@ -207,9 +213,11 @@ export function EditarOrcamentoForm({
             <input type="hidden" name="tubeteMedida" value={etiqueta.tubeteMedida} />
             <input type="hidden" name="rotulagem" value={etiqueta.rotulagem} />
             <input type="hidden" name="serrilha" value={etiqueta.serrilha} />
+            <input type="hidden" name="serrilhaOutro" value={etiqueta.serrilhaOutro} />
             <input type="hidden" name="vernizRotuloTotal" value={String(etiqueta.vernizRotuloTotal)} />
             <input type="hidden" name="vernizRotuloReserva" value={String(etiqueta.vernizRotuloReserva)} />
             <input type="hidden" name="vernizRotuloTipo" value={etiqueta.vernizRotuloTipo} />
+            <input type="hidden" name="vernizRotuloTipoOutro" value={etiqueta.vernizRotuloTipoOutro} />
             <input
               type="hidden"
               name="vernizContraRotuloTotal"
@@ -221,8 +229,19 @@ export function EditarOrcamentoForm({
               value={String(etiqueta.vernizContraRotuloReserva)}
             />
             <input type="hidden" name="vernizContraRotuloTipo" value={etiqueta.vernizContraRotuloTipo} />
+            <input
+              type="hidden"
+              name="vernizContraRotuloTipoOutro"
+              value={etiqueta.vernizContraRotuloTipoOutro}
+            />
             <input type="hidden" name="laminacaoRotulo" value={etiqueta.laminacaoRotulo} />
+            <input type="hidden" name="laminacaoRotuloOutro" value={etiqueta.laminacaoRotuloOutro} />
             <input type="hidden" name="laminacaoContraRotulo" value={etiqueta.laminacaoContraRotulo} />
+            <input
+              type="hidden"
+              name="laminacaoContraRotuloOutro"
+              value={etiqueta.laminacaoContraRotuloOutro}
+            />
             <input type="hidden" name="rebobinamento" value={etiqueta.rebobinamento} />
             <input
               type="hidden"
@@ -231,6 +250,7 @@ export function EditarOrcamentoForm({
                 etiqueta.hotStampings.map((h) => ({
                   lado: h.lado,
                   tipo: h.tipo,
+                  tipoOutro: h.tipoOutro || null,
                   medida: h.medida || null,
                   cor: h.cor || null,
                 }))

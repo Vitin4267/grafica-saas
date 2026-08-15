@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import type { StatusPedido } from "@/generated/prisma/enums";
 import { D } from "@/lib/pricing/decimal";
-import { buscarWebhookAutomacao, dispararEventoAutomacao } from "@/lib/webhook-automacao";
+import { buscarAutomacaoGrafica, dispararEventoAutomacao } from "@/lib/webhook-automacao";
 import { normalizarTelefone } from "@/lib/telefone";
 import { cruzouLimiteMinimo } from "@/lib/estoque-critico";
 import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
@@ -41,7 +41,7 @@ export type PedidoParaAvanco = {
   producaoLinkToken: string | null;
   orcamento: {
     cliente: { nome: string; telefone: string | null };
-    grafica: { nome: string };
+    grafica: { nome: string; corPrimaria: string | null };
     itens: { quantidade: number; itemGrafica: { itemCatalogo: { nome: string } } }[];
   };
 };
@@ -260,9 +260,9 @@ export async function avancarStatusPedido(
   const proximoStatus = SEQUENCIA_STATUS_PEDIDO[indiceAtual + 1];
   const statusAnterior = pedido.status;
 
-  // Buscado uma única vez e reaproveitado pro evento pedido_status_mudou
-  // abaixo.
-  const webhookUrl = await buscarWebhookAutomacao(pedido.graficaId);
+  // Buscado uma única vez e reaproveitado pros eventos estoque_critico e
+  // pedido_status_mudou abaixo.
+  const automacao = await buscarAutomacaoGrafica(pedido.graficaId);
 
   try {
     // Baixa automática de estoque: só na entrada em produção física (FILA→IMPRESSAO),
@@ -651,7 +651,8 @@ export async function avancarStatusPedido(
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
       );
 
-      if (webhookUrl) {
+      if (automacao.webhookUrl && automacao.notificarEstoqueCritico) {
+        const webhookUrl = automacao.webhookUrl;
         for (const evento of eventosEstoqueCritico) {
           // after() em vez de void: garante que a instância serverless
           // continua viva até o webhook terminar, mesmo depois da resposta
@@ -688,10 +689,11 @@ export async function avancarStatusPedido(
     throw erro;
   }
 
-  if (webhookUrl) {
+  if (automacao.webhookUrl && automacao.notificarStatusMudou) {
     // after() em vez de void: garante que a instância serverless continua
     // viva até o webhook terminar, mesmo depois da resposta já ter sido
     // enviada ao cliente.
+    const webhookUrl = automacao.webhookUrl;
     after(() =>
       dispararEventoAutomacao(webhookUrl, {
         tipo: "pedido_status_mudou",
@@ -733,7 +735,8 @@ export async function avancarStatusPedido(
         pedido.orcamento.cliente.nome,
         ROTULOS_STATUS_PEDIDO[proximoStatus],
         itensResumo,
-        link
+        link,
+        pedido.orcamento.grafica.corPrimaria
       );
       for (const responsavel of responsaveis) {
         // after() em vez de void: garante que a instância serverless

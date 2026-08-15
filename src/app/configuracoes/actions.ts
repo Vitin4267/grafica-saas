@@ -68,6 +68,20 @@ const ROTULO_UNIDADE_DIMENSAO: Record<"MM" | "CM" | "M", string> = {
   M: "Metro",
 };
 
+// Os 3 limiares (dias antes do prazo) do alerta de prazo por e-mail — ver
+// src/lib/alerta-prazo-email.ts. Fora de CAMPOS_DECIMAL/CAMPOS_INTEIRO
+// (que exigem > 0) porque o terceiro limiar é 0 por padrão (dia do prazo).
+const CAMPOS_LIMIAR_PRAZO = [
+  "alertaPrazoLimiar1Dias",
+  "alertaPrazoLimiar2Dias",
+  "alertaPrazoLimiar3Dias",
+] as const;
+const ROTULO_LIMIAR_PRAZO: Record<(typeof CAMPOS_LIMIAR_PRAZO)[number], string> = {
+  alertaPrazoLimiar1Dias: "1º aviso (dias antes do prazo)",
+  alertaPrazoLimiar2Dias: "2º aviso (dias antes do prazo)",
+  alertaPrazoLimiar3Dias: "3º aviso (dias antes do prazo)",
+};
+
 export async function salvarParametros(
   _estadoAnterior: SalvarParametrosResult | null,
   formData: FormData
@@ -128,6 +142,39 @@ export async function salvarParametros(
     return { ok: false, mensagem: "Incremento de arredondamento deve ser maior que zero." };
   }
 
+  // Alerta de prazo por e-mail (ver src/lib/alerta-prazo-email.ts): liga/
+  // desliga geral + os 3 limiares, em dias antes do prazo. 0 é um valor
+  // válido (dia do prazo/atrasado), por isso valida >= 0 em vez de > 0 como
+  // os CAMPOS_INTEIRO acima.
+  const limiaresPrazo: Record<string, number> = {};
+  for (const campo of CAMPOS_LIMIAR_PRAZO) {
+    const bruto = formData.get(campo);
+    if (typeof bruto !== "string" || bruto.trim() === "") {
+      return { ok: false, mensagem: `Preencha o campo "${ROTULO_LIMIAR_PRAZO[campo]}".` };
+    }
+    const valor = Number(bruto);
+    if (!Number.isInteger(valor) || valor < 0) {
+      return {
+        ok: false,
+        mensagem: `Valor inválido em "${ROTULO_LIMIAR_PRAZO[campo]}" — deve ser um número inteiro não-negativo.`,
+      };
+    }
+    limiaresPrazo[campo] = valor;
+  }
+  if (
+    !(
+      limiaresPrazo.alertaPrazoLimiar1Dias > limiaresPrazo.alertaPrazoLimiar2Dias &&
+      limiaresPrazo.alertaPrazoLimiar2Dias > limiaresPrazo.alertaPrazoLimiar3Dias
+    )
+  ) {
+    return {
+      ok: false,
+      mensagem:
+        "Os 3 avisos do alerta de prazo precisam estar em ordem decrescente (ex: 5, 3, 0) — o 1º aviso tem que ser mais folgado que o 2º, e o 2º mais que o 3º.",
+    };
+  }
+  const alertaPrazoAtivo = formData.get("alertaPrazoAtivo") === "on";
+
   // Opcional, ao contrário dos CAMPOS_DECIMAL acima — não faz parte da
   // composição de preço (só exibição no card de tinta), então em branco é um
   // estado válido (limpa a estimativa de valor), não erro.
@@ -164,7 +211,15 @@ export async function salvarParametros(
 
   await prisma.parametrosGrafica.update({
     where: { graficaId: usuario.graficaId },
-    data: { ...dados, comissaoVendedorBase, custoTintaPorMl },
+    data: {
+      ...dados,
+      comissaoVendedorBase,
+      custoTintaPorMl,
+      alertaPrazoAtivo,
+      alertaPrazoLimiar1Dias: limiaresPrazo.alertaPrazoLimiar1Dias,
+      alertaPrazoLimiar2Dias: limiaresPrazo.alertaPrazoLimiar2Dias,
+      alertaPrazoLimiar3Dias: limiaresPrazo.alertaPrazoLimiar3Dias,
+    },
   });
 
   await prisma.grafica.update({
@@ -198,6 +253,19 @@ export async function salvarParametros(
   if ((graficaAntes?.unidadePadraoDimensao ?? "CM") !== unidadePadraoDimensao) {
     antesTextos.push(`Unidade padrão: ${ROTULO_UNIDADE_DIMENSAO[graficaAntes?.unidadePadraoDimensao ?? "CM"]}`);
     depoisTextos.push(`Unidade padrão: ${ROTULO_UNIDADE_DIMENSAO[unidadePadraoDimensao]}`);
+  }
+
+  if ((parametrosAntes?.alertaPrazoAtivo ?? true) !== alertaPrazoAtivo) {
+    antesTextos.push(`Alerta de prazo ativo: ${(parametrosAntes?.alertaPrazoAtivo ?? true) ? "sim" : "não"}`);
+    depoisTextos.push(`Alerta de prazo ativo: ${alertaPrazoAtivo ? "sim" : "não"}`);
+  }
+  for (const campo of CAMPOS_LIMIAR_PRAZO) {
+    const antes = parametrosAntes?.[campo] ?? (campo === "alertaPrazoLimiar1Dias" ? 5 : campo === "alertaPrazoLimiar2Dias" ? 3 : 0);
+    const depois = limiaresPrazo[campo];
+    if (antes !== depois) {
+      antesTextos.push(`${ROTULO_LIMIAR_PRAZO[campo]}: ${antes}`);
+      depoisTextos.push(`${ROTULO_LIMIAR_PRAZO[campo]}: ${depois}`);
+    }
   }
 
   if (antesTextos.length > 0) {

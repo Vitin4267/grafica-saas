@@ -49,7 +49,10 @@ export async function solicitarResetSenha(
     return { ok: false, mensagem: MENSAGEM_BLOQUEIO };
   }
 
-  const usuario = await prisma.usuario.findUnique({ where: { email } });
+  const usuario = await prisma.usuario.findUnique({
+    where: { email },
+    include: { grafica: { select: { corPrimaria: true } } },
+  });
 
   if (usuario) {
     const tokenBruto = gerarTokenBruto();
@@ -62,7 +65,7 @@ export async function solicitarResetSenha(
 
     const origem = await resolverOrigemPublica();
     const link = `${origem}/redefinir-senha?token=${tokenBruto}`;
-    const { assunto, html, texto } = templateResetSenha(link);
+    const { assunto, html, texto } = templateResetSenha(link, usuario.grafica.corPrimaria);
 
     // after() em vez de void/await (2026-07-26, atualizado 2026-08-13): a
     // MENSAGEM já era idêntica nos dois caminhos, mas o TEMPO não podia

@@ -41,17 +41,32 @@ export function normalizarRebobinamento(valor: string | null | undefined): Resul
   return { ok: true, valor: n };
 }
 
+// Regra genérica: quando um campo de escolha (Select) recebe o valor-gatilho
+// de "outro" (OUTRO na maioria dos enums, OUTROS em SuperficieAplicacao), o
+// texto livre pareado precisa estar preenchido — senão a escolha "outro" fica
+// sem significado nenhum registrado. Reaproveitada por todo par
+// campo/campoOutro de OrcamentoItemEtiqueta e OrcamentoItemHotStamping.
+export function validarCampoOutro(
+  valor: string | null,
+  valorOutro: string | null,
+  mensagem: string,
+  valorGatilho: string = "OUTRO"
+): ResultadoValidacao<true> {
+  if (valor === valorGatilho && !valorOutro?.trim()) {
+    return { ok: false, mensagem };
+  }
+  return { ok: true, valor: true };
+}
+
 // materialSubstrato = OUTRO exige o texto livre preenchido — sem isso a
 // escolha "outro" fica sem significado nenhum registrado.
 export function validarMaterialSubstratoOutro(
   materialSubstrato: string | null,
   materialSubstratoOutro: string | null
 ): ResultadoValidacao<true> {
-  if (materialSubstrato === "OUTRO" && !materialSubstratoOutro?.trim()) {
-    return {
-      ok: false,
-      mensagem: "Descreva o material quando escolher \"Outro\" como substrato.",
-    };
-  }
-  return { ok: true, valor: true };
+  return validarCampoOutro(
+    materialSubstrato,
+    materialSubstratoOutro,
+    'Descreva o material quando escolher "Outro" como substrato.'
+  );
 }

@@ -20,10 +20,17 @@ const ROTULO_FORMA: Record<string, string> = {
   OUTRO: "Outro",
 };
 
+// "Outro — cheque pré-datado" em vez de só "Outro", quando há detalhe salvo.
+function rotuloForma(forma: string, detalhe: string | null) {
+  const rotulo = ROTULO_FORMA[forma] ?? forma;
+  return forma === "OUTRO" && detalhe ? `${rotulo} — ${detalhe}` : rotulo;
+}
+
 type Pagamento = {
   id: string;
   valor: string;
   forma: string;
+  formaDetalhe: string | null;
   observacao: string | null;
   createdAt: string;
 };
@@ -43,7 +50,7 @@ function LinhaPagamento({ pagamento }: { pagamento: Pagamento }) {
           <p className="text-sm font-medium text-slate-800 dark:text-slate-100">
             {formatoMoeda.format(Number(pagamento.valor))}
             <span className="ml-2 text-xs font-normal text-slate-500">
-              {ROTULO_FORMA[pagamento.forma] ?? pagamento.forma}
+              {rotuloForma(pagamento.forma, pagamento.formaDetalhe)}
             </span>
           </p>
           <p className="text-xs text-slate-500">
@@ -90,6 +97,7 @@ export function PagamentosCard({
   podeRegistrar: boolean;
 }) {
   const [state, formAction, isPending] = useActionState(registrarPagamento, null);
+  const [formaEscolhida, setFormaEscolhida] = useState("PIX");
 
   const valorPago = pagamentos.reduce((soma, p) => soma + Number(p.valor), 0);
   const saldoDevedor = total - valorPago;
@@ -144,7 +152,12 @@ export function PagamentosCard({
           <input type="hidden" name="orcamentoId" value={orcamentoId} />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Input label="Valor" name="valor" type="number" step="0.01" min="0.01" required />
-            <Select label="Forma" name="forma" defaultValue="PIX">
+            <Select
+              label="Forma"
+              name="forma"
+              value={formaEscolhida}
+              onChange={(evento) => setFormaEscolhida(evento.target.value)}
+            >
               {Object.entries(ROTULO_FORMA).map(([valor, rotulo]) => (
                 <option key={valor} value={valor}>
                   {rotulo}
@@ -152,6 +165,15 @@ export function PagamentosCard({
               ))}
             </Select>
             <Input label="Observação (opcional)" name="observacao" />
+            {formaEscolhida === "OUTRO" && (
+              <Input
+                label="Detalhe"
+                name="formaDetalhe"
+                type="text"
+                placeholder="ex: cheque pré-datado"
+                className="sm:col-span-3"
+              />
+            )}
           </div>
           {state && !state.ok && <Alert variant="error">{state.mensagem}</Alert>}
           <Button type="submit" loading={isPending} className="self-start">

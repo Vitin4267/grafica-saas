@@ -52,11 +52,27 @@ async function criarFixture(opts: {
   diasAtePrazo: number;
   alertaPrazoUltimoLimiarDias?: number | null;
   vendedorEhDono?: boolean;
+  // Sobrescreve ParametrosGrafica.alertaPrazo* pra esta gráfica de teste —
+  // omitido = sem linha em ParametrosGrafica, cai nos defaults do schema
+  // (ativo=true, limiares 5/3/0), mesmo comportamento hardcoded de antes.
+  parametrosPrazo?: { ativo?: boolean; limiar1?: number; limiar2?: number; limiar3?: number };
 }): Promise<Fixture> {
   const s = sufixo();
   const grafica = await prisma.grafica.create({
     data: { nome: `Teste Alerta Prazo ${s}`, slug: `teste-alerta-prazo-${s}` },
   });
+
+  if (opts.parametrosPrazo) {
+    await prisma.parametrosGrafica.create({
+      data: {
+        graficaId: grafica.id,
+        alertaPrazoAtivo: opts.parametrosPrazo.ativo ?? true,
+        alertaPrazoLimiar1Dias: opts.parametrosPrazo.limiar1 ?? 5,
+        alertaPrazoLimiar2Dias: opts.parametrosPrazo.limiar2 ?? 3,
+        alertaPrazoLimiar3Dias: opts.parametrosPrazo.limiar3 ?? 0,
+      },
+    });
+  }
 
   const dono = await prisma.usuario.create({
     data: {
@@ -242,6 +258,68 @@ describe("enviarAlertasPrazoEmail — cascata dos limiares 5/3/0 dias", () => {
       expect(dispararEventoEmailMock).toHaveBeenCalledTimes(1);
       expect(dispararEventoEmailMock.mock.calls[0][0].destinatario).toBe(f.vendedorEmail);
       expect(dispararEventoEmailMock.mock.calls[0][0].tipo).toBe("pedido_prazo_atrasado");
+    },
+    TIMEOUT_MS
+  );
+});
+
+describe("enviarAlertasPrazoEmail — limiares configuráveis por gráfica (ParametrosGrafica)", () => {
+  it(
+    "gráfica com alertaPrazoAtivo=false não dispara nada, mesmo com pedido já atrasado",
+    async () => {
+      const f = await criarFixture({ diasAtePrazo: -3, parametrosPrazo: { ativo: false } });
+
+      const resultado = await enviarAlertasPrazoEmail(ORIGEM);
+
+      expect(resultado.processados).toBe(0);
+      expect(dispararEventoEmailMock).not.toHaveBeenCalled();
+      const pedido = await prisma.pedido.findUniqueOrThrow({ where: { id: f.pedidoId } });
+      expect(pedido.alertaPrazoUltimoLimiarDias).toBeNull(); // nunca marcado, pra reavaliar se a gráfica reativar depois
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "gráfica com limiares customizados (7/4/1) usa esses valores em vez do padrão 5/3/0",
+    async () => {
+      // A 6 dias do prazo: com os limiares padrão (5/3/0) não dispararia nada
+      // (limiarAplicavel null, ver primeiro describe acima); com 7/4/1
+      // configurado, 6 cai no limiar1=7.
+      const f = await criarFixture({
+        diasAtePrazo: 6,
+        parametrosPrazo: { limiar1: 7, limiar2: 4, limiar3: 1 },
+      });
+
+      const resultado = await enviarAlertasPrazoEmail(ORIGEM);
+      expect(resultado.processados).toBe(1);
+
+      const pedido = await prisma.pedido.findUniqueOrThrow({ where: { id: f.pedidoId } });
+      expect(pedido.alertaPrazoUltimoLimiarDias).toBe(7);
+
+      expect(dispararEventoEmailMock).toHaveBeenCalledTimes(2);
+      for (const chamada of dispararEventoEmailMock.mock.calls) {
+        expect(chamada[0].tipo).toBe("pedido_prazo_proximo");
+        expect(chamada[0].texto).toContain("Faltam 7 dias");
+      }
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "gráfica com limiar3 customizado (1, não 0) trata esse valor como o terminal — nunca reenvia depois dele",
+    async () => {
+      const f = await criarFixture({
+        diasAtePrazo: 0,
+        alertaPrazoUltimoLimiarDias: 1,
+        parametrosPrazo: { limiar1: 7, limiar2: 4, limiar3: 1 },
+      });
+
+      const resultado = await enviarAlertasPrazoEmail(ORIGEM);
+
+      expect(resultado.processados).toBe(0);
+      expect(dispararEventoEmailMock).not.toHaveBeenCalled();
+      const pedido = await prisma.pedido.findUniqueOrThrow({ where: { id: f.pedidoId } });
+      expect(pedido.alertaPrazoUltimoLimiarDias).toBe(1); // intocado
     },
     TIMEOUT_MS
   );

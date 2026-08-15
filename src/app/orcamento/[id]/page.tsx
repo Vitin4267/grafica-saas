@@ -484,6 +484,7 @@ export default async function OrcamentoDetalhePage({
             id: p.id,
             valor: p.valor.toString(),
             forma: p.forma,
+            formaDetalhe: p.formaDetalhe,
             observacao: p.observacao,
             createdAt: p.createdAt.toISOString(),
           }))}

@@ -29,6 +29,7 @@ export type DadosPdfPedido = {
 export type DadosPdfOrcamento = {
   graficaNome: string;
   logoUrl: string | null;
+  corPrimaria: string | null;
   clienteNome: string;
   status: "RASCUNHO" | "ENVIADO" | "APROVADO" | "REJEITADO";
   criadoEm: Date;
@@ -45,6 +46,63 @@ const ROTULO_STATUS: Record<string, string> = {
   APROVADO: "Aprovado",
   REJEITADO: "Rejeitado",
 };
+
+// Teal padrão da plataforma — usado quando a gráfica não configurou
+// Grafica.corPrimaria (ver /configuracoes/identidade) ou configurou um
+// valor em formato inválido (defesa em profundidade, mesmo já validado no
+// salvamento — ver comentário equivalente em src/lib/email/templates.ts).
+const COR_PADRAO = "#0d9488";
+const HEX_REGEX_COR = /^#[0-9A-Fa-f]{6}$/;
+
+function paraRgb(hex: string): [number, number, number] {
+  return [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16),
+  ];
+}
+
+function paraHex([r, g, b]: [number, number, number]): string {
+  const canal = (v: number) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0");
+  return `#${canal(r)}${canal(g)}${canal(b)}`;
+}
+
+// Mistura a cor base com branco ou preto numa fração fixa — usado pra
+// derivar, em runtime, os tons mais claro (fundo do total) e mais escuro
+// (textos de destaque) que o teal fixo já usava (aproximação das paradas
+// teal-50/teal-700/teal-900 do Tailwind, computada a partir de QUALQUER cor
+// configurada em /configuracoes/identidade, não só o teal).
+function misturar(hex: string, alvo: [number, number, number], fracao: number): string {
+  const [r, g, b] = paraRgb(hex);
+  const [ra, ga, ba] = alvo;
+  return paraHex([r + (ra - r) * fracao, g + (ga - g) * fracao, b + (ba - b) * fracao]);
+}
+
+type CoresDocumento = { base: string; clara: string; escura: string; maisEscura: string };
+
+// Tons exatos que o PDF já usava (teal-50/teal-700/teal-900 do Tailwind) —
+// usados tal e qual quando a gráfica não configurou corPrimaria, pra manter
+// o PDF byte-a-byte igual ao de hoje no caso mais comum (nenhuma gráfica
+// configurou uma cor ainda). Só o `misturar()` acima entra em ação pra uma
+// cor de verdade configurada, onde não existe "o tom certo" pré-definido.
+const CORES_PADRAO: CoresDocumento = {
+  base: COR_PADRAO,
+  clara: "#f0fdfa",
+  escura: "#0f766e",
+  maisEscura: "#134e4a",
+};
+
+function resolverCores(corPrimaria: string | null): CoresDocumento {
+  if (!corPrimaria || !HEX_REGEX_COR.test(corPrimaria)) {
+    return CORES_PADRAO;
+  }
+  return {
+    base: corPrimaria,
+    clara: misturar(corPrimaria, [255, 255, 255], 0.93), // fundo do total (~teal-50)
+    escura: misturar(corPrimaria, [0, 0, 0], 0.15), // texto sobre fundo claro (~teal-700)
+    maisEscura: misturar(corPrimaria, [0, 0, 0], 0.4), // valor total, mais contraste (~teal-900)
+  };
+}
 
 const estilos = StyleSheet.create({
   pagina: { padding: 40, fontSize: 10, color: "#0f172a" },
@@ -139,11 +197,12 @@ const estilos = StyleSheet.create({
 
 export function OrcamentoDocumento({ dados }: { dados: DadosPdfOrcamento }) {
   const agora = new Date();
+  const cores = resolverCores(dados.corPrimaria);
 
   return (
     <Document title={`Orçamento — ${dados.clienteNome}`}>
       <Page size="A4" style={estilos.pagina}>
-        <View style={estilos.cabecalho}>
+        <View style={[estilos.cabecalho, { borderBottomColor: cores.base }]}>
           <View>
             {dados.logoUrl ? (
               <>
@@ -170,7 +229,7 @@ export function OrcamentoDocumento({ dados }: { dados: DadosPdfOrcamento }) {
               (ver comentário de Orcamento.respostaPublicaNome no schema). */}
           {(dados.status === "APROVADO" || dados.status === "REJEITADO") &&
             dados.respostaPublicaNome && (
-              <Text style={estilos.respostaPublica}>
+              <Text style={[estilos.respostaPublica, { color: cores.escura }]}>
                 {dados.status === "APROVADO" ? "Aprovado" : "Recusado"} por{" "}
                 {dados.respostaPublicaNome}
                 {dados.respostaPublicaEm &&
@@ -247,9 +306,9 @@ export function OrcamentoDocumento({ dados }: { dados: DadosPdfOrcamento }) {
           })}
         </View>
 
-        <View style={estilos.totalBox}>
-          <Text style={estilos.totalLabel}>Total do orçamento</Text>
-          <Text style={estilos.totalValor}>{dados.total}</Text>
+        <View style={[estilos.totalBox, { backgroundColor: cores.clara }]}>
+          <Text style={[estilos.totalLabel, { color: cores.escura }]}>Total do orçamento</Text>
+          <Text style={[estilos.totalValor, { color: cores.maisEscura }]}>{dados.total}</Text>
         </View>
 
         <Text style={estilos.rodape} fixed>

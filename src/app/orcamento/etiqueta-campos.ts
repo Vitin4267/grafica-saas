@@ -14,6 +14,7 @@ export type CamposHotStamping = {
   chave: string;
   lado: string;
   tipo: string;
+  tipoOutro: string;
   medida: string;
   cor: string;
 };
@@ -25,7 +26,9 @@ export type CamposEtiqueta = {
   materialSubstrato: string;
   materialSubstratoOutro: string;
   tipoAdesivo: string;
+  tipoAdesivoOutro: string;
   superficieAplicacao: string;
+  superficieAplicacaoOutro: string;
   formatoEtiqueta: string;
   coresRotulo: string;
   coresContraRotulo: string;
@@ -33,14 +36,19 @@ export type CamposEtiqueta = {
   tubeteMedida: string;
   rotulagem: string;
   serrilha: string;
+  serrilhaOutro: string;
   vernizRotuloTotal: boolean;
   vernizRotuloReserva: boolean;
   vernizRotuloTipo: string;
+  vernizRotuloTipoOutro: string;
   vernizContraRotuloTotal: boolean;
   vernizContraRotuloReserva: boolean;
   vernizContraRotuloTipo: string;
+  vernizContraRotuloTipoOutro: string;
   laminacaoRotulo: string;
+  laminacaoRotuloOutro: string;
   laminacaoContraRotulo: string;
+  laminacaoContraRotuloOutro: string;
   rebobinamento: string;
   hotStampings: CamposHotStamping[];
 };
@@ -50,7 +58,9 @@ export function etiquetaInicial(): CamposEtiqueta {
     materialSubstrato: "",
     materialSubstratoOutro: "",
     tipoAdesivo: "",
+    tipoAdesivoOutro: "",
     superficieAplicacao: "",
+    superficieAplicacaoOutro: "",
     formatoEtiqueta: "",
     coresRotulo: "",
     coresContraRotulo: "",
@@ -58,14 +68,19 @@ export function etiquetaInicial(): CamposEtiqueta {
     tubeteMedida: "",
     rotulagem: "",
     serrilha: "",
+    serrilhaOutro: "",
     vernizRotuloTotal: false,
     vernizRotuloReserva: false,
     vernizRotuloTipo: "",
+    vernizRotuloTipoOutro: "",
     vernizContraRotuloTotal: false,
     vernizContraRotuloReserva: false,
     vernizContraRotuloTipo: "",
+    vernizContraRotuloTipoOutro: "",
     laminacaoRotulo: "",
+    laminacaoRotuloOutro: "",
     laminacaoContraRotulo: "",
+    laminacaoContraRotuloOutro: "",
     rebobinamento: "",
     hotStampings: [],
   };
@@ -79,7 +94,9 @@ export function etiquetaParaCampos(linha: {
   materialSubstrato: string | null;
   materialSubstratoOutro: string | null;
   tipoAdesivo: string | null;
+  tipoAdesivoOutro: string | null;
   superficieAplicacao: string | null;
+  superficieAplicacaoOutro: string | null;
   formatoEtiqueta: string | null;
   coresRotulo: number | null;
   coresContraRotulo: number | null;
@@ -87,23 +104,30 @@ export function etiquetaParaCampos(linha: {
   tubeteMedida: string | null;
   rotulagem: string | null;
   serrilha: string | null;
+  serrilhaOutro: string | null;
   vernizRotuloTotal: boolean;
   vernizRotuloReserva: boolean;
   vernizRotuloTipo: string | null;
+  vernizRotuloTipoOutro: string | null;
   vernizContraRotuloTotal: boolean;
   vernizContraRotuloReserva: boolean;
   vernizContraRotuloTipo: string | null;
+  vernizContraRotuloTipoOutro: string | null;
   laminacaoRotulo: string | null;
+  laminacaoRotuloOutro: string | null;
   laminacaoContraRotulo: string | null;
+  laminacaoContraRotuloOutro: string | null;
   rebobinamento: number | null;
-  hotStampings: { lado: string; tipo: string; medida: string | null; cor: string | null }[];
+  hotStampings: { lado: string; tipo: string; tipoOutro: string | null; medida: string | null; cor: string | null }[];
 } | null): CamposEtiqueta {
   if (!linha) return etiquetaInicial();
   return {
     materialSubstrato: linha.materialSubstrato ?? "",
     materialSubstratoOutro: linha.materialSubstratoOutro ?? "",
     tipoAdesivo: linha.tipoAdesivo ?? "",
+    tipoAdesivoOutro: linha.tipoAdesivoOutro ?? "",
     superficieAplicacao: linha.superficieAplicacao ?? "",
+    superficieAplicacaoOutro: linha.superficieAplicacaoOutro ?? "",
     formatoEtiqueta: linha.formatoEtiqueta ?? "",
     coresRotulo: linha.coresRotulo?.toString() ?? "",
     coresContraRotulo: linha.coresContraRotulo?.toString() ?? "",
@@ -111,19 +135,25 @@ export function etiquetaParaCampos(linha: {
     tubeteMedida: linha.tubeteMedida ?? "",
     rotulagem: linha.rotulagem ?? "",
     serrilha: linha.serrilha ?? "",
+    serrilhaOutro: linha.serrilhaOutro ?? "",
     vernizRotuloTotal: linha.vernizRotuloTotal,
     vernizRotuloReserva: linha.vernizRotuloReserva,
     vernizRotuloTipo: linha.vernizRotuloTipo ?? "",
+    vernizRotuloTipoOutro: linha.vernizRotuloTipoOutro ?? "",
     vernizContraRotuloTotal: linha.vernizContraRotuloTotal,
     vernizContraRotuloReserva: linha.vernizContraRotuloReserva,
     vernizContraRotuloTipo: linha.vernizContraRotuloTipo ?? "",
+    vernizContraRotuloTipoOutro: linha.vernizContraRotuloTipoOutro ?? "",
     laminacaoRotulo: linha.laminacaoRotulo ?? "",
+    laminacaoRotuloOutro: linha.laminacaoRotuloOutro ?? "",
     laminacaoContraRotulo: linha.laminacaoContraRotulo ?? "",
+    laminacaoContraRotuloOutro: linha.laminacaoContraRotuloOutro ?? "",
     rebobinamento: linha.rebobinamento?.toString() ?? "",
     hotStampings: linha.hotStampings.map((h) => ({
       chave: gerarChave(),
       lado: h.lado,
       tipo: h.tipo,
+      tipoOutro: h.tipoOutro ?? "",
       medida: h.medida ?? "",
       cor: h.cor ?? "",
     })),

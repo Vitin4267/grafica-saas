@@ -5,12 +5,18 @@ import { Card } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
-import { ROTULO_UNIDADE } from "@/lib/unidade";
+import { rotuloUnidade } from "@/lib/unidade";
 import { gerarChave } from "@/lib/chave-local";
 import { salvarFichaTecnica } from "./actions";
 
 type Variante = { id: string; rotulo: string };
-type MateriaPrima = { id: string; nome: string; unidade: string | null; variantes: Variante[] };
+type MateriaPrima = {
+  id: string;
+  nome: string;
+  unidade: string | null;
+  unidadeOutro: string | null;
+  variantes: Variante[];
+};
 type Linha = {
   chave: string;
   materiaPrimaId: string;
@@ -175,7 +181,11 @@ export function FichaTecnicaForm({
                         onChange={(e) =>
                           atualizar(linha.chave, "quantidadePorUnidade", e.target.value)
                         }
-                        placeholder={materiaAtual?.unidade ? ROTULO_UNIDADE[materiaAtual.unidade] : "0"}
+                        placeholder={
+                          materiaAtual?.unidade
+                            ? rotuloUnidade(materiaAtual.unidade, materiaAtual.unidadeOutro)
+                            : "0"
+                        }
                         className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-slate-900 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/15 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                       />
                     </label>

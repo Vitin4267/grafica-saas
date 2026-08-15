@@ -10,7 +10,7 @@ import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo, podeVerModulo, podeConfirmarEstagio } from "@/lib/auth/permissoes";
 import { Prisma } from "@/generated/prisma/client";
-import { buscarWebhookAutomacao, dispararEventoAutomacao } from "@/lib/webhook-automacao";
+import { buscarAutomacaoGrafica, dispararEventoAutomacao } from "@/lib/webhook-automacao";
 import { normalizarTelefone } from "@/lib/telefone";
 import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
 import { registrarAuditoria } from "@/lib/auditoria";
@@ -238,7 +238,7 @@ export async function cancelarPedido(
   }
 
   const statusAnterior = pedido.status;
-  const webhookUrl = await buscarWebhookAutomacao(usuario.graficaId);
+  const automacao = await buscarAutomacaoGrafica(usuario.graficaId);
   let itensEstornados = 0;
 
   try {
@@ -324,10 +324,11 @@ export async function cancelarPedido(
     throw erro;
   }
 
-  if (webhookUrl) {
+  if (automacao.webhookUrl && automacao.notificarStatusMudou) {
     // after() em vez de void: garante que a instância serverless continua
     // viva até o webhook terminar, mesmo depois da resposta já ter sido
     // enviada ao cliente.
+    const webhookUrl = automacao.webhookUrl;
     after(() =>
       dispararEventoAutomacao(webhookUrl, {
         tipo: "pedido_status_mudou",

@@ -24,18 +24,36 @@ export async function salvarAutomacao(
   // Campo write-only: em branco = "manter o valor salvo" (nunca reexibimos a
   // URL completa no formulário, só o domínio — ver page.tsx).
   const novaUrl = formData.get("webhookUrl");
+  let webhookUrlParaSalvar: string | undefined;
   if (typeof novaUrl === "string" && novaUrl.trim()) {
     const validacao = validarWebhookUrl(novaUrl.trim());
     if (!validacao.ok) {
       return { ok: false, mensagem: validacao.mensagem ?? "URL inválida." };
     }
-
-    await prisma.automacaoGrafica.upsert({
-      where: { graficaId: usuario.graficaId },
-      update: { webhookUrl: novaUrl.trim() },
-      create: { graficaId: usuario.graficaId, webhookUrl: novaUrl.trim() },
-    });
+    webhookUrlParaSalvar = novaUrl.trim();
   }
+
+  // Checkbox desmarcado não aparece no FormData — ausência = false.
+  const notificarStatusMudou = formData.get("notificarStatusMudou") === "on";
+  const notificarEstoqueCritico = formData.get("notificarEstoqueCritico") === "on";
+  const notificarPedidoAtrasado = formData.get("notificarPedidoAtrasado") === "on";
+
+  await prisma.automacaoGrafica.upsert({
+    where: { graficaId: usuario.graficaId },
+    update: {
+      ...(webhookUrlParaSalvar !== undefined ? { webhookUrl: webhookUrlParaSalvar } : {}),
+      notificarStatusMudou,
+      notificarEstoqueCritico,
+      notificarPedidoAtrasado,
+    },
+    create: {
+      graficaId: usuario.graficaId,
+      ...(webhookUrlParaSalvar !== undefined ? { webhookUrl: webhookUrlParaSalvar } : {}),
+      notificarStatusMudou,
+      notificarEstoqueCritico,
+      notificarPedidoAtrasado,
+    },
+  });
 
   revalidatePath("/configuracoes/automacao");
   return { ok: true, mensagem: "Automação salva com sucesso!" };

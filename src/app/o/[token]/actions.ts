@@ -85,7 +85,7 @@ export async function responderOrcamentoPublico(
     where: { linkPublicoToken: token },
     include: {
       cliente: { select: { nome: true } },
-      grafica: { select: { nome: true } },
+      grafica: { select: { nome: true, corPrimaria: true } },
     },
   });
   if (!orcamento) {
@@ -273,7 +273,8 @@ export async function responderOrcamentoPublico(
       orcamento.cliente.nome,
       nome,
       Number(orcamento.total),
-      `${origem}/orcamento/${orcamento.id}`
+      `${origem}/orcamento/${orcamento.id}`,
+      orcamento.grafica.corPrimaria
     );
     await notificarRespostaOrcamento(orcamento.graficaId, orcamento.usuarioId, "orcamento_aprovado", template);
   } else {
@@ -304,7 +305,8 @@ export async function responderOrcamentoPublico(
       nome,
       Number(orcamento.total),
       motivo,
-      `${origem}/orcamento/${orcamento.id}`
+      `${origem}/orcamento/${orcamento.id}`,
+      orcamento.grafica.corPrimaria
     );
     await notificarRespostaOrcamento(orcamento.graficaId, orcamento.usuarioId, "orcamento_recusado", template);
   }

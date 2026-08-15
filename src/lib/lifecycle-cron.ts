@@ -40,7 +40,7 @@ export async function enviarAvisosTrialExpirando(
       avisoTrialEnviadoEm: null,
       trialExpiraEm: { gt: inicioJanela, lte: fimJanela },
     },
-    select: { id: true, graficaId: true },
+    select: { id: true, graficaId: true, grafica: { select: { corPrimaria: true } } },
   });
 
   let avisosProcessados = 0;
@@ -75,7 +75,11 @@ export async function enviarAvisosTrialExpirando(
 
     if (donos.length === 0) continue;
 
-    const { assunto, html, texto } = templateTrialExpirando(orcamentosGerados, linkAssinatura);
+    const { assunto, html, texto } = templateTrialExpirando(
+      orcamentosGerados,
+      linkAssinatura,
+      assinatura.grafica.corPrimaria
+    );
     for (const dono of donos) {
       // after() em vez de await: dispararEventoEmail é melhor esforço
       // (nunca lança) e o resultado nunca é usado depois — não precisa

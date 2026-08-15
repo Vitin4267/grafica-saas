@@ -38,9 +38,35 @@ export type EventoAutomacao =
 
 const TIMEOUT_MS = 5_000; // bem menor que o do chat (15s) — ninguém na UI está esperando resposta
 
-export async function buscarWebhookAutomacao(graficaId: string): Promise<string | null> {
-  const automacao = await prisma.automacaoGrafica.findUnique({ where: { graficaId } });
-  return automacao?.webhookUrl ?? null;
+export type AutomacaoConfig = {
+  webhookUrl: string | null;
+  notificarStatusMudou: boolean;
+  notificarEstoqueCritico: boolean;
+  notificarPedidoAtrasado: boolean;
+};
+
+// Uma query só devolvendo webhookUrl + os 3 toggles por tipo (ver
+// /configuracoes/automacao) — quem chama decide, por tipo de evento, se
+// notificarXxx está ligado antes de disparar. Se a gráfica nunca visitou
+// /configuracoes/automacao (linha ainda não existe), os toggles caem no
+// mesmo default `true` do schema — mas como webhookUrl vem null nesse caso,
+// nada dispara de qualquer forma.
+export async function buscarAutomacaoGrafica(graficaId: string): Promise<AutomacaoConfig> {
+  const automacao = await prisma.automacaoGrafica.findUnique({
+    where: { graficaId },
+    select: {
+      webhookUrl: true,
+      notificarStatusMudou: true,
+      notificarEstoqueCritico: true,
+      notificarPedidoAtrasado: true,
+    },
+  });
+  return {
+    webhookUrl: automacao?.webhookUrl ?? null,
+    notificarStatusMudou: automacao?.notificarStatusMudou ?? true,
+    notificarEstoqueCritico: automacao?.notificarEstoqueCritico ?? true,
+    notificarPedidoAtrasado: automacao?.notificarPedidoAtrasado ?? true,
+  };
 }
 
 // Nunca lança erro pra cima — uma automação falhando não pode derrubar a

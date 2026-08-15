@@ -35,6 +35,19 @@ export default async function DespesaDetalhePage({
     notFound();
   }
 
+  // Inclui a categoria já vinculada mesmo se ela tiver sido desativada
+  // depois — senão o <select> perderia a opção selecionada e trocaria a
+  // categoria da despesa sem o usuário pedir (ver comentário parecido em
+  // CustosPedidoSecao.tsx, que só lida com lançamento novo).
+  const categoriasCusto = await prisma.categoriaCusto.findMany({
+    where: {
+      graficaId: usuario.graficaId,
+      OR: [{ ativa: true }, ...(despesa.categoriaCustoId ? [{ id: despesa.categoriaCustoId }] : [])],
+    },
+    orderBy: { ordem: "asc" },
+    select: { id: true, nome: true },
+  });
+
   return (
     <div className="flex flex-1 flex-col">
       <UserNav
@@ -66,12 +79,15 @@ export default async function DespesaDetalhePage({
           valoresIniciais={{
             descricao: despesa.descricao,
             categoria: despesa.categoria ?? "",
+            categoriaCustoId: despesa.categoriaCustoId,
             valor: despesa.valor.toString(),
             vencimento: dataParaInputValue(despesa.vencimento),
           }}
+          categoriasCusto={categoriasCusto}
           status={despesa.status}
           pagoEm={despesa.pagoEm ? dataParaInputValue(despesa.pagoEm) : null}
           formaPagamento={despesa.formaPagamento}
+          formaPagamentoDetalhe={despesa.formaPagamentoDetalhe}
           recorrente={despesa.recorrente}
           podeEditar={podeEditar}
         />

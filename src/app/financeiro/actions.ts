@@ -19,6 +19,32 @@ function revalidarFinanceiro(despesaId?: string) {
   if (despesaId) revalidatePath(`/financeiro/${despesaId}`);
 }
 
+// Decide os dois campos de categoria a partir do que veio do form: se um
+// categoriaCustoId foi escolhido (select de CampoCategoriaDespesa.tsx),
+// confere que ele pertence à gráfica e espelha o NOME da categoria em
+// `categoria` — snapshot legível pra quem só lê o texto (lista, CSV) não
+// precisar mudar. Sem categoriaCustoId, usa o texto livre digitado e limpa
+// a relação (importante em editarDespesa: trocar de categoria da lista pra
+// "Outra" precisa desligar o vínculo antigo, não só ignorá-lo).
+async function resolverCategoriaDespesa(
+  graficaId: string,
+  dados: { categoria?: string; categoriaCustoId?: string }
+): Promise<
+  | { ok: true; categoria: string | undefined; categoriaCustoId: string | null }
+  | { ok: false; mensagem: string }
+> {
+  if (!dados.categoriaCustoId) {
+    return { ok: true, categoria: dados.categoria, categoriaCustoId: null };
+  }
+  const categoriaCusto = await prisma.categoriaCusto.findFirst({
+    where: { id: dados.categoriaCustoId, graficaId },
+  });
+  if (!categoriaCusto) {
+    return { ok: false, mensagem: "Categoria de custo inválida." };
+  }
+  return { ok: true, categoria: categoriaCusto.nome, categoriaCustoId: categoriaCusto.id };
+}
+
 export async function criarDespesa(
   _estadoAnterior: DespesaResult | null,
   formData: FormData
@@ -33,11 +59,17 @@ export async function criarDespesa(
   const parsed = despesaSchema.safeParse({
     descricao: formData.get("descricao"),
     categoria: formData.get("categoria") ?? undefined,
+    categoriaCustoId: formData.get("categoriaCustoId") ?? undefined,
     valor: formData.get("valor"),
     vencimento: formData.get("vencimento"),
   });
   if (!parsed.success) {
     return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Dados inválidos." };
+  }
+
+  const dadosCategoria = await resolverCategoriaDespesa(usuario.graficaId, parsed.data);
+  if (!dadosCategoria.ok) {
+    return { ok: false, mensagem: dadosCategoria.mensagem };
   }
 
   const recorrente = formData.get("recorrente") === "on";
@@ -50,7 +82,15 @@ export async function criarDespesa(
   // rodando ao mesmo tempo).
   const despesa = await prisma.$transaction(async (tx) => {
     const criada = await tx.despesa.create({
-      data: { graficaId: usuario.graficaId, ...parsed.data, recorrente },
+      data: {
+        graficaId: usuario.graficaId,
+        descricao: parsed.data.descricao,
+        categoria: dadosCategoria.categoria,
+        categoriaCustoId: dadosCategoria.categoriaCustoId,
+        valor: parsed.data.valor,
+        vencimento: parsed.data.vencimento,
+        recorrente,
+      },
     });
     if (!recorrente) return criada;
     return tx.despesa.update({
@@ -102,6 +142,7 @@ export async function editarDespesa(
   const parsed = despesaSchema.safeParse({
     descricao: formData.get("descricao"),
     categoria: formData.get("categoria") ?? undefined,
+    categoriaCustoId: formData.get("categoriaCustoId") ?? undefined,
     valor: formData.get("valor"),
     vencimento: formData.get("vencimento"),
   });
@@ -109,12 +150,21 @@ export async function editarDespesa(
     return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   }
 
+  const dadosCategoria = await resolverCategoriaDespesa(usuario.graficaId, parsed.data);
+  if (!dadosCategoria.ok) {
+    return { ok: false, mensagem: dadosCategoria.mensagem };
+  }
+
   const recorrente = formData.get("recorrente") === "on";
 
   await prisma.despesa.update({
     where: { id: despesaId },
     data: {
-      ...parsed.data,
+      descricao: parsed.data.descricao,
+      categoria: dadosCategoria.categoria,
+      categoriaCustoId: dadosCategoria.categoriaCustoId,
+      valor: parsed.data.valor,
+      vencimento: parsed.data.vencimento,
       recorrente,
       // Liga recorrência numa despesa que ainda não tinha série: essa
       // ocorrência vira o início. Já tinha série (recorrente antes ou
@@ -203,11 +253,12 @@ export async function marcarComoPaga(
   const parsed = marcarComoPagaSchema.safeParse({
     despesaId: formData.get("despesaId"),
     formaPagamento: formData.get("formaPagamento"),
+    formaPagamentoDetalhe: formData.get("formaPagamentoDetalhe") ?? undefined,
   });
   if (!parsed.success) {
     return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   }
-  const { despesaId, formaPagamento } = parsed.data;
+  const { despesaId, formaPagamento, formaPagamentoDetalhe } = parsed.data;
 
   const despesa = await prisma.despesa.findFirst({
     where: { id: despesaId, graficaId: usuario.graficaId },
@@ -218,7 +269,14 @@ export async function marcarComoPaga(
 
   await prisma.despesa.update({
     where: { id: despesaId },
-    data: { status: "PAGA", pagoEm: new Date(), formaPagamento },
+    data: {
+      status: "PAGA",
+      pagoEm: new Date(),
+      formaPagamento,
+      // Só guarda o detalhe quando a forma é OUTRO — nunca deixa texto
+      // órfão de uma forma antiga sobrar se o usuário escolher outra forma.
+      formaPagamentoDetalhe: formaPagamento === "OUTRO" ? (formaPagamentoDetalhe ?? null) : null,
+    },
   });
 
   await registrarAuditoria({
@@ -263,7 +321,7 @@ export async function marcarComoPendente(
 
   await prisma.despesa.update({
     where: { id: despesaId },
-    data: { status: "PENDENTE", pagoEm: null, formaPagamento: null },
+    data: { status: "PENDENTE", pagoEm: null, formaPagamento: null, formaPagamentoDetalhe: null },
   });
 
   await registrarAuditoria({

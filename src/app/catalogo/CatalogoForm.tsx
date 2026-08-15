@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Alert } from "@/components/ui/Alert";
-import { ROTULO_UNIDADE } from "@/lib/unidade";
+import { ROTULO_UNIDADE, rotuloUnidade } from "@/lib/unidade";
 import { gerarChave } from "@/lib/chave-local";
 import {
   BoxIcon,
@@ -38,6 +38,7 @@ type ItemCatalogo = {
   categoria: string;
   nome: string;
   unidade: string | null;
+  unidadeOutro: string | null;
 };
 
 type Selecao = {
@@ -380,7 +381,7 @@ const ItemLinha = memo(function ItemLinha({
         </span>
         {item.unidade && (
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500 dark:bg-slate-800">
-            {ROTULO_UNIDADE[item.unidade] ?? item.unidade}
+            {rotuloUnidade(item.unidade, item.unidadeOutro)}
           </span>
         )}
       </label>
@@ -532,6 +533,9 @@ function NovoItemForm({
     null
   );
   const datalistId = `categorias-${tipo}`;
+  // Controlado só pra decidir se mostra o campo de texto livre — o valor em
+  // si continua indo pro FormData normalmente via o próprio <select name>.
+  const [unidade, setUnidade] = useState("UNIDADE");
 
   useEffect(() => {
     if (state?.ok && state.itemId) {
@@ -577,18 +581,30 @@ function NovoItemForm({
         </div>
 
         {tipo !== "PRODUTO" && (
-          <Select
-            label="Unidade de medida"
-            name="unidade"
-            defaultValue="UNIDADE"
-            hint="Base usada para comprar/cobrar esse item — igual aos itens já existentes."
-          >
-            {Object.entries(ROTULO_UNIDADE).map(([valor, rotulo]) => (
-              <option key={valor} value={valor}>
-                {rotulo}
-              </option>
-            ))}
-          </Select>
+          <>
+            <Select
+              label="Unidade de medida"
+              name="unidade"
+              value={unidade}
+              onChange={(e) => setUnidade(e.target.value)}
+              hint="Base usada para comprar/cobrar esse item — igual aos itens já existentes."
+            >
+              {Object.entries(ROTULO_UNIDADE).map(([valor, rotulo]) => (
+                <option key={valor} value={valor}>
+                  {rotulo}
+                </option>
+              ))}
+            </Select>
+            {unidade === "OUTRO" && (
+              <Input
+                label="Qual unidade?"
+                name="unidadeOutro"
+                placeholder="ex: resma, galão, fardo"
+                maxLength={40}
+                required
+              />
+            )}
+          </>
         )}
 
         {tipo === "PRODUTO" && (

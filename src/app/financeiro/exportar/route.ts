@@ -15,6 +15,12 @@ function formatoValor(valor: number | Dec): string {
   return (valor instanceof D ? valor : new D(valor)).toFixed(2).replace(".", ",");
 }
 
+// "OUTRO — cheque pré-datado" em vez de só "OUTRO", quando há detalhe salvo
+// (Pagamento.formaDetalhe) — mesma disciplina de PagamentosCard.tsx.
+function rotuloForma(forma: string, detalhe: string | null) {
+  return forma === "OUTRO" && detalhe ? `${forma} — ${detalhe}` : forma;
+}
+
 // Regime de caixa: receita = pagamento recebido no mês, despesa = despesa
 // paga no mês — os dois lados só contam dinheiro que realmente entrou/saiu,
 // pra bater com o que o contador espera de um extrato pra DRE simples.
@@ -90,7 +96,7 @@ export async function GET(request: NextRequest) {
       formatoInstanteReal.format(pagamento.createdAt),
       pagamento.orcamento.cliente.nome,
       pagamento.orcamento.filial?.nome ?? "",
-      pagamento.forma,
+      rotuloForma(pagamento.forma, pagamento.formaDetalhe),
       formatoValor(Number(pagamento.valor)),
     ]);
   }

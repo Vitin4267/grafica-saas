@@ -8,6 +8,7 @@ import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
+import { CampoCategoriaDespesa } from "../CampoCategoriaDespesa";
 import { editarDespesa, excluirDespesa, marcarComoPaga, marcarComoPendente } from "../actions";
 
 const ROTULO_FORMA: Record<string, string> = {
@@ -19,9 +20,16 @@ const ROTULO_FORMA: Record<string, string> = {
   OUTRO: "Outro",
 };
 
+// "Outro — cheque pré-datado" em vez de só "Outro", quando há detalhe salvo.
+function rotuloForma(forma: string, detalhe: string | null) {
+  const rotulo = ROTULO_FORMA[forma] ?? forma;
+  return forma === "OUTRO" && detalhe ? `${rotulo} — ${detalhe}` : rotulo;
+}
+
 type ValoresDespesa = {
   descricao: string;
   categoria: string;
+  categoriaCustoId: string | null;
   valor: string;
   vencimento: string;
 };
@@ -29,17 +37,21 @@ type ValoresDespesa = {
 export function DespesaForm({
   despesaId,
   valoresIniciais,
+  categoriasCusto,
   status,
   pagoEm,
   formaPagamento,
+  formaPagamentoDetalhe,
   recorrente,
   podeEditar,
 }: {
   despesaId: string;
   valoresIniciais: ValoresDespesa;
+  categoriasCusto: { id: string; nome: string }[];
   status: "PENDENTE" | "PAGA";
   pagoEm: string | null;
   formaPagamento: string | null;
+  formaPagamentoDetalhe: string | null;
   recorrente: boolean;
   podeEditar: boolean;
 }) {
@@ -52,6 +64,7 @@ export function DespesaForm({
   });
   const [estadoPaga, pagaAction, marcandoPaga] = useActionState(marcarComoPaga, null);
   const [estadoPendente, pendenteAction, marcandoPendente] = useActionState(marcarComoPendente, null);
+  const [formaEscolhida, setFormaEscolhida] = useState("PIX");
 
   if (!podeEditar) {
     return (
@@ -62,7 +75,10 @@ export function DespesaForm({
         </p>
         <p className="text-slate-500">Vencimento: {valoresIniciais.vencimento}</p>
         <p className="text-slate-500">
-          Status: {status === "PAGA" ? `Paga em ${pagoEm}` : "Pendente"}
+          Status:{" "}
+          {status === "PAGA"
+            ? `Paga em ${pagoEm}${formaPagamento ? ` (${rotuloForma(formaPagamento, formaPagamentoDetalhe)})` : ""}`
+            : "Pendente"}
           {recorrente ? " · 🔁 Recorrente" : ""}
         </p>
         <p className="mt-2 text-xs text-slate-400">Você tem acesso só de visualização a esta tela.</p>
@@ -77,7 +93,7 @@ export function DespesaForm({
           <div>
             <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
               Paga em {pagoEm}
-              {formaPagamento && ` · ${ROTULO_FORMA[formaPagamento] ?? formaPagamento}`}
+              {formaPagamento && ` · ${rotuloForma(formaPagamento, formaPagamentoDetalhe)}`}
             </p>
             {estadoPendente && !estadoPendente.ok && (
               <p className="mt-1 text-xs text-rose-600">{estadoPendente.mensagem}</p>
@@ -93,15 +109,30 @@ export function DespesaForm({
       ) : (
         <Card className="flex flex-col gap-3 p-5">
           <p className="text-sm font-medium text-slate-500">Marcar como paga</p>
-          <form action={pagaAction} className="flex items-end gap-3">
+          <form action={pagaAction} className="flex flex-wrap items-end gap-3">
             <input type="hidden" name="despesaId" value={despesaId} />
-            <Select label="Forma de pagamento" name="formaPagamento" defaultValue="PIX" className="flex-1">
+            <Select
+              label="Forma de pagamento"
+              name="formaPagamento"
+              value={formaEscolhida}
+              onChange={(evento) => setFormaEscolhida(evento.target.value)}
+              className="flex-1"
+            >
               {Object.entries(ROTULO_FORMA).map(([valor, rotulo]) => (
                 <option key={valor} value={valor}>
                   {rotulo}
                 </option>
               ))}
             </Select>
+            {formaEscolhida === "OUTRO" && (
+              <Input
+                label="Detalhe"
+                name="formaPagamentoDetalhe"
+                type="text"
+                placeholder="ex: cheque pré-datado"
+                className="flex-1"
+              />
+            )}
             <Button type="submit" loading={marcandoPaga}>
               {marcandoPaga ? "Salvando..." : "Marcar como paga"}
             </Button>
@@ -122,11 +153,10 @@ export function DespesaForm({
               required
               className="col-span-2"
             />
-            <Input
-              label="Categoria (opcional)"
-              name="categoria"
-              type="text"
-              defaultValue={valoresIniciais.categoria}
+            <CampoCategoriaDespesa
+              categorias={categoriasCusto}
+              categoriaCustoIdInicial={valoresIniciais.categoriaCustoId}
+              categoriaInicial={valoresIniciais.categoria}
             />
             <Input
               label="Valor (R$)"

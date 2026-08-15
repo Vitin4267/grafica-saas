@@ -11,6 +11,32 @@ import {
 
 const MS_POR_DIA = 86_400_000;
 
+// Defaults espelhando ParametrosGrafica no schema (alertaPrazoLimiar1Dias=5,
+// 2=3, 3=0, alertaPrazoAtivo=true) — usados quando a gráfica nunca configurou
+// nada em /configuracoes (linha ausente em ParametrosGrafica), mesmo padrão
+// de margemFaixaBaixa/margemFaixaBoa em src/app/meu-negocio/relatorios/page.tsx.
+const LIMIAR_1_PADRAO = 5;
+const LIMIAR_2_PADRAO = 3;
+const LIMIAR_3_PADRAO = 0;
+
+// Generaliza a cascata que antes era um ternário fixo (`diasParaPrazo <= 0 ?
+// 0 : diasParaPrazo <= 3 ? 3 : diasParaPrazo <= 5 ? 5 : null`) pra qualquer
+// trio de limiares configurado pela gráfica (ordenados do maior pro menor,
+// ex: [5, 3, 0] ou [7, 4, 1]) — devolve o MENOR limiar que ainda "cobre"
+// diasParaPrazo (ou seja, o mais urgente aplicável agora), ou null se o prazo
+// está longe demais até do limiar mais folgado. A validação em
+// src/app/configuracoes/actions.ts garante limiar1 > limiar2 > limiar3 antes
+// de chegar aqui, então não precisa reordenar defensivamente — mas ordena
+// mesmo assim (custo desprezível) pra este helper nunca depender dessa
+// garantia externa pra se comportar certo.
+export function calcularLimiarAplicavel(diasParaPrazo: number, limiares: number[]): number | null {
+  const limiaresAsc = [...limiares].sort((a, b) => a - b);
+  for (const limiar of limiaresAsc) {
+    if (diasParaPrazo <= limiar) return limiar;
+  }
+  return null;
+}
+
 // Canal SEPARADO de src/lib/alerta-atraso.ts (webhook de automação da
 // própria gráfica, roda sob demanda a cada carregamento de /producao, só
 // dispara UMA vez, depois do prazo já vencido). Este aqui é o cron diário
@@ -51,18 +77,32 @@ export async function enviarAlertasPrazoEmail(
   // calcularia diasParaPrazo um dia adiantado, mandando (ou deixando de
   // mandar) o alerta um dia cedo demais.
   const hoje = dataInputParaUTC(hojeBrasiliaInputValue());
-  // Janela de busca: nenhum pedido com prazo a mais de 5 dias tem
-  // limiarAplicavel != null, então não vale escanear pedidos com prazo daqui
-  // a meses — evita crescer o findMany junto com o volume de pedidos em
-  // fila da plataforma inteira.
-  const janelaMaxima = new Date(hoje.getTime() + 5 * MS_POR_DIA);
+  // Janela de busca: precisa cobrir o MAIOR limiar1 configurado por qualquer
+  // gráfica com o alerta ligado (o padrão é 5 dias, mas uma gráfica pode
+  // configurar mais em /configuracoes) — sem isso, um pedido de uma gráfica
+  // com limiar1=10 nunca chegaria nem a ser buscado. Continua evitando
+  // escanear pedidos com prazo daqui a meses, só que com o corte dinâmico em
+  // vez de fixo em 5.
+  const limiar1MaisAlto = await prisma.parametrosGrafica.aggregate({
+    where: { alertaPrazoAtivo: true },
+    _max: { alertaPrazoLimiar1Dias: true },
+  });
+  const janelaDias = Math.max(LIMIAR_1_PADRAO, limiar1MaisAlto._max.alertaPrazoLimiar1Dias ?? LIMIAR_1_PADRAO);
+  const janelaMaxima = new Date(hoje.getTime() + janelaDias * MS_POR_DIA);
 
   const pedidos = await prisma.pedido.findMany({
     where: {
       status: { notIn: ["ENTREGUE", "CANCELADO"] },
       prazoEntrega: { not: null, lte: janelaMaxima },
-      // 0 é terminal (ver comentário acima) — filtra no banco em vez de só
-      // no loop, pra não reprocessar pra sempre todo pedido atrasado antigo.
+      // 0 é terminal pro trio de limiares PADRÃO (filtra no banco em vez de
+      // só no loop, pra não reprocessar pra sempre todo pedido atrasado
+      // antigo). Uma gráfica que configurar um limiar3 diferente de 0 perde
+      // só essa otimização de banco pros próprios pedidos (o findMany
+      // continua trazendo de volta um pedido cujo terminal real já foi
+      // avisado) — a dedup de verdade é o `ultimoLimiarJaEnviado <=
+      // limiarAplicavel` dentro do loop abaixo, que funciona com qualquer
+      // limiar3, então nenhum e-mail duplicado chega a sair; só um pouco
+      // mais de linhas trafegando da query.
       //
       // OR explícito com `null` em vez de só `{ not: 0 }`: um filtro
       // `{ not: 0 }` sozinho, num campo NULLABLE, compila pra SQL `<> 0` —
@@ -74,7 +114,7 @@ export async function enviarAlertasPrazoEmail(
       OR: [{ alertaPrazoUltimoLimiarDias: null }, { alertaPrazoUltimoLimiarDias: { not: 0 } }],
     },
     include: {
-      grafica: { select: { nome: true } },
+      grafica: { select: { nome: true, corPrimaria: true } },
       orcamento: {
         select: {
           cliente: { select: { nome: true } },
@@ -90,15 +130,47 @@ export async function enviarAlertasPrazoEmail(
   // Cache por gráfica dentro desta run — evita repetir a mesma query de
   // DONOs pra cada pedido atrasado da mesma gráfica.
   const donosPorGrafica = new Map<string, { email: string }[]>();
+  // Cache dos parâmetros de alerta (ativo + os 3 limiares) por gráfica dentro
+  // desta run — mesmo raciocínio de donosPorGrafica. Ausência de linha em
+  // ParametrosGrafica (gráfica que nunca configurou nada em /configuracoes)
+  // usa os defaults do schema, mesmo padrão de margemFaixaBaixa/margemFaixaBoa
+  // em src/app/meu-negocio/relatorios/page.tsx.
+  const parametrosAlertaPorGrafica = new Map<string, { ativo: boolean; limiares: number[] }>();
 
   for (const pedido of pedidos) {
+    if (!parametrosAlertaPorGrafica.has(pedido.graficaId)) {
+      const parametros = await prisma.parametrosGrafica.findUnique({
+        where: { graficaId: pedido.graficaId },
+        select: {
+          alertaPrazoAtivo: true,
+          alertaPrazoLimiar1Dias: true,
+          alertaPrazoLimiar2Dias: true,
+          alertaPrazoLimiar3Dias: true,
+        },
+      });
+      parametrosAlertaPorGrafica.set(pedido.graficaId, {
+        ativo: parametros?.alertaPrazoAtivo ?? true,
+        limiares: [
+          parametros?.alertaPrazoLimiar1Dias ?? LIMIAR_1_PADRAO,
+          parametros?.alertaPrazoLimiar2Dias ?? LIMIAR_2_PADRAO,
+          parametros?.alertaPrazoLimiar3Dias ?? LIMIAR_3_PADRAO,
+        ],
+      });
+    }
+    // Gate logo no início do processamento desta gráfica: se ela desligou o
+    // alerta de prazo (alertaPrazoAtivo=false), pula o pedido sem gerar
+    // nenhum e-mail — nem marca alertaPrazoUltimoLimiarDias, então se a
+    // gráfica reativar depois o pedido volta a ser avaliado normalmente.
+    const { ativo, limiares } = parametrosAlertaPorGrafica.get(pedido.graficaId)!;
+    if (!ativo) continue;
+
     const prazoEntrega = pedido.prazoEntrega!;
     // Ambos já são meia-noite UTC representando um dia de calendário — a
     // subtração dá dias inteiros exatos, sem arredondamento necessário.
     const diasParaPrazo = (prazoEntrega.getTime() - hoje.getTime()) / MS_POR_DIA;
 
-    const limiarAplicavel = diasParaPrazo <= 0 ? 0 : diasParaPrazo <= 3 ? 3 : diasParaPrazo <= 5 ? 5 : null;
-    if (limiarAplicavel === null) continue; // prazo longe demais ainda (defensivo — a query acima já filtra isso)
+    const limiarAplicavel = calcularLimiarAplicavel(diasParaPrazo, limiares);
+    if (limiarAplicavel === null) continue; // prazo longe demais ainda pros limiares desta gráfica
 
     const ultimoLimiarJaEnviado = pedido.alertaPrazoUltimoLimiarDias;
     if (ultimoLimiarJaEnviado !== null && ultimoLimiarJaEnviado <= limiarAplicavel) continue; // já avisou este limiar (ou um mais urgente)
@@ -147,11 +219,27 @@ export async function enviarAlertasPrazoEmail(
             // vencido (0 = vence hoje), mesmo cálculo de alerta-atraso.ts,
             // só que a partir do `hoje`/`diasParaPrazo` corretos de
             // Brasília, não o hojeUTC (com o bug de fuso) do arquivo antigo.
-            template: templatePedidoPrazoAtrasado(graficaNome, clienteNome, itens, -diasParaPrazo, prazoFormatado, linkProducao),
+            template: templatePedidoPrazoAtrasado(
+              graficaNome,
+              clienteNome,
+              itens,
+              -diasParaPrazo,
+              prazoFormatado,
+              linkProducao,
+              pedido.grafica.corPrimaria
+            ),
           }
         : {
             tipo: "pedido_prazo_proximo" as const,
-            template: templatePedidoPrazoProximo(graficaNome, clienteNome, itens, limiarAplicavel, prazoFormatado, linkProducao),
+            template: templatePedidoPrazoProximo(
+              graficaNome,
+              clienteNome,
+              itens,
+              limiarAplicavel,
+              prazoFormatado,
+              linkProducao,
+              pedido.grafica.corPrimaria
+            ),
           };
 
     for (const destinatario of destinatarios) {

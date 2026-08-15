@@ -4,9 +4,14 @@ import { useActionState } from "react";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { CampoCategoriaDespesa } from "./CampoCategoriaDespesa";
 import { criarDespesa } from "./actions";
 
-export function NovaDespesaForm() {
+export function NovaDespesaForm({
+  categoriasCusto,
+}: {
+  categoriasCusto: { id: string; nome: string }[];
+}) {
   const [state, formAction, isPending] = useActionState(criarDespesa, null);
 
   return (
@@ -20,7 +25,7 @@ export function NovaDespesaForm() {
           required
           className="sm:col-span-2"
         />
-        <Input label="Categoria (opcional)" name="categoria" type="text" placeholder="ex: Fornecedor, Aluguel" />
+        <CampoCategoriaDespesa categorias={categoriasCusto} />
         <Input label="Valor (R$)" name="valor" type="number" step="0.01" min="0.01" required />
         <Input label="Vencimento" name="vencimento" type="date" required className="sm:col-span-2" />
       </div>

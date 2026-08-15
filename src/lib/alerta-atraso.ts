@@ -2,7 +2,7 @@ import "server-only";
 import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizarTelefone } from "@/lib/telefone";
-import { buscarWebhookAutomacao, dispararEventoAutomacao } from "@/lib/webhook-automacao";
+import { buscarAutomacaoGrafica, dispararEventoAutomacao } from "@/lib/webhook-automacao";
 
 const MS_POR_DIA = 86_400_000;
 
@@ -16,8 +16,10 @@ export async function verificarEDispararAlertasAtraso(
   graficaId: string,
   graficaNome: string
 ): Promise<void> {
-  const webhookUrl = await buscarWebhookAutomacao(graficaId);
-  if (!webhookUrl) return; // sem webhook configurado, nada a fazer
+  const automacao = await buscarAutomacaoGrafica(graficaId);
+  if (!automacao.webhookUrl) return; // sem webhook configurado, nada a fazer
+  if (!automacao.notificarPedidoAtrasado) return; // tipo desligado pra esta gráfica
+  const webhookUrl = automacao.webhookUrl;
 
   const hojeUTC = new Date();
   hojeUTC.setUTCHours(0, 0, 0, 0);

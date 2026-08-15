@@ -53,6 +53,12 @@ export default async function FinanceiroPage() {
     orderBy: [{ status: "asc" }, { vencimento: "asc" }],
   });
 
+  const categoriasCusto = await prisma.categoriaCusto.findMany({
+    where: { graficaId: usuario.graficaId, ativa: true },
+    orderBy: { ordem: "asc" },
+    select: { id: true, nome: true },
+  });
+
   const mesAtual = new Date().toISOString().slice(0, 7);
 
   return (
@@ -147,7 +153,7 @@ export default async function FinanceiroPage() {
             <h2 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">
               Nova despesa
             </h2>
-            <NovaDespesaForm />
+            <NovaDespesaForm categoriasCusto={categoriasCusto} />
           </Card>
         )}
       </main>

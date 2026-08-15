@@ -127,7 +127,7 @@ function pedidoParaAvanco(f: Fixture): PedidoParaAvanco {
     producaoLinkToken: null,
     orcamento: {
       cliente: { nome: "Cliente Teste", telefone: null },
-      grafica: { nome: "Gráfica Teste" },
+      grafica: { nome: "Gráfica Teste", corPrimaria: null },
       itens: [{ quantidade: f.quantidadeItem, itemGrafica: { itemCatalogo: { nome: "Produto Teste" } } }],
     },
   };

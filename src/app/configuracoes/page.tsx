@@ -21,9 +21,23 @@ export default async function ConfiguracoesPage() {
   // estrito do motor de precificação, ver src/lib/pricing/carregar.ts) —
   // carregarParametrosTenant já garante (via upsert) que a linha existe,
   // então este findUnique nunca vem null.
-  const { comissaoVendedorBase, custoTintaPorMl } = await prisma.parametrosGrafica.findUniqueOrThrow({
+  const {
+    comissaoVendedorBase,
+    custoTintaPorMl,
+    alertaPrazoAtivo,
+    alertaPrazoLimiar1Dias,
+    alertaPrazoLimiar2Dias,
+    alertaPrazoLimiar3Dias,
+  } = await prisma.parametrosGrafica.findUniqueOrThrow({
     where: { graficaId: usuario.graficaId },
-    select: { comissaoVendedorBase: true, custoTintaPorMl: true },
+    select: {
+      comissaoVendedorBase: true,
+      custoTintaPorMl: true,
+      alertaPrazoAtivo: true,
+      alertaPrazoLimiar1Dias: true,
+      alertaPrazoLimiar2Dias: true,
+      alertaPrazoLimiar3Dias: true,
+    },
   });
   // unidadePadraoDimensao mora em Grafica (não em ParametrosGrafica): não é
   // um parâmetro do motor de precificação, é só a unidade de entrada/exibição
@@ -59,6 +73,10 @@ export default async function ConfiguracoesPage() {
           comissaoVendedorBase={comissaoVendedorBase}
           custoTintaPorMl={custoTintaPorMl ? Number(custoTintaPorMl) : null}
           unidadePadraoDimensao={unidadePadraoDimensao}
+          alertaPrazoAtivo={alertaPrazoAtivo}
+          alertaPrazoLimiar1Dias={alertaPrazoLimiar1Dias}
+          alertaPrazoLimiar2Dias={alertaPrazoLimiar2Dias}
+          alertaPrazoLimiar3Dias={alertaPrazoLimiar3Dias}
         />
       </main>
     </div>

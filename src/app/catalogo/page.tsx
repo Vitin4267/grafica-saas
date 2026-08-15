@@ -135,6 +135,7 @@ export default async function CatalogoPage() {
             categoria: i.categoria,
             nome: i.nome,
             unidade: i.unidade,
+            unidadeOutro: i.unidadeOutro,
           }))}
           selecoes={selecoesPorItem}
         />

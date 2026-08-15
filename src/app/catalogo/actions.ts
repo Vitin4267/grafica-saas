@@ -30,6 +30,10 @@ export type SalvarCatalogoResult = {
 };
 
 const TIPOS_ITEM_CATALOGO = ["PRODUTO", "MATERIA_PRIMA", "SERVICO"] as const;
+// Espelha o enum UnidadeMedida do schema (ver node_modules/.../generated —
+// MILHEIRO estava faltando aqui antes de OUTRO entrar, então uma gráfica que
+// escolhesse "milheiro" no <Select> — que lista TODO ROTULO_UNIDADE — levava
+// um erro de validação silencioso; corrigido junto com a adição de OUTRO).
 const UNIDADES_MEDIDA = [
   "FOLHA",
   "METRO_QUADRADO",
@@ -40,30 +44,45 @@ const UNIDADES_MEDIDA = [
   "ROLO",
   "PACOTE",
   "CENTO",
+  "MILHEIRO",
   "HORA",
+  "OUTRO",
 ] as const;
 
-const novoItemCatalogoSchema = z.object({
-  tipo: z.enum(TIPOS_ITEM_CATALOGO),
-  nome: z.string().trim().min(2, "Nome muito curto").max(120),
-  categoria: z.string().trim().min(2, "Categoria muito curta").max(80),
-  descricao: z
-    .string()
-    .trim()
-    .max(500)
-    .optional()
-    .transform((v) => (v ? v : undefined)),
-  unidade: z
-    .union([z.enum(UNIDADES_MEDIDA), z.literal("")])
-    .optional()
-    .transform((v) => (v ? v : undefined)),
-  ncm: z
-    .string()
-    .trim()
-    .max(20)
-    .optional()
-    .transform((v) => (v ? v : undefined)),
-});
+const novoItemCatalogoSchema = z
+  .object({
+    tipo: z.enum(TIPOS_ITEM_CATALOGO),
+    nome: z.string().trim().min(2, "Nome muito curto").max(120),
+    categoria: z.string().trim().min(2, "Categoria muito curta").max(80),
+    descricao: z
+      .string()
+      .trim()
+      .max(500)
+      .optional()
+      .transform((v) => (v ? v : undefined)),
+    unidade: z
+      .union([z.enum(UNIDADES_MEDIDA), z.literal("")])
+      .optional()
+      .transform((v) => (v ? v : undefined)),
+    // Texto livre pra unidade=OUTRO (ex: "resma", "galão", "fardo") — mesmo
+    // espírito de materialSubstratoOutro em src/lib/orcamento-etiqueta.ts.
+    unidadeOutro: z
+      .string()
+      .trim()
+      .max(40)
+      .optional()
+      .transform((v) => (v ? v : undefined)),
+    ncm: z
+      .string()
+      .trim()
+      .max(20)
+      .optional()
+      .transform((v) => (v ? v : undefined)),
+  })
+  .refine((dados) => dados.unidade !== "OUTRO" || Boolean(dados.unidadeOutro), {
+    message: 'Descreva a unidade quando escolher "Outro".',
+    path: ["unidadeOutro"],
+  });
 
 export type CriarItemCatalogoResult = {
   ok: boolean;
@@ -97,6 +116,7 @@ export async function criarItemCatalogo(
     // z.optional() só trata undefined como ausente, não null.
     descricao: formData.get("descricao") ?? undefined,
     unidade: formData.get("unidade") ?? undefined,
+    unidadeOutro: formData.get("unidadeOutro") ?? undefined,
     ncm: formData.get("ncm") ?? undefined,
   });
 
@@ -104,7 +124,7 @@ export async function criarItemCatalogo(
     return { ok: false, mensagem: resultado.error.issues[0].message };
   }
 
-  const { tipo, nome, categoria, descricao, unidade, ncm } = resultado.data;
+  const { tipo, nome, categoria, descricao, unidade, unidadeOutro, ncm } = resultado.data;
 
   // Bloqueia duplicar tanto um item já existente no mestre global quanto um item
   // privado que essa mesma gráfica já tenha criado antes. Esse findFirst é só um
@@ -125,10 +145,24 @@ export async function criarItemCatalogo(
     return { ok: false, mensagem: "Já existe um item com esse nome nesse tipo de catálogo." };
   }
 
+  // Só grava unidadeOutro quando a unidade escolhida de fato for OUTRO — evita
+  // um texto órfão sobrando no banco se o formulário mandar os dois campos
+  // (ex: usuário digitou algo, depois trocou pra uma unidade da lista fechada).
+  const unidadeOutroFinal = unidade === "OUTRO" ? unidadeOutro : undefined;
+
   let novoItem: { id: string };
   try {
     novoItem = await prisma.itemCatalogo.create({
-      data: { graficaId: usuario.graficaId, tipo, nome, categoria, descricao, unidade, ncm },
+      data: {
+        graficaId: usuario.graficaId,
+        tipo,
+        nome,
+        categoria,
+        descricao,
+        unidade,
+        unidadeOutro: unidadeOutroFinal,
+        ncm,
+      },
     });
   } catch (erro) {
     if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2002") {

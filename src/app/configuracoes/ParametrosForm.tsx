@@ -20,11 +20,19 @@ export function ParametrosForm({
   comissaoVendedorBase,
   custoTintaPorMl,
   unidadePadraoDimensao,
+  alertaPrazoAtivo,
+  alertaPrazoLimiar1Dias,
+  alertaPrazoLimiar2Dias,
+  alertaPrazoLimiar3Dias,
 }: {
   parametros: ParametrosTenant;
   comissaoVendedorBase: BaseComissao;
   custoTintaPorMl: number | null;
   unidadePadraoDimensao: UnidadeDimensao;
+  alertaPrazoAtivo: boolean;
+  alertaPrazoLimiar1Dias: number;
+  alertaPrazoLimiar2Dias: number;
+  alertaPrazoLimiar3Dias: number;
 }) {
   const [state, formAction, isPending] = useActionState(salvarParametros, null);
 
@@ -151,6 +159,64 @@ export function ParametrosForm({
             ))}
           </select>
         </label>
+      </Card>
+
+      <Card className="flex flex-col gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Alerta de prazo por e-mail
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Avisa o vendedor e o(s) DONO(s) da gráfica por e-mail conforme o
+            prazo de entrega de um pedido se aproxima — em 3 momentos, do mais
+            folgado pro dia do prazo/atrasado. Os valores abaixo são em dias
+            antes do prazo (0 = no dia).
+          </p>
+        </div>
+
+        <label className="flex items-center gap-2.5">
+          <input
+            type="checkbox"
+            name="alertaPrazoAtivo"
+            defaultChecked={alertaPrazoAtivo}
+            className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+          />
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+            Enviar alerta de prazo por e-mail
+          </span>
+        </label>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Input
+            label="1º aviso (dias antes)"
+            name="alertaPrazoLimiar1Dias"
+            type="number"
+            step="1"
+            min="0"
+            defaultValue={alertaPrazoLimiar1Dias}
+          />
+          <Input
+            label="2º aviso (dias antes)"
+            name="alertaPrazoLimiar2Dias"
+            type="number"
+            step="1"
+            min="0"
+            defaultValue={alertaPrazoLimiar2Dias}
+          />
+          <Input
+            label="3º aviso (dias antes)"
+            name="alertaPrazoLimiar3Dias"
+            type="number"
+            step="1"
+            min="0"
+            defaultValue={alertaPrazoLimiar3Dias}
+            hint="0 = no dia do prazo (ou já atrasado)"
+          />
+        </div>
+        <p className="text-xs text-slate-500">
+          Precisam estar em ordem decrescente (ex: 5, 3, 0) — o 1º aviso é o
+          mais folgado, o 3º é o mais urgente.
+        </p>
       </Card>
 
       <Card className="flex items-center justify-between gap-4 p-6">

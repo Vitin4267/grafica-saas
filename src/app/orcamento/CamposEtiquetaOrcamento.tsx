@@ -37,6 +37,7 @@ const OPCOES_TIPO_ADESIVO: [string, string][] = [
   ["BORRACHA_25G", "Borracha 25g"],
   ["BORRACHA_30G", "Borracha 30g"],
   ["BORRACHA_50G", "Borracha 50g"],
+  ["OUTRO", "Outro"],
 ];
 const OPCOES_SUPERFICIE: [string, string][] = [
   ["VIDRO", "Vidro"],
@@ -54,15 +55,18 @@ const OPCOES_SERRILHA: [string, string][] = [
   ["SERRILHA", "Serrilha"],
   ["MICRO_SERRILHA", "Micro serrilha"],
   ["GAP", "Gap"],
+  ["OUTRO", "Outro"],
 ];
 const OPCOES_LAMINACAO: [string, string][] = [
   ["BRILHO", "Brilho"],
   ["FOSCO", "Fosco"],
+  ["OUTRO", "Outro"],
 ];
 const OPCOES_VERNIZ: [string, string][] = [
   ["BRILHO", "Brilho"],
   ["FOSCO", "Fosco"],
   ["RIBBON", "Ribbon"],
+  ["OUTRO", "Outro"],
 ];
 const OPCOES_LADO: [string, string][] = [
   ["ROTULO", "Rótulo"],
@@ -71,6 +75,7 @@ const OPCOES_LADO: [string, string][] = [
 const OPCOES_TIPO_HOT_STAMPING: [string, string][] = [
   ["HOT", "Hot"],
   ["COLD", "Cold"],
+  ["OUTRO", "Outro"],
 ];
 
 function SelectOpcional({
@@ -125,6 +130,15 @@ function LinhaHotStamping({
           ))}
         </Select>
       </div>
+      {linha.tipo === "OUTRO" && (
+        <div className="w-28">
+          <Input
+            label="Qual tipo"
+            value={linha.tipoOutro}
+            onChange={(e) => onAlterar("tipoOutro", e.target.value)}
+          />
+        </div>
+      )}
       <div className="w-28">
         <Input
           label="Medida"
@@ -178,7 +192,7 @@ export function CamposEtiquetaOrcamento({
   const adicionarHotStamping = () =>
     set("hotStampings", [
       ...valores.hotStampings,
-      { chave: gerarChave(), lado: "ROTULO", tipo: "HOT", medida: "", cor: "" },
+      { chave: gerarChave(), lado: "ROTULO", tipo: "HOT", tipoOutro: "", medida: "", cor: "" },
     ]);
 
   if (!expandido) {
@@ -226,12 +240,26 @@ export function CamposEtiquetaOrcamento({
           opcoes={OPCOES_TIPO_ADESIVO}
           onChange={(v) => set("tipoAdesivo", v)}
         />
+        {valores.tipoAdesivo === "OUTRO" && (
+          <Input
+            label="Qual adesivo"
+            value={valores.tipoAdesivoOutro}
+            onChange={(e) => set("tipoAdesivoOutro", e.target.value)}
+          />
+        )}
         <SelectOpcional
           label="Superfície de aplicação"
           valor={valores.superficieAplicacao}
           opcoes={OPCOES_SUPERFICIE}
           onChange={(v) => set("superficieAplicacao", v)}
         />
+        {valores.superficieAplicacao === "OUTROS" && (
+          <Input
+            label="Qual superfície"
+            value={valores.superficieAplicacaoOutro}
+            onChange={(e) => set("superficieAplicacaoOutro", e.target.value)}
+          />
+        )}
         <Input
           label="Formato da etiqueta"
           value={valores.formatoEtiqueta}
@@ -283,6 +311,13 @@ export function CamposEtiquetaOrcamento({
           opcoes={OPCOES_SERRILHA}
           onChange={(v) => set("serrilha", v)}
         />
+        {valores.serrilha === "OUTRO" && (
+          <Input
+            label="Qual serrilha"
+            value={valores.serrilhaOutro}
+            onChange={(e) => set("serrilhaOutro", e.target.value)}
+          />
+        )}
         <Input
           label="Rebobinamento (1-8)"
           type="number"
@@ -320,6 +355,13 @@ export function CamposEtiquetaOrcamento({
             opcoes={OPCOES_VERNIZ}
             onChange={(v) => set("vernizRotuloTipo", v)}
           />
+          {valores.vernizRotuloTipo === "OUTRO" && (
+            <Input
+              label="Qual acabamento"
+              value={valores.vernizRotuloTipoOutro}
+              onChange={(e) => set("vernizRotuloTipoOutro", e.target.value)}
+            />
+          )}
         </div>
         <div className="flex flex-col gap-2 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
           <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
@@ -349,22 +391,47 @@ export function CamposEtiquetaOrcamento({
             opcoes={OPCOES_VERNIZ}
             onChange={(v) => set("vernizContraRotuloTipo", v)}
           />
+          {valores.vernizContraRotuloTipo === "OUTRO" && (
+            <Input
+              label="Qual acabamento"
+              value={valores.vernizContraRotuloTipoOutro}
+              onChange={(e) => set("vernizContraRotuloTipoOutro", e.target.value)}
+            />
+          )}
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <SelectOpcional
-          label="Laminação rótulo"
-          valor={valores.laminacaoRotulo}
-          opcoes={OPCOES_LAMINACAO}
-          onChange={(v) => set("laminacaoRotulo", v)}
-        />
-        <SelectOpcional
-          label="Laminação contra-rótulo"
-          valor={valores.laminacaoContraRotulo}
-          opcoes={OPCOES_LAMINACAO}
-          onChange={(v) => set("laminacaoContraRotulo", v)}
-        />
+        <div className="flex flex-col gap-2">
+          <SelectOpcional
+            label="Laminação rótulo"
+            valor={valores.laminacaoRotulo}
+            opcoes={OPCOES_LAMINACAO}
+            onChange={(v) => set("laminacaoRotulo", v)}
+          />
+          {valores.laminacaoRotulo === "OUTRO" && (
+            <Input
+              label="Qual laminação"
+              value={valores.laminacaoRotuloOutro}
+              onChange={(e) => set("laminacaoRotuloOutro", e.target.value)}
+            />
+          )}
+        </div>
+        <div className="flex flex-col gap-2">
+          <SelectOpcional
+            label="Laminação contra-rótulo"
+            valor={valores.laminacaoContraRotulo}
+            opcoes={OPCOES_LAMINACAO}
+            onChange={(v) => set("laminacaoContraRotulo", v)}
+          />
+          {valores.laminacaoContraRotulo === "OUTRO" && (
+            <Input
+              label="Qual laminação"
+              value={valores.laminacaoContraRotuloOutro}
+              onChange={(e) => set("laminacaoContraRotuloOutro", e.target.value)}
+            />
+          )}
+        </div>
       </div>
 
       {!hotStampingExpandido ? (

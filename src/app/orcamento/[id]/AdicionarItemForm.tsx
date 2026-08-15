@@ -58,7 +58,13 @@ export function AdicionarItemForm({
         <input type="hidden" name="materialSubstrato" value={campos.etiqueta.materialSubstrato} />
         <input type="hidden" name="materialSubstratoOutro" value={campos.etiqueta.materialSubstratoOutro} />
         <input type="hidden" name="tipoAdesivo" value={campos.etiqueta.tipoAdesivo} />
+        <input type="hidden" name="tipoAdesivoOutro" value={campos.etiqueta.tipoAdesivoOutro} />
         <input type="hidden" name="superficieAplicacao" value={campos.etiqueta.superficieAplicacao} />
+        <input
+          type="hidden"
+          name="superficieAplicacaoOutro"
+          value={campos.etiqueta.superficieAplicacaoOutro}
+        />
         <input type="hidden" name="formatoEtiqueta" value={campos.etiqueta.formatoEtiqueta} />
         <input type="hidden" name="coresRotulo" value={campos.etiqueta.coresRotulo} />
         <input type="hidden" name="coresContraRotulo" value={campos.etiqueta.coresContraRotulo} />
@@ -66,9 +72,11 @@ export function AdicionarItemForm({
         <input type="hidden" name="tubeteMedida" value={campos.etiqueta.tubeteMedida} />
         <input type="hidden" name="rotulagem" value={campos.etiqueta.rotulagem} />
         <input type="hidden" name="serrilha" value={campos.etiqueta.serrilha} />
+        <input type="hidden" name="serrilhaOutro" value={campos.etiqueta.serrilhaOutro} />
         <input type="hidden" name="vernizRotuloTotal" value={String(campos.etiqueta.vernizRotuloTotal)} />
         <input type="hidden" name="vernizRotuloReserva" value={String(campos.etiqueta.vernizRotuloReserva)} />
         <input type="hidden" name="vernizRotuloTipo" value={campos.etiqueta.vernizRotuloTipo} />
+        <input type="hidden" name="vernizRotuloTipoOutro" value={campos.etiqueta.vernizRotuloTipoOutro} />
         <input
           type="hidden"
           name="vernizContraRotuloTotal"
@@ -80,8 +88,19 @@ export function AdicionarItemForm({
           value={String(campos.etiqueta.vernizContraRotuloReserva)}
         />
         <input type="hidden" name="vernizContraRotuloTipo" value={campos.etiqueta.vernizContraRotuloTipo} />
+        <input
+          type="hidden"
+          name="vernizContraRotuloTipoOutro"
+          value={campos.etiqueta.vernizContraRotuloTipoOutro}
+        />
         <input type="hidden" name="laminacaoRotulo" value={campos.etiqueta.laminacaoRotulo} />
+        <input type="hidden" name="laminacaoRotuloOutro" value={campos.etiqueta.laminacaoRotuloOutro} />
         <input type="hidden" name="laminacaoContraRotulo" value={campos.etiqueta.laminacaoContraRotulo} />
+        <input
+          type="hidden"
+          name="laminacaoContraRotuloOutro"
+          value={campos.etiqueta.laminacaoContraRotuloOutro}
+        />
         <input type="hidden" name="rebobinamento" value={campos.etiqueta.rebobinamento} />
         <input
           type="hidden"
@@ -90,6 +109,7 @@ export function AdicionarItemForm({
             campos.etiqueta.hotStampings.map((h) => ({
               lado: h.lado,
               tipo: h.tipo,
+              tipoOutro: h.tipoOutro || null,
               medida: h.medida || null,
               cor: h.cor || null,
             }))

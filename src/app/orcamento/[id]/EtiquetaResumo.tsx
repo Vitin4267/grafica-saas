@@ -6,7 +6,9 @@ export type EtiquetaResumoDados = {
   materialSubstrato: string | null;
   materialSubstratoOutro: string | null;
   tipoAdesivo: string | null;
+  tipoAdesivoOutro: string | null;
   superficieAplicacao: string | null;
+  superficieAplicacaoOutro: string | null;
   formatoEtiqueta: string | null;
   coresRotulo: number | null;
   coresContraRotulo: number | null;
@@ -14,16 +16,27 @@ export type EtiquetaResumoDados = {
   tubeteMedida: string | null;
   rotulagem: string | null;
   serrilha: string | null;
+  serrilhaOutro: string | null;
   vernizRotuloTotal: boolean;
   vernizRotuloReserva: boolean;
   vernizRotuloTipo: string | null;
+  vernizRotuloTipoOutro: string | null;
   vernizContraRotuloTotal: boolean;
   vernizContraRotuloReserva: boolean;
   vernizContraRotuloTipo: string | null;
+  vernizContraRotuloTipoOutro: string | null;
   laminacaoRotulo: string | null;
+  laminacaoRotuloOutro: string | null;
   laminacaoContraRotulo: string | null;
+  laminacaoContraRotuloOutro: string | null;
   rebobinamento: number | null;
-  hotStampings: { lado: string; tipo: string; medida: string | null; cor: string | null }[];
+  hotStampings: {
+    lado: string;
+    tipo: string;
+    tipoOutro: string | null;
+    medida: string | null;
+    cor: string | null;
+  }[];
 };
 
 const ROTULO_MATERIAL_SUBSTRATO: Record<string, string> = {
@@ -69,6 +82,13 @@ const ROTULO_VERNIZ: Record<string, string> = { BRILHO: "Brilho", FOSCO: "Fosco"
 export const ROTULO_LADO: Record<string, string> = { ROTULO: "Rótulo", CONTRA_ROTULO: "Contra-rótulo" };
 export const ROTULO_TIPO_HOT: Record<string, string> = { HOT: "Hot", COLD: "Cold" };
 
+// Exportado pra ser reaproveitado por src/lib/pdf/mapear-dados.ts — mesmo
+// raciocínio de linhasEtiqueta(): tipo=OUTRO mostra o texto livre pareado em
+// vez do rótulo genérico "Outro".
+export function rotuloTipoHotStamping(h: { tipo: string; tipoOutro: string | null }): string {
+  return h.tipo === "OUTRO" && h.tipoOutro ? h.tipoOutro : (ROTULO_TIPO_HOT[h.tipo] ?? h.tipo);
+}
+
 // Exportado pra ser reaproveitado por src/lib/pdf/mapear-dados.ts — o PDF
 // (@react-pdf/renderer) não pode renderizar este componente JSX diretamente
 // (não é DOM normal), mas pode reusar essa função pura de rótulo/valor.
@@ -82,22 +102,51 @@ export function linhasEtiqueta(e: EtiquetaResumoDados): [string, string][] {
             : (ROTULO_MATERIAL_SUBSTRATO[e.materialSubstrato] ?? e.materialSubstrato),
         ]
       : null,
-    e.tipoAdesivo ? ["Adesivo", ROTULO_TIPO_ADESIVO[e.tipoAdesivo] ?? e.tipoAdesivo] : null,
-    e.superficieAplicacao ? ["Aplicação", ROTULO_SUPERFICIE[e.superficieAplicacao] ?? e.superficieAplicacao] : null,
+    e.tipoAdesivo
+      ? [
+          "Adesivo",
+          e.tipoAdesivo === "OUTRO" && e.tipoAdesivoOutro
+            ? e.tipoAdesivoOutro
+            : (ROTULO_TIPO_ADESIVO[e.tipoAdesivo] ?? e.tipoAdesivo),
+        ]
+      : null,
+    e.superficieAplicacao
+      ? [
+          "Aplicação",
+          e.superficieAplicacao === "OUTROS" && e.superficieAplicacaoOutro
+            ? e.superficieAplicacaoOutro
+            : (ROTULO_SUPERFICIE[e.superficieAplicacao] ?? e.superficieAplicacao),
+        ]
+      : null,
     e.formatoEtiqueta ? ["Formato", e.formatoEtiqueta] : null,
     e.coresRotulo !== null ? ["Cores rótulo", String(e.coresRotulo)] : null,
     e.coresContraRotulo !== null ? ["Cores contra-rótulo", String(e.coresContraRotulo)] : null,
     e.embalagemQtdPorRolo !== null ? ["Por rolo", String(e.embalagemQtdPorRolo)] : null,
     e.tubeteMedida ? ["Tubete", e.tubeteMedida] : null,
     e.rotulagem ? ["Rotulagem", ROTULO_ROTULAGEM[e.rotulagem] ?? e.rotulagem] : null,
-    e.serrilha ? ["Serrilha", ROTULO_SERRILHA[e.serrilha] ?? e.serrilha] : null,
+    e.serrilha
+      ? [
+          "Serrilha",
+          e.serrilha === "OUTRO" && e.serrilhaOutro
+            ? e.serrilhaOutro
+            : (ROTULO_SERRILHA[e.serrilha] ?? e.serrilha),
+        ]
+      : null,
     e.rebobinamento !== null ? ["Rebobinamento", String(e.rebobinamento)] : null,
     e.vernizRotuloTotal || e.vernizRotuloReserva
       ? [
           "Verniz rótulo",
           `${[e.vernizRotuloTotal ? "total" : null, e.vernizRotuloReserva ? "reserva" : null]
             .filter(Boolean)
-            .join(" + ")}${e.vernizRotuloTipo ? ` (${ROTULO_VERNIZ[e.vernizRotuloTipo] ?? e.vernizRotuloTipo})` : ""}`,
+            .join(" + ")}${
+            e.vernizRotuloTipo
+              ? ` (${
+                  e.vernizRotuloTipo === "OUTRO" && e.vernizRotuloTipoOutro
+                    ? e.vernizRotuloTipoOutro
+                    : (ROTULO_VERNIZ[e.vernizRotuloTipo] ?? e.vernizRotuloTipo)
+                })`
+              : ""
+          }`,
         ]
       : null,
     e.vernizContraRotuloTotal || e.vernizContraRotuloReserva
@@ -105,12 +154,32 @@ export function linhasEtiqueta(e: EtiquetaResumoDados): [string, string][] {
           "Verniz contra-rótulo",
           `${[e.vernizContraRotuloTotal ? "total" : null, e.vernizContraRotuloReserva ? "reserva" : null]
             .filter(Boolean)
-            .join(" + ")}${e.vernizContraRotuloTipo ? ` (${ROTULO_VERNIZ[e.vernizContraRotuloTipo] ?? e.vernizContraRotuloTipo})` : ""}`,
+            .join(" + ")}${
+            e.vernizContraRotuloTipo
+              ? ` (${
+                  e.vernizContraRotuloTipo === "OUTRO" && e.vernizContraRotuloTipoOutro
+                    ? e.vernizContraRotuloTipoOutro
+                    : (ROTULO_VERNIZ[e.vernizContraRotuloTipo] ?? e.vernizContraRotuloTipo)
+                })`
+              : ""
+          }`,
         ]
       : null,
-    e.laminacaoRotulo ? ["Laminação rótulo", ROTULO_LAMINACAO[e.laminacaoRotulo] ?? e.laminacaoRotulo] : null,
+    e.laminacaoRotulo
+      ? [
+          "Laminação rótulo",
+          e.laminacaoRotulo === "OUTRO" && e.laminacaoRotuloOutro
+            ? e.laminacaoRotuloOutro
+            : (ROTULO_LAMINACAO[e.laminacaoRotulo] ?? e.laminacaoRotulo),
+        ]
+      : null,
     e.laminacaoContraRotulo
-      ? ["Laminação contra-rótulo", ROTULO_LAMINACAO[e.laminacaoContraRotulo] ?? e.laminacaoContraRotulo]
+      ? [
+          "Laminação contra-rótulo",
+          e.laminacaoContraRotulo === "OUTRO" && e.laminacaoContraRotuloOutro
+            ? e.laminacaoContraRotuloOutro
+            : (ROTULO_LAMINACAO[e.laminacaoContraRotulo] ?? e.laminacaoContraRotulo),
+        ]
       : null,
   ];
   return linhas.filter((l): l is [string, string] => l !== null);
@@ -134,7 +203,7 @@ export function EtiquetaResumo({ etiqueta }: { etiqueta: EtiquetaResumoDados }) 
         <div className="flex flex-col gap-0.5">
           {etiqueta.hotStampings.map((h, i) => (
             <span key={i}>
-              Hot/cold stamping ({ROTULO_LADO[h.lado] ?? h.lado}): {ROTULO_TIPO_HOT[h.tipo] ?? h.tipo}
+              Hot/cold stamping ({ROTULO_LADO[h.lado] ?? h.lado}): {rotuloTipoHotStamping(h)}
               {h.medida ? ` · ${h.medida}` : ""}
               {h.cor ? ` · ${h.cor}` : ""}
             </span>

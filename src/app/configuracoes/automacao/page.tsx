@@ -71,7 +71,12 @@ export default async function ConfiguracoesAutomacaoPage() {
           </p>
         </div>
 
-        <AutomacaoForm webhookUrlMascarada={webhookUrlMascarada} />
+        <AutomacaoForm
+          webhookUrlMascarada={webhookUrlMascarada}
+          notificarStatusMudou={automacao.notificarStatusMudou}
+          notificarEstoqueCritico={automacao.notificarEstoqueCritico}
+          notificarPedidoAtrasado={automacao.notificarPedidoAtrasado}
+        />
       </main>
     </div>
   );

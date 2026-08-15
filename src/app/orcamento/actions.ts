@@ -57,27 +57,35 @@ const tipoAdesivoSchema = z.enum([
   "BORRACHA_25G",
   "BORRACHA_30G",
   "BORRACHA_50G",
+  "OUTRO",
 ]);
 const superficieAplicacaoSchema = z.enum(["VIDRO", "PLASTICO", "METAL", "PAPEL", "PAPELAO", "OUTROS"]);
 const tipoRotulagemSchema = z.enum(["MANUAL", "AUTOMATICA"]);
-const tipoSerrilhaSchema = z.enum(["SERRILHA", "MICRO_SERRILHA", "GAP"]);
-const tipoLaminacaoSchema = z.enum(["BRILHO", "FOSCO"]);
-const tipoAcabamentoVernizSchema = z.enum(["BRILHO", "FOSCO", "RIBBON"]);
-const tipoHotStampingSchema = z.enum(["HOT", "COLD"]);
+const tipoSerrilhaSchema = z.enum(["SERRILHA", "MICRO_SERRILHA", "GAP", "OUTRO"]);
+const tipoLaminacaoSchema = z.enum(["BRILHO", "FOSCO", "OUTRO"]);
+const tipoAcabamentoVernizSchema = z.enum(["BRILHO", "FOSCO", "RIBBON", "OUTRO"]);
+const tipoHotStampingSchema = z.enum(["HOT", "COLD", "OUTRO"]);
 
-const hotStampingEntradaSchema = z.object({
-  lado: ladoEtiquetaSchema,
-  tipo: tipoHotStampingSchema,
-  medida: z.string().max(60).nullable(),
-  cor: z.string().max(60).nullable(),
-});
+const hotStampingEntradaSchema = z
+  .object({
+    lado: ladoEtiquetaSchema,
+    tipo: tipoHotStampingSchema,
+    tipoOutro: z.string().max(60).nullable(),
+    medida: z.string().max(60).nullable(),
+    cor: z.string().max(60).nullable(),
+  })
+  .refine((dados) => dados.tipo !== "OUTRO" || Boolean(dados.tipoOutro?.trim()), {
+    message: 'Descreva o tipo quando escolher "Outro" como tipo de hot/cold stamping.',
+  });
 
 const etiquetaEntradaSchema = z
   .object({
     materialSubstrato: materialSubstratoSchema.nullable(),
     materialSubstratoOutro: z.string().max(120).nullable(),
     tipoAdesivo: tipoAdesivoSchema.nullable(),
+    tipoAdesivoOutro: z.string().max(120).nullable(),
     superficieAplicacao: superficieAplicacaoSchema.nullable(),
+    superficieAplicacaoOutro: z.string().max(120).nullable(),
     formatoEtiqueta: z.string().max(120).nullable(),
     coresRotulo: z.number().int().min(0).nullable(),
     coresContraRotulo: z.number().int().min(0).nullable(),
@@ -85,14 +93,19 @@ const etiquetaEntradaSchema = z
     tubeteMedida: z.string().max(60).nullable(),
     rotulagem: tipoRotulagemSchema.nullable(),
     serrilha: tipoSerrilhaSchema.nullable(),
+    serrilhaOutro: z.string().max(120).nullable(),
     vernizRotuloTotal: z.boolean(),
     vernizRotuloReserva: z.boolean(),
     vernizRotuloTipo: tipoAcabamentoVernizSchema.nullable(),
+    vernizRotuloTipoOutro: z.string().max(120).nullable(),
     vernizContraRotuloTotal: z.boolean(),
     vernizContraRotuloReserva: z.boolean(),
     vernizContraRotuloTipo: tipoAcabamentoVernizSchema.nullable(),
+    vernizContraRotuloTipoOutro: z.string().max(120).nullable(),
     laminacaoRotulo: tipoLaminacaoSchema.nullable(),
+    laminacaoRotuloOutro: z.string().max(120).nullable(),
     laminacaoContraRotulo: tipoLaminacaoSchema.nullable(),
+    laminacaoContraRotuloOutro: z.string().max(120).nullable(),
     rebobinamento: z.number().int().min(1).max(8).nullable(),
     // Teto generoso (ninguém cadastra 20 variações de hot stamping num item de
     // verdade) só pra impedir um POST forjado com milhares de linhas.
@@ -101,6 +114,32 @@ const etiquetaEntradaSchema = z
   .refine(
     (dados) => dados.materialSubstrato !== "OUTRO" || Boolean(dados.materialSubstratoOutro?.trim()),
     { message: 'Descreva o material quando escolher "Outro" como substrato.' }
+  )
+  .refine((dados) => dados.tipoAdesivo !== "OUTRO" || Boolean(dados.tipoAdesivoOutro?.trim()), {
+    message: 'Descreva o adesivo quando escolher "Outro" como tipo de adesivo.',
+  })
+  .refine(
+    (dados) => dados.superficieAplicacao !== "OUTROS" || Boolean(dados.superficieAplicacaoOutro?.trim()),
+    { message: 'Descreva a superfície quando escolher "Outros" como superfície de aplicação.' }
+  )
+  .refine((dados) => dados.serrilha !== "OUTRO" || Boolean(dados.serrilhaOutro?.trim()), {
+    message: 'Descreva a serrilha quando escolher "Outro" como serrilha.',
+  })
+  .refine(
+    (dados) => dados.vernizRotuloTipo !== "OUTRO" || Boolean(dados.vernizRotuloTipoOutro?.trim()),
+    { message: 'Descreva o acabamento de verniz do rótulo quando escolher "Outro".' }
+  )
+  .refine(
+    (dados) =>
+      dados.vernizContraRotuloTipo !== "OUTRO" || Boolean(dados.vernizContraRotuloTipoOutro?.trim()),
+    { message: 'Descreva o acabamento de verniz do contra-rótulo quando escolher "Outro".' }
+  )
+  .refine((dados) => dados.laminacaoRotulo !== "OUTRO" || Boolean(dados.laminacaoRotuloOutro?.trim()), {
+    message: 'Descreva a laminação do rótulo quando escolher "Outro".',
+  })
+  .refine(
+    (dados) => dados.laminacaoContraRotulo !== "OUTRO" || Boolean(dados.laminacaoContraRotuloOutro?.trim()),
+    { message: 'Descreva a laminação do contra-rótulo quando escolher "Outro".' }
   );
 
 // Item já digitado/computado no carrinho local (client) — o servidor NUNCA confia
@@ -405,7 +444,9 @@ export async function criarOrcamento(
                     materialSubstrato: item.etiqueta?.materialSubstrato ?? null,
                     materialSubstratoOutro: item.etiqueta?.materialSubstratoOutro ?? null,
                     tipoAdesivo: item.etiqueta?.tipoAdesivo ?? null,
+                    tipoAdesivoOutro: item.etiqueta?.tipoAdesivoOutro ?? null,
                     superficieAplicacao: item.etiqueta?.superficieAplicacao ?? null,
+                    superficieAplicacaoOutro: item.etiqueta?.superficieAplicacaoOutro ?? null,
                     formatoEtiqueta: item.etiqueta?.formatoEtiqueta ?? null,
                     coresRotulo: item.etiqueta?.coresRotulo ?? null,
                     coresContraRotulo: item.etiqueta?.coresContraRotulo ?? null,
@@ -413,19 +454,25 @@ export async function criarOrcamento(
                     tubeteMedida: item.etiqueta?.tubeteMedida ?? null,
                     rotulagem: item.etiqueta?.rotulagem ?? null,
                     serrilha: item.etiqueta?.serrilha ?? null,
+                    serrilhaOutro: item.etiqueta?.serrilhaOutro ?? null,
                     vernizRotuloTotal: item.etiqueta?.vernizRotuloTotal ?? false,
                     vernizRotuloReserva: item.etiqueta?.vernizRotuloReserva ?? false,
                     vernizRotuloTipo: item.etiqueta?.vernizRotuloTipo ?? null,
+                    vernizRotuloTipoOutro: item.etiqueta?.vernizRotuloTipoOutro ?? null,
                     vernizContraRotuloTotal: item.etiqueta?.vernizContraRotuloTotal ?? false,
                     vernizContraRotuloReserva: item.etiqueta?.vernizContraRotuloReserva ?? false,
                     vernizContraRotuloTipo: item.etiqueta?.vernizContraRotuloTipo ?? null,
+                    vernizContraRotuloTipoOutro: item.etiqueta?.vernizContraRotuloTipoOutro ?? null,
                     laminacaoRotulo: item.etiqueta?.laminacaoRotulo ?? null,
+                    laminacaoRotuloOutro: item.etiqueta?.laminacaoRotuloOutro ?? null,
                     laminacaoContraRotulo: item.etiqueta?.laminacaoContraRotulo ?? null,
+                    laminacaoContraRotuloOutro: item.etiqueta?.laminacaoContraRotuloOutro ?? null,
                     rebobinamento: item.etiqueta?.rebobinamento ?? null,
                     hotStampings: {
                       create: (item.etiqueta?.hotStampings ?? []).map((h) => ({
                         lado: h.lado,
                         tipo: h.tipo,
+                        tipoOutro: h.tipoOutro,
                         medida: h.medida,
                         cor: h.cor,
                       })),

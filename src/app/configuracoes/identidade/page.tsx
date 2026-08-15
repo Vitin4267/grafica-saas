@@ -42,12 +42,15 @@ export default async function ConfiguracoesIdentidadePage() {
             Identidade visual
           </h1>
           <p className="mt-1 text-slate-500">
-            Sua logo aparece no PDF de orçamento enviado pros seus clientes,
-            no lugar do nome da gráfica em texto simples.
+            Sua logo e a cor da marca aparecem no PDF de orçamento e nos
+            e-mails enviados pros seus clientes.
           </p>
         </div>
 
-        <IdentidadeForm logoUrlAtual={usuario.grafica.logoUrl} />
+        <IdentidadeForm
+          logoUrlAtual={usuario.grafica.logoUrl}
+          corPrimariaAtual={usuario.grafica.corPrimaria}
+        />
       </main>
     </div>
   );
