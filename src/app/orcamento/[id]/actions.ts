@@ -329,6 +329,21 @@ export async function editarOrcamento(
     return { ok: false, mensagem: resultado.mensagem };
   }
 
+  // Achado de auditoria pré-lançamento (2026-08-15): esta action sempre
+  // sobrescrevia precoUnitario/precoTotal com o preço CHEIO recalculado,
+  // mesmo em itens com desconto negociado ativo — silenciosamente cobrando
+  // o preço cheio enquanto descontoTipo/descontoValor continuavam gravados
+  // como se o desconto ainda estivesse valendo (UI mostrava "15% de
+  // desconto" com o item já cobrando 100%). Pior ainda: precoSugeridoUnitario
+  // (a baseline usada por "voltar ao preço sugerido" em
+  // aplicarDescontoItemOrcamento) nunca era atualizado, então remover um
+  // desconto depois de editar quantidade/medida podia cobrar um valor bem
+  // abaixo do correto. Em vez de tentar reaplicar o desconto sozinho contra
+  // a nova base (arriscaria pular a checagem de aprovação/piso de custo),
+  // a escolha segura é limpar o desconto junto com o recálculo — o vendedor
+  // decide explicitamente se quer negociar de novo contra o preço atual.
+  const tinhaDescontoAtivo = item.descontoTipo !== null;
+
   // Produto não muda em editarOrcamento (só quantidade/medida/cores), então
   // modeloCalculo vem do item já existente, não de `resultado`.
   let etiqueta: EtiquetaParaGravar | null = null;
@@ -358,6 +373,15 @@ export async function editarOrcamento(
             acabamento: acabamento || null,
             precoUnitario: resultado.precoUnitario,
             precoTotal: resultado.precoTotal,
+            // Baseline sempre fresca — precoSugeridoUnitario nunca fica presa
+            // ao valor de quando o item foi criado (ver comentário acima).
+            precoSugeridoUnitario: resultado.precoUnitario,
+            // Desconto negociado não sobrevive a uma edição de preço — ver
+            // comentário acima. Idempotente quando já era null.
+            descontoTipo: null,
+            descontoValor: null,
+            motivoDesconto: null,
+            aprovadoPorId: null,
             corFrente: resultado.corFrente,
             corVerso: resultado.corVerso,
             breakdown: resultado.breakdown ?? undefined,
@@ -461,7 +485,12 @@ export async function editarOrcamento(
   revalidatePath(`/orcamento/${orcamentoId}`);
   revalidatePath("/orcamento");
 
-  return { ok: true, mensagem: "Item atualizado com sucesso!" };
+  return {
+    ok: true,
+    mensagem: tinhaDescontoAtivo
+      ? "Item atualizado com sucesso! O desconto negociado foi removido porque o preço mudou — aplique de novo se ainda for o caso."
+      : "Item atualizado com sucesso!",
+  };
 }
 
 export type AlterarClienteResult = { ok: boolean; mensagem: string };

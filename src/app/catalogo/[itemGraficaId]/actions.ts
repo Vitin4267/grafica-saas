@@ -25,6 +25,22 @@ function formatarQuantidade(valor: unknown): string {
   return valor === null || valor === undefined ? "—" : formatoQuantidade.format(Number(valor));
 }
 
+const MENSAGEM_ESTOQUE_DIVERGENTE =
+  "O estoque deste item mudou desde que a página foi aberta (provavelmente uma baixa de produção) — recarregue a página e lance de novo.";
+
+// Sinaliza, de dentro da transação, que o estoque mudou entre a leitura
+// (resolverItemMateriaPrima, antes da transação) e a escrita — usado só pra
+// abortar a transação inteira com mensagem amigável. Achado de auditoria
+// pré-lançamento (2026-08-15): os 3 lançamentos manuais abaixo (entrada de
+// compra, saída manual, ajuste de inventário) gravavam estoqueAtual com um
+// `update` simples, sem comparar com o valor lido — igual ao bug que
+// salvarCatalogo/salvarVariantesMateriaPrima (catalogo/actions.ts) já
+// corrigiram com compare-and-swap. Sem isso, uma baixa de produção
+// concorrente (pedido avançando de status enquanto este form ficava aberto)
+// era silenciosamente apagada do saldo corrente pelo valor "absoluto" que
+// este form calculava em cima do estoque desatualizado que tinha lido.
+class ErroEstoqueDivergente extends Error {}
+
 export type SalvarConfigResult = { ok: boolean; mensagem: string };
 
 const modeloCalculoSchema = z.enum(["SIMPLES", "M2", "OFFSET"]);
@@ -938,33 +954,44 @@ export async function lancarEntradaCompra(
   const novoEstoque = new D(estoqueAnterior ?? 0).plus(quantidadeDec).toFixed(4);
   const agora = new Date();
 
-  await prisma.$transaction(async (tx) => {
-    if (variante) {
-      await tx.varianteMateriaPrima.update({
-        where: { id: variante.id },
-        data: { estoqueAtual: novoEstoque, precoCompra: custoUnitarioDec.toFixed(4) },
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Compare-and-swap: só grava se estoqueAtual ainda for o valor lido
+      // acima (ver ErroEstoqueDivergente) — mesmo princípio de
+      // salvarCatalogo/salvarVariantesMateriaPrima.
+      const cas = variante
+        ? await tx.varianteMateriaPrima.updateMany({
+            where: { id: variante.id, estoqueAtual: estoqueAnterior },
+            data: { estoqueAtual: novoEstoque, precoCompra: custoUnitarioDec.toFixed(4) },
+          })
+        : await tx.itemGrafica.updateMany({
+            where: { id: itemGrafica.id, estoqueAtual: estoqueAnterior },
+            data: { estoqueAtual: novoEstoque, precoCompra: custoUnitarioDec.toFixed(4) },
+          });
+      if (cas.count === 0) {
+        throw new ErroEstoqueDivergente();
+      }
+      await tx.movimentacaoEstoque.create({
+        data: {
+          itemGraficaId: itemGrafica.id,
+          varianteId: variante?.id ?? null,
+          tipo: "ENTRADA_COMPRA",
+          quantidade: quantidadeDec.toFixed(4),
+          custoUnitario: custoUnitarioDec.toFixed(4),
+          custoTotal: custoTotalDec.toFixed(2),
+          precoReferenciaEm: agora,
+          documento: documento ?? null,
+          fornecedorId: fornecedorValidoId,
+          criadoPorId: usuario.id,
+        },
       });
-    } else {
-      await tx.itemGrafica.update({
-        where: { id: itemGrafica.id },
-        data: { estoqueAtual: novoEstoque, precoCompra: custoUnitarioDec.toFixed(4) },
-      });
-    }
-    await tx.movimentacaoEstoque.create({
-      data: {
-        itemGraficaId: itemGrafica.id,
-        varianteId: variante?.id ?? null,
-        tipo: "ENTRADA_COMPRA",
-        quantidade: quantidadeDec.toFixed(4),
-        custoUnitario: custoUnitarioDec.toFixed(4),
-        custoTotal: custoTotalDec.toFixed(2),
-        precoReferenciaEm: agora,
-        documento: documento ?? null,
-        fornecedorId: fornecedorValidoId,
-        criadoPorId: usuario.id,
-      },
     });
-  });
+  } catch (erro) {
+    if (erro instanceof ErroEstoqueDivergente) {
+      return { ok: false, mensagem: MENSAGEM_ESTOQUE_DIVERGENTE };
+    }
+    throw erro;
+  }
 
   await registrarAuditoria({
     graficaId: usuario.graficaId,
@@ -1025,29 +1052,44 @@ export async function lancarSaidaManual(
   const estoqueAnterior = variante ? variante.estoqueAtual : itemGrafica.estoqueAtual;
   const quantidadeDec = new D(quantidade);
 
-  await prisma.$transaction(async (tx) => {
-    // Sem controle de estoque (estoqueAtual null) — grava o histórico da
-    // saída mesmo assim, só não mexe num número que não existe (mesmo
-    // princípio de "sem controle de estoque" já usado na baixa automática).
-    if (estoqueAnterior !== null) {
-      const novoEstoque = new D(estoqueAnterior).minus(quantidadeDec).toFixed(4);
-      if (variante) {
-        await tx.varianteMateriaPrima.update({ where: { id: variante.id }, data: { estoqueAtual: novoEstoque } });
-      } else {
-        await tx.itemGrafica.update({ where: { id: itemGrafica.id }, data: { estoqueAtual: novoEstoque } });
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Sem controle de estoque (estoqueAtual null) — grava o histórico da
+      // saída mesmo assim, só não mexe num número que não existe (mesmo
+      // princípio de "sem controle de estoque" já usado na baixa automática).
+      if (estoqueAnterior !== null) {
+        const novoEstoque = new D(estoqueAnterior).minus(quantidadeDec).toFixed(4);
+        // Compare-and-swap — ver ErroEstoqueDivergente.
+        const cas = variante
+          ? await tx.varianteMateriaPrima.updateMany({
+              where: { id: variante.id, estoqueAtual: estoqueAnterior },
+              data: { estoqueAtual: novoEstoque },
+            })
+          : await tx.itemGrafica.updateMany({
+              where: { id: itemGrafica.id, estoqueAtual: estoqueAnterior },
+              data: { estoqueAtual: novoEstoque },
+            });
+        if (cas.count === 0) {
+          throw new ErroEstoqueDivergente();
+        }
       }
-    }
-    await tx.movimentacaoEstoque.create({
-      data: {
-        itemGraficaId: itemGrafica.id,
-        varianteId: variante?.id ?? null,
-        tipo: "SAIDA_MANUAL",
-        quantidade: quantidadeDec.toFixed(4),
-        motivo,
-        criadoPorId: usuario.id,
-      },
+      await tx.movimentacaoEstoque.create({
+        data: {
+          itemGraficaId: itemGrafica.id,
+          varianteId: variante?.id ?? null,
+          tipo: "SAIDA_MANUAL",
+          quantidade: quantidadeDec.toFixed(4),
+          motivo,
+          criadoPorId: usuario.id,
+        },
+      });
     });
-  });
+  } catch (erro) {
+    if (erro instanceof ErroEstoqueDivergente) {
+      return { ok: false, mensagem: MENSAGEM_ESTOQUE_DIVERGENTE };
+    }
+    throw erro;
+  }
 
   revalidatePath(`/catalogo/${itemGraficaId}`);
   revalidatePath("/catalogo");
@@ -1109,23 +1151,43 @@ export async function lancarAjusteInventario(
     return { ok: false, mensagem: "O novo estoque informado é igual ao atual — nada para ajustar." };
   }
 
-  await prisma.$transaction(async (tx) => {
-    if (variante) {
-      await tx.varianteMateriaPrima.update({ where: { id: variante.id }, data: { estoqueAtual: novoEstoque } });
-    } else {
-      await tx.itemGrafica.update({ where: { id: itemGrafica.id }, data: { estoqueAtual: novoEstoque } });
-    }
-    await tx.movimentacaoEstoque.create({
-      data: {
-        itemGraficaId: itemGrafica.id,
-        varianteId: variante?.id ?? null,
-        tipo: "AJUSTE_INVENTARIO",
-        quantidade: delta,
-        motivo: observacao ?? "Ajuste de contagem física",
-        criadoPorId: usuario.id,
-      },
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Compare-and-swap — ver ErroEstoqueDivergente. Especialmente
+      // importante aqui: o "novo estoque" digitado é um valor ABSOLUTO
+      // baseado na contagem física que o operador viu quando abriu o form —
+      // sem essa checagem, uma baixa de produção concorrente seria
+      // sobrescrita pelo valor contado, que já não reflete mais o consumo
+      // que aconteceu no meio-tempo.
+      const cas = variante
+        ? await tx.varianteMateriaPrima.updateMany({
+            where: { id: variante.id, estoqueAtual: estoqueAnterior },
+            data: { estoqueAtual: novoEstoque },
+          })
+        : await tx.itemGrafica.updateMany({
+            where: { id: itemGrafica.id, estoqueAtual: estoqueAnterior },
+            data: { estoqueAtual: novoEstoque },
+          });
+      if (cas.count === 0) {
+        throw new ErroEstoqueDivergente();
+      }
+      await tx.movimentacaoEstoque.create({
+        data: {
+          itemGraficaId: itemGrafica.id,
+          varianteId: variante?.id ?? null,
+          tipo: "AJUSTE_INVENTARIO",
+          quantidade: delta,
+          motivo: observacao ?? "Ajuste de contagem física",
+          criadoPorId: usuario.id,
+        },
+      });
     });
-  });
+  } catch (erro) {
+    if (erro instanceof ErroEstoqueDivergente) {
+      return { ok: false, mensagem: MENSAGEM_ESTOQUE_DIVERGENTE };
+    }
+    throw erro;
+  }
 
   revalidatePath(`/catalogo/${itemGraficaId}`);
   revalidatePath("/catalogo");

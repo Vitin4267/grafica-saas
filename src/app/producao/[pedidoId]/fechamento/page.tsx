@@ -236,8 +236,17 @@ export default async function FechamentoPedidoPage({
     margemPrevistaValor !== null && valorNegociadoTotal !== null && valorNegociadoTotal > 0
       ? (margemPrevistaValor / valorNegociadoTotal) * 100
       : null;
-  const margemRealValor = lucro?.lucro ?? null;
-  const margemRealPercentual = lucro && lucro.receita > 0 ? (lucro.lucro / lucro.receita) * 100 : null;
+  // Achado de auditoria pré-lançamento (2026-08-15): lucroDoPedido() soma
+  // pedido.custos (que pode vir vazio) e SEMPRE retorna um número — sem esta
+  // guarda, um pedido sem nenhum custo lançado ainda mostrava aqui "100% de
+  // margem" (lucro = receita cheia), contradizendo a seção "Qualidade do
+  // dado" mais abaixo na mesma tela e o card lucroCard logo acima, que já
+  // tratam "nenhum custo lançado" como null (sem dado), não como "custo
+  // zero de verdade". Mesma guarda de custosReaisAtivos.length usada em
+  // lucroCard.
+  const margemRealValor = custosReaisAtivos.length > 0 ? (lucro?.lucro ?? null) : null;
+  const margemRealPercentual =
+    custosReaisAtivos.length > 0 && lucro && lucro.receita > 0 ? (lucro.lucro / lucro.receita) * 100 : null;
 
   // QUALIDADE DO DADO
   const totalCustoRealTudo = custosReaisAtivos.reduce((acc, c) => acc + Number(c.valor), 0);

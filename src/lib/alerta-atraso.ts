@@ -36,6 +36,23 @@ export async function verificarEDispararAlertasAtraso(
 
   for (const pedido of pedidosAtrasados) {
     const prazoEntrega = pedido.prazoEntrega!;
+
+    // Compare-and-swap ANTES de disparar o webhook — achado de auditoria
+    // pré-lançamento (2026-08-15): como esta função roda sob demanda a cada
+    // carregamento de /producao (não é cron com lock), duas requisições
+    // concorrentes (duas abas, dois funcionários abrindo a tela quase
+    // juntos) podiam ambas ver alertaAtrasoEnviadoEm: null na query acima e
+    // disparar o evento pedido_atrasado 2x antes que qualquer uma marcasse
+    // o campo — virando notificação duplicada pro cliente final, se a
+    // automação da gráfica notifica por WhatsApp/e-mail. Marcando primeiro
+    // (e só disparando se a marcação teve sucesso), a segunda tentativa
+    // concorrente sempre casa zero linhas no updateMany e não dispara nada.
+    const cas = await prisma.pedido.updateMany({
+      where: { id: pedido.id, alertaAtrasoEnviadoEm: null },
+      data: { alertaAtrasoEnviadoEm: new Date() },
+    });
+    if (cas.count === 0) continue;
+
     // after() em vez de void: garante que a instância serverless continua
     // viva até o webhook terminar, mesmo depois da resposta (render da
     // página /producao) já ter sido enviada ao cliente.
@@ -51,10 +68,5 @@ export async function verificarEDispararAlertasAtraso(
         orcamentoId: pedido.orcamentoId,
       })
     );
-
-    await prisma.pedido.update({
-      where: { id: pedido.id },
-      data: { alertaAtrasoEnviadoEm: new Date() },
-    });
   }
 }
