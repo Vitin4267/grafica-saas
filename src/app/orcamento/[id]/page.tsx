@@ -7,6 +7,7 @@ import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import {
   podeVerMeuNegocio,
   exigirVerModulo,
+  podeEditarModulo,
   obterModulosVisiveis,
 } from "@/lib/auth/permissoes";
 import { resolverOrigemPublica } from "@/lib/url-publica";
@@ -17,7 +18,14 @@ import { formatoInstanteRealComHora } from "@/lib/data";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/Badge";
+import { MedidorMargem } from "@/components/ui/MedidorMargem";
 import { ArrowLeftIcon } from "@/components/icons";
+import {
+  calcularMargemItemOrcamento,
+  calcularMargemAgregadaOrcamento,
+  LIMIAR_MARGEM_RUIM,
+  LIMIAR_MARGEM_ATENCAO,
+} from "@/lib/orcamento-margem";
 import { OrcamentoAcoes } from "./OrcamentoAcoes";
 import { EditarOrcamentoForm } from "./EditarOrcamentoForm";
 import { DescontoItemForm } from "./DescontoItemForm";
@@ -25,6 +33,7 @@ import { AdicionarItemForm } from "./AdicionarItemForm";
 import { TrocarClienteForm } from "./TrocarClienteForm";
 import { CompartilharOrcamento } from "./CompartilharOrcamento";
 import { PagamentosCard } from "./PagamentosCard";
+import { ContasReceberCard } from "./ContasReceberCard";
 import { CustoProducaoCard } from "./CustoProducaoCard";
 import { NotaFiscalCard } from "./NotaFiscalCard";
 import { PrimeiroOrcamentoCelebracao } from "./PrimeiroOrcamentoCelebracao";
@@ -65,6 +74,7 @@ export default async function OrcamentoDetalhePage({
   await exigirAssinaturaAtiva(usuario);
   await exigirVerModulo(usuario, "ORCAMENTO");
   const origem = await resolverOrigemPublica();
+  const podeEditarFinanceiro = await podeEditarModulo(usuario, "FINANCEIRO");
 
   const [orcamento, clientes, itensVendaveis, parametrosGrafica] = await Promise.all([
     prisma.orcamento.findFirst({
@@ -81,6 +91,7 @@ export default async function OrcamentoDetalhePage({
           },
         },
         pagamentos: { orderBy: { createdAt: "desc" } },
+        contasReceber: { orderBy: { vencimento: "asc" } },
       },
     }),
     prisma.cliente.findMany({
@@ -153,6 +164,37 @@ export default async function OrcamentoDetalhePage({
       return [chave, { em, responsavel }];
     })
   ) as Record<ChaveEtapaOrcamento, { em: Date | null; responsavel: string | null }>;
+
+  // Alerta de margem negativa (só faz sentido ANTES de aprovar — o vendedor
+  // ainda pode ajustar preço/desconto do rascunho). Custo estimado por item
+  // reaproveita a mesma regra de atualizarStatusOrcamento/
+  // aplicarDescontoItemOrcamento (src/app/orcamento/[id]/actions.ts), lida
+  // em src/lib/orcamento-margem.ts — nenhum cálculo de preço/custo novo.
+  const margensPorItemId =
+    orcamento.status === "RASCUNHO"
+      ? new Map(
+          orcamento.itens.map((item) => [
+            item.id,
+            calcularMargemItemOrcamento({
+              precoTotal: item.precoTotal,
+              quantidade: item.quantidade,
+              breakdown: item.breakdown,
+              precoCompra: item.itemGrafica.precoCompra,
+            }),
+          ])
+        )
+      : null;
+  const margemAgregada =
+    orcamento.status === "RASCUNHO"
+      ? calcularMargemAgregadaOrcamento(
+          orcamento.itens.map((item) => ({
+            precoTotal: item.precoTotal,
+            quantidade: item.quantidade,
+            breakdown: item.breakdown,
+            precoCompra: item.itemGrafica.precoCompra,
+          }))
+        )
+      : null;
 
   function mapearTinta(item: NonNullable<typeof orcamento>["itens"][number]) {
     if (!item.tinta) return null;
@@ -294,6 +336,18 @@ export default async function OrcamentoDetalhePage({
                   motivoDesconto={item.motivoDesconto}
                   aprovadoPorId={item.aprovadoPorId}
                 />
+                {margensPorItemId?.get(item.id) && (
+                  <Card className="mb-4 -mt-2 p-5">
+                    <p className="mb-2 text-sm font-medium text-slate-500">
+                      Margem estimada deste item
+                    </p>
+                    <MedidorMargem
+                      margem={margensPorItemId.get(item.id)!.margemPercent}
+                      limiarRuim={LIMIAR_MARGEM_RUIM}
+                      limiarBom={LIMIAR_MARGEM_ATENCAO}
+                    />
+                  </Card>
+                )}
                 <AnaliseTintaCard
                   orcamentoItemId={item.id}
                   podeUsar={acessoTinta.liberado}
@@ -377,6 +431,29 @@ export default async function OrcamentoDetalhePage({
           </p>
         </Card>
 
+        {margemAgregada && (
+          <Card className="mb-6 p-5">
+            <p className="mb-3 text-sm font-medium text-slate-500">Margem estimada do orçamento</p>
+            {margemAgregada.ok ? (
+              <MedidorMargem
+                margem={margemAgregada.margemPercent}
+                limiarRuim={LIMIAR_MARGEM_RUIM}
+                limiarBom={LIMIAR_MARGEM_ATENCAO}
+              />
+            ) : (
+              <p className="text-sm text-slate-500">
+                {margemAgregada.itensSemCusto > 0
+                  ? `Não é possível estimar a margem total — ${margemAgregada.itensSemCusto} ${
+                      margemAgregada.itensSemCusto === 1
+                        ? "item não tem custo cadastrado (preço de compra)"
+                        : "itens não têm custo cadastrado (preço de compra)"
+                    } pra calcular.`
+                  : "Sem itens suficientes pra estimar a margem."}
+              </p>
+            )}
+          </Card>
+        )}
+
         <Card className="mb-6 p-5">
           <div className="mb-3 flex items-center justify-between">
             <p className="text-sm font-medium text-slate-500">
@@ -412,6 +489,21 @@ export default async function OrcamentoDetalhePage({
           }))}
           podeRegistrar={orcamento.status === "APROVADO"}
         />
+
+        {orcamento.status === "APROVADO" && (
+          <ContasReceberCard
+            orcamentoId={orcamento.id}
+            podeEditar={podeEditarFinanceiro}
+            contas={orcamento.contasReceber.map((c) => ({
+              id: c.id,
+              descricao: c.descricao,
+              valor: c.valor.toString(),
+              vencimento: c.vencimento.toISOString(),
+              status: c.status,
+              recebidoEm: c.recebidoEm ? c.recebidoEm.toISOString() : null,
+            }))}
+          />
+        )}
 
         {orcamento.pedido && (
           <Link href="/producao" className="mb-6 block">

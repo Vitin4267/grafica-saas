@@ -1600,6 +1600,7 @@ const UNIDADE_FISCAL: Record<string, string> = {
   ROLO: "RL",
   PACOTE: "PCT",
   CENTO: "CT",
+  MILHEIRO: "MIL",
   HORA: "HR",
 };
 

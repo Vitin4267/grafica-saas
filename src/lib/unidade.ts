@@ -8,5 +8,6 @@ export const ROTULO_UNIDADE: Record<string, string> = {
   ROLO: "rolo",
   PACOTE: "pacote",
   CENTO: "cento",
+  MILHEIRO: "milheiro",
   HORA: "hora",
 };
