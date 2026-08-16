@@ -356,6 +356,17 @@ model AssinaturaGrafica {
   // hoje. Ver src/lib/billing/limite-uso.ts.
   limiteExcedidoDesde DateTime?
 
+  // Início da janela de carência de INADIMPLENTE (2 meses, ver
+  // DIAS_CARENCIA_INADIMPLENCIA em src/lib/billing/status.ts) — decisão de
+  // produto de 2026-08-15: bloquear acesso na primeira falha de cobrança do
+  // Stripe é agressivo demais (cartão vencido por um dia, banco recusando
+  // por engano). Setado por sincronizarSubscription quando o status
+  // TRANSICIONA pra INADIMPLENTE (nunca resetado por resyncs subsequentes
+  // enquanto continuar INADIMPLENTE); voltado a null assim que sai desse
+  // status (ATIVA ou CANCELADA). null = nunca entrou em INADIMPLENTE, ou já
+  // saiu.
+  inadimplenteDesde DateTime?
+
   // Quando o e-mail de "seu trial está quase acabando" foi disparado (ver
   // src/app/api/cron/lifecycle/route.ts, cron diário) — idempotência pra
   // não mandar o aviso duas vezes. null = ainda não enviado. Fica null pra
@@ -458,6 +469,7 @@ model Usuario {
   tokensVerificacaoEmail TokenVerificacaoEmail[]
   comissoes              Comissao[]
   responsaveisEstagio    ResponsavelEstagio[]
+  responsaveisAdministrativo ResponsavelAdministrativo[]
 
   @@index([graficaId])
   @@map("usuarios")
@@ -1972,6 +1984,29 @@ model ResponsavelEstagio {
   @@unique([usuarioId, status])
   @@index([status])
   @@map("responsaveis_estagio")
+}
+
+// Área ADMINISTRATIVA (não é etapa de produção — por isso não reaproveita
+// ResponsavelEstagio/StatusPedido, que é o motor de estado do Pedido) que
+// pode ter um ou mais responsáveis atribuídos. Hoje só NOTA_FISCAL existe
+// (pedido do usuário em 2026-08-15/16: notificar quem emite a NF-e quando um
+// orçamento é aprovado e já está pronto pra emitir) — enum deixado aberto
+// pra outras áreas administrativas futuras (cobrança, etc.) sem precisar de
+// migration nova, só adicionar valor ao enum + linha na UI.
+enum AreaAdministrativa {
+  NOTA_FISCAL
+}
+
+model ResponsavelAdministrativo {
+  id        String             @id @default(cuid())
+  usuarioId String
+  area      AreaAdministrativa
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, area])
+  @@index([area])
+  @@map("responsaveis_administrativo")
 }
 
 // Rate limit da confirmação pública de etapa (src/app/p/[token]) — tabela

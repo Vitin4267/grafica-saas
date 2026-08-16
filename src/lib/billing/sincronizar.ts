@@ -37,7 +37,7 @@ async function sincronizarSubscription(subscriptionDoEvento: Stripe.Subscription
   // estar livre.
   const existente = await prisma.assinaturaGrafica.findUnique({
     where: { graficaId },
-    select: { cortesia: true },
+    select: { cortesia: true, status: true, inadimplenteDesde: true },
   });
   if (existente?.cortesia) return;
 
@@ -65,6 +65,19 @@ async function sincronizarSubscription(subscriptionDoEvento: Stripe.Subscription
       ? new Date(subscription.trial_end * 1000)
       : null;
 
+  // Marca o INÍCIO da carência só na transição pra INADIMPLENTE (existente
+  // não era INADIMPLENTE ainda) — um resync subsequente enquanto continua
+  // INADIMPLENTE (o Stripe manda customer.subscription.updated de novo em
+  // cada nova tentativa de cobrança automática) NÃO reseta o relógio, senão
+  // a carência de 2 meses nunca vencia de verdade. Sai de INADIMPLENTE
+  // (voltou ATIVA, ou não existe ainda) = null, sem carência acumulada.
+  const inadimplenteDesde =
+    status === "INADIMPLENTE"
+      ? existente?.status === "INADIMPLENTE"
+        ? existente.inadimplenteDesde
+        : new Date()
+      : null;
+
   await prisma.assinaturaGrafica.upsert({
     where: { graficaId },
     update: {
@@ -79,6 +92,7 @@ async function sincronizarSubscription(subscriptionDoEvento: Stripe.Subscription
       periodoAtualExpiraEm,
       trialExpiraEm,
       canceladaEm: status === "CANCELADA" ? new Date() : null,
+      inadimplenteDesde,
       // Sincronização real chegou: a reserva de checkout (ver iniciarCheckout
       // em configuracoes/assinatura/actions.ts) já cumpriu seu papel, não
       // precisa mais segurar novos checkouts por ela.
@@ -93,6 +107,7 @@ async function sincronizarSubscription(subscriptionDoEvento: Stripe.Subscription
       stripePriceId: priceId,
       periodoAtualExpiraEm,
       trialExpiraEm,
+      inadimplenteDesde,
     },
   });
 }
@@ -135,7 +150,7 @@ export async function processarEventoStripe(evento: Stripe.Event): Promise<void>
       // já aplicava re-buscando a subscription fresca.
       await prisma.assinaturaGrafica.updateMany({
         where: { graficaId, stripeSubscriptionId: subscription.id },
-        data: { status: "CANCELADA", canceladaEm: new Date() },
+        data: { status: "CANCELADA", canceladaEm: new Date(), inadimplenteDesde: null },
       });
       return;
     }

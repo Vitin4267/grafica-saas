@@ -41,8 +41,31 @@ describe("assinaturaEstaLiberada", () => {
     expect(assinaturaEstaLiberada({ status: "TRIALING", trialExpiraEm: null }, agora)).toBe(true);
   });
 
-  it("bloqueia INADIMPLENTE", () => {
+  it("bloqueia INADIMPLENTE sem inadimplenteDesde (defensivo — não deveria acontecer na prática)", () => {
     expect(assinaturaEstaLiberada({ status: "INADIMPLENTE", trialExpiraEm: null }, agora)).toBe(false);
+  });
+
+  it("libera INADIMPLENTE dentro dos 60 dias de carência", () => {
+    const inadimplenteDesde = new Date("2026-06-20T12:00:00Z"); // 21 dias antes de `agora`
+    expect(
+      assinaturaEstaLiberada({ status: "INADIMPLENTE", trialExpiraEm: null, inadimplenteDesde }, agora)
+    ).toBe(true);
+  });
+
+  it("libera INADIMPLENTE bem no limite dos 60 dias", () => {
+    const inadimplenteDesde = new Date(agora);
+    inadimplenteDesde.setUTCDate(inadimplenteDesde.getUTCDate() - 59);
+    expect(
+      assinaturaEstaLiberada({ status: "INADIMPLENTE", trialExpiraEm: null, inadimplenteDesde }, agora)
+    ).toBe(true);
+  });
+
+  it("bloqueia INADIMPLENTE depois de passar os 60 dias de carência", () => {
+    const inadimplenteDesde = new Date(agora);
+    inadimplenteDesde.setUTCDate(inadimplenteDesde.getUTCDate() - 61);
+    expect(
+      assinaturaEstaLiberada({ status: "INADIMPLENTE", trialExpiraEm: null, inadimplenteDesde }, agora)
+    ).toBe(false);
   });
 
   it("bloqueia CANCELADA", () => {

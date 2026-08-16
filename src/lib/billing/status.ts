@@ -26,11 +26,34 @@ export function mapearStatusStripe(status: Stripe.Subscription.Status): StatusAs
   }
 }
 
+// 2 meses de carência antes de bloquear por inadimplência (ver comentário em
+// AssinaturaGrafica.inadimplenteDesde) — decisão de produto de 2026-08-15,
+// depois de bloquear na primeira falha de cobrança ter sido considerado
+// agressivo demais. 60 dias corridos, mesmo estilo de dia-fixo de
+// DIAS_TOLERANCIA_LIMITE (src/lib/billing/limite-uso.ts), não "2 meses de
+// calendário" (evita a ambiguidade de meses com dias diferentes).
+export const DIAS_CARENCIA_INADIMPLENCIA = 60;
+
+// Decide se uma assinatura INADIMPLENTE ainda está dentro da janela de
+// carência. null (nunca marcado — não deveria acontecer se status já é
+// INADIMPLENTE, mas defensivo) bloqueia direto, sem carência.
+function dentroDaCarenciaInadimplencia(inadimplenteDesde: Date | null, agora: Date): boolean {
+  if (!inadimplenteDesde) return false;
+  const prazo = new Date(inadimplenteDesde);
+  prazo.setUTCDate(prazo.getUTCDate() + DIAS_CARENCIA_INADIMPLENCIA);
+  return agora < prazo;
+}
+
 // Decide se o gate de acesso (src/lib/auth/assinatura.ts) libera o app.
 // TRIALING só libera enquanto trialExpiraEm não passou — depois disso, sem
 // uma assinatura paga de verdade, trava igual a qualquer outro status ruim.
 export function assinaturaEstaLiberada(
-  assinatura: { status: StatusAssinatura; trialExpiraEm: Date | null; cortesia?: boolean } | null,
+  assinatura: {
+    status: StatusAssinatura;
+    trialExpiraEm: Date | null;
+    cortesia?: boolean;
+    inadimplenteDesde?: Date | null;
+  } | null,
   agora: Date = new Date()
 ): boolean {
   if (!assinatura) return false;
@@ -46,6 +69,10 @@ export function assinaturaEstaLiberada(
 
   if (assinatura.status === "TRIALING") {
     return assinatura.trialExpiraEm === null || assinatura.trialExpiraEm > agora;
+  }
+
+  if (assinatura.status === "INADIMPLENTE") {
+    return dentroDaCarenciaInadimplencia(assinatura.inadimplenteDesde ?? null, agora);
   }
 
   return false;
