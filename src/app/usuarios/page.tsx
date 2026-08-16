@@ -10,6 +10,7 @@ import { UsuariosLista } from "./UsuariosLista";
 import { AcessoMeuNegocioForm } from "./AcessoMeuNegocioForm";
 import { ComissaoUsuarioForm } from "./ComissaoUsuarioForm";
 import { ResponsaveisEstagioForm } from "./ResponsaveisEstagioForm";
+import { ResponsaveisAdministrativoForm } from "./ResponsaveisAdministrativoForm";
 
 export default async function UsuariosPage() {
   const usuario = await exigirUsuarioAutenticado();
@@ -20,7 +21,10 @@ export default async function UsuariosPage() {
   const todosUsuarios = await prisma.usuario.findMany({
     where: { graficaId: usuario.graficaId },
     orderBy: { nome: "asc" },
-    include: { responsaveisEstagio: { select: { status: true } } },
+    include: {
+      responsaveisEstagio: { select: { status: true } },
+      responsaveisAdministrativo: { select: { area: true } },
+    },
   });
 
   // Particionado em memória (não duas queries): volume baixo por gráfica, e
@@ -135,6 +139,25 @@ export default async function UsuariosPage() {
               email: u.email,
               papel: u.papel,
               etapas: u.responsaveisEstagio.map((r) => r.status),
+            }))}
+          />
+        </section>
+
+        <section className="mt-12">
+          <h2 className="mb-1 text-lg font-semibold text-slate-900 dark:text-white">
+            Responsáveis administrativos
+          </h2>
+          <p className="mb-4 text-sm text-slate-500">
+            Marque quem recebe e-mail quando um orçamento aprovado está pronto
+            pra emitir Nota Fiscal.
+          </p>
+          <ResponsaveisAdministrativoForm
+            funcionarios={usuarios.map((u) => ({
+              id: u.id,
+              nome: u.nome,
+              email: u.email,
+              papel: u.papel,
+              areas: u.responsaveisAdministrativo.map((r) => r.area),
             }))}
           />
         </section>

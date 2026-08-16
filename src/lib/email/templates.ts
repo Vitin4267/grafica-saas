@@ -364,6 +364,49 @@ export function templateOrcamentoRecusado(
   };
 }
 
+// Disparado pelos dois caminhos de aprovação de orçamento
+// (atualizarStatusOrcamento em src/app/orcamento/[id]/actions.ts e
+// responderOrcamentoPublico em src/app/o/[token]/actions.ts) pra quem está
+// configurado como responsável pela área NOTA_FISCAL em /usuarios (ver
+// ResponsavelAdministrativo/AreaAdministrativa no schema) — só quando o
+// orçamento já está pronto fiscalmente naquele momento (ver
+// prepararNotificacaoNotaFiscal em src/lib/nota-fiscal.ts, que reaproveita
+// verificarProntidaoFiscal). Diferente de templateEstagioResponsavel (link
+// público /p/[token], sem login): quem emite NF-e precisa estar autenticado
+// e ter permissão pra isso, então linkOrcamento é a tela normal e
+// autenticada do orçamento (/orcamento/[id]) — o botão de emitir já está lá,
+// dentro de NotaFiscalCard.tsx. Sem link de confirmação por e-mail (isso é
+// feito dentro do sistema).
+export function templateResponsavelNotaFiscal(
+  graficaNome: string,
+  clienteNome: string,
+  orcamentoId: string,
+  valorTotal: number,
+  linkOrcamento: string,
+  corPrimaria?: string | null
+): { assunto: string; html: string; texto: string } {
+  const cor = resolverCorPrimaria(corPrimaria);
+  const valorFormatado = formatarValorBRL(valorTotal);
+  const referencia = `#${orcamentoId.slice(-6)}`;
+
+  return {
+    assunto: `Nota Fiscal pendente — ${removerQuebrasDeLinha(clienteNome)} — ${removerQuebrasDeLinha(graficaNome)}`,
+    texto: `O orçamento ${referencia} de ${clienteNome} (${valorFormatado}) foi aprovado e já está pronto pra emitir a Nota Fiscal.\n\nVeja o orçamento e emita a NF-e em: ${linkOrcamento}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2 style="color: #0f172a;">Nota Fiscal pendente</h2>
+        <p style="color: #334155;">O orçamento ${referencia} de <strong>${escapeHtml(clienteNome)}</strong> foi aprovado e já está pronto pra emitir a Nota Fiscal.</p>
+        <p style="color: #0f172a; font-size: 22px; font-weight: 700;">${valorFormatado}</p>
+        <p>
+          <a href="${linkOrcamento}" style="display: inline-block; background: ${cor}; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px;">
+            Ver orçamento e emitir NF-e
+          </a>
+        </p>
+      </div>
+    `,
+  };
+}
+
 // Disparado pelo cron diário (enviarAlertasPrazoEmail, src/lib/alerta-prazo-email.ts)
 // quando um pedido chega a 5 ou 3 dias do prazo de entrega — canal SEPARADO
 // do alerta_atraso antigo (webhook de automação da própria gráfica, dispara

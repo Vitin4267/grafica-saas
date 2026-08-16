@@ -11,6 +11,7 @@ import { senhaSchema } from "@/lib/auth/validation";
 import { hashPassword } from "@/lib/auth/password";
 import { ESTAGIOS_ATRIBUIVEIS } from "@/lib/producao-estagios";
 import { registrarAuditoria } from "@/lib/auditoria";
+import type { AreaAdministrativa } from "@/generated/prisma/enums";
 
 const ROTULO_PAPEL: Record<"ADMIN" | "OPERADOR", string> = {
   ADMIN: "Admin",
@@ -392,6 +393,88 @@ export async function salvarResponsaveisEstagio(
   revalidatePath("/usuarios");
 
   return { ok: true, mensagem: "Responsáveis por etapa atualizados com sucesso!" };
+}
+
+export type SalvarResponsaveisAdministrativoResult = { ok: boolean; mensagem: string };
+
+// As áreas administrativas que podem ter responsável atribuído em /usuarios
+// — hoje só NOTA_FISCAL existe (ver enum AreaAdministrativa no schema), mas
+// fica numa lista (não um valor solto) pra esta action já servir a uma
+// segunda área no futuro sem precisar mudar a lógica, só adicionar o valor
+// aqui e o rótulo abaixo.
+const AREAS_ADMINISTRATIVAS: AreaAdministrativa[] = ["NOTA_FISCAL"];
+const ROTULO_AREA_ADMINISTRATIVA: Record<AreaAdministrativa, string> = {
+  NOTA_FISCAL: "Emissão de Nota Fiscal",
+};
+
+// Mesmo padrão de salvarResponsaveisEstagio logo acima: ResponsavelAdministrativo
+// não tem flag boolean pra fazer upsert em cima — a PRESENÇA da linha é o
+// "marcado" — então apaga tudo do tenant e recria só o que veio marcado
+// (lista pequena, sem histórico a preservar). Campo `resp_${usuarioId}_${area}`,
+// mesmo nome de padrão da action de etapas, generalizado pra usar `area` no
+// lugar de `status`.
+export async function salvarResponsaveisAdministrativo(
+  _estadoAnterior: SalvarResponsaveisAdministrativoResult | null,
+  formData: FormData
+): Promise<SalvarResponsaveisAdministrativoResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  exigirPapel(usuario, ["DONO"]);
+
+  // desativadoEm: null — mesmo motivo de salvarResponsaveisEstagio: um
+  // funcionário removido não aparece mais no form, então funcionarioIds
+  // precisa excluí-lo pra não apagar (ou impedir de reatribuir) o vínculo
+  // dele por engano.
+  const funcionarios = await prisma.usuario.findMany({
+    where: { graficaId: usuario.graficaId, desativadoEm: null },
+    select: { id: true, nome: true },
+  });
+  const funcionarioIds = funcionarios.map((f) => f.id);
+  const nomePorId = new Map(funcionarios.map((f) => [f.id, f.nome]));
+
+  const responsaveisAntes = await prisma.responsavelAdministrativo.findMany({
+    where: { usuarioId: { in: funcionarioIds } },
+  });
+  const chaveAntes = new Set(responsaveisAntes.map((r) => `${r.usuarioId}::${r.area}`));
+
+  const paresNovos = funcionarioIds.flatMap((usuarioId) =>
+    AREAS_ADMINISTRATIVAS.filter((area) => formData.get(`resp_${usuarioId}_${area}`) === "on").map((area) => ({
+      usuarioId,
+      area,
+    }))
+  );
+  const chaveDepois = new Set(paresNovos.map((p) => `${p.usuarioId}::${p.area}`));
+
+  await prisma.$transaction([
+    prisma.responsavelAdministrativo.deleteMany({ where: { usuarioId: { in: funcionarioIds } } }),
+    prisma.responsavelAdministrativo.createMany({ data: paresNovos }),
+  ]);
+
+  const descreverChave = (chave: string) => {
+    const [usuarioId, area] = chave.split("::");
+    return `${nomePorId.get(usuarioId) ?? usuarioId} → ${ROTULO_AREA_ADMINISTRATIVA[area as AreaAdministrativa] ?? area}`;
+  };
+  const ganhos = [...chaveDepois].filter((c) => !chaveAntes.has(c)).map(descreverChave);
+  const perdas = [...chaveAntes].filter((c) => !chaveDepois.has(c)).map(descreverChave);
+
+  if (ganhos.length > 0 || perdas.length > 0) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "usuario.salvar_responsaveis_administrativo",
+      entidade: "Grafica",
+      entidadeId: usuario.graficaId,
+      descricao: "Responsáveis administrativos atualizados",
+      valorAnterior: perdas.length > 0 ? perdas.join(", ") : undefined,
+      valorNovo: ganhos.length > 0 ? ganhos.join(", ") : undefined,
+    });
+  }
+
+  revalidatePath("/usuarios");
+
+  return { ok: true, mensagem: "Responsáveis administrativos atualizados com sucesso!" };
 }
 
 export type DesativarUsuarioResult = { ok: boolean; mensagem: string };

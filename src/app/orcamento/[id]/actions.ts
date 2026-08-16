@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { randomBytes } from "node:crypto";
 import { put, del } from "@vercel/blob";
 import { exigirTokenBlobPrivado } from "@/lib/blob-assinado";
@@ -25,7 +26,7 @@ import {
   ROTULOS_STATUS_ORCAMENTO,
   type StatusOrcamento,
 } from "@/lib/orcamento-status";
-import { verificarProntidaoFiscal } from "@/lib/nota-fiscal";
+import { verificarProntidaoFiscal, prepararNotificacaoNotaFiscal } from "@/lib/nota-fiscal";
 import {
   emitirNfe,
   consultarNfe,
@@ -33,6 +34,8 @@ import {
   type AmbienteFocusNfe,
   type RespostaFocusNfe,
 } from "@/lib/focus-nfe";
+import { dispararEventoEmail } from "@/lib/email/webhook-email";
+import { templateResponsavelNotaFiscal } from "@/lib/email/templates";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { formatoMoeda } from "@/lib/moeda";
 import { dataInputParaUTC, dataHoraInputParaUTC } from "@/lib/data";
@@ -232,6 +235,38 @@ export async function atualizarStatusOrcamento(
 
     if (!aprovado) {
       return { ok: false, mensagem: "Este orçamento já teve o status alterado. Atualize a página." };
+    }
+
+    // Só dispara depois que a transação de aprovação acima realmente teve
+    // sucesso (nunca em conflito de concorrência, já tratado pelo `if
+    // (!aprovado)` logo acima). Avisa quem está configurado como responsável
+    // pela emissão de NF-e (ver ResponsavelAdministrativo/AreaAdministrativa
+    // no schema) — prepararNotificacaoNotaFiscal já retorna null quando
+    // ninguém está configurado ou quando o orçamento ainda não está pronto
+    // fiscalmente, então o `if` abaixo cobre os dois casos. Mesmo princípio
+    // de melhor esforço do resto do projeto: dispararEventoEmail nunca
+    // lança, e after() garante que a instância serverless continua viva até
+    // o e-mail terminar de sair, mesmo depois da resposta já enviada.
+    const notificacaoNotaFiscal = await prepararNotificacaoNotaFiscal(orcamentoId, usuario.graficaId);
+    if (notificacaoNotaFiscal) {
+      const origemNotaFiscal = await resolverOrigemPublica();
+      const templateNotaFiscal = templateResponsavelNotaFiscal(
+        notificacaoNotaFiscal.graficaNome,
+        notificacaoNotaFiscal.clienteNome,
+        orcamentoId,
+        notificacaoNotaFiscal.valorTotal,
+        `${origemNotaFiscal}/orcamento/${orcamentoId}`,
+        notificacaoNotaFiscal.corPrimaria
+      );
+      for (const destinatario of notificacaoNotaFiscal.destinatarios) {
+        after(() =>
+          dispararEventoEmail({
+            tipo: "responsavel_nota_fiscal",
+            destinatario: destinatario.email,
+            ...templateNotaFiscal,
+          })
+        );
+      }
     }
   } else {
     const cas = await prisma.orcamento.updateMany({
@@ -1592,6 +1627,23 @@ export async function cancelarOrcamento(
     }
   }
 
+  // Achado de auditoria pré-lançamento (2026-08-16): faltava limpar a arte
+  // do PRÓPRIO orçamento (ver enviarArteOrcamento/removerArteOrcamento) —
+  // sem isso, cancelar um rascunho que já tinha arte anexada deixava o blob
+  // público (store diferente do de tinta, por isso sem exigirTokenBlobPrivado
+  // aqui, igual removerArteOrcamento) órfão pra sempre e a cota de
+  // armazenamento da gráfica reduzida sem volta, porque ArquivoArmazenado só
+  // se relaciona com Grafica, não com Orcamento — nada mais no sistema
+  // reconhece esse arquivo como órfão depois do delete acima.
+  const arquivoArteRemovido = await removerArquivo({
+    graficaId: usuario.graficaId,
+    tipo: "ARTE_ORCAMENTO",
+    referenciaId: orcamentoId,
+  });
+  if (arquivoArteRemovido) {
+    await del(arquivoArteRemovido.url).catch(() => {});
+  }
+
   updateTag(`uso-${usuario.graficaId}`); // orçamento removido muda a contagem do mês (ver src/lib/billing/uso.ts)
   revalidatePath("/orcamento");
   redirect("/orcamento");
@@ -1754,8 +1806,41 @@ export async function registrarPagamento(
     };
   }
 
-  const pagamento = await prisma.pagamento.create({
-    data: { orcamentoId, valor, forma: formaParsed.data, formaDetalhe, observacao },
+  // Reconciliação automática com Conta a Receber (2026-08-16, pedido do
+  // usuário): se o valor bate EXATO com uma parcela PENDENTE deste mesmo
+  // orçamento, marca ela como recebida também — sem isso, a fatura ficava
+  // paga aqui mas pendente lá, mesmo o cliente tendo preenchido o próprio
+  // campo de recebimento. Só reconcilia em match EXATO de valor: pagamento
+  // parcial ou com sobra não mexe em nada (evita casar errado — ver
+  // pendencias-negocio-pos-auditoria.md). Entre parcelas pendentes do mesmo
+  // valor, pega a de vencimento mais próximo (determinístico, não há como
+  // saber qual o cliente quis pagar). Tudo na mesma transação, com
+  // compare-and-swap na ContaReceber (mesmo padrão de marcarComoRecebido em
+  // financeiro/contas-receber/actions.ts) — se ela for marcada como
+  // recebida ou cancelada por outra requisição bem no meio disso, não
+  // sobrescreve.
+  const { pagamento, contaReceberVinculada } = await prisma.$transaction(async (tx) => {
+    const pagamentoCriado = await tx.pagamento.create({
+      data: { orcamentoId, valor, forma: formaParsed.data, formaDetalhe, observacao },
+    });
+
+    const candidata = await tx.contaReceber.findFirst({
+      where: { orcamentoId, graficaId: usuario.graficaId, status: "PENDENTE", valor },
+      orderBy: { vencimento: "asc" },
+    });
+
+    let vinculada: { id: string; descricao: string } | null = null;
+    if (candidata) {
+      const cas = await tx.contaReceber.updateMany({
+        where: { id: candidata.id, status: "PENDENTE" },
+        data: { status: "RECEBIDO", recebidoEm: new Date(), pagamentoId: pagamentoCriado.id },
+      });
+      if (cas.count > 0) {
+        vinculada = { id: candidata.id, descricao: candidata.descricao };
+      }
+    }
+
+    return { pagamento: pagamentoCriado, contaReceberVinculada: vinculada };
   });
 
   await registrarAuditoria({
@@ -1765,13 +1850,23 @@ export async function registrarPagamento(
     acao: "pagamento.registrar",
     entidade: "Pagamento",
     entidadeId: pagamento.id,
-    descricao: `Pagamento de ${formatoMoeda.format(valor)} (${formaParsed.data}) registrado no orçamento #${orcamentoId.slice(-6)}`,
+    descricao: `Pagamento de ${formatoMoeda.format(valor)} (${formaParsed.data}) registrado no orçamento #${orcamentoId.slice(-6)}${
+      contaReceberVinculada
+        ? ` — conta a receber "${contaReceberVinculada.descricao}" marcada como recebida automaticamente`
+        : ""
+    }`,
   });
 
   revalidatePath(`/orcamento/${orcamentoId}`);
   revalidatePath("/meu-negocio");
+  if (contaReceberVinculada) revalidatePath("/financeiro/contas-receber");
 
-  return { ok: true, mensagem: "Pagamento registrado com sucesso!" };
+  return {
+    ok: true,
+    mensagem: contaReceberVinculada
+      ? `Pagamento registrado com sucesso! A conta a receber "${contaReceberVinculada.descricao}" foi marcada como recebida automaticamente.`
+      : "Pagamento registrado com sucesso!",
+  };
 }
 
 const UNIDADE_FISCAL: Record<string, string> = {

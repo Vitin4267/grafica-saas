@@ -11,9 +11,14 @@ import { obterIpRequisicao } from "@/lib/auth/ip";
 import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
 import { resolverOrigemPublica } from "@/lib/url-publica";
 import { dispararEventoEmail, type EventoEmail } from "@/lib/email/webhook-email";
-import { templateOrcamentoAprovado, templateOrcamentoRecusado } from "@/lib/email/templates";
+import {
+  templateOrcamentoAprovado,
+  templateOrcamentoRecusado,
+  templateResponsavelNotaFiscal,
+} from "@/lib/email/templates";
 import { assinaturaEstaLiberada } from "@/lib/billing/status";
 import { calcularPrevisaoAprovacaoPedido, gravarPrevisaoAprovacaoPedido } from "@/lib/pedido-aprovacao";
+import { prepararNotificacaoNotaFiscal } from "@/lib/nota-fiscal";
 
 export type ResponderPublicoResult = { ok: boolean; mensagem: string };
 
@@ -277,6 +282,36 @@ export async function responderOrcamentoPublico(
       orcamento.grafica.corPrimaria
     );
     await notificarRespostaOrcamento(orcamento.graficaId, orcamento.usuarioId, "orcamento_aprovado", template);
+
+    // Mesmo princípio do caminho autenticado (atualizarStatusOrcamento em
+    // src/app/orcamento/[id]/actions.ts): só dispara depois que a transação
+    // de aprovação acima já teve sucesso (o `if (!resultado)` logo acima já
+    // trata o conflito de concorrência). prepararNotificacaoNotaFiscal
+    // retorna null quando ninguém está configurado como responsável pela
+    // área NOTA_FISCAL em /usuarios, ou quando o orçamento ainda não está
+    // pronto fiscalmente — o `if` abaixo cobre os dois casos. `origem` já
+    // foi resolvida acima pra montar o link de templateOrcamentoAprovado,
+    // reaproveitada aqui.
+    const notificacaoNotaFiscal = await prepararNotificacaoNotaFiscal(orcamento.id, orcamento.graficaId);
+    if (notificacaoNotaFiscal) {
+      const templateNotaFiscal = templateResponsavelNotaFiscal(
+        notificacaoNotaFiscal.graficaNome,
+        notificacaoNotaFiscal.clienteNome,
+        orcamento.id,
+        notificacaoNotaFiscal.valorTotal,
+        `${origem}/orcamento/${orcamento.id}`,
+        notificacaoNotaFiscal.corPrimaria
+      );
+      for (const destinatario of notificacaoNotaFiscal.destinatarios) {
+        after(() =>
+          dispararEventoEmail({
+            tipo: "responsavel_nota_fiscal",
+            destinatario: destinatario.email,
+            ...templateNotaFiscal,
+          })
+        );
+      }
+    }
   } else {
     // Motivo vai pro campo próprio (Orcamento.respostaPublicaMotivo — ver
     // comentário no schema), na MESMA operação que muda o status e grava o

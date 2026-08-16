@@ -25,6 +25,7 @@ export type EventoEmail = {
     | "estagio_responsavel"
     | "orcamento_aprovado"
     | "orcamento_recusado"
+    | "responsavel_nota_fiscal"
     | "pedido_prazo_proximo"
     | "pedido_prazo_atrasado";
   destinatario: string;
