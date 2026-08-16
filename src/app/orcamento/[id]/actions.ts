@@ -26,7 +26,7 @@ import {
   ROTULOS_STATUS_ORCAMENTO,
   type StatusOrcamento,
 } from "@/lib/orcamento-status";
-import { verificarProntidaoFiscal, prepararNotificacaoNotaFiscal } from "@/lib/nota-fiscal";
+import { verificarProntidaoFiscal, prepararNotificacaoNotaFiscal, resolverDadosFiscais } from "@/lib/nota-fiscal";
 import {
   emitirNfe,
   consultarNfe,
@@ -1883,6 +1883,18 @@ const UNIDADE_FISCAL: Record<string, string> = {
   HORA: "HR",
 };
 
+// unidade === "OUTRO" não tem entrada na tabela acima (é texto livre da
+// gráfica, guardado em ItemCatalogo.unidadeOutro) — sem isto, caía sempre no
+// fallback genérico "UN", perdendo a unidade real digitada. O campo de
+// unidade comercial da NFe aceita texto curto, não precisa ser um código
+// oficial de tabela SEFAZ, então um recorte das primeiras letras já resolve.
+function resolverUnidadeFiscal(unidade: string | null, unidadeOutro: string | null): string {
+  if (unidade === "OUTRO" && unidadeOutro?.trim()) {
+    return unidadeOutro.trim().toUpperCase().slice(0, 6);
+  }
+  return UNIDADE_FISCAL[unidade ?? "UNIDADE"] ?? "UN";
+}
+
 export type EmitirNotaFiscalResult = { ok: boolean; mensagem: string };
 
 // StatusNotaFiscal (schema.prisma) não tem um valor DENEGADO separado — tanto
@@ -1945,9 +1957,7 @@ export async function emitirNotaFiscal(
     await prisma.notaFiscal.delete({ where: { id: orcamento.notaFiscal.id } });
   }
 
-  const dadosFiscais = await prisma.dadosFiscaisGrafica.findUnique({
-    where: { graficaId: usuario.graficaId },
-  });
+  const dadosFiscais = await resolverDadosFiscais(orcamento.filialId, usuario.graficaId);
 
   const checagem = verificarProntidaoFiscal({
     dadosFiscais,
@@ -1995,7 +2005,10 @@ export async function emitirNotaFiscal(
           descricao: item.itemGrafica.itemCatalogo.nome,
           ncm: item.itemGrafica.itemCatalogo.ncm!,
           cfop: dadosFiscais.cfopPadrao,
-          unidade: UNIDADE_FISCAL[item.itemGrafica.itemCatalogo.unidade ?? "UNIDADE"] ?? "UN",
+          unidade: resolverUnidadeFiscal(
+            item.itemGrafica.itemCatalogo.unidade,
+            item.itemGrafica.itemCatalogo.unidadeOutro
+          ),
           quantidade: item.quantidade,
           valorUnitario: Number(item.precoUnitario),
           valorBruto: Number(item.precoTotal),
@@ -2049,14 +2062,13 @@ export async function atualizarStatusNotaFiscal(
 
   const notaFiscal = await prisma.notaFiscal.findFirst({
     where: { orcamentoId, graficaId: usuario.graficaId },
+    include: { orcamento: { select: { filialId: true } } },
   });
   if (!notaFiscal) {
     return { ok: false, mensagem: "Nota fiscal não encontrada." };
   }
 
-  const dadosFiscais = await prisma.dadosFiscaisGrafica.findUnique({
-    where: { graficaId: usuario.graficaId },
-  });
+  const dadosFiscais = await resolverDadosFiscais(notaFiscal.orcamento.filialId, usuario.graficaId);
   if (!dadosFiscais?.focusNfeToken) {
     return { ok: false, mensagem: "Token da Focus NFe não configurado." };
   }

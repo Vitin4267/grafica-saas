@@ -12,7 +12,7 @@ import {
 } from "@/lib/auth/permissoes";
 import { resolverOrigemPublica } from "@/lib/url-publica";
 import { buscarCustoRealVsOrcado } from "@/lib/custo-producao";
-import { verificarProntidaoFiscal } from "@/lib/nota-fiscal";
+import { verificarProntidaoFiscal, resolverDadosFiscais } from "@/lib/nota-fiscal";
 import { formatoMoeda } from "@/lib/moeda";
 import { formatoInstanteRealComHora } from "@/lib/data";
 import { UserNav } from "@/components/UserNav";
@@ -156,9 +156,7 @@ export default async function OrcamentoDetalhePage({
 
   let checagemFiscal: { pronto: boolean; pendencias: string[] } | null = null;
   if (orcamento.status === "APROVADO" && !orcamento.notaFiscal) {
-    const dadosFiscais = await prisma.dadosFiscaisGrafica.findUnique({
-      where: { graficaId: usuario.graficaId },
-    });
+    const dadosFiscais = await resolverDadosFiscais(orcamento.filialId, usuario.graficaId);
     checagemFiscal = verificarProntidaoFiscal({
       dadosFiscais,
       cliente: orcamento.cliente,

@@ -1,6 +1,31 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
+import type { DadosFiscaisGrafica } from "@/generated/prisma/client";
+
+// Dados fiscais "resolvidos" pra um orçamento/filial — DadosFiscaisFilial
+// espelha DadosFiscaisGrafica campo a campo (só troca graficaId por
+// filialId como chave de vínculo), então o mesmo tipo serve pros dois.
+export type DadosFiscaisResolvidos = Omit<
+  DadosFiscaisGrafica,
+  "id" | "graficaId" | "createdAt" | "updatedAt"
+>;
+
+// Decide de onde vêm os dados fiscais usados pra emitir/consultar uma nota:
+// se a filial do orçamento tiver seu próprio cadastro fiscal (CNPJ próprio,
+// configurado em Configurações → Filiais → [filial]), usa ele; senão cai no
+// comportamento de sempre — os dados fiscais da gráfica. `filialId` null
+// (orçamento sem filial) sempre vai direto pro caminho da gráfica.
+export async function resolverDadosFiscais(
+  filialId: string | null,
+  graficaId: string
+): Promise<DadosFiscaisResolvidos | null> {
+  if (filialId) {
+    const dadosFilial = await prisma.dadosFiscaisFilial.findUnique({ where: { filialId } });
+    if (dadosFilial) return dadosFilial;
+  }
+  return prisma.dadosFiscaisGrafica.findUnique({ where: { graficaId } });
+}
 
 // Checagem do que falta configurar antes de conseguir emitir uma nota fiscal
 // — usada tanto pra decidir o que mostrar no NotaFiscalCard quanto (defesa em
@@ -112,18 +137,20 @@ export async function prepararNotificacaoNotaFiscal(
   });
   if (responsaveis.length === 0) return null;
 
-  const [orcamento, dadosFiscais] = await Promise.all([
-    prisma.orcamento.findFirst({
-      where: { id: orcamentoId, graficaId },
-      include: {
-        cliente: true,
-        grafica: { select: { nome: true, corPrimaria: true } },
-        itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
-      },
-    }),
-    prisma.dadosFiscaisGrafica.findUnique({ where: { graficaId } }),
-  ]);
+  const orcamento = await prisma.orcamento.findFirst({
+    where: { id: orcamentoId, graficaId },
+    include: {
+      cliente: true,
+      grafica: { select: { nome: true, corPrimaria: true } },
+      itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
+    },
+  });
   if (!orcamento) return null;
+
+  // Precisa do filialId do orçamento (acabou de carregar acima) antes de
+  // saber se olha pros dados fiscais da filial ou da gráfica — por isso não
+  // dá mais pra buscar em paralelo com o orçamento.
+  const dadosFiscais = await resolverDadosFiscais(orcamento.filialId, graficaId);
 
   const checagem = verificarProntidaoFiscal({
     dadosFiscais,

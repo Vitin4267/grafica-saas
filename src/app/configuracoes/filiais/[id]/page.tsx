@@ -12,6 +12,7 @@ import {
 import { UserNav } from "@/components/UserNav";
 import { ArrowLeftIcon } from "@/components/icons";
 import { FilialForm } from "./FilialForm";
+import { DadosFiscaisFilialForm } from "./DadosFiscaisFilialForm";
 
 export default async function FilialDetalhePage({
   params,
@@ -31,6 +32,16 @@ export default async function FilialDetalhePage({
   if (!filial) {
     notFound();
   }
+
+  // Não faz upsert (diferente de /configuracoes/fiscal) — o cadastro fiscal
+  // da filial é opcional por natureza, não cria linha só de visitar a
+  // página. Ausência de linha == "esta filial usa os dados da gráfica".
+  const dadosFiscaisFilial = await prisma.dadosFiscaisFilial.findUnique({
+    where: { filialId: filial.id },
+  });
+  const tokenMascaradoFilial = dadosFiscaisFilial?.focusNfeToken
+    ? `•••• ${dadosFiscaisFilial.focusNfeToken.slice(-4)}`
+    : null;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -66,6 +77,37 @@ export default async function FilialDetalhePage({
             ativa: filial.ativa,
           }}
         />
+
+        <div className="mt-10">
+          <h2 className="mb-1 text-lg font-bold text-slate-900 dark:text-white">
+            Dados fiscais próprios
+          </h2>
+          <p className="mb-6 text-sm text-slate-500">
+            Usados pra emitir nota fiscal (NF-e) desta filial via Focus NFe,
+            no lugar dos dados fiscais da gráfica.
+          </p>
+          <DadosFiscaisFilialForm
+            filialId={filial.id}
+            valoresIniciais={{
+              ambiente: (dadosFiscaisFilial?.ambiente ?? "homologacao") as "homologacao" | "producao",
+              cnpj: dadosFiscaisFilial?.cnpj ?? "",
+              razaoSocial: dadosFiscaisFilial?.razaoSocial ?? "",
+              nomeFantasia: dadosFiscaisFilial?.nomeFantasia ?? "",
+              inscricaoEstadual: dadosFiscaisFilial?.inscricaoEstadual ?? "",
+              regimeTributario: dadosFiscaisFilial?.regimeTributario ?? "",
+              enderecoCep: dadosFiscaisFilial?.enderecoCep ?? "",
+              enderecoLogradouro: dadosFiscaisFilial?.enderecoLogradouro ?? "",
+              enderecoNumero: dadosFiscaisFilial?.enderecoNumero ?? "",
+              enderecoBairro: dadosFiscaisFilial?.enderecoBairro ?? "",
+              enderecoMunicipio: dadosFiscaisFilial?.enderecoMunicipio ?? "",
+              enderecoUf: dadosFiscaisFilial?.enderecoUf ?? "",
+              naturezaOperacaoPadrao: dadosFiscaisFilial?.naturezaOperacaoPadrao ?? "Venda de mercadoria",
+              cfopPadrao: dadosFiscaisFilial?.cfopPadrao ?? "5102",
+              csosnPadrao: dadosFiscaisFilial?.csosnPadrao ?? "102",
+            }}
+            tokenMascarado={tokenMascaradoFilial}
+          />
+        </div>
       </main>
     </div>
   );

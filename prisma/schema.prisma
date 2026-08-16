@@ -196,8 +196,9 @@ model Filial {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  grafica    Grafica     @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  orcamentos Orcamento[]
+  grafica         Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamentos      Orcamento[]
+  dadosFiscais    DadosFiscaisFilial?
 
   @@unique([graficaId, nome])
   @@index([graficaId])
@@ -244,6 +245,52 @@ model DadosFiscaisGrafica {
   grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
 
   @@map("dados_fiscais_grafica")
+}
+
+// Cadastro fiscal completo e independente de uma FILIAL com CNPJ próprio —
+// espelha DadosFiscaisGrafica campo a campo de propósito (cada CNPJ é um
+// contribuinte separado perante a Focus NFe/SEFAZ, precisa do próprio
+// token/cadastro lá, não dá pra "herdar" o da matriz). Opcional: uma filial
+// sem linha aqui continua emitindo com os dados da gráfica (comportamento de
+// sempre, sem mudança) — ver resolverDadosFiscais em src/lib/nota-fiscal.ts,
+// único ponto que decide qual dos dois usar. Modelo separado (não um
+// filialId nullable dentro de DadosFiscaisGrafica) de propósito: evita
+// problema de unicidade parcial (Postgres trata NULL como sempre distinto em
+// @@unique, então não daria pra garantir "no máximo 1 linha-padrão da
+// gráfica" só com filialId opcional na mesma tabela) e mantém o caminho
+// gráfica-level 100% intocado — decisão de 2026-08-16, pedido de negócio
+// ainda sem caso real (nenhuma gráfica cliente tem filial com CNPJ próprio
+// hoje), construído preventivamente.
+model DadosFiscaisFilial {
+  id       String @id @default(cuid())
+  filialId String @unique
+
+  focusNfeToken String?
+  ambiente      String  @default("homologacao")
+
+  cnpj              String?
+  razaoSocial       String?
+  nomeFantasia      String?
+  inscricaoEstadual String?
+  regimeTributario  String?
+
+  enderecoCep        String?
+  enderecoLogradouro String?
+  enderecoNumero     String?
+  enderecoBairro     String?
+  enderecoMunicipio  String?
+  enderecoUf         String?
+
+  naturezaOperacaoPadrao String @default("Venda de mercadoria")
+  cfopPadrao             String @default("5102")
+  csosnPadrao            String @default("102")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  filial Filial @relation(fields: [filialId], references: [id], onDelete: Cascade)
+
+  @@map("dados_fiscais_filial")
 }
 
 enum StatusNotaFiscal {

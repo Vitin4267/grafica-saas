@@ -38,6 +38,7 @@ async function exportarDados() {
     filiais,
     parametrosGrafica,
     dadosFiscais,
+    dadosFiscaisFiliais,
     automacao,
     orcamentos,
     orcamentoItens,
@@ -58,6 +59,7 @@ async function exportarDados() {
     prisma.filial.findMany(),
     prisma.parametrosGrafica.findMany(),
     prisma.dadosFiscaisGrafica.findMany(),
+    prisma.dadosFiscaisFilial.findMany(),
     prisma.automacaoGrafica.findMany(),
     prisma.orcamento.findMany(),
     prisma.orcamentoItem.findMany(),
@@ -81,6 +83,7 @@ async function exportarDados() {
     filiais,
     parametrosGrafica,
     dadosFiscais,
+    dadosFiscaisFiliais,
     automacao,
     orcamentos,
     orcamentoItens,
@@ -115,17 +118,17 @@ export async function GET(request: NextRequest) {
   // Falha alto se o store privado não estiver configurado, em vez de deixar
   // put()/list()/del() caírem silenciosamente pro token do store público
   // (ver exigirTokenBlobPrivado em src/lib/blob-assinado.ts) — este dump
-  // contém Usuario.senhaHash e DadosFiscaisGrafica.focusNfeToken em texto
-  // claro, não pode arriscar ir pro store público sem erro nenhum. Confere
-  // ANTES de exportar os dados (evita gastar a query cara à toa).
+  // contém Usuario.senhaHash e DadosFiscaisGrafica/DadosFiscaisFilial.focusNfeToken
+  // em texto claro, não pode arriscar ir pro store público sem erro nenhum.
+  // Confere ANTES de exportar os dados (evita gastar a query cara à toa).
   const tokenPrivado = exigirTokenBlobPrivado();
 
   const dados = await exportarDados();
   const nomeArquivo = `backups/backup-${new Date().toISOString().slice(0, 10)}.json`;
 
   // access: "private" — este dump inclui Usuario.senhaHash (hash argon2id de
-  // todo usuário de toda gráfica) e DadosFiscaisGrafica.focusNfeToken (token
-  // de API de terceiro em texto claro). Blob público + nome de arquivo
+  // todo usuário de toda gráfica) e DadosFiscaisGrafica/DadosFiscaisFilial
+  // .focusNfeToken (token de API de terceiro em texto claro). Blob público + nome de arquivo
   // previsível == esses dados baixáveis por qualquer um que descubra a URL do
   // blob store, sem autenticação nenhuma. Restaurar exige usar `get()` de
   // @vercel/blob (autenticado pelo token do servidor), nunca a URL direta.
