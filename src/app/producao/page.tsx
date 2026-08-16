@@ -100,7 +100,7 @@ export default async function ProducaoPage({
   await verificarEDispararAlertasAtraso(usuario.graficaId, usuario.grafica.nome);
   const origem = await resolverOrigemPublica();
 
-  const [todosPedidos, clientes] = await Promise.all([
+  const [todosPedidos, clientes, responsaveisEstagio] = await Promise.all([
     prisma.pedido.findMany({
       where: {
         graficaId: usuario.graficaId,
@@ -128,7 +128,21 @@ export default async function ProducaoPage({
       select: { id: true, nome: true },
       orderBy: { nome: "asc" },
     }),
+    // Quem é responsável por CADA etapa (não só a do usuário logado, ver
+    // `responsabilidades` acima) — pra mostrar o nome na tela, tanto na
+    // lista quanto no Kanban. Tabela pequena (1 linha por
+    // funcionário×etapa atribuída), sem custo de N+1 em buscar tudo de uma
+    // vez em vez de filtrar por pedido.
+    prisma.responsavelEstagio.findMany({
+      where: { usuario: { graficaId: usuario.graficaId } },
+      select: { status: true, usuario: { select: { nome: true } } },
+    }),
   ]);
+
+  const responsaveisPorEtapa: Partial<Record<StatusPedido, string[]>> = {};
+  for (const r of responsaveisEstagio) {
+    (responsaveisPorEtapa[r.status] ??= []).push(r.usuario.nome);
+  }
 
   // Buscada UMA VEZ fora do loop de pedidos (evita N+1) — só as ATIVAS, pra
   // popular o select de "lançar custo" de cada linha. Categorias inativas
@@ -233,6 +247,7 @@ export default async function ProducaoPage({
                 arteComentarioCliente={pedido.arteComentarioCliente}
                 linkArtePublico={pedido.arteLinkToken ? `${origem}/a/${pedido.arteLinkToken}` : null}
                 preflightAvisos={(pedido.preflightAvisos as AvisoPreflight[] | null) ?? []}
+                responsaveisEtapa={responsaveisPorEtapa[pedido.status] ?? []}
                 categoriasCustoAtivas={categoriasCustoAtivas}
                 // valor/lucro só viajam pro client quando podeVerCustos:
                 // nunca deixar quem só tem CUSTOS.podeEditar (lança
@@ -307,6 +322,7 @@ export default async function ProducaoPage({
           pedidosKanban={pedidosKanban}
           podeEditar={podeEditar}
           podeVerCustos={podeVerCustos}
+          responsaveisPorEtapa={responsaveisPorEtapa}
         />
       </main>
     </div>

@@ -72,10 +72,16 @@ export function KanbanBoard({
   pedidos,
   podeEditar,
   podeVerCustos,
+  responsaveisPorEtapa,
 }: {
   pedidos: PedidoKanban[];
   podeEditar: boolean;
   podeVerCustos: boolean;
+  // Nomes de quem está atribuído a cada etapa (ver ResponsavelEstagio,
+  // configurado em /usuarios) — mostrado no cabeçalho da coluna, já que é
+  // uma característica da ETAPA, não de um pedido individual. Sempre
+  // ausente/[] pra FILA (não é etapa atribuível, ver ESTAGIOS_ATRIBUIVEIS).
+  responsaveisPorEtapa: Partial<Record<StatusPedido, string[]>>;
 }) {
   // Status otimista aplicado localmente enquanto a Server Action ainda não
   // confirmou — os dados "de verdade" continuam vindo do servidor via
@@ -216,6 +222,7 @@ export function KanbanBoard({
               podeVerCustos={podeVerCustos}
               pendentes={pendentes}
               erros={erros}
+              responsaveis={responsaveisPorEtapa[status] ?? []}
             />
           ))}
         </div>
@@ -242,6 +249,7 @@ function KanbanColuna({
   podeVerCustos,
   pendentes,
   erros,
+  responsaveis,
 }: {
   status: StatusPedido;
   pedidos: PedidoKanban[];
@@ -251,6 +259,7 @@ function KanbanColuna({
   podeVerCustos: boolean;
   pendentes: Set<string>;
   erros: Record<string, string>;
+  responsaveis: string[];
 }) {
   // disabled=true faz esta coluna nunca virar um alvo de colisão válido
   // durante o arraste — é isso que impede soltar um card em qualquer coluna
@@ -270,11 +279,18 @@ function KanbanColuna({
             : "border-slate-200 bg-slate-50/40 dark:border-slate-800 dark:bg-slate-900/30"
       }`}
     >
-      <div className="flex items-center justify-between px-1">
-        <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-          {ROTULOS_STATUS_PEDIDO[status]}
-        </h2>
-        <span className="text-xs text-slate-400">{pedidos.length}</span>
+      <div className="flex flex-col gap-0.5 px-1">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+            {ROTULOS_STATUS_PEDIDO[status]}
+          </h2>
+          <span className="text-xs text-slate-400">{pedidos.length}</span>
+        </div>
+        {responsaveis.length > 0 && (
+          <p className="truncate text-xs text-slate-400" title={responsaveis.join(", ")}>
+            Responsável: {responsaveis.join(", ")}
+          </p>
+        )}
       </div>
       <div className="flex flex-1 flex-col gap-2">
         {pedidos.length === 0 ? (

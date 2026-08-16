@@ -45,6 +45,7 @@ export function PedidoLinha({
   podeEditarCustos,
   podeVerCustos,
   souResponsavelDesteStatus,
+  responsaveisEtapa,
   chipAtraso,
   arteUrl,
   arteAprovadaEm,
@@ -74,6 +75,10 @@ export function PedidoLinha({
   // ESTAGIOS_ATRIBUIVEIS), então IniciarImpressaoBotao abaixo continua
   // exigindo podeEditar puro.
   souResponsavelDesteStatus: boolean;
+  // Nomes de TODOS os funcionários atribuídos como responsável pela etapa
+  // ATUAL deste pedido (ver ResponsavelEstagio) — não só o usuário logado.
+  // Sempre [] pra FILA/ENTREGUE/CANCELADO (ver ESTAGIOS_ATRIBUIVEIS).
+  responsaveisEtapa: string[];
   chipAtraso: ReactNode;
   arteUrl: string | null;
   arteAprovadaEm: Date | null;
@@ -178,6 +183,15 @@ export function PedidoLinha({
           arteComentarioCliente={arteComentarioCliente}
           linkArtePublico={linkArtePublico}
         />
+      )}
+      {/* Quem está atribuído como responsável pela etapa ATUAL (ver
+          ResponsavelEstagio, configurado em /usuarios) — informativo, não
+          controla nada aqui (o botão de avançar já usa
+          souResponsavelDesteStatus pra isso). */}
+      {responsaveisEtapa.length > 0 && (
+        <p className="text-xs text-slate-500">
+          Responsável: {responsaveisEtapa.join(", ")}
+        </p>
       )}
       {/* Nome é declarado, não verificado (ver comentário do prop acima) —
           por isso "aprovada por", nunca "confirmada por". Mostrado

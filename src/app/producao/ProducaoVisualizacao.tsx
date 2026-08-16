@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { KanbanBoard, type PedidoKanban } from "./KanbanBoard";
+import type { StatusPedido } from "@/generated/prisma/enums";
 
 // A lista (PedidoLinha.tsx e tudo que ela carrega — chip de atraso, custo,
 // arte etc.) chega PRONTA do Server Component (producao/page.tsx) via
@@ -13,11 +14,13 @@ export function ProducaoVisualizacao({
   pedidosKanban,
   podeEditar,
   podeVerCustos,
+  responsaveisPorEtapa,
 }: {
   lista: ReactNode;
   pedidosKanban: PedidoKanban[];
   podeEditar: boolean;
   podeVerCustos: boolean;
+  responsaveisPorEtapa: Partial<Record<StatusPedido, string[]>>;
 }) {
   const [visao, setVisao] = useState<"lista" | "quadro">("lista");
 
@@ -52,7 +55,12 @@ export function ProducaoVisualizacao({
 
       <div className={visao === "lista" ? "" : "hidden"}>{lista}</div>
       <div className={visao === "quadro" ? "" : "hidden"}>
-        <KanbanBoard pedidos={pedidosKanban} podeEditar={podeEditar} podeVerCustos={podeVerCustos} />
+        <KanbanBoard
+          pedidos={pedidosKanban}
+          podeEditar={podeEditar}
+          podeVerCustos={podeVerCustos}
+          responsaveisPorEtapa={responsaveisPorEtapa}
+        />
       </div>
     </div>
   );
