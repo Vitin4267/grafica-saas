@@ -17,6 +17,7 @@ import { registrarAuditoria } from "@/lib/auditoria";
 import { formatoMoeda } from "@/lib/moeda";
 import { D } from "@/lib/pricing/decimal";
 import { montarChavePerda } from "@/lib/perda-fixa-producao";
+import { analisarPreflight } from "@/lib/preflight";
 import { avancarStatusPedido, buscarOrcamentoParaBaixa } from "./status-transicao";
 import {
   validarArquivoArte,
@@ -517,6 +518,9 @@ export async function enviarArte(
 
   const pedido = await prisma.pedido.findFirst({
     where: { id: pedidoId, graficaId: usuario.graficaId },
+    // itens (largura/altura) só servem pro preflight abaixo — decidir contra
+    // qual tamanho checar o DPI efetivo da arte.
+    include: { orcamento: { select: { itens: { select: { larguraCm: true, alturaCm: true } } } } },
   });
   if (!pedido) {
     return { ok: false, mensagem: "Pedido não encontrado." };
@@ -570,6 +574,20 @@ export async function enviarArte(
 
   const arteLinkToken = pedido.arteLinkToken ?? randomBytes(20).toString("base64url");
 
+  // Preflight é melhor esforço (nunca lança, ver analisarPreflight) — roda
+  // ANTES do update pra gravar os achados no mesmo write que já grava
+  // arteUrl, nunca deixando uma janela com arte nova e preflightAvisos
+  // desatualizado (do arquivo anterior).
+  const bufferArquivo = Buffer.from(await arquivo.arrayBuffer());
+  const preflightAvisos = await analisarPreflight(
+    bufferArquivo,
+    arquivo.type,
+    pedido.orcamento.itens.map((item) => ({
+      larguraCm: item.larguraCm == null ? null : Number(item.larguraCm),
+      alturaCm: item.alturaCm == null ? null : Number(item.alturaCm),
+    }))
+  );
+
   await prisma.pedido.update({
     where: { id: pedidoId },
     data: {
@@ -577,6 +595,7 @@ export async function enviarArte(
       arteLinkToken,
       arteAprovadaEm: null,
       arteComentarioCliente: null,
+      preflightAvisos,
     },
   });
 
@@ -629,7 +648,12 @@ export async function removerArte(
 
   await prisma.pedido.update({
     where: { id: pedidoId },
-    data: { arteUrl: null, arteAprovadaEm: null, arteComentarioCliente: null },
+    data: {
+      arteUrl: null,
+      arteAprovadaEm: null,
+      arteComentarioCliente: null,
+      preflightAvisos: Prisma.JsonNull,
+    },
   });
 
   const arquivoRemovido = await removerArquivo({

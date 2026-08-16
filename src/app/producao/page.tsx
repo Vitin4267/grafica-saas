@@ -21,7 +21,10 @@ import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { PrinterIcon } from "@/components/icons";
 import { PedidoLinha } from "./PedidoLinha";
+import { ProducaoVisualizacao } from "./ProducaoVisualizacao";
+import type { PedidoKanban } from "./KanbanBoard";
 import type { StatusPedido } from "@/generated/prisma/enums";
+import type { AvisoPreflight } from "@/lib/preflight";
 
 const REGEX_DATA = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -155,6 +158,101 @@ export default async function ProducaoPage({
     .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
   const pedidos = [...pedidosAtivos, ...pedidosFinalizados];
 
+  // Mesma fórmula usada dentro do .map da lista abaixo (lucroDoPedido, ver
+  // src/lib/custo-pedido.ts) — extraída pra função porque agora também
+  // alimenta pedidosKanban, sem duplicar a conta duas vezes no arquivo.
+  function lucroDoPedidoListado(pedido: (typeof pedidosAtivos)[number]) {
+    const custosAtivos = pedido.custos.filter((custo) => custo.estornadoEm === null);
+    const custoTotalPedido = custosAtivos.reduce((soma, custo) => soma + Number(custo.valor), 0);
+    return custosAtivos.length > 0 ? Number(pedido.orcamento.total) - custoTotalPedido : null;
+  }
+
+  // Visão Kanban só tem coluna pras etapas ATIVAS (ver KanbanBoard.tsx) —
+  // pedidosAtivos já é exatamente esse recorte (STATUS_FINALIZADOS excluído
+  // acima), então nada de recalcular o filtro. valor/lucro seguem a mesma
+  // regra de podeVerCustos da lista: nunca viajam pro client sem permissão,
+  // nem escondidos por CSS.
+  const pedidosKanban: PedidoKanban[] = pedidosAtivos.map((pedido) => ({
+    id: pedido.id,
+    orcamentoId: pedido.orcamentoId,
+    clienteNome: pedido.orcamento.cliente.nome,
+    itensResumo: pedido.orcamento.itens.map((i) => i.itemGrafica.itemCatalogo.nome).join(", "),
+    status: pedido.status,
+    chipAtraso: chipAtraso(pedido.prazoEntrega, pedido.status),
+    valorTotal: podeVerCustos ? Number(pedido.orcamento.total) : null,
+    lucro: podeVerCustos ? lucroDoPedidoListado(pedido) : null,
+    souResponsavelDesteStatus: etapasResponsavel.has(pedido.status),
+  }));
+
+  // Construído aqui (fora do JSX final) pra poder ser passado pronto —
+  // já renderizado pelo servidor — como children de ProducaoVisualizacao
+  // (client component): a lista continua 100% a mesma, só o lugar onde ela
+  // é montada muda (alterna com o Kanban via CSS, não é recriada).
+  const listaConteudo =
+    pedidos.length === 0 ? (
+      <EmptyState
+        icone={<PrinterIcon className="h-6 w-6" />}
+        texto={
+          filtrosAtivos
+            ? "Nenhum pedido encontrado com esse filtro."
+            : "Nenhum pedido em produção ainda. Pedidos aparecem aqui automaticamente quando um orçamento é aprovado."
+        }
+        href="/orcamento"
+        rotuloCta="Ir para Orçamento"
+      />
+    ) : (
+      <Card className="divide-y divide-slate-100 dark:divide-slate-800">
+        {pedidos.map((pedido, indice) => {
+          // Divisor visual só na virada de ativos pra finalizados (nunca
+          // no topo, mesmo se a lista inteira for só finalizados).
+          const inicioFinalizados = indice === pedidosAtivos.length && pedidosAtivos.length > 0;
+
+          return (
+            <div key={pedido.id}>
+              {inicioFinalizados && (
+                <p className="bg-slate-50 px-6 py-2 text-xs font-medium text-slate-500 dark:bg-slate-900/50">
+                  Finalizados
+                </p>
+              )}
+              <PedidoLinha
+                pedidoId={pedido.id}
+                orcamentoId={pedido.orcamentoId}
+                clienteNome={pedido.orcamento.cliente.nome}
+                itensResumo={pedido.orcamento.itens
+                  .map((i) => i.itemGrafica.itemCatalogo.nome)
+                  .join(", ")}
+                status={pedido.status}
+                podeEditar={podeEditar}
+                podeEditarCustos={podeEditarCustos}
+                podeVerCustos={podeVerCustos}
+                souResponsavelDesteStatus={etapasResponsavel.has(pedido.status)}
+                chipAtraso={chipAtraso(pedido.prazoEntrega, pedido.status)}
+                arteUrl={pedido.arteUrl}
+                arteAprovadaEm={pedido.arteAprovadaEm}
+                arteRespondidaPor={pedido.arteRespondidaPor}
+                arteComentarioCliente={pedido.arteComentarioCliente}
+                linkArtePublico={pedido.arteLinkToken ? `${origem}/a/${pedido.arteLinkToken}` : null}
+                preflightAvisos={(pedido.preflightAvisos as AvisoPreflight[] | null) ?? []}
+                categoriasCustoAtivas={categoriasCustoAtivas}
+                // valor/lucro só viajam pro client quando podeVerCustos:
+                // nunca deixar quem só tem CUSTOS.podeEditar (lança
+                // retrabalho) receber o número no payload da página, nem
+                // que escondido por CSS — ver critério de aceite do PR-1.
+                custos={pedido.custos.map((custo) => ({
+                  id: custo.id,
+                  categoriaNome: custo.categoriaCusto.nome,
+                  valor: podeVerCustos ? Number(custo.valor) : null,
+                  observacao: custo.observacao,
+                  createdAt: custo.createdAt.toISOString(),
+                }))}
+                lucro={podeVerCustos ? lucroDoPedidoListado(pedido) : null}
+              />
+            </div>
+          );
+        })}
+      </Card>
+    );
+
   return (
     <div className="flex flex-1 flex-col">
       <UserNav
@@ -204,84 +302,12 @@ export default async function ProducaoPage({
           )}
         </form>
 
-        {pedidos.length === 0 ? (
-          <EmptyState
-            icone={<PrinterIcon className="h-6 w-6" />}
-            texto={
-              filtrosAtivos
-                ? "Nenhum pedido encontrado com esse filtro."
-                : "Nenhum pedido em produção ainda. Pedidos aparecem aqui automaticamente quando um orçamento é aprovado."
-            }
-            href="/orcamento"
-            rotuloCta="Ir para Orçamento"
-          />
-        ) : (
-          <Card className="divide-y divide-slate-100 dark:divide-slate-800">
-            {pedidos.map((pedido, indice) => {
-              // Mesma fórmula de lucroDoPedido (src/lib/custo-pedido.ts):
-              // receita = total do orçamento aprovado, custo = soma dos
-              // custos REAIS já lançados. Calculado aqui (reaproveitando os
-              // dados já trazidos pelo findMany acima) em vez de chamar
-              // lucroDoPedido por pedido — isso evitaria N+1 queries (uma
-              // por pedido) já que o mesmo dado já está carregado.
-              //
-              // custosAtivos filtra estornadoEm (fase "custo real" §3.3):
-              // um custo automático estornado no cancelamento continua na
-              // lista `custos` (histórico, mostrado em CustosPedidoSecao),
-              // mas não pode contar contra o lucro do pedido.
-              const custosAtivos = pedido.custos.filter((custo) => custo.estornadoEm === null);
-              const custoTotalPedido = custosAtivos.reduce((soma, custo) => soma + Number(custo.valor), 0);
-              const lucroPedido =
-                custosAtivos.length > 0 ? Number(pedido.orcamento.total) - custoTotalPedido : null;
-
-              // Divisor visual só na virada de ativos pra finalizados (nunca
-              // no topo, mesmo se a lista inteira for só finalizados).
-              const inicioFinalizados = indice === pedidosAtivos.length && pedidosAtivos.length > 0;
-
-              return (
-                <div key={pedido.id}>
-                  {inicioFinalizados && (
-                    <p className="bg-slate-50 px-6 py-2 text-xs font-medium text-slate-500 dark:bg-slate-900/50">
-                      Finalizados
-                    </p>
-                  )}
-                  <PedidoLinha
-                  pedidoId={pedido.id}
-                  orcamentoId={pedido.orcamentoId}
-                  clienteNome={pedido.orcamento.cliente.nome}
-                  itensResumo={pedido.orcamento.itens
-                    .map((i) => i.itemGrafica.itemCatalogo.nome)
-                    .join(", ")}
-                  status={pedido.status}
-                  podeEditar={podeEditar}
-                  podeEditarCustos={podeEditarCustos}
-                  podeVerCustos={podeVerCustos}
-                  souResponsavelDesteStatus={etapasResponsavel.has(pedido.status)}
-                  chipAtraso={chipAtraso(pedido.prazoEntrega, pedido.status)}
-                  arteUrl={pedido.arteUrl}
-                  arteAprovadaEm={pedido.arteAprovadaEm}
-                  arteRespondidaPor={pedido.arteRespondidaPor}
-                  arteComentarioCliente={pedido.arteComentarioCliente}
-                  linkArtePublico={pedido.arteLinkToken ? `${origem}/a/${pedido.arteLinkToken}` : null}
-                  categoriasCustoAtivas={categoriasCustoAtivas}
-                  // valor/lucro só viajam pro client quando podeVerCustos:
-                  // nunca deixar quem só tem CUSTOS.podeEditar (lança
-                  // retrabalho) receber o número no payload da página, nem
-                  // que escondido por CSS — ver critério de aceite do PR-1.
-                  custos={pedido.custos.map((custo) => ({
-                    id: custo.id,
-                    categoriaNome: custo.categoriaCusto.nome,
-                    valor: podeVerCustos ? Number(custo.valor) : null,
-                    observacao: custo.observacao,
-                    createdAt: custo.createdAt.toISOString(),
-                  }))}
-                  lucro={podeVerCustos ? lucroPedido : null}
-                  />
-                </div>
-              );
-            })}
-          </Card>
-        )}
+        <ProducaoVisualizacao
+          lista={listaConteudo}
+          pedidosKanban={pedidosKanban}
+          podeEditar={podeEditar}
+          podeVerCustos={podeVerCustos}
+        />
       </main>
     </div>
   );

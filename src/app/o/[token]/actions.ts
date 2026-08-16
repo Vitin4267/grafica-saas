@@ -238,6 +238,10 @@ export async function responderOrcamentoPublico(
           // continua "pertencendo" contabilmente ao orçamento, nunca cria
           // uma linha nova de razão pro Pedido.
           arteUrl: orcamento.arteUrl,
+          // Mesmo arquivo copiado acima — copia os achados já calculados
+          // junto, não recalcula (ver comentário de Pedido.preflightAvisos
+          // no schema.prisma).
+          preflightAvisos: orcamento.preflightAvisos ?? undefined,
         },
       });
 

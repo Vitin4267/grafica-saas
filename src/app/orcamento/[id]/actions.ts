@@ -14,6 +14,7 @@ import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { calcularItemOrcamento } from "@/lib/orcamento-precificacao";
+import { analisarPreflight } from "@/lib/preflight";
 import { resolverOrigemPublica } from "@/lib/url-publica";
 import {
   validarArquivoArte,
@@ -203,6 +204,10 @@ export async function atualizarStatusOrcamento(
           // limpa pedido.arteUrl local, sem apagar o blob — comportamento
           // esperado.
           arteUrl: orcamento.arteUrl,
+          // Mesmo arquivo copiado acima — copia os achados já calculados
+          // junto, não recalcula (ver comentário de Pedido.preflightAvisos
+          // no schema.prisma).
+          preflightAvisos: orcamento.preflightAvisos ?? undefined,
         },
       });
 
@@ -692,6 +697,8 @@ export async function enviarArteOrcamento(
 
   const orcamento = await prisma.orcamento.findFirst({
     where: { id: orcamentoId, graficaId: usuario.graficaId },
+    // itens (largura/altura) só servem pro preflight abaixo.
+    include: { itens: { select: { larguraCm: true, alturaCm: true } } },
   });
   if (!orcamento) {
     return { ok: false, mensagem: "Orçamento não encontrado." };
@@ -738,9 +745,22 @@ export async function enviarArteOrcamento(
   }
   await confirmarArquivo(reserva.arquivoId, { url: blob.url, pathname: blob.pathname });
 
+  // Preflight é melhor esforço (nunca lança, ver analisarPreflight) — mesmo
+  // cuidado de enviarArte (producao/actions.ts): roda antes do update pra
+  // gravar os achados no mesmo write que já grava arteUrl.
+  const bufferArquivo = Buffer.from(await arquivo.arrayBuffer());
+  const preflightAvisos = await analisarPreflight(
+    bufferArquivo,
+    arquivo.type,
+    orcamento.itens.map((item) => ({
+      larguraCm: item.larguraCm == null ? null : Number(item.larguraCm),
+      alturaCm: item.alturaCm == null ? null : Number(item.alturaCm),
+    }))
+  );
+
   await prisma.orcamento.update({
     where: { id: orcamentoId },
-    data: { arteUrl: blob.url },
+    data: { arteUrl: blob.url, preflightAvisos },
   });
 
   // Apaga a arte anterior DEPOIS que a nova já está gravada no banco (melhor
@@ -785,7 +805,7 @@ export async function removerArteOrcamento(
 
   await prisma.orcamento.update({
     where: { id: orcamentoId },
-    data: { arteUrl: null },
+    data: { arteUrl: null, preflightAvisos: Prisma.JsonNull },
   });
 
   const arquivoRemovido = await removerArquivo({

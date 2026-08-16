@@ -1242,6 +1242,16 @@ model Orcamento {
   // orcamento/[id]/actions.ts e o/[token]/actions.ts).
   arteUrl String?
 
+  // Achados do preflight automático rodado no momento do upload (ver
+  // src/lib/preflight.ts) — array de { checagem, severidade, mensagem }.
+  // null = arquivo ainda não passou pelo preflight (nunca teve arte
+  // enviada, ou foi enviada antes desta feature existir). Recalculado do
+  // zero a cada novo upload (nunca acumula achado de um arquivo antigo).
+  // v1 cobre: DPI efetivo (raster) e sangria via MediaBox×TrimBox (PDF) —
+  // NÃO tenta detectar CMYK/RGB dentro do conteúdo de um PDF já pronto
+  // (só é confiável pra imagem raster), nem checar fonte embutida ainda.
+  preflightAvisos Json?
+
   // Rastreamento de etapas de produção (data+hora combinados, mesmo padrão
   // de arteAprovadaEm) + nome de quem é responsável — não precisa ser o
   // usuário logado, por isso é texto livre e não uma FK pra Usuario. Editável
@@ -1850,6 +1860,11 @@ model Pedido {
   arteAprovadaEm        DateTime?
   arteComentarioCliente String?
   arteLinkToken         String?   @unique
+  // Mesmo campo/formato de Orcamento.preflightAvisos (ver comentário lá) —
+  // quando a arte do orçamento é copiada pro Pedido na aprovação, os
+  // achados de preflight são copiados junto (não recalculados, é o mesmo
+  // arquivo); um reenvio de arte na Produção recalcula do zero.
+  preflightAvisos Json?
   // Nome DECLARADO por quem respondeu pelo link público — não é verificado
   // (quem tem o link digita o que quiser), vale como registro, igual a uma
   // assinatura em formulário de papel. Nunca escrever "confirmado por" na

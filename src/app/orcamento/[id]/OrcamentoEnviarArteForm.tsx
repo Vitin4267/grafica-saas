@@ -5,7 +5,9 @@ import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { PreflightAvisos } from "@/components/ui/PreflightAvisos";
 import { validarArquivoArte } from "@/lib/upload-validacao";
+import type { AvisoPreflight } from "@/lib/preflight";
 import { enviarArteOrcamento, removerArteOrcamento } from "./actions";
 
 // Só aparece com o orçamento em RASCUNHO (ver page.tsx) — gate de negócio
@@ -17,9 +19,13 @@ import { enviarArteOrcamento, removerArteOrcamento } from "./actions";
 export function OrcamentoEnviarArteForm({
   orcamentoId,
   arteUrl,
+  preflightAvisos,
 }: {
   orcamentoId: string;
   arteUrl: string | null;
+  // Achados do preflight automático (ver src/lib/preflight.ts) sobre a arte
+  // ATUAL deste orçamento — recalculado do zero a cada reenvio.
+  preflightAvisos: AvisoPreflight[];
 }) {
   const [state, formAction, isPending] = useActionState(enviarArteOrcamento, null);
   const [estadoRemover, removerAction, removendoArte] = useActionState(removerArteOrcamento, null);
@@ -108,6 +114,9 @@ export function OrcamentoEnviarArteForm({
       {estadoRemover && !estadoRemover.ok && (
         <Alert variant="error">{estadoRemover.mensagem}</Alert>
       )}
+      {/* Achados do preflight automático — mostrado sempre que há arte
+          anexada com achados, nunca bloqueia envio/aprovação. */}
+      <PreflightAvisos avisos={preflightAvisos} />
     </div>
   );
 }

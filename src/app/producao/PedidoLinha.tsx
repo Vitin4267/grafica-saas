@@ -8,6 +8,8 @@ import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { StatusBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
+import { PreflightAvisos } from "@/components/ui/PreflightAvisos";
+import type { AvisoPreflight } from "@/lib/preflight";
 import { PrinterIcon } from "@/components/icons";
 import { AvancarPedidoButton } from "./AvancarPedidoButton";
 import {
@@ -49,6 +51,7 @@ export function PedidoLinha({
   arteComentarioCliente,
   arteRespondidaPor = null,
   linkArtePublico,
+  preflightAvisos,
   categoriasCustoAtivas,
   custos,
   lucro,
@@ -81,6 +84,10 @@ export function PedidoLinha({
   // ainda não passa esta prop — ver relatório final.
   arteRespondidaPor?: string | null;
   linkArtePublico: string | null;
+  // Achados do preflight automático (ver src/lib/preflight.ts) sobre a arte
+  // ATUAL deste pedido — recalculado do zero a cada reenvio, null/[] quando
+  // não há arte ou nada a avisar.
+  preflightAvisos: AvisoPreflight[];
   // Só as categorias ATIVAS da gráfica (buscadas uma vez em producao/page.tsx,
   // fora do loop de pedidos) — populam o select de "lançar custo" abaixo.
   categoriasCustoAtivas: { id: string; nome: string }[];
@@ -182,6 +189,10 @@ export function PedidoLinha({
           Arte aprovada por {arteRespondidaPor} em {formatoInstanteRealComHora.format(arteAprovadaEm)}
         </p>
       )}
+      {/* Achados do preflight automático — mostrado independente de
+          status/podeEditar (mesmo critério do bloco "aprovada por" acima),
+          nunca bloqueia nada, só informa. */}
+      <PreflightAvisos avisos={preflightAvisos} />
 
       <CustosPedidoSecao
         pedidoId={pedidoId}

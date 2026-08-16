@@ -47,6 +47,7 @@ import { AnaliseTintaCard } from "./AnaliseTintaCard";
 import { verificarRecursoPago } from "@/lib/auth/recurso-pago";
 import { urlAssinadaLeitura } from "@/lib/blob-assinado";
 import { converterDeCm, ROTULO_UNIDADE_DIMENSAO } from "@/lib/unidade-dimensao";
+import type { AvisoPreflight } from "@/lib/preflight";
 
 // Server Action herda o maxDuration da página (Vercel) — analisarTintaItem
 // espera até 40s do webhook n8n + upload da imagem + margem (ver
@@ -314,7 +315,11 @@ export default async function OrcamentoDetalhePage({
         {orcamento.status === "RASCUNHO" && (
           <Card className="mb-6 p-5">
             <p className="mb-3 text-sm font-medium text-slate-500">Arte do orçamento</p>
-            <OrcamentoEnviarArteForm orcamentoId={orcamento.id} arteUrl={orcamento.arteUrl} />
+            <OrcamentoEnviarArteForm
+              orcamentoId={orcamento.id}
+              arteUrl={orcamento.arteUrl}
+              preflightAvisos={(orcamento.preflightAvisos as AvisoPreflight[] | null) ?? []}
+            />
           </Card>
         )}
 
