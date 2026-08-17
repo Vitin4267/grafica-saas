@@ -11,6 +11,8 @@ import {
   type BlobReal,
   type DiferencaReconciliacao,
 } from "@/lib/billing/reconciliacao-armazenamento";
+import { removerArquivo } from "@/lib/billing/armazenamento";
+import { exigirTokenBlobPrivado } from "@/lib/blob-assinado";
 
 // Lógica do cron diário de "ciclo de vida" (src/app/api/cron/lifecycle/
 // route.ts) — separada da rota pra poder ser testada sem precisar montar um
@@ -340,4 +342,48 @@ export async function reconciliarArmazenamento(): Promise<ResultadoReconciliacao
     orfaosEncontrados: orfaosParaApagar.length,
     orfaosApagados,
   };
+}
+
+// --- Expiração de importação de planilha abandonada ----------------------
+
+// Uma ImportacaoPlanilha fica em status MAPEANDO desde o momento em que a
+// linha é criada (ver tentarRegistrarImportacao em
+// src/lib/rate-limit-importacao.ts, que já consome a cota mensal) até a
+// pessoa confirmar o mapeamento — se ela nunca voltar pra confirmar, o
+// arquivo ficaria pra sempre no store privado do Blob e a linha nunca sairia
+// de "aguardando". 24h de folga: mais que suficiente pra qualquer sessão de
+// mapeamento real, curto o bastante pra não acumular lixo por muito tempo. A
+// cota já foi consumida no momento da criação e continua consumida — expirar
+// aqui só limpa o arquivo/estado, nunca devolve a cota do mês (mesmo
+// raciocínio de "falha depois do registro ainda conta" usado em toda a
+// feature).
+const HORAS_EXPIRACAO_IMPORTACAO = 24;
+
+export type ResultadoExpiracaoImportacoes = { processadas: number };
+
+export async function expirarImportacoesAbandonadas(): Promise<ResultadoExpiracaoImportacoes> {
+  const limite = new Date(Date.now() - HORAS_EXPIRACAO_IMPORTACAO * 60 * 60 * 1000);
+  const abandonadas = await prisma.importacaoPlanilha.findMany({
+    where: { status: "MAPEANDO", createdAt: { lt: limite } },
+    select: { id: true, graficaId: true },
+  });
+
+  let processadas = 0;
+  for (const importacao of abandonadas) {
+    const arquivoRevertido = await removerArquivo({
+      graficaId: importacao.graficaId,
+      tipo: "PLANILHA_IMPORTACAO",
+      referenciaId: importacao.id,
+    });
+    if (arquivoRevertido) {
+      await del(arquivoRevertido.url, { token: exigirTokenBlobPrivado() }).catch(() => {});
+    }
+    await prisma.importacaoPlanilha.update({
+      where: { id: importacao.id },
+      data: { status: "ERRO", mensagemErro: "Expirado — mapeamento não confirmado a tempo." },
+    });
+    processadas++;
+  }
+
+  return { processadas };
 }

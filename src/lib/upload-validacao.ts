@@ -78,6 +78,38 @@ export function extensaoImagemTinta(tipo: string): "png" | "webp" | "jpg" {
   return "jpg";
 }
 
+// Planilha do Importador com IA (src/app/importar) — vai pro store PRIVADO
+// (nunca vira URL pública), então a preocupação de "hospedar arquivo
+// malicioso numa URL de boa reputação" (ver comentário grande abaixo) não
+// se aplica aqui como se aplica pra arte/logo. Mesmo assim vale limitar
+// tamanho/tipo antes de gastar tempo de parser em algo que não é planilha.
+const TIPOS_PLANILHA_PERMITIDOS = new Set([
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
+  "text/csv",
+  "application/csv",
+  "application/vnd.ms-excel", // alguns navegadores/SOs relatam .csv assim
+  "", // navegador às vezes não declara tipo nenhum pra .csv — extensão decide
+]);
+const EXTENSOES_PLANILHA_PERMITIDAS = [".xlsx", ".csv"];
+const TAMANHO_MAXIMO_PLANILHA = 10 * 1024 * 1024;
+
+export function validarArquivoPlanilha(arquivo: { type: string; size: number; name: string }): ValidacaoArquivo {
+  if (arquivo.size === 0) return { ok: false, mensagem: "Selecione um arquivo." };
+  const nomeMinusculo = arquivo.name.toLowerCase();
+  const extensaoOk = EXTENSOES_PLANILHA_PERMITIDAS.some((ext) => nomeMinusculo.endsWith(ext));
+  if (!extensaoOk || !TIPOS_PLANILHA_PERMITIDOS.has(arquivo.type)) {
+    return { ok: false, mensagem: "Envie um arquivo .xlsx ou .csv." };
+  }
+  if (arquivo.size > TAMANHO_MAXIMO_PLANILHA) {
+    return { ok: false, mensagem: "Arquivo muito grande — o limite é 10MB." };
+  }
+  return { ok: true };
+}
+
+export function ehPlanilhaXlsx(nomeArquivo: string): boolean {
+  return nomeArquivo.toLowerCase().endsWith(".xlsx");
+}
+
 // Assinatura ("magic bytes") de cada formato aceito. As validações acima
 // checam `arquivo.type`, que é o Content-Type DECLARADO pelo cliente no
 // multipart — trivialmente forjável montando a requisição à mão. Sem conferir
@@ -114,6 +146,9 @@ export function assinaturaBateComTipo(bytes: Uint8Array, tipo: string): boolean 
         bytes[10] === 0x42 &&
         bytes[11] === 0x50
       );
+    case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+      // .xlsx é um ZIP — assinatura padrão de arquivo ZIP local (PK\x03\x04).
+      return comecaCom(bytes, [0x50, 0x4b, 0x03, 0x04]);
     default:
       // Tipo fora das allowlists acima nunca chega aqui (as validações de
       // tipo rodam antes), mas fail-closed por garantia.

@@ -79,15 +79,25 @@ export default async function OrcamentoPage() {
       />
 
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-10">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
-            {podeEditar ? "Calculadora de orçamento" : "Orçamentos"}
-          </h1>
-          <p className="mt-1 text-slate-500">
-            {podeEditar
-              ? "Escolha o cliente e o produto para montar o orçamento em segundos."
-              : "Acompanhe os orçamentos da gráfica."}
-          </p>
+        <div className="mb-8 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
+              {podeEditar ? "Calculadora de orçamento" : "Orçamentos"}
+            </h1>
+            <p className="mt-1 text-slate-500">
+              {podeEditar
+                ? "Escolha o cliente e o produto para montar o orçamento em segundos."
+                : "Acompanhe os orçamentos da gráfica."}
+            </p>
+          </div>
+          {podeEditar && (
+            <Link
+              href="/importar/pedidos"
+              className="text-sm font-medium text-teal-700 hover:underline dark:text-teal-400"
+            >
+              Importar pedidos de planilha
+            </Link>
+          )}
         </div>
 
         {!podeEditar ? null : clientes.length === 0 || itensVendaveis.length === 0 ? (
