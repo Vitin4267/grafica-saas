@@ -9,6 +9,7 @@ import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { clienteSchema } from "@/lib/clientes";
+import { ehViolacaoDeChaveEstrangeira } from "@/lib/prisma-conflito";
 
 export type CriarClienteResult = { ok: boolean; mensagem: string };
 
@@ -200,7 +201,7 @@ export async function excluirCliente(
   try {
     await prisma.cliente.delete({ where: { id: clienteId } });
   } catch (erro) {
-    if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2003") {
+    if (ehViolacaoDeChaveEstrangeira(erro)) {
       return {
         ok: false,
         mensagem:

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Prisma } from "@/generated/prisma/client";
-import { ehConflitoDeSerializacao, ehViolacaoDeUnicidade } from "./prisma-conflito";
+import { ehConflitoDeSerializacao, ehViolacaoDeUnicidade, ehViolacaoDeChaveEstrangeira } from "./prisma-conflito";
 
 describe("ehConflitoDeSerializacao", () => {
   it("reconhece PrismaClientKnownRequestError com código P2034", () => {
@@ -58,5 +58,51 @@ describe("ehViolacaoDeUnicidade", () => {
       clientVersion: "7.9.0",
     });
     expect(ehViolacaoDeUnicidade(erro)).toBe(false);
+  });
+});
+
+describe("ehViolacaoDeChaveEstrangeira", () => {
+  it("reconhece código P2003", () => {
+    const erro = new Prisma.PrismaClientKnownRequestError("violação de FK", {
+      code: "P2003",
+      clientVersion: "7.9.0",
+    });
+    expect(ehViolacaoDeChaveEstrangeira(erro)).toBe(true);
+  });
+
+  it("NÃO reconhece outro código", () => {
+    const erro = new Prisma.PrismaClientKnownRequestError("duplicado", {
+      code: "P2002",
+      clientVersion: "7.9.0",
+    });
+    expect(ehViolacaoDeChaveEstrangeira(erro)).toBe(false);
+  });
+
+  // Achado excluindo Prensa/Cliente em uso, confirmado empiricamente contra o
+  // banco de verdade (mesmo jeito do achado de ehConflitoDeSerializacao):
+  // violação de RESTRICT no DELETE nunca chega como PrismaClientKnownRequestError
+  // P2003 com @prisma/adapter-pg — chega como DriverAdapterError cru com o
+  // SQLSTATE do Postgres na causa. Sem este check, excluir uma prensa/cliente
+  // ainda em uso escapava como erro 500 em vez da mensagem amigável.
+  it("reconhece o DriverAdapterError cru do @prisma/adapter-pg (SQLSTATE 23001, restrict_violation)", () => {
+    const erro = { name: "DriverAdapterError", cause: { code: "23001" } };
+    expect(ehViolacaoDeChaveEstrangeira(erro)).toBe(true);
+  });
+
+  it("reconhece o DriverAdapterError cru do @prisma/adapter-pg (SQLSTATE 23503, foreign_key_violation)", () => {
+    const erro = { name: "DriverAdapterError", cause: { code: "23503" } };
+    expect(ehViolacaoDeChaveEstrangeira(erro)).toBe(true);
+  });
+
+  it("NÃO reconhece um DriverAdapterError de outro código", () => {
+    const erro = { name: "DriverAdapterError", cause: { code: "23505" } };
+    expect(ehViolacaoDeChaveEstrangeira(erro)).toBe(false);
+  });
+
+  it("não quebra com valores estranhos (null, string, objeto vazio)", () => {
+    expect(ehViolacaoDeChaveEstrangeira(null)).toBe(false);
+    expect(ehViolacaoDeChaveEstrangeira("erro qualquer")).toBe(false);
+    expect(ehViolacaoDeChaveEstrangeira({})).toBe(false);
+    expect(ehViolacaoDeChaveEstrangeira(new Error("erro genérico"))).toBe(false);
   });
 });

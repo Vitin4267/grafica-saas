@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { calcularItemOrcamento } from "@/lib/orcamento-precificacao";
 import { D } from "@/lib/pricing/decimal";
+import { ehViolacaoDeChaveEstrangeira } from "@/lib/prisma-conflito";
 
 // Dados de exemplo pra /comecar: um conjunto mínimo e COERENTE (prensa + papel
 // com tabela de preço + formato de folha + produto Offset + produto Simples +
@@ -313,7 +314,7 @@ export async function limparDadosExemplo(graficaId: string): Promise<ResultadoLi
       await tx.cliente.delete({ where: { id: cliente.id } });
     });
   } catch (erro) {
-    if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2003") {
+    if (ehViolacaoDeChaveEstrangeira(erro)) {
       catalogoRemovido = false;
     } else {
       throw erro;

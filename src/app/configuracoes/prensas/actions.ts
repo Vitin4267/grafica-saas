@@ -8,6 +8,7 @@ import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
+import { ehViolacaoDeChaveEstrangeira } from "@/lib/prisma-conflito";
 
 export type SalvarPrensaResult = { ok: boolean; mensagem: string };
 
@@ -134,7 +135,7 @@ export async function excluirPrensa(
   try {
     await prisma.prensa.delete({ where: { id: prensaId } });
   } catch (erro) {
-    if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2003") {
+    if (ehViolacaoDeChaveEstrangeira(erro)) {
       return {
         ok: false,
         mensagem:
