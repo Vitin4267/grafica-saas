@@ -355,6 +355,57 @@ export function ParametrosForm({
         </Link>
       </Card>
 
+      <Card className="flex items-center justify-between gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Importar clientes de planilha
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Suba uma planilha (.xlsx ou .csv) da sua base de clientes — a IA
+            sugere o mapeamento de coluna, você confirma antes de importar.
+          </p>
+        </div>
+        <Link href="/importar/clientes">
+          <Button type="button" variant="outline">
+            Importar clientes
+          </Button>
+        </Link>
+      </Card>
+
+      <Card className="flex items-center justify-between gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Importar catálogo de planilha
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Suba uma planilha de produtos, serviços ou matéria-prima —
+            entram como itens de modelo Simples, prontos pra ajustar preço.
+          </p>
+        </div>
+        <Link href="/importar/catalogo">
+          <Button type="button" variant="outline">
+            Importar catálogo
+          </Button>
+        </Link>
+      </Card>
+
+      <Card className="flex items-center justify-between gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Importar pedidos históricos de planilha
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Traga pra dentro pedidos que já foram vendidos, pra manter o
+            histórico de faturamento nos relatórios de Meu Negócio.
+          </p>
+        </div>
+        <Link href="/importar/pedidos">
+          <Button type="button" variant="outline">
+            Importar pedidos
+          </Button>
+        </Link>
+      </Card>
+
       <Card className="flex flex-col gap-4 p-6">
         <h2 className="text-base font-semibold text-slate-900 dark:text-white">
           Nesting de bobina
