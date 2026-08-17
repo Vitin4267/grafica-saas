@@ -121,8 +121,15 @@ export default async function OrcamentoPage() {
               id: ig.id,
               nome: ig.itemCatalogo.nome,
             }))}
-            clientes={clientes}
-            filiais={filiais}
+            // Remapeado pra {id, nome} igual os dois props acima — sem isso,
+            // o objeto Cliente/Filial inteiro (CPF/CNPJ, endereço) ia junto
+            // no payload da página só pra alimentar um <select> que usa só
+            // esses dois campos. O tipo Cliente/Filial em CalculadoraForm.tsx
+            // já era só {id,nome}, mas isso é apagado em runtime — sem o
+            // .map() aqui, o dado extra continuava indo pro HTML, visível em
+            // "ver código-fonte"/aba Network pra qualquer um.
+            clientes={clientes.map((c) => ({ id: c.id, nome: c.nome }))}
+            filiais={filiais.map((f) => ({ id: f.id, nome: f.nome }))}
             unidadePadrao={usuario.grafica.unidadePadraoDimensao}
           />
         )}

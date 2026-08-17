@@ -273,7 +273,11 @@ export default async function OrcamentoDetalhePage({
                 <TrocarClienteForm
                   orcamentoId={orcamento.id}
                   clienteAtualId={orcamento.clienteId}
-                  clientes={clientes}
+                  // Remapeado pra {id,nome} — sem isso, CPF/CNPJ e endereço
+                  // de todo cliente iam pro payload da página só pra
+                  // alimentar este <select> (ver mesmo achado em
+                  // orcamento/page.tsx).
+                  clientes={clientes.map((c) => ({ id: c.id, nome: c.nome }))}
                 />
               </div>
             )}
