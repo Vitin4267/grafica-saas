@@ -53,7 +53,7 @@ export default async function FornecedoresPage() {
           <p className="mt-1 text-slate-500">
             Quem vendeu cada material — aparece como opção ao registrar uma
             entrada de compra no Catálogo. Não é um cadastro de cotação ou
-            aprovação de compra, só "de quem eu comprei este item".
+            aprovação de compra, só &quot;de quem eu comprei este item&quot;.
           </p>
         </div>
 

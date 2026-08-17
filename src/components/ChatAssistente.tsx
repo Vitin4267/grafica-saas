@@ -4,14 +4,39 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { SparklesIcon, XIcon, ArrowRightIcon } from "@/components/icons";
-import { LINKS } from "@/components/UserNav";
 import { verificarAssistenteDisponivel, enviarPerguntaAssistente } from "./ChatAssistente.actions";
 
 type Mensagem = { autor: "usuario" | "assistente"; texto: string; erro?: boolean };
 
+// Rótulo de área enviado no campo `pagina` do webhook do Assistente
+// (ver webhook-assistente.ts) — usado do lado do n8n pra rotear a pergunta
+// pro prompt de sistema certo (um por área), em vez de um prompt único
+// tentando cobrir o site inteiro. Cobre TODAS as rotas autenticadas, não só
+// o menu principal (LINKS, de UserNav.tsx) — Configurações e Financeiro têm
+// sub-áreas com prompt próprio (Filiais/Fiscal e Importador saíram de
+// "Configurações" de propósito, ver árvore de decisão da divisão em áreas).
+// Ordem importa: prefixos mais específicos (`/configuracoes/filiais`) vêm
+// antes do prefixo genérico (`/configuracoes`) que ele venceria por engano.
+const AREAS_ASSISTENTE: { prefixo: string; area: string }[] = [
+  { prefixo: "/orcamento", area: "Orçamento" },
+  { prefixo: "/clientes", area: "Clientes" },
+  { prefixo: "/catalogo", area: "Catálogo" },
+  { prefixo: "/producao", area: "Produção" },
+  { prefixo: "/financeiro", area: "Financeiro" },
+  { prefixo: "/meu-negocio", area: "Meu Negócio" },
+  { prefixo: "/importar", area: "Importador" },
+  { prefixo: "/usuarios", area: "Usuários" },
+  { prefixo: "/configuracoes/assinatura", area: "Assinatura" },
+  { prefixo: "/configuracoes/filiais", area: "Filiais" },
+  { prefixo: "/configuracoes/fiscal", area: "Filiais" },
+  { prefixo: "/configuracoes", area: "Configurações" },
+];
+
 function rotularPagina(pathname: string): string {
-  const link = LINKS.find((l) => pathname === l.href || pathname.startsWith(`${l.href}/`));
-  return link?.label ?? pathname;
+  const encontrada = AREAS_ASSISTENTE.find(
+    ({ prefixo }) => pathname === prefixo || pathname.startsWith(`${prefixo}/`)
+  );
+  return encontrada?.area ?? pathname;
 }
 
 // Widget autossuficiente, sem props: verifica sozinho (via Server Action) se

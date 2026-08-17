@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useEffect, useState, type ChangeEvent } from "react";
+import { useActionState, useState, type ChangeEvent } from "react";
+import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -39,11 +40,9 @@ export function IdentidadeForm({
   // digitada mesmo depois do banco já ter voltado pra null (revalidatePath
   // re-renderiza o Server Component pai, mas o estado local deste Client
   // Component não se redefine sozinho por causa disso).
-  useEffect(() => {
-    if (stateRestaurarCor?.ok) {
-      setCorDigitada(COR_PADRAO);
-    }
-  }, [stateRestaurarCor]);
+  useAoMudar(stateRestaurarCor, (estado) => {
+    if (estado?.ok) setCorDigitada(COR_PADRAO);
+  });
 
   // Mesma ideia de EnviarArteForm.tsx: valida antes de submeter, pra nunca
   // depender do limite de corpo da Server Action pra avisar o usuário.

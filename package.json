@@ -27,8 +27,8 @@
     "next": "^16.3.1",
     "next-themes": "^0.4.6",
     "pdf-lib": "^1.17.1",
-    "react": "19.2.4",
-    "react-dom": "19.2.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "server-only": "^0.0.1",
     "sharp": "^0.35.3",
     "stripe": "^22.3.1",
@@ -36,7 +36,8 @@
   },
   "overrides": {
     "uuid": "^11.1.1",
-    "@types/node": "^20"
+    "@types/node": "^20",
+    "deepmerge-ts": "^8.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
