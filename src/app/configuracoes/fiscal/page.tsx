@@ -54,7 +54,7 @@ export default async function ConfiguracoesFiscaisPage() {
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Dados fiscais</h1>
           <p className="mt-1 text-slate-500">
             Usados pra emitir nota fiscal (NF-e) pros seus clientes via Focus
-            NFe. A conta na Focus NFe é sua — o grafica-saas nunca guarda
+            NFe. A conta na Focus NFe é sua — o GrafPro nunca guarda
             certificado digital, só o token de acesso da sua própria conta.
           </p>
         </div>

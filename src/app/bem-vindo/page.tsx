@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { SparklesIcon, ArrowRightIcon } from "@/components/icons";
 
 export const metadata = {
-  title: "Bem-vindo — Gráfica+",
+  title: "Bem-vindo — GrafPro",
 };
 
 export default async function BemVindoPage() {
@@ -40,7 +40,7 @@ export default async function BemVindoPage() {
 
           <p className="text-lg text-slate-600 dark:text-slate-400">
             A <span className="font-semibold text-slate-900 dark:text-white">{usuario.grafica.nome}</span> já
-            tem um espaço só dela no Gráfica+. Faltam só alguns minutos de configuração pra você montar
+            tem um espaço só dela no GrafPro. Faltam só alguns minutos de configuração pra você montar
             o primeiro orçamento.
           </p>
 

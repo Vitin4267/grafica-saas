@@ -200,7 +200,7 @@ export default function Home() {
       <footer className="border-t border-slate-200 py-8 dark:border-slate-800">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 text-sm text-slate-500 sm:flex-row">
           <Logo />
-          <p>© {new Date().getFullYear()} Gráfica+. Todos os direitos reservados.</p>
+          <p>© {new Date().getFullYear()} GrafPro. Todos os direitos reservados.</p>
           <div className="flex items-center gap-4">
             <Link href="/termos" className="hover:text-slate-700 dark:hover:text-slate-300">
               Termos de Uso

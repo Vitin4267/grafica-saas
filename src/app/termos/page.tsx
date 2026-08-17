@@ -3,7 +3,7 @@ import { Logo } from "@/components/Logo";
 import { ArrowLeftIcon } from "@/components/icons";
 
 export const metadata = {
-  title: "Termos de Uso — Gráfica+",
+  title: "Termos de Uso — GrafPro",
 };
 
 export default function TermosPage() {
@@ -28,19 +28,19 @@ export default function TermosPage() {
 
         <div className="mt-8 flex flex-col gap-6 text-sm leading-relaxed [&_h2]:mt-6 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:text-slate-900 dark:[&_h2]:text-white [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:flex [&_ol]:flex-col [&_ol]:gap-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:flex [&_ul]:flex-col [&_ul]:gap-2">
           <p>
-            Estes Termos de Uso regulam a utilização do Gráfica+, um sistema (SaaS) de
+            Estes Termos de Uso regulam a utilização do GrafPro, um sistema (SaaS) de
             orçamento, catálogo, estoque, financeiro e gestão para gráficas, oferecido por{" "}
             <strong>Victor Ferrareto Dias</strong>, pessoa física inscrita no CPF{" "}
-            <strong>542.664.238-96</strong>, doravante &ldquo;Gráfica+&rdquo;. Ao criar uma
+            <strong>542.664.238-96</strong>, doravante &ldquo;GrafPro&rdquo;. Ao criar uma
             conta, você concorda integralmente com estes termos.
           </p>
 
           <div>
             <h2>1. O que é o serviço</h2>
             <p>
-              O Gráfica+ é uma plataforma online para gráficas gerenciarem orçamentos,
+              O GrafPro é uma plataforma online para gráficas gerenciarem orçamentos,
               clientes, catálogo de produtos, estoque, produção, financeiro e emissão de nota
-              fiscal. Cada gráfica que se cadastra (&ldquo;Cliente Gráfica+&rdquo;) opera de
+              fiscal. Cada gráfica que se cadastra (&ldquo;Cliente GrafPro&rdquo;) opera de
               forma isolada das demais, com seus próprios dados.
             </p>
           </div>
@@ -68,7 +68,7 @@ export default function TermosPage() {
               Cada gráfica cadastrada é a <strong>controladora</strong> dos dados de seus
               próprios clientes (pessoas ou empresas que ela cadastra no sistema para gerar
               orçamentos e notas fiscais) — é ela quem decide coletar esses dados e para quê.
-              O Gráfica+ atua como <strong>operador</strong>: processa esses dados apenas para
+              O GrafPro atua como <strong>operador</strong>: processa esses dados apenas para
               viabilizar o funcionamento do sistema para a gráfica contratante, e nunca os
               utiliza para finalidade própria. Detalhes completos em nossa{" "}
               <Link href="/privacidade" className="font-medium text-teal-700 hover:underline dark:text-teal-400">
@@ -91,7 +91,7 @@ export default function TermosPage() {
           <div>
             <h2>5. Integrações e serviços de terceiros</h2>
             <p>
-              O Gráfica+ pode se conectar, a critério e configuração de cada gráfica, a
+              O GrafPro pode se conectar, a critério e configuração de cada gráfica, a
               serviços de terceiros: emissão de nota fiscal (Focus NFe), consulta de endereço
               por CEP (ViaCEP) e um webhook de automação (n8n ou similar) configurado pela
               própria gráfica para receber eventos como pedido atrasado ou estoque crítico.
@@ -134,7 +134,7 @@ export default function TermosPage() {
           <div>
             <h2>8. Limitação de responsabilidade</h2>
             <p>
-              O Gráfica+ é fornecido &ldquo;como está&rdquo;. Fazemos o possível para manter o
+              O GrafPro é fornecido &ldquo;como está&rdquo;. Fazemos o possível para manter o
               serviço disponível e seguro, mas não garantimos operação ininterrupta.
               Recomendamos que cada gráfica mantenha seus próprios backups de informações
               críticas quando aplicável.

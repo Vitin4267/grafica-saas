@@ -99,7 +99,7 @@ export default async function ConfiguracoesAssinaturaPage({
             Assinatura
           </h1>
           <p className="mt-1 text-slate-500">
-            Cobrança do uso do grafica-saas. Sem assinatura ativa (ou trial
+            Cobrança do uso do GrafPro. Sem assinatura ativa (ou trial
             válido), o acesso ao sistema fica bloqueado pra toda a equipe.
           </p>
         </div>

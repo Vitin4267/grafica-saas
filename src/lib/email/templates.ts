@@ -45,12 +45,12 @@ export function templateResetSenha(
 ): { assunto: string; html: string; texto: string } {
   const cor = resolverCorPrimaria(corPrimaria);
   return {
-    assunto: "Redefinir sua senha — Gráfica+",
+    assunto: "Redefinir sua senha — GrafPro",
     texto: `Recebemos um pedido pra redefinir sua senha.\n\nAcesse o link abaixo (válido por 1 hora):\n${link}\n\nSe você não pediu isso, pode ignorar este e-mail — sua senha continua a mesma.`,
     html: `
       <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
         <h2 style="color: #0f172a;">Redefinir sua senha</h2>
-        <p style="color: #334155;">Recebemos um pedido pra redefinir a senha da sua conta no Gráfica+.</p>
+        <p style="color: #334155;">Recebemos um pedido pra redefinir a senha da sua conta no GrafPro.</p>
         <p>
           <a href="${link}" style="display: inline-block; background: ${cor}; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600;">
             Redefinir senha
@@ -118,12 +118,12 @@ export function templateTrialExpirando(
 
   return {
     assunto: "Seu teste grátis termina em 2 dias — não perca o acesso",
-    texto: `Seu período de testes está quase no fim!\n\nVocê já gerou ${orcamentosTexto} no Gráfica+ — imagina quanto tempo isso já economizou do seu cálculo manual.\n\nPra não perder o acesso ao seu painel e ao histórico dos seus clientes, escolha um plano a partir de R$ 110,00:\n${linkAssinatura}`,
+    texto: `Seu período de testes está quase no fim!\n\nVocê já gerou ${orcamentosTexto} no GrafPro — imagina quanto tempo isso já economizou do seu cálculo manual.\n\nPra não perder o acesso ao seu painel e ao histórico dos seus clientes, escolha um plano a partir de R$ 110,00:\n${linkAssinatura}`,
     html: `
       <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
         <h2 style="color: #0f172a;">Seu teste grátis está quase no fim</h2>
         <p style="color: #334155;">
-          Faltam só 2 dias! Você já gerou <strong>${orcamentosTexto}</strong> no Gráfica+ —
+          Faltam só 2 dias! Você já gerou <strong>${orcamentosTexto}</strong> no GrafPro —
           imagina quanto tempo isso já economizou do seu cálculo manual.
         </p>
         <p style="color: #334155;">
@@ -507,12 +507,12 @@ export function templateVerificacaoEmail(
 } {
   const cor = resolverCorPrimaria(corPrimaria);
   return {
-    assunto: "Seu código de confirmação — Gráfica+",
+    assunto: "Seu código de confirmação — GrafPro",
     texto: `Seu código de confirmação é: ${codigo}\n\nEsse código vale por 15 minutos. Se você não pediu isso, pode ignorar este e-mail.`,
     html: `
       <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
         <h2 style="color: #0f172a;">Confirme seu e-mail</h2>
-        <p style="color: #334155;">Use o código abaixo pra confirmar seu e-mail e liberar o acesso à sua conta no Gráfica+.</p>
+        <p style="color: #334155;">Use o código abaixo pra confirmar seu e-mail e liberar o acesso à sua conta no GrafPro.</p>
         <p style="font-family: monospace; font-size: 32px; font-weight: 700; letter-spacing: 8px; color: ${cor}; text-align: center; padding: 16px 0;">
           ${codigo}
         </p>

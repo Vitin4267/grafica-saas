@@ -7,7 +7,7 @@ export function Logo({ className = "" }: { className?: string }) {
         <PrinterIcon className="h-5 w-5" strokeWidth={2} />
       </span>
       <span className="text-slate-900 dark:text-slate-50">
-        Gráfica<span className="text-teal-600">+</span>
+        Graf<span className="text-teal-600">Pro</span>
       </span>
     </span>
   );

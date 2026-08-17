@@ -1,8 +1,8 @@
-# Gráfica+
+# GrafPro
 
 Multi-tenant quoting and management SaaS for Brazilian print shops (gráficas) — pricing, catalog, production, finance, and subscription billing, all in one product.
 
-**🔗 Live:** [grafica-saas-peach.vercel.app](https://grafica-saas-peach.vercel.app/)
+**🔗 Live:** [grafpro.com.br](https://grafpro.com.br/)
 
 [![Tests](https://github.com/Vitin4267/grafica-saas/actions/workflows/test.yml/badge.svg)](https://github.com/Vitin4267/grafica-saas/actions/workflows/test.yml)
 

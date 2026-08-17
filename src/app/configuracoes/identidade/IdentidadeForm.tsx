@@ -111,7 +111,7 @@ export function IdentidadeForm({
           <h2 className="text-base font-semibold text-slate-900 dark:text-white">Cor da marca</h2>
           <p className="mt-1 text-sm text-slate-500">
             Usada no PDF de orçamento e nos e-mails enviados pros seus clientes. Sem uma cor
-            configurada, usamos o teal padrão do Gráfica+.
+            configurada, usamos o teal padrão do GrafPro.
           </p>
         </div>
 

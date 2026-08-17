@@ -3,7 +3,7 @@ import { Logo } from "@/components/Logo";
 import { ArrowLeftIcon } from "@/components/icons";
 
 export const metadata = {
-  title: "Política de Privacidade — Gráfica+",
+  title: "Política de Privacidade — GrafPro",
 };
 
 export default function PrivacidadePage() {
@@ -30,7 +30,7 @@ export default function PrivacidadePage() {
 
         <div className="mt-8 flex flex-col gap-6 text-sm leading-relaxed [&_h2]:mt-6 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:text-slate-900 dark:[&_h2]:text-white [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:flex [&_ul]:flex-col [&_ul]:gap-2 [&_table]:w-full [&_table]:text-left [&_table]:border-collapse [&_th]:border-b [&_th]:border-slate-200 dark:[&_th]:border-slate-800 [&_th]:pb-2 [&_th]:font-semibold [&_th]:text-slate-900 dark:[&_th]:text-white [&_td]:border-b [&_td]:border-slate-100 dark:[&_td]:border-slate-800/60 [&_td]:py-2 [&_td]:align-top">
           <p>
-            Esta política explica quais dados o Gráfica+ coleta, para quê, com quem
+            Esta política explica quais dados o GrafPro coleta, para quê, com quem
             compartilha e quais direitos você tem sobre eles, em conformidade com a Lei Geral
             de Proteção de Dados (LGPD — Lei nº 13.709/2018). O responsável por esta plataforma
             é <strong>Victor Ferrareto Dias</strong>, pessoa física, CPF{" "}
@@ -43,7 +43,7 @@ export default function PrivacidadePage() {
             <p>
               Quando você cria uma conta como gráfica, você (a gráfica) é a{" "}
               <strong>controladora</strong> dos dados dos seus clientes que cadastrar no
-              sistema. O Gráfica+ atua como <strong>operador</strong>: processa esses dados
+              sistema. O GrafPro atua como <strong>operador</strong>: processa esses dados
               apenas para viabilizar o funcionamento do sistema, seguindo as instruções da
               gráfica, e nunca os usa para nenhuma finalidade própria (como venda de dados,
               anúncios ou treinamento de modelos de terceiros).

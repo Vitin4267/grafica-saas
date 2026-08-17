@@ -328,7 +328,7 @@ export function ParametrosForm({
             Assinatura
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Status da cobrança do grafica-saas — trial, plano ativo, fatura.
+            Status da cobrança do GrafPro — trial, plano ativo, fatura.
           </p>
         </div>
         <Link href="/configuracoes/assinatura">

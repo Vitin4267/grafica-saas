@@ -42,7 +42,7 @@ export function AuthLayout({
           </ul>
         </div>
         <p className="relative text-sm text-teal-100">
-          © {new Date().getFullYear()} Gráfica+
+          © {new Date().getFullYear()} GrafPro
         </p>
       </div>
 

@@ -38,12 +38,12 @@ model Grafica {
   // Logo da PRÓPRIA gráfica (não confundir com a marca do grafica-saas) —
   // usada no cabeçalho do PDF de orçamento (src/lib/pdf/OrcamentoDocumento.tsx)
   // no lugar da marca da plataforma. Opcional: sem logo, o PDF mostra só o
-  // nome da gráfica em texto, nunca a marca "Gráfica+".
+  // nome da gráfica em texto, nunca a marca "GrafPro".
   logoUrl String?
 
   // Cor de destaque usada no PDF de orçamento e nos e-mails transacionais
   // que vão pro CLIENTE FINAL da gráfica (aprovação de orçamento, arte,
-  // etc.) — documentos com a cara da gráfica, não do Gráfica+. Formato hex
+  // etc.) — documentos com a cara da gráfica, não do GrafPro. Formato hex
   // ("#RRGGBB"), validado na action. null = mantém o teal padrão da
   // plataforma (comportamento de hoje, sem mudança pra quem nunca configurar).
   corPrimaria String?

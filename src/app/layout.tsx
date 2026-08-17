@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Gráfica+ · Orçamentos e gestão para gráficas",
+  title: "GrafPro · Orçamentos e gestão para gráficas",
   description:
     "Monte orçamentos, cadastre clientes e controle o estoque da sua gráfica em um só lugar.",
 };
