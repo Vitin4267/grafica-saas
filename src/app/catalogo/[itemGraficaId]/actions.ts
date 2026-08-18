@@ -44,6 +44,22 @@ class ErroEstoqueDivergente extends Error {}
 export type SalvarConfigResult = { ok: boolean; mensagem: string };
 
 const modeloCalculoSchema = z.enum(["SIMPLES", "M2", "OFFSET"]);
+// Sem OUTRO de propósito: unidadeContagem não tem campo "outro" livre (só
+// ItemCatalogo.unidade tem), então OUTRO aqui só mostraria o rótulo genérico
+// "outro" na exibição de preço — melhor nem oferecer a opção.
+const unidadeContagemSchema = z.enum([
+  "FOLHA",
+  "METRO_QUADRADO",
+  "METRO_LINEAR",
+  "UNIDADE",
+  "LITRO",
+  "KG",
+  "ROLO",
+  "PACOTE",
+  "CENTO",
+  "MILHEIRO",
+  "HORA",
+]);
 const baseCobrancaSchema = z.enum([
   "UNIDADE",
   "M2",
@@ -122,6 +138,29 @@ export async function salvarModeloProduto(
   }
   const modeloCalculo = modeloParsed.data;
 
+  // Unidade em que a gráfica vende este produto (ex: rótulo por milheiro) —
+  // camada de exibição derivada, nunca mexe no motor de preço (ver
+  // src/lib/unidade-contagem.ts e comentário do campo no schema). Vale pros
+  // 3 modelos de cálculo, não só M2/OFFSET.
+  const unidadeContagemRaw = String(formData.get("unidadeContagem") || "");
+  const unidadeContagemParsed = unidadeContagemRaw
+    ? unidadeContagemSchema.safeParse(unidadeContagemRaw)
+    : null;
+  if (unidadeContagemRaw && !unidadeContagemParsed?.success) {
+    return { ok: false, mensagem: "Unidade de venda inválida." };
+  }
+  const unidadeContagem = unidadeContagemParsed?.success ? unidadeContagemParsed.data : null;
+  const fatorConversaoRaw = formData.get("fatorConversao");
+  const fatorConversao = fatorConversaoRaw ? Number(fatorConversaoRaw) : null;
+  if (fatorConversao !== null && (!Number.isFinite(fatorConversao) || fatorConversao <= 0)) {
+    return { ok: false, mensagem: "Fator de conversão da unidade de venda inválido." };
+  }
+  // As duas coisas andam juntas — unidade sem fator (ou vice-versa) não tem
+  // como converter preço nenhum, então trata como "não configurado" em vez
+  // de gravar um par incompleto.
+  const unidadeContagemFinal = unidadeContagem && fatorConversao ? unidadeContagem : null;
+  const fatorConversaoFinal = unidadeContagem && fatorConversao ? fatorConversao : null;
+
   const ROTULO_MODELO: Record<typeof modeloCalculo, string> = {
     SIMPLES: "Simples",
     M2: "M² (flexografia)",
@@ -133,7 +172,11 @@ export async function salvarModeloProduto(
     if (modeloCalculo === "SIMPLES") {
       await prisma.itemGrafica.update({
         where: { id: itemGraficaId },
-        data: { modeloCalculo: "SIMPLES" },
+        data: {
+          modeloCalculo: "SIMPLES",
+          unidadeContagem: unidadeContagemFinal,
+          fatorConversao: fatorConversaoFinal,
+        },
       });
 
       await registrarAuditoria({
@@ -171,7 +214,13 @@ export async function salvarModeloProduto(
       await prisma.$transaction([
         prisma.itemGrafica.update({
           where: { id: itemGraficaId },
-          data: { modeloCalculo: "M2", custoImpressaoM2, areaMinimaFaturavel },
+          data: {
+            modeloCalculo: "M2",
+            custoImpressaoM2,
+            areaMinimaFaturavel,
+            unidadeContagem: unidadeContagemFinal,
+            fatorConversao: fatorConversaoFinal,
+          },
         }),
         prisma.bobinaMaterial.deleteMany({ where: { itemGraficaId } }),
         prisma.bobinaMaterial.createMany({
@@ -242,7 +291,15 @@ export async function salvarModeloProduto(
       await prisma.$transaction([
         prisma.itemGrafica.update({
           where: { id: itemGraficaId },
-          data: { modeloCalculo: "OFFSET", viraFolha, gramaturaGm2, prensaId, papelId },
+          data: {
+            modeloCalculo: "OFFSET",
+            viraFolha,
+            gramaturaGm2,
+            prensaId,
+            papelId,
+            unidadeContagem: unidadeContagemFinal,
+            fatorConversao: fatorConversaoFinal,
+          },
         }),
         prisma.formatoFolha.deleteMany({ where: { itemGraficaId } }),
         prisma.formatoFolha.createMany({

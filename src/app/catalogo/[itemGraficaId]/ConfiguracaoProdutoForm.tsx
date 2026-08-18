@@ -8,9 +8,26 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { gerarChave } from "@/lib/chave-local";
+import { ROTULO_UNIDADE } from "@/lib/unidade";
 import { salvarModeloProduto } from "./actions";
 
 type ModeloCalculo = "SIMPLES" | "M2" | "OFFSET";
+
+// Mesmo conjunto de unidadeContagemSchema em actions.ts — sem OUTRO (sem
+// campo de texto livre pra essa, ficaria só "outro" na exibição de preço).
+const OPCOES_UNIDADE_CONTAGEM = [
+  "MILHEIRO",
+  "CENTO",
+  "PACOTE",
+  "ROLO",
+  "UNIDADE",
+  "FOLHA",
+  "METRO_QUADRADO",
+  "METRO_LINEAR",
+  "LITRO",
+  "KG",
+  "HORA",
+] as const;
 
 type BobinaLinha = { chave: string; larguraNominal: string; refile: string };
 type FormatoLinha = {
@@ -186,6 +203,8 @@ export function ConfiguracaoProdutoForm({
   prensas,
   bobinas: bobinasIniciais,
   formatosFolha: formatosIniciais,
+  unidadeContagem: unidadeContagemInicial,
+  fatorConversao: fatorConversaoInicial,
 }: {
   itemGraficaId: string;
   modeloCalculo: ModeloCalculo;
@@ -199,6 +218,10 @@ export function ConfiguracaoProdutoForm({
   prensas: { id: string; nome: string }[];
   bobinas: { larguraNominal: string; refile: string }[];
   formatosFolha: { nome: string; larguraFolha: string; alturaFolha: string }[];
+  // Unidade em que a gráfica VENDE este produto (ex: rótulo por milheiro) —
+  // só exibição, nunca muda o motor de preço. Vazio = comportamento atual.
+  unidadeContagem: string;
+  fatorConversao: string;
 }) {
   const [modeloCalculo, setModeloCalculo] = useState<ModeloCalculo>(modeloCalculoInicial);
   const [bobinas, setBobinas] = useState<BobinaLinha[]>(() =>
@@ -252,6 +275,31 @@ export function ConfiguracaoProdutoForm({
           <option value="M2">M2 — grande formato em bobina</option>
           <option value="OFFSET">Offset — impressão em folha</option>
         </Select>
+
+        <div className="grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 dark:border-slate-800">
+          <Select
+            label="Vender por (opcional)"
+            name="unidadeContagem"
+            defaultValue={unidadeContagemInicial}
+            hint="Só muda como o preço é MOSTRADO — o cálculo continua igual."
+          >
+            <option value="">Não usar unidade alternativa</option>
+            {OPCOES_UNIDADE_CONTAGEM.map((u) => (
+              <option key={u} value={u}>
+                {ROTULO_UNIDADE[u]}
+              </option>
+            ))}
+          </Select>
+          <Input
+            label="Quantas unidades base = 1 dessas"
+            name="fatorConversao"
+            type="number"
+            step="1"
+            min="1"
+            defaultValue={fatorConversaoInicial}
+            placeholder="ex: 1000 para milheiro"
+          />
+        </div>
 
         {modeloCalculo === "M2" && (
           <div className="flex flex-col gap-4 border-t border-slate-100 pt-4 dark:border-slate-800">

@@ -222,6 +222,8 @@ export default async function ConfiguracaoItemPage({
                 larguraFolha: f.larguraFolha.toString(),
                 alturaFolha: f.alturaFolha.toString(),
               }))}
+              unidadeContagem={itemGrafica.unidadeContagem ?? ""}
+              fatorConversao={itemGrafica.fatorConversao?.toString() ?? ""}
             />
             {itemGrafica.modeloCalculo === "M2" && (
               <ConfiguracaoClicheEtiquetaForm
