@@ -231,8 +231,8 @@ export default async function ConfiguracaoItemPage({
                 configuracao={
                   itemGrafica.configuracaoClicheEtiqueta
                     ? {
-                        custoClicheUnitario:
-                          itemGrafica.configuracaoClicheEtiqueta.custoClicheUnitario.toString(),
+                        custoClichePorCm2:
+                          itemGrafica.configuracaoClicheEtiqueta.custoClichePorCm2.toString(),
                       }
                     : null
                 }

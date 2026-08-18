@@ -115,7 +115,7 @@ export async function carregarContextoPrecificacao(
       custoM2Material = Number(papel.precoCompra ?? 0);
       contexto.etiquetaCliche = {
         quantidadeCores: dadosEtiqueta.quantidadeCores,
-        custoClicheUnitario: Number(item.configuracaoClicheEtiqueta.custoClicheUnitario),
+        custoClichePorCm2: Number(item.configuracaoClicheEtiqueta.custoClichePorCm2),
       };
     }
 

@@ -557,8 +557,8 @@ export async function salvarConfiguracaoClicheEtiqueta(
     return { ok: false, mensagem: "Item não encontrado." };
   }
 
-  const custoClicheUnitario = Number(formData.get("custoClicheUnitario"));
-  if (!Number.isFinite(custoClicheUnitario) || custoClicheUnitario < 0) {
+  const custoClichePorCm2 = Number(formData.get("custoClichePorCm2"));
+  if (!Number.isFinite(custoClichePorCm2) || custoClichePorCm2 < 0) {
     return { ok: false, mensagem: "Custo do clichê inválido." };
   }
 
@@ -568,12 +568,12 @@ export async function salvarConfiguracaoClicheEtiqueta(
 
   await prisma.configuracaoClicheEtiqueta.upsert({
     where: { itemGraficaId },
-    update: { custoClicheUnitario },
-    create: { itemGraficaId, custoClicheUnitario },
+    update: { custoClichePorCm2 },
+    create: { itemGraficaId, custoClichePorCm2 },
   });
 
-  const textoAntes = formatarPreco(configAntes?.custoClicheUnitario ?? null);
-  const textoDepois = formatarPreco(custoClicheUnitario);
+  const textoAntes = formatarPreco(configAntes?.custoClichePorCm2 ?? null);
+  const textoDepois = formatarPreco(custoClichePorCm2);
   if (textoAntes !== textoDepois) {
     await registrarAuditoria({
       graficaId: usuario.graficaId,

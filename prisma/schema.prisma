@@ -1064,11 +1064,16 @@ model ConfiguracaoAcabamento {
 // ConfiguracaoAcabamento pra SERVICO/acabamento (presença = ligado, sem
 // checkbox extra). Só relevante quando ItemGrafica.modeloCalculo=M2.
 model ConfiguracaoClicheEtiqueta {
-  id                  String   @id @default(cuid())
-  itemGraficaId       String   @unique
-  custoClicheUnitario Decimal  @db.Decimal(12, 4) // R$ por clichê (por cor), fixo — não escala com a tiragem
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                String   @id @default(cuid())
+  itemGraficaId     String   @unique
+  // R$ por cm² de área de clichê — achado analisando 132 pedidos reais da
+  // Assus (histórico "Custos_Adestek"): o custo do clichê escala com a área
+  // da etiqueta, não é um valor fixo igual pra qualquer tamanho (confirmado
+  // comparando pedidos de tamanhos diferentes com o mesmo nº de cores).
+  // Nunca escala com a tiragem — só com área × nº de cores.
+  custoClichePorCm2 Decimal  @db.Decimal(12, 4)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id], onDelete: Cascade)
 

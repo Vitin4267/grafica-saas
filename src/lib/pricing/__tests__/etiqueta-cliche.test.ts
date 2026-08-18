@@ -41,9 +41,10 @@ function pedidoEtiqueta(quantidade: number): PedidoPrecificacao {
   };
 }
 
-describe("motor de clichê de etiqueta — fixo por cor, papel variável", () => {
-  it("custo de clichê é IDÊNTICO em tiragens bem diferentes (fixo por cor, não por quantidade)", () => {
-    const etiquetaCliche = { quantidadeCores: 4, custoClicheUnitario: 25 };
+describe("motor de clichê de etiqueta — por área e por cor, papel variável", () => {
+  it("custo de clichê é IDÊNTICO em tiragens bem diferentes (por área×cor, não por quantidade)", () => {
+    // Etiqueta 5×5cm = 25cm². 4 cores × R$1,00/cm² × 25cm² = R$100.
+    const etiquetaCliche = { quantidadeCores: 4, custoClichePorCm2: 1 };
 
     const resultadoPequeno = precificar(
       pedidoEtiqueta(100),
@@ -54,13 +55,27 @@ describe("motor de clichê de etiqueta — fixo por cor, papel variável", () =>
       contextoEtiqueta({ etiquetaCliche })
     );
 
-    // 4 cores × R$25 = R$100, igual nos dois — a prova central do requisito.
+    // Igual nos dois, mesmo com tiragem 500× maior — a prova central do requisito.
     expect(resultadoPequeno.detalhes.cliche.toNumber()).toBe(100);
     expect(resultadoGrande.detalhes.cliche.toNumber()).toBe(100);
   });
 
+  it("etiqueta maior (mais área) custa mais clichê, mesmo nº de cores e mesma taxa por cm²", () => {
+    const etiquetaCliche = { quantidadeCores: 2, custoClichePorCm2: 1 };
+    function pedidoTamanho(larguraM: number, alturaM: number): PedidoPrecificacao {
+      return { tipo: "M2", pedido: { larguraM, alturaM, quantidade: 1000 }, acabamentos: [] };
+    }
+
+    const pequena = precificar(pedidoTamanho(0.05, 0.05), contextoEtiqueta({ etiquetaCliche })); // 25cm²
+    const grande = precificar(pedidoTamanho(0.1, 0.1), contextoEtiqueta({ etiquetaCliche })); // 100cm²
+
+    // 2 cores × R$1/cm² × área — escala 4x junto com a área (25→100cm²).
+    expect(pequena.detalhes.cliche.toNumber()).toBe(50); // 2×1×25
+    expect(grande.detalhes.cliche.toNumber()).toBe(200); // 2×1×100
+  });
+
   it("troca de papel (custoM2Material) muda o preço final proporcionalmente ao material, sem mexer no clichê", () => {
-    const etiquetaCliche = { quantidadeCores: 2, custoClicheUnitario: 20 };
+    const etiquetaCliche = { quantidadeCores: 2, custoClichePorCm2: 20 };
 
     const papelBarato = precificar(
       pedidoEtiqueta(1000),

@@ -12,7 +12,7 @@ export function ConfiguracaoClicheEtiquetaForm({
   configuracao,
 }: {
   itemGraficaId: string;
-  configuracao: { custoClicheUnitario: string } | null;
+  configuracao: { custoClichePorCm2: string } | null;
 }) {
   const [state, formAction, isPending] = useActionState(salvarConfiguracaoClicheEtiqueta, null);
 
@@ -27,14 +27,14 @@ export function ConfiguracaoClicheEtiquetaForm({
         </Alert>
 
         <Input
-          label="Custo do clichê por cor (R$)"
-          name="custoClicheUnitario"
+          label="Custo do clichê por cm² (R$)"
+          name="custoClichePorCm2"
           type="number"
           step="0.0001"
           min="0"
           required
-          defaultValue={configuracao?.custoClicheUnitario ?? ""}
-          hint="Cobrado uma vez por cor da arte escolhida no orçamento, não escala com a quantidade — mesma lógica de uma chapa offset."
+          defaultValue={configuracao?.custoClichePorCm2 ?? ""}
+          hint="Multiplicado pela área da etiqueta e pelo nº de cores do orçamento — não escala com a quantidade impressa, só com tamanho e nº de cores (mesma lógica de uma chapa offset, só que por área)."
         />
 
         {state && <Alert variant={state.ok ? "success" : "error"}>{state.mensagem}</Alert>}

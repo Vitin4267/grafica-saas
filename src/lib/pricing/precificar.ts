@@ -33,9 +33,12 @@ export type ContextoPrecificacao = {
   custoEmbalagem?: number;
   custoFreteEstimado?: number;
   // Motor de clichê de etiqueta (só M2) — presente só quando o produto tem
-  // ConfiguracaoClicheEtiqueta E o orçamento informou papel+cores. Fixo por
-  // cor, nunca escala com a quantidade (mesmo padrão de custoChapas do offset).
-  etiquetaCliche?: { quantidadeCores: number; custoClicheUnitario: number };
+  // ConfiguracaoClicheEtiqueta E o orçamento informou papel+cores. Custo por
+  // clichê = área da etiqueta × custoClichePorCm2; total = isso × nº de
+  // cores. Nunca escala com a tiragem/quantidade (achado analisando pedidos
+  // reais: mesma etiqueta, mesmo nº de cores, custo de clichê idêntico
+  // independente de imprimir 1.000 ou 60.000 unidades).
+  etiquetaCliche?: { quantidadeCores: number; custoClichePorCm2: number };
   custoFaca?: number; // ferramental de corte, R$ livre, por item de orçamento
 };
 
@@ -69,10 +72,16 @@ export function precificar(
     };
     const acabamentos = calcularAcabamentos(pedido.acabamentos, ctxAcabamento);
 
+    // Área da PEÇA (não a área faturável com margem/gap de nesting) — o
+    // clichê cobre o desenho real da etiqueta, não a folga de segurança
+    // usada só pra calcular aproveitamento de bobina.
+    const areaClicheCm2 = paraDecimal(pedido.pedido.larguraM)
+      .times(pedido.pedido.alturaM)
+      .times(10_000);
     const custoCliche = contexto.etiquetaCliche
-      ? paraDecimal(contexto.etiquetaCliche.quantidadeCores).times(
-          contexto.etiquetaCliche.custoClicheUnitario
-        )
+      ? paraDecimal(contexto.etiquetaCliche.quantidadeCores)
+          .times(contexto.etiquetaCliche.custoClichePorCm2)
+          .times(areaClicheCm2)
       : undefined;
     const custoFaca = contexto.custoFaca !== undefined ? paraDecimal(contexto.custoFaca) : undefined;
 

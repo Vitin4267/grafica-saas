@@ -19,6 +19,14 @@ const ChatAssistente = dynamic(
   { ssr: false }
 );
 
+// Lazy pelo mesmo motivo do ChatAssistente acima: a maioria das visitas não é
+// DONO ou não tem pendência nenhuma (o componente checa isso sozinho e
+// renderiza null), então não vale pagar o parse do JS em toda rota.
+const PendenciasConfiguracaoModal = dynamic(
+  () => import("@/components/PendenciasConfiguracaoModal").then((m) => m.PendenciasConfiguracaoModal),
+  { ssr: false }
+);
+
 // Exportado pra ChatAssistente reaproveitar os mesmos rótulos em pt-BR na
 // hora de identificar em qual página o usuário está. `modulo` liga cada link
 // ao controle granular de permissão (ver src/lib/auth/permissoes.ts) — link
@@ -232,6 +240,7 @@ export function UserNav({
       )}
 
       <ChatAssistente />
+      <PendenciasConfiguracaoModal />
     </header>
   );
 }
