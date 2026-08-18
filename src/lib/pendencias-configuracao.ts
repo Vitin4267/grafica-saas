@@ -12,11 +12,17 @@ import { prisma } from "@/lib/prisma";
 // Extensível: cada pendência é um `tipo` do union abaixo. Adicionar uma nova
 // checagem no futuro é só mais um item no array dentro de
 // listarPendenciasConfiguracao, sem mexer no que já existe.
-export type PendenciaConfiguracao = {
-  tipo: "BOBINA_ETIQUETA_FALTANDO";
-  itemGraficaId: string;
-  nomeProduto: string;
-};
+export type PendenciaConfiguracao =
+  | {
+      tipo: "BOBINA_ETIQUETA_FALTANDO";
+      itemGraficaId: string;
+      nomeProduto: string;
+    }
+  | {
+      tipo: "PAPEL_MATERIA_PRIMA_FALTANDO";
+      itemGraficaId: string;
+      nomeProduto: string;
+    };
 
 export async function listarPendenciasConfiguracao(
   graficaId: string
@@ -34,9 +40,39 @@ export async function listarPendenciasConfiguracao(
     include: { itemCatalogo: true },
   });
 
-  return itensSemBobina.map((item) => ({
+  const pendenciasBobina = itensSemBobina.map((item) => ({
     tipo: "BOBINA_ETIQUETA_FALTANDO" as const,
     itemGraficaId: item.id,
     nomeProduto: item.itemCatalogo.nome,
   }));
+
+  // Produto com clichê de etiqueta configurado depende de existir pelo
+  // menos uma matéria-prima ativa pra ser escolhida como papel no orçamento
+  // (mesmo filtro de src/lib/orcamento/page.tsx e orcamento-precificacao.ts:
+  // qualquer MATERIA_PRIMA ativa da gráfica, sem categoria obrigatória). Sem
+  // isso o seletor de papel aparece vazio pro vendedor. Contagem primeiro —
+  // só busca os produtos afetados se a gráfica realmente não tem nenhuma.
+  const totalMateriasPrimas = await prisma.itemGrafica.count({
+    where: { graficaId, ativo: true, itemCatalogo: { tipo: "MATERIA_PRIMA" } },
+  });
+
+  let pendenciasPapel: PendenciaConfiguracao[] = [];
+  if (totalMateriasPrimas === 0) {
+    const itensComCliche = await prisma.itemGrafica.findMany({
+      where: {
+        graficaId,
+        ativo: true,
+        configuracaoClicheEtiqueta: { isNot: null },
+      },
+      include: { itemCatalogo: true },
+    });
+
+    pendenciasPapel = itensComCliche.map((item) => ({
+      tipo: "PAPEL_MATERIA_PRIMA_FALTANDO" as const,
+      itemGraficaId: item.id,
+      nomeProduto: item.itemCatalogo.nome,
+    }));
+  }
+
+  return [...pendenciasBobina, ...pendenciasPapel];
 }

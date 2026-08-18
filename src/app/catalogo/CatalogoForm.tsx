@@ -9,6 +9,7 @@ import { Alert } from "@/components/ui/Alert";
 import { ROTULO_UNIDADE, rotuloUnidade } from "@/lib/unidade";
 import { gerarChave } from "@/lib/chave-local";
 import {
+  AlertTriangleIcon,
   BoxIcon,
   LayersIcon,
   WrenchIcon,
@@ -321,6 +322,7 @@ const ItemLinha = memo(function ItemLinha({
   selecaoInicial,
   valorPreco,
   onMudarPreco,
+  temPendencia,
 }: {
   item: ItemCatalogo;
   selecionado: boolean;
@@ -328,6 +330,7 @@ const ItemLinha = memo(function ItemLinha({
   selecaoInicial?: Selecao;
   valorPreco: string;
   onMudarPreco: (id: string, valor: string) => void;
+  temPendencia: boolean;
 }) {
   // Matéria-prima com variantes (ex: espessura de chapa) não usa mais preço/
   // estoque no nível do item — isso mora nas variantes, geridas numa tela
@@ -382,6 +385,15 @@ const ItemLinha = memo(function ItemLinha({
         {item.unidade && (
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500 dark:bg-slate-800">
             {rotuloUnidade(item.unidade, item.unidadeOutro)}
+          </span>
+        )}
+        {temPendencia && (
+          <span
+            title="Configuração incompleta — este produto ainda não pode ser usado num orçamento"
+            className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+          >
+            <AlertTriangleIcon className="h-3 w-3" />
+            Pendência
           </span>
         )}
       </label>
@@ -635,10 +647,16 @@ function NovoItemForm({
 export function CatalogoForm({
   itensCatalogo,
   selecoes,
+  itemGraficaIdsComPendencia,
 }: {
   itensCatalogo: ItemCatalogo[];
   selecoes: Record<string, Selecao>;
+  itemGraficaIdsComPendencia: string[];
 }) {
+  const idsComPendencia = useMemo(
+    () => new Set(itemGraficaIdsComPendencia),
+    [itemGraficaIdsComPendencia]
+  );
   const [abaAtiva, setAbaAtiva] = useState<Tipo>("PRODUTO");
   const [busca, setBusca] = useState("");
   const [mostrarNovoItem, setMostrarNovoItem] = useState(false);
@@ -915,6 +933,9 @@ export function CatalogoForm({
                           selecaoInicial={selecoes[item.id]}
                           valorPreco={precosPrincipais[item.id] ?? ""}
                           onMudarPreco={definirPreco}
+                          temPendencia={Boolean(
+                            selecoes[item.id]?.id && idsComPendencia.has(selecoes[item.id].id)
+                          )}
                         />
                       </div>
                     ))}

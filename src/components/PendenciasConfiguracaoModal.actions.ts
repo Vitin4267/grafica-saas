@@ -2,10 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirUsuarioAutenticado, obterUsuarioAtual } from "@/lib/auth/session";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { listarPendenciasConfiguracao, type PendenciaConfiguracao } from "@/lib/pendencias-configuracao";
+import { obterStatusOnboarding } from "@/lib/onboarding";
 
 // Refile default — mesmo valor já usado como ponto de partida em
 // BobinasEditor (ConfiguracaoProdutoForm.tsx) quando o usuário adiciona uma
@@ -16,9 +17,22 @@ const REFILE_PADRAO = 0.02;
 // Só DONO vê pendência — checado aqui, no servidor, nunca confiando num
 // prop client-side (regra permanente do projeto: tudo sensível é
 // re-derivado da sessão, nunca confiado no que chega do cliente).
+//
+// obterUsuarioAtual (nullable), não exigirUsuarioAutenticado (que dá
+// redirect("/login")) — mesmo motivo de ChatAssistente.actions.ts usar a
+// versão nullable: isto roda sozinho num useEffect de background em toda
+// página autenticada, não a partir de um clique do usuário. Se a sessão
+// tiver expirado nesse meio-tempo, precisa só devolver "nada pra mostrar",
+// nunca disparar um redirect surpresa enquanto a pessoa está usando outra
+// tela.
+// Só mostra pendência depois que a gráfica já passou do onboarding básico
+// (mesmo sinal `completo` de /comecar: tem cliente e tem catálogo vendável)
+// — uma conta recém-criada não pode competir com o checklist de /comecar.
 export async function obterPendenciasConfiguracao(): Promise<PendenciaConfiguracao[]> {
-  const usuario = await exigirUsuarioAutenticado();
-  if (usuario.papel !== "DONO") return [];
+  const usuario = await obterUsuarioAtual();
+  if (!usuario || usuario.papel !== "DONO") return [];
+  const onboarding = await obterStatusOnboarding(usuario.graficaId);
+  if (!onboarding.completo) return [];
   return listarPendenciasConfiguracao(usuario.graficaId);
 }
 

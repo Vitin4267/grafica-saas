@@ -14,6 +14,8 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { AlertTriangleIcon } from "@/components/icons";
 import { verificarEDispararAlertaEstoque } from "@/lib/alerta-estoque";
+import { listarPendenciasConfiguracao } from "@/lib/pendencias-configuracao";
+import { obterStatusOnboarding } from "@/lib/onboarding";
 import { CatalogoForm } from "./CatalogoForm";
 
 export default async function CatalogoPage() {
@@ -25,7 +27,7 @@ export default async function CatalogoPage() {
 
   const totalCriticos = await verificarEDispararAlertaEstoque(usuario.graficaId, usuario.grafica.nome);
 
-  const [itensCatalogo, itensGrafica] = await Promise.all([
+  const [itensCatalogo, itensGrafica, statusOnboarding] = await Promise.all([
     prisma.itemCatalogo.findMany({
       // Mestre global (graficaId=null) + itens privados criados por essa gráfica.
       where: { OR: [{ graficaId: null }, { graficaId: usuario.graficaId }] },
@@ -35,7 +37,17 @@ export default async function CatalogoPage() {
       where: { graficaId: usuario.graficaId },
       include: { variantes: { where: { ativo: true }, select: { id: true, rotulo: true } } },
     }),
+    obterStatusOnboarding(usuario.graficaId),
   ]);
+
+  // Mesmo gate do modal pós-login (PendenciasConfiguracaoModal.actions.ts):
+  // só mostra pendência depois que a gráfica passou do onboarding básico,
+  // senão uma conta recém-criada montando o catálogo pela primeira vez já
+  // veria o badge de "pendência" no meio do próprio fluxo de cadastro.
+  const pendenciasConfiguracao = statusOnboarding.completo
+    ? await listarPendenciasConfiguracao(usuario.graficaId)
+    : [];
+  const itemGraficaIdsComPendencia = pendenciasConfiguracao.map((p) => p.itemGraficaId);
 
   const selecoesPorItem = Object.fromEntries(
     itensGrafica.map((ig) => [
@@ -138,6 +150,7 @@ export default async function CatalogoPage() {
             unidadeOutro: i.unidadeOutro,
           }))}
           selecoes={selecoesPorItem}
+          itemGraficaIdsComPendencia={itemGraficaIdsComPendencia}
         />
       </main>
     </div>

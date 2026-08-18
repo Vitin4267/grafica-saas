@@ -234,6 +234,19 @@ export async function calcularItemOrcamento(
     };
   } catch (erro) {
     if (erro instanceof ErroPrecificacao) {
+      // MATERIAL_SEM_BOBINA é resolvido só pelo Dono (Configurações do
+      // produto ou o questionário de pendências pós-login) — um
+      // vendedor ADMIN/OPERADOR batendo nesse erro no meio de um
+      // orçamento não tem como resolver sozinho, então a mensagem crua
+      // do motor ("Este material não tem nenhuma bobina cadastrada.")
+      // vira instrução de quem procurar, não só a constatação do problema.
+      if (erro.codigo === "MATERIAL_SEM_BOBINA") {
+        return {
+          ok: false,
+          mensagem:
+            "Este produto ainda não tem a largura da bobina configurada — peça pro Dono da gráfica configurar em Catálogo antes de usar em um orçamento.",
+        };
+      }
       return { ok: false, mensagem: erro.message };
     }
     throw erro;
