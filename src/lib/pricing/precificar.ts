@@ -32,6 +32,11 @@ export type ContextoPrecificacao = {
   margemLucroOverride?: number;
   custoEmbalagem?: number;
   custoFreteEstimado?: number;
+  // Motor de clichê de etiqueta (só M2) — presente só quando o produto tem
+  // ConfiguracaoClicheEtiqueta E o orçamento informou papel+cores. Fixo por
+  // cor, nunca escala com a quantidade (mesmo padrão de custoChapas do offset).
+  etiquetaCliche?: { quantidadeCores: number; custoClicheUnitario: number };
+  custoFaca?: number; // ferramental de corte, R$ livre, por item de orçamento
 };
 
 export type ResultadoPrecificacao = ResultadoComposicao & {
@@ -64,6 +69,13 @@ export function precificar(
     };
     const acabamentos = calcularAcabamentos(pedido.acabamentos, ctxAcabamento);
 
+    const custoCliche = contexto.etiquetaCliche
+      ? paraDecimal(contexto.etiquetaCliche.quantidadeCores).times(
+          contexto.etiquetaCliche.custoClicheUnitario
+        )
+      : undefined;
+    const custoFaca = contexto.custoFaca !== undefined ? paraDecimal(contexto.custoFaca) : undefined;
+
     const composicao = comporPreco({
       quantidade: pedido.pedido.quantidade,
       custoBase: resultado.custoBase,
@@ -73,6 +85,8 @@ export function precificar(
       custoFreteEstimado: contexto.custoFreteEstimado
         ? paraDecimal(contexto.custoFreteEstimado)
         : undefined,
+      custoCliche,
+      custoFaca,
       parametros: contexto.parametros,
       margemLucroOverride: contexto.margemLucroOverride,
     });

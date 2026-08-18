@@ -74,4 +74,29 @@ describe("comporPreco", () => {
     const totalGravado = Number(resultado.precoFinal.toFixed(2));
     expect(Math.round(unitarioGravado * 7 * 100) / 100).toBe(totalGravado);
   });
+
+  it("custoCliche e custoFaca somam em custoDireto uma única vez, sem escalar com a quantidade", () => {
+    const semExtras = comporPreco({
+      quantidade: 1000,
+      custoBase: paraDecimal(100),
+      parametros: { ...PARAMS, overheadPercent: 0, margemPadrao: 0, impostoPercent: 0 },
+    });
+    const comExtras = comporPreco({
+      quantidade: 1000,
+      custoBase: paraDecimal(100),
+      custoCliche: paraDecimal(40), // ex: 4 cores × R$10/clichê
+      custoFaca: paraDecimal(60),
+      parametros: { ...PARAMS, overheadPercent: 0, margemPadrao: 0, impostoPercent: 0 },
+    });
+
+    // custoDireto sobe exatamente 40+60=100, não 100×1000 (não escala com Q).
+    expect(comExtras.custoDireto.toNumber()).toBe(semExtras.custoDireto.toNumber() + 100);
+    expect(comExtras.detalhes.cliche.toNumber()).toBe(40);
+    expect(comExtras.detalhes.faca.toNumber()).toBe(60);
+
+    // Sem os params, os detalhes vêm zerados (nunca undefined) — mantém o
+    // shape do breakdown estável entre orçamentos com e sem etiqueta.
+    expect(semExtras.detalhes.cliche.toNumber()).toBe(0);
+    expect(semExtras.detalhes.faca.toNumber()).toBe(0);
+  });
 });

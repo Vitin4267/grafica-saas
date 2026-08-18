@@ -21,6 +21,10 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       corFrente: null,
       corVerso: null,
       acabamentoIds: [],
+      papelId: null,
+      quantidadeCores: null,
+      custoFaca: null,
+      custoFrete: null,
     });
     expect(resultado.ok).toBe(true);
     if (resultado.ok) {
@@ -36,6 +40,10 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       corFrente: null,
       corVerso: null,
       acabamentoIds: [],
+      papelId: null,
+      quantidadeCores: null,
+      custoFaca: null,
+      custoFrete: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -48,6 +56,10 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       corFrente: null,
       corVerso: null,
       acabamentoIds: [],
+      papelId: null,
+      quantidadeCores: null,
+      custoFaca: null,
+      custoFrete: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -60,6 +72,10 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       corFrente: null,
       corVerso: null,
       acabamentoIds: [],
+      papelId: null,
+      quantidadeCores: null,
+      custoFaca: null,
+      custoFrete: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -72,6 +88,10 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       corFrente: null,
       corVerso: null,
       acabamentoIds: [],
+      papelId: null,
+      quantidadeCores: null,
+      custoFaca: null,
+      custoFrete: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -84,6 +104,10 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       corFrente: null,
       corVerso: null,
       acabamentoIds: [],
+      papelId: null,
+      quantidadeCores: null,
+      custoFaca: null,
+      custoFrete: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -96,6 +120,10 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       corFrente: null,
       corVerso: null,
       acabamentoIds: [],
+      papelId: null,
+      quantidadeCores: null,
+      custoFaca: null,
+      custoFrete: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -108,6 +136,79 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       corFrente: null,
       corVerso: null,
       acabamentoIds: [],
+      papelId: null,
+      quantidadeCores: null,
+      custoFaca: null,
+      custoFrete: null,
+    });
+    expect(resultado.ok).toBe(false);
+  });
+
+  // Guardas do motor de clichê de etiqueta / faca / frete — mesmo raciocínio
+  // das guardas de quantidade/largura acima: editarOrcamento/
+  // adicionarItemOrcamento leem esses campos direto do FormData, sem zod.
+  // ITEM_SIMPLES nem chega a tocar essas guardas (elas rodam antes do branch
+  // SIMPLES/M2/OFFSET), então serve igual pros três casos abaixo.
+  it("rejeita quantidadeCores fracionária", async () => {
+    const resultado = await calcularItemOrcamento(ITEM_SIMPLES, "grafica-1", {
+      quantidade: 1,
+      larguraCm: null,
+      alturaCm: null,
+      corFrente: null,
+      corVerso: null,
+      acabamentoIds: [],
+      papelId: null,
+      quantidadeCores: 1.5,
+      custoFaca: null,
+      custoFrete: null,
+    });
+    expect(resultado.ok).toBe(false);
+  });
+
+  it("rejeita quantidadeCores menor que 1", async () => {
+    const resultado = await calcularItemOrcamento(ITEM_SIMPLES, "grafica-1", {
+      quantidade: 1,
+      larguraCm: null,
+      alturaCm: null,
+      corFrente: null,
+      corVerso: null,
+      acabamentoIds: [],
+      papelId: null,
+      quantidadeCores: 0,
+      custoFaca: null,
+      custoFrete: null,
+    });
+    expect(resultado.ok).toBe(false);
+  });
+
+  it("rejeita custoFaca negativo", async () => {
+    const resultado = await calcularItemOrcamento(ITEM_SIMPLES, "grafica-1", {
+      quantidade: 1,
+      larguraCm: null,
+      alturaCm: null,
+      corFrente: null,
+      corVerso: null,
+      acabamentoIds: [],
+      papelId: null,
+      quantidadeCores: null,
+      custoFaca: -1,
+      custoFrete: null,
+    });
+    expect(resultado.ok).toBe(false);
+  });
+
+  it("rejeita custoFrete negativo", async () => {
+    const resultado = await calcularItemOrcamento(ITEM_SIMPLES, "grafica-1", {
+      quantidade: 1,
+      larguraCm: null,
+      alturaCm: null,
+      corFrente: null,
+      corVerso: null,
+      acabamentoIds: [],
+      papelId: null,
+      quantidadeCores: null,
+      custoFaca: null,
+      custoFrete: -1,
     });
     expect(resultado.ok).toBe(false);
   });

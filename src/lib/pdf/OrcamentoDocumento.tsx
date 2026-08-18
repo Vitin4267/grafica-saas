@@ -14,6 +14,10 @@ export type ItemPdfOrcamento = {
   acabamentosEstruturados: string[];
   precoUnitario: string;
   precoTotal: string;
+  // "R$ X / milheiro", "R$ Y / rolo (N un.)" — só exibição, nunca muda o
+  // total cobrado (ver src/lib/unidade-contagem.ts). Vazio quando o produto
+  // não tem unidadeContagem/fatorConversao nem o item tem embalagemQtdPorRolo.
+  conversoesPreco: string[];
   etiquetaLinhas: [string, string][];
   hotStampingLinhas: string[];
 };
@@ -303,7 +307,14 @@ export function OrcamentoDocumento({ dados }: { dados: DadosPdfOrcamento }) {
                   )}
                 </View>
                 <Text style={estilos.colQtd}>{item.quantidade}</Text>
-                <Text style={estilos.colUnit}>{item.precoUnitario}</Text>
+                <View style={estilos.colUnit}>
+                  <Text>{item.precoUnitario}</Text>
+                  {item.conversoesPreco.map((c) => (
+                    <Text key={c} style={[estilos.detalhesItem, { textAlign: "right" }]}>
+                      {c}
+                    </Text>
+                  ))}
+                </View>
                 <Text style={estilos.colTotal}>{item.precoTotal}</Text>
               </View>
             );

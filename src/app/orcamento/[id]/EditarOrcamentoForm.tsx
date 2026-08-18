@@ -4,11 +4,13 @@ import { useActionState, useState } from "react";
 import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
 import { CamposEtiquetaOrcamento, type CamposEtiqueta } from "../CamposEtiquetaOrcamento";
 import type { ItemAcabamentoDisponivel } from "../SeletorItemOrcamento";
+import type { PapelDisponivel } from "../CamposPrecificacaoEtiquetaOrcamento";
 import {
   converterDeCm,
   converterParaCm,
@@ -45,15 +47,20 @@ export function EditarOrcamentoForm({
   orcamentoItemId,
   itemNome,
   modeloCalculo,
+  usaClicheEtiqueta,
   valoresIniciais,
   podeRemover,
   unidadeDimensao,
   acabamentosDisponiveis,
+  papeisDisponiveis,
 }: {
   orcamentoId: string;
   orcamentoItemId: string;
   itemNome: string;
   modeloCalculo: "SIMPLES" | "M2" | "OFFSET";
+  // ConfiguracaoClicheEtiqueta presente pro produto deste item — só então
+  // mostra o seletor de papel/cores/faca/frete.
+  usaClicheEtiqueta: boolean;
   // Unidade congelada na criação do item — nunca a padrão atual da gráfica,
   // pra trocar a configuração não mudar o que já foi orçado.
   unidadeDimensao: UnidadeDimensao;
@@ -67,9 +74,14 @@ export function EditarOrcamentoForm({
     corFrente: string;
     corVerso: string;
     etiqueta: CamposEtiqueta;
+    papelId: string;
+    quantidadeCores: string;
+    custoFaca: string;
+    custoFrete: string;
   };
   podeRemover: boolean;
   acabamentosDisponiveis: ItemAcabamentoDisponivel[];
+  papeisDisponiveis: PapelDisponivel[];
 }) {
   const [state, formAction, isPending] = useActionState(editarOrcamento, null);
   const [estadoRemocao, acaoRemover, removendoPending] = useActionState(
@@ -229,6 +241,65 @@ export function EditarOrcamentoForm({
             defaultValue={valoresIniciais.acabamento}
             placeholder="ex: laminação fosca, corte reto"
           />
+        )}
+
+        {usaClicheEtiqueta && (
+          <div className="flex flex-col gap-4 rounded-xl border border-slate-300 p-4 dark:border-slate-700">
+            <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              Precificação de etiqueta
+            </p>
+            {papeisDisponiveis.length === 0 ? (
+              <span className="text-xs text-slate-500">
+                Nenhuma matéria-prima de papel cadastrada ainda — cadastre em Catálogo.
+              </span>
+            ) : (
+              <Select
+                label="Papel"
+                name="papelId"
+                defaultValue={valoresIniciais.papelId}
+                required
+              >
+                <option value="" disabled>
+                  Selecione o papel
+                </option>
+                {papeisDisponiveis.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nome}
+                    {p.precoCompra ? ` — R$ ${p.precoCompra}/m²` : ""}
+                  </option>
+                ))}
+              </Select>
+            )}
+            <Input
+              label="Quantidade de cores (clichês)"
+              name="quantidadeCores"
+              type="number"
+              min={1}
+              required
+              defaultValue={valoresIniciais.quantidadeCores}
+              hint="Um clichê por cor da arte — custo fixo, não muda com a tiragem."
+            />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Input
+                label="Custo da faca (R$)"
+                name="custoFaca"
+                type="number"
+                min={0}
+                step="0.01"
+                defaultValue={valoresIniciais.custoFaca}
+                placeholder="opcional"
+              />
+              <Input
+                label="Custo de frete (R$)"
+                name="custoFrete"
+                type="number"
+                min={0}
+                step="0.01"
+                defaultValue={valoresIniciais.custoFrete}
+                placeholder="opcional"
+              />
+            </div>
+          </div>
         )}
 
         {modeloCalculo === "M2" && (

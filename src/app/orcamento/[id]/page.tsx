@@ -14,6 +14,7 @@ import { resolverOrigemPublica } from "@/lib/url-publica";
 import { buscarCustoRealVsOrcado } from "@/lib/custo-producao";
 import { verificarProntidaoFiscal, resolverDadosFiscais } from "@/lib/nota-fiscal";
 import { formatoMoeda } from "@/lib/moeda";
+import { calcularConversoesPreco } from "@/lib/unidade-contagem";
 import { formatoInstanteRealComHora } from "@/lib/data";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
@@ -77,7 +78,7 @@ export default async function OrcamentoDetalhePage({
   const origem = await resolverOrigemPublica();
   const podeEditarFinanceiro = await podeEditarModulo(usuario, "FINANCEIRO");
 
-  const [orcamento, clientes, itensVendaveis, parametrosGrafica, acabamentosDisponiveisRaw] = await Promise.all([
+  const [orcamento, clientes, itensVendaveis, parametrosGrafica, acabamentosDisponiveisRaw, papeisDisponiveisRaw] = await Promise.all([
     prisma.orcamento.findFirst({
       where: { id, graficaId: usuario.graficaId },
       include: {
@@ -86,10 +87,13 @@ export default async function OrcamentoDetalhePage({
         notaFiscal: true,
         itens: {
           include: {
-            itemGrafica: { include: { itemCatalogo: true } },
+            itemGrafica: {
+              include: { itemCatalogo: true, configuracaoClicheEtiqueta: { select: { id: true } } },
+            },
             etiqueta: { include: { hotStampings: true } },
             tinta: true,
             acabamentos: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
+            precificacaoEtiqueta: true,
           },
         },
         pagamentos: { orderBy: { createdAt: "desc" } },
@@ -102,7 +106,7 @@ export default async function OrcamentoDetalhePage({
     }),
     prisma.itemGrafica.findMany({
       where: { graficaId: usuario.graficaId, ativo: true, precoVenda: { not: null } },
-      include: { itemCatalogo: true },
+      include: { itemCatalogo: true, configuracaoClicheEtiqueta: { select: { id: true } } },
       orderBy: { itemCatalogo: { nome: "asc" } },
     }),
     prisma.parametrosGrafica.findUnique({
@@ -119,11 +123,27 @@ export default async function OrcamentoDetalhePage({
       include: { itemCatalogo: true },
       orderBy: { itemCatalogo: { nome: "asc" } },
     }),
+    // Matéria-prima candidata a "papel" no motor de clichê de etiqueta —
+    // mesmo padrão da query equivalente em orcamento/page.tsx.
+    prisma.itemGrafica.findMany({
+      where: {
+        graficaId: usuario.graficaId,
+        ativo: true,
+        itemCatalogo: { tipo: "MATERIA_PRIMA" },
+      },
+      include: { itemCatalogo: true },
+      orderBy: { itemCatalogo: { nome: "asc" } },
+    }),
   ]);
   const custoTintaPorMl = parametrosGrafica?.custoTintaPorMl ? Number(parametrosGrafica.custoTintaPorMl) : null;
   const acabamentosDisponiveis = acabamentosDisponiveisRaw.map((ig) => ({
     id: ig.id,
     nome: ig.itemCatalogo.nome,
+  }));
+  const papeisDisponiveis = papeisDisponiveisRaw.map((ig) => ({
+    id: ig.id,
+    nome: ig.itemCatalogo.nome,
+    precoCompra: ig.precoCompra?.toString() ?? null,
   }));
 
   if (!orcamento) {
@@ -336,9 +356,11 @@ export default async function OrcamentoDetalhePage({
                   orcamentoItemId={item.id}
                   itemNome={item.itemGrafica.itemCatalogo.nome}
                   modeloCalculo={item.modeloCalculo}
+                  usaClicheEtiqueta={item.itemGrafica.configuracaoClicheEtiqueta !== null}
                   unidadeDimensao={item.unidadeDimensao}
                   podeRemover={orcamento.itens.length > 1}
                   acabamentosDisponiveis={acabamentosDisponiveis}
+                  papeisDisponiveis={papeisDisponiveis}
                   valoresIniciais={{
                     quantidade: item.quantidade,
                     larguraCm: item.larguraCm?.toString() ?? "",
@@ -349,6 +371,10 @@ export default async function OrcamentoDetalhePage({
                     corFrente: item.corFrente?.toString() ?? "",
                     corVerso: item.corVerso?.toString() ?? "",
                     etiqueta: etiquetaParaCampos(item.etiqueta),
+                    papelId: item.precificacaoEtiqueta?.papelId ?? "",
+                    quantidadeCores: item.precificacaoEtiqueta?.quantidadeCores.toString() ?? "",
+                    custoFaca: item.precificacaoEtiqueta?.custoFaca?.toString() ?? "",
+                    custoFrete: item.precificacaoEtiqueta?.custoFrete?.toString() ?? "",
                   }}
                 />
                 <DescontoItemForm
@@ -394,9 +420,11 @@ export default async function OrcamentoDetalhePage({
                 categoria: ig.itemCatalogo.categoria,
                 precoVenda: ig.precoVenda!.toString(),
                 modeloCalculo: ig.modeloCalculo,
+                usaClicheEtiqueta: ig.configuracaoClicheEtiqueta !== null,
               }))}
               unidadePadrao={usuario.grafica.unidadePadraoDimensao}
               acabamentosDisponiveis={acabamentosDisponiveis}
+              papeisDisponiveis={papeisDisponiveis}
             />
           </div>
         ) : (
@@ -433,6 +461,18 @@ export default async function OrcamentoDetalhePage({
                     </span>
                   )}
                   <span>Unitário: {formatoMoeda.format(Number(item.precoUnitario))}</span>
+                  {calcularConversoesPreco({
+                    precoUnitario: Number(item.precoUnitario),
+                    unidadeContagem: item.itemGrafica.unidadeContagem,
+                    fatorConversao: item.itemGrafica.fatorConversao
+                      ? Number(item.itemGrafica.fatorConversao)
+                      : null,
+                    embalagemQtdPorRolo: item.etiqueta?.embalagemQtdPorRolo ?? null,
+                  }).map((c) => (
+                    <span key={c.rotulo}>
+                      {c.valorFormatado} / {c.rotulo}
+                    </span>
+                  ))}
                 </div>
                 {item.etiqueta && <EtiquetaResumo etiqueta={item.etiqueta} />}
                 {orcamento.status !== "REJEITADO" && (

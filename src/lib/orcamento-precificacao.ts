@@ -18,6 +18,13 @@ export type DadosItemOrcamento = {
   // Só usado pelo motor avançado (M2/OFFSET) — SIMPLES continua com o campo de
   // texto livre OrcamentoItem.acabamento, sem custo (ver src/lib/orcamento.ts).
   acabamentoIds: string[];
+  // Motor de clichê de etiqueta (só M2 com ConfiguracaoClicheEtiqueta) — papel
+  // escolhido NESTE orçamento (matéria-prima) e quantidade de cores da arte.
+  // custoFaca/custoFrete são R$ livres, por item, independentes do modelo.
+  papelId: string | null;
+  quantidadeCores: number | null;
+  custoFaca: number | null;
+  custoFrete: number | null;
 };
 
 export type AcabamentoParaGravar = {
@@ -36,6 +43,13 @@ export type ResultadoItemOrcamento =
       corVerso: number | null;
       breakdown: Prisma.InputJsonValue | null;
       acabamentos: AcabamentoParaGravar[];
+      precificacaoEtiqueta: {
+        papelId: string;
+        quantidadeCores: number;
+        custoClicheCalculado: string;
+        custoFaca: string | null;
+        custoFrete: string | null;
+      } | null;
     }
   | { ok: false; mensagem: string };
 
@@ -74,6 +88,24 @@ export async function calcularItemOrcamento(
     return { ok: false, mensagem: "Largura e altura precisam ser maiores que zero." };
   }
 
+  // Guardas do motor de clichê de etiqueta / faca / frete — mesma razão das
+  // duas guardas acima: editarOrcamento/adicionarItemOrcamento leem esses
+  // campos direto do FormData, sem zod. Universal (roda pra SIMPLES também,
+  // mesmo que nunca preencha esses campos na prática) pra não deixar o
+  // branch SIMPLES abaixo devolver ok:true antes de checar.
+  if (
+    dados.quantidadeCores !== null &&
+    (!Number.isInteger(dados.quantidadeCores) || dados.quantidadeCores < 1)
+  ) {
+    return { ok: false, mensagem: "Quantidade de cores inválida (mínimo 1)." };
+  }
+  if (dados.custoFaca !== null && (!Number.isFinite(dados.custoFaca) || dados.custoFaca < 0)) {
+    return { ok: false, mensagem: "Custo de faca inválido." };
+  }
+  if (dados.custoFrete !== null && (!Number.isFinite(dados.custoFrete) || dados.custoFrete < 0)) {
+    return { ok: false, mensagem: "Custo de frete inválido." };
+  }
+
   if (itemGrafica.modeloCalculo === "SIMPLES") {
     // Number(null) é 0, não erro — sem esta guarda, um produto que ficou sem
     // preço no catálogo (ex: campo limpo por engano numa edição em lote)
@@ -105,6 +137,7 @@ export async function calcularItemOrcamento(
       corVerso: null,
       breakdown: null,
       acabamentos: [],
+      precificacaoEtiqueta: null,
     };
   }
 
@@ -129,7 +162,16 @@ export async function calcularItemOrcamento(
   }
 
   try {
-    const contexto = await carregarContextoPrecificacao(itemGrafica.id, graficaId);
+    const contexto = await carregarContextoPrecificacao(
+      itemGrafica.id,
+      graficaId,
+      dados.papelId && dados.quantidadeCores
+        ? { papelId: dados.papelId, quantidadeCores: dados.quantidadeCores }
+        : undefined
+    );
+    if (dados.custoFrete !== null) contexto.custoFreteEstimado = dados.custoFrete;
+    if (dados.custoFaca !== null) contexto.custoFaca = dados.custoFaca;
+
     const acabamentos =
       dados.acabamentoIds.length > 0
         ? await resolverConfigAcabamentos(dados.acabamentoIds, graficaId)
@@ -176,6 +218,19 @@ export async function calcularItemOrcamento(
         qtdBase: a.qtdBase.toString(),
         custoCalculado: a.custo.toString(),
       })),
+      // Usa contexto.etiquetaCliche (nunca dados.papelId truthy sozinho) como
+      // fonte de verdade — protege contra um papelId mandado por engano/
+      // adulterado pra um produto M2 que não tem ConfiguracaoClicheEtiqueta:
+      // se o motor não aplicou o clichê de verdade, não gravamos nada.
+      precificacaoEtiqueta: contexto.etiquetaCliche
+        ? {
+            papelId: dados.papelId!,
+            quantidadeCores: dados.quantidadeCores!,
+            custoClicheCalculado: resultado.detalhes.cliche.toString(),
+            custoFaca: dados.custoFaca !== null ? String(dados.custoFaca) : null,
+            custoFrete: dados.custoFrete !== null ? String(dados.custoFrete) : null,
+          }
+        : null,
     };
   } catch (erro) {
     if (erro instanceof ErroPrecificacao) {

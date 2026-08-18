@@ -25,6 +25,7 @@ import {
   type ItemAcabamentoDisponivel,
 } from "./SeletorItemOrcamento";
 import type { CamposEtiqueta } from "./CamposEtiquetaOrcamento";
+import type { CamposPrecificacaoEtiqueta, PapelDisponivel } from "./CamposPrecificacaoEtiquetaOrcamento";
 
 const OPCOES_TIPO_PEDIDO: [string, string][] = [
   ["MODELO_NOVO", "Modelo novo"],
@@ -141,17 +142,20 @@ type ItemCarrinho = {
   precoTotal: string;
   modeloCalculo: "SIMPLES" | "M2" | "OFFSET";
   etiqueta: CamposEtiqueta;
+  precificacaoEtiqueta: CamposPrecificacaoEtiqueta;
 };
 
 export function CalculadoraForm({
   itens,
   acabamentosDisponiveis,
+  papeisDisponiveis,
   clientes,
   filiais,
   unidadePadrao,
 }: {
   itens: ItemVenda[];
   acabamentosDisponiveis: ItemAcabamentoDisponivel[];
+  papeisDisponiveis: PapelDisponivel[];
   clientes: Cliente[];
   filiais: Filial[];
   // Grafica.unidadePadraoDimensao — o formulário de item nasce nessa unidade
@@ -222,6 +226,19 @@ export function CalculadoraForm({
     const altura = campos.altura ? Number(campos.altura) : null;
     const corFrente = campos.corFrente !== "" ? Number(campos.corFrente) : null;
     const corVerso = campos.corVerso !== "" ? Number(campos.corVerso) : null;
+    const papelId = campos.precificacaoEtiqueta.papelId || null;
+    const quantidadeCores =
+      campos.precificacaoEtiqueta.quantidadeCores !== ""
+        ? Number(campos.precificacaoEtiqueta.quantidadeCores)
+        : null;
+    const custoFaca =
+      campos.precificacaoEtiqueta.custoFaca !== ""
+        ? Number(campos.precificacaoEtiqueta.custoFaca)
+        : null;
+    const custoFrete =
+      campos.precificacaoEtiqueta.custoFrete !== ""
+        ? Number(campos.precificacaoEtiqueta.custoFrete)
+        : null;
 
     setAdicionando(true);
     const resultado = await precificarItem({
@@ -233,6 +250,10 @@ export function CalculadoraForm({
       corFrente,
       corVerso,
       acabamentoIds: campos.acabamentoIds,
+      papelId,
+      quantidadeCores,
+      custoFaca,
+      custoFrete,
     });
     setAdicionando(false);
 
@@ -261,6 +282,7 @@ export function CalculadoraForm({
         precoTotal: resultado.precoTotal,
         modeloCalculo: resultado.modeloCalculo,
         etiqueta: campos.etiqueta,
+        precificacaoEtiqueta: campos.precificacaoEtiqueta,
       },
     ]);
     setCampos(camposIniciais(itens, unidadePadrao));
@@ -283,6 +305,17 @@ export function CalculadoraForm({
       acabamento: i.acabamento,
       acabamentoIds: i.acabamentoIds,
       etiqueta: etiquetaParaEntrada(i.etiqueta),
+      papelId: i.precificacaoEtiqueta.papelId || null,
+      quantidadeCores:
+        i.precificacaoEtiqueta.quantidadeCores !== ""
+          ? Number(i.precificacaoEtiqueta.quantidadeCores)
+          : null,
+      custoFaca:
+        i.precificacaoEtiqueta.custoFaca !== "" ? Number(i.precificacaoEtiqueta.custoFaca) : null,
+      custoFrete:
+        i.precificacaoEtiqueta.custoFrete !== ""
+          ? Number(i.precificacaoEtiqueta.custoFrete)
+          : null,
     }))
   );
 
@@ -394,6 +427,7 @@ export function CalculadoraForm({
             <SeletorItemOrcamento
               itens={itens}
               acabamentosDisponiveis={acabamentosDisponiveis}
+              papeisDisponiveis={papeisDisponiveis}
               valores={campos}
               onChange={setCampos}
             />

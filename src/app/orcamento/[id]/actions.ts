@@ -326,6 +326,14 @@ export async function editarOrcamento(
   const acabamento = String(formData.get("acabamento") || "").slice(0, 200);
   const corFrente = formData.get("corFrente") ? Number(formData.get("corFrente")) : null;
   const corVerso = formData.get("corVerso") ? Number(formData.get("corVerso")) : null;
+  // Motor de clichê de etiqueta (só M2 com ConfiguracaoClicheEtiqueta) — ver
+  // src/lib/orcamento-precificacao.ts.
+  const papelId = String(formData.get("papelId") || "").trim() || null;
+  const quantidadeCores = formData.get("quantidadeCores")
+    ? Number(formData.get("quantidadeCores"))
+    : null;
+  const custoFaca = formData.get("custoFaca") ? Number(formData.get("custoFaca")) : null;
+  const custoFrete = formData.get("custoFrete") ? Number(formData.get("custoFrete")) : null;
 
   if (!quantidade || quantidade <= 0 || quantidade > 1_000_000) {
     return { ok: false, mensagem: "Informe uma quantidade válida (até 1.000.000 unidades)." };
@@ -364,6 +372,10 @@ export async function editarOrcamento(
     corFrente,
     corVerso,
     acabamentoIds,
+    papelId,
+    quantidadeCores,
+    custoFaca,
+    custoFrete,
   });
   if (!resultado.ok) {
     return { ok: false, mensagem: resultado.mensagem };
@@ -444,6 +456,31 @@ export async function editarOrcamento(
               })),
             });
           }
+        }
+
+        // upsert (não create): a mesma linha é atualizada se o vendedor trocar
+        // o papel/cores num item que já tinha essa config, nunca duplica.
+        // Ausente quando o produto não tem ConfiguracaoClicheEtiqueta —
+        // resultado.precificacaoEtiqueta já vem null nesse caso.
+        if (resultado.precificacaoEtiqueta) {
+          await tx.orcamentoItemPrecificacaoEtiqueta.upsert({
+            where: { orcamentoItemId },
+            create: {
+              orcamentoItemId,
+              papelId: resultado.precificacaoEtiqueta.papelId,
+              quantidadeCores: resultado.precificacaoEtiqueta.quantidadeCores,
+              custoClicheCalculado: resultado.precificacaoEtiqueta.custoClicheCalculado,
+              custoFaca: resultado.precificacaoEtiqueta.custoFaca,
+              custoFrete: resultado.precificacaoEtiqueta.custoFrete,
+            },
+            update: {
+              papelId: resultado.precificacaoEtiqueta.papelId,
+              quantidadeCores: resultado.precificacaoEtiqueta.quantidadeCores,
+              custoClicheCalculado: resultado.precificacaoEtiqueta.custoClicheCalculado,
+              custoFaca: resultado.precificacaoEtiqueta.custoFaca,
+              custoFrete: resultado.precificacaoEtiqueta.custoFrete,
+            },
+          });
         }
 
         // upsert (não create) porque um item M2 criado antes desta feature
@@ -1138,6 +1175,14 @@ export async function adicionarItemOrcamento(
   const acabamentoIds = formData.getAll("acabamentoIds").map(String).filter(Boolean).slice(0, 20);
   const corFrente = formData.get("corFrente") ? Number(formData.get("corFrente")) : null;
   const corVerso = formData.get("corVerso") ? Number(formData.get("corVerso")) : null;
+  // Motor de clichê de etiqueta (só M2 com ConfiguracaoClicheEtiqueta) — ver
+  // src/lib/orcamento-precificacao.ts.
+  const papelId = String(formData.get("papelId") || "").trim() || null;
+  const quantidadeCores = formData.get("quantidadeCores")
+    ? Number(formData.get("quantidadeCores"))
+    : null;
+  const custoFaca = formData.get("custoFaca") ? Number(formData.get("custoFaca")) : null;
+  const custoFrete = formData.get("custoFrete") ? Number(formData.get("custoFrete")) : null;
 
   if (!itemGraficaId || !quantidade || quantidade <= 0 || quantidade > 1_000_000) {
     return { ok: false, mensagem: "Escolha um produto e uma quantidade válida (até 1.000.000 unidades)." };
@@ -1182,6 +1227,10 @@ export async function adicionarItemOrcamento(
     corFrente,
     corVerso,
     acabamentoIds,
+    papelId,
+    quantidadeCores,
+    custoFaca,
+    custoFrete,
   });
   if (!resultado.ok) {
     return { ok: false, mensagem: resultado.mensagem };
@@ -1275,6 +1324,17 @@ export async function adicionarItemOrcamento(
                     })),
                   }
                 : undefined,
+            precificacaoEtiqueta: resultado.precificacaoEtiqueta
+              ? {
+                  create: {
+                    papelId: resultado.precificacaoEtiqueta.papelId,
+                    quantidadeCores: resultado.precificacaoEtiqueta.quantidadeCores,
+                    custoClicheCalculado: resultado.precificacaoEtiqueta.custoClicheCalculado,
+                    custoFaca: resultado.precificacaoEtiqueta.custoFaca,
+                    custoFrete: resultado.precificacaoEtiqueta.custoFrete,
+                  },
+                }
+              : undefined,
           },
         });
         const agregado = await tx.orcamentoItem.aggregate({

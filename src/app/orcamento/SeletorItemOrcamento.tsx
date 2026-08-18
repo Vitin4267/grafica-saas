@@ -4,6 +4,12 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { CamposEtiquetaOrcamento, etiquetaInicial, type CamposEtiqueta } from "./CamposEtiquetaOrcamento";
 import {
+  CamposPrecificacaoEtiquetaOrcamento,
+  precificacaoEtiquetaInicial,
+  type CamposPrecificacaoEtiqueta,
+  type PapelDisponivel,
+} from "./CamposPrecificacaoEtiquetaOrcamento";
+import {
   UNIDADES_DIMENSAO,
   ROTULO_UNIDADE_DIMENSAO,
   converterParaCm,
@@ -18,6 +24,9 @@ export type ItemVenda = {
   categoria: string;
   precoVenda: string;
   modeloCalculo: "SIMPLES" | "M2" | "OFFSET";
+  // ConfiguracaoClicheEtiqueta presente pra este produto — só produtos M2
+  // marcados assim mostram o seletor de papel/cores/faca/frete abaixo.
+  usaClicheEtiqueta: boolean;
 };
 
 // Serviço do catálogo (ItemGrafica tipo SERVICO) já configurado como acabamento
@@ -45,6 +54,7 @@ export type CamposItemOrcamento = {
   acabamento: string;
   acabamentoIds: string[];
   etiqueta: CamposEtiqueta;
+  precificacaoEtiqueta: CamposPrecificacaoEtiqueta;
 };
 
 // unidadePadrao vem de Grafica.unidadePadraoDimensao (lida pelo servidor no
@@ -78,6 +88,7 @@ export function camposIniciais(
     acabamento: "",
     acabamentoIds: [],
     etiqueta: etiquetaInicial(),
+    precificacaoEtiqueta: precificacaoEtiquetaInicial(),
   };
 }
 
@@ -89,11 +100,13 @@ export function camposIniciais(
 export function SeletorItemOrcamento({
   itens,
   acabamentosDisponiveis,
+  papeisDisponiveis,
   valores,
   onChange,
 }: {
   itens: ItemVenda[];
   acabamentosDisponiveis: ItemAcabamentoDisponivel[];
+  papeisDisponiveis: PapelDisponivel[];
   valores: CamposItemOrcamento;
   onChange: (novo: CamposItemOrcamento) => void;
 }) {
@@ -101,6 +114,7 @@ export function SeletorItemOrcamento({
   const usaModeloM2 = itemSelecionado?.modeloCalculo === "M2";
   const usaModeloOffset = itemSelecionado?.modeloCalculo === "OFFSET";
   const usaMotorAvancado = usaModeloM2 || usaModeloOffset;
+  const usaClicheEtiqueta = usaModeloM2 && itemSelecionado?.usaClicheEtiqueta === true;
 
   const set =
     (campo: keyof CamposItemOrcamento) =>
@@ -128,6 +142,7 @@ export function SeletorItemOrcamento({
       acabamento: "",
       acabamentoIds: [],
       etiqueta: etiquetaInicial(),
+      precificacaoEtiqueta: precificacaoEtiquetaInicial(),
     });
   };
 
@@ -250,6 +265,14 @@ export function SeletorItemOrcamento({
           value={valores.acabamento}
           onChange={set("acabamento")}
           placeholder="ex: laminação fosca, corte reto"
+        />
+      )}
+
+      {usaClicheEtiqueta && (
+        <CamposPrecificacaoEtiquetaOrcamento
+          papeisDisponiveis={papeisDisponiveis}
+          valores={valores.precificacaoEtiqueta}
+          onChange={(precificacaoEtiqueta) => onChange({ ...valores, precificacaoEtiqueta })}
         />
       )}
 

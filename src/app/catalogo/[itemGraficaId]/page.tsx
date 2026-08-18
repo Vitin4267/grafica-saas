@@ -14,6 +14,7 @@ import { Card } from "@/components/ui/Card";
 import { ArrowLeftIcon } from "@/components/icons";
 import { ConfiguracaoProdutoForm } from "./ConfiguracaoProdutoForm";
 import { ConfiguracaoAcabamentoForm } from "./ConfiguracaoAcabamentoForm";
+import { ConfiguracaoClicheEtiquetaForm } from "./ConfiguracaoClicheEtiquetaForm";
 import { FichaTecnicaForm } from "./FichaTecnicaForm";
 import { TabelaGramaturaForm } from "./TabelaGramaturaForm";
 import { VariantesMateriaPrimaForm } from "./VariantesMateriaPrimaForm";
@@ -68,6 +69,7 @@ export default async function ConfiguracaoItemPage({
         bobinas: { orderBy: { larguraNominal: "asc" } },
         formatosFolha: { orderBy: { nome: "asc" } },
         configuracaoAcabamento: true,
+        configuracaoClicheEtiqueta: true,
         fichaTecnica: true,
         tabelaPrecoPapel: { orderBy: { gramatura: "asc" } },
         variantes: { where: { ativo: true }, orderBy: { rotulo: "asc" } },
@@ -221,6 +223,19 @@ export default async function ConfiguracaoItemPage({
                 alturaFolha: f.alturaFolha.toString(),
               }))}
             />
+            {itemGrafica.modeloCalculo === "M2" && (
+              <ConfiguracaoClicheEtiquetaForm
+                itemGraficaId={itemGrafica.id}
+                configuracao={
+                  itemGrafica.configuracaoClicheEtiqueta
+                    ? {
+                        custoClicheUnitario:
+                          itemGrafica.configuracaoClicheEtiqueta.custoClicheUnitario.toString(),
+                      }
+                    : null
+                }
+              />
+            )}
             <FichaTecnicaForm
               itemGraficaId={itemGrafica.id}
               materiasPrimas={materiasPrimas.map((m) => ({

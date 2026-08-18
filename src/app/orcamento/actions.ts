@@ -160,6 +160,12 @@ const itemEntradaSchema = z.object({
   acabamento: z.string().max(200).nullable(),
   acabamentoIds: z.array(z.string().min(1)).max(20).default([]),
   etiqueta: etiquetaEntradaSchema.nullable(),
+  // Motor de clichê de etiqueta (só M2 com ConfiguracaoClicheEtiqueta) — ver
+  // src/lib/orcamento-precificacao.ts.
+  papelId: z.string().min(1).nullable(),
+  quantidadeCores: z.number().int().positive().nullable(),
+  custoFaca: z.number().min(0).nullable(),
+  custoFrete: z.number().min(0).nullable(),
 });
 
 export type PrecificarItemResult =
@@ -190,6 +196,10 @@ export async function precificarItem(input: {
   corFrente: number | null;
   corVerso: number | null;
   acabamentoIds: string[];
+  papelId: string | null;
+  quantidadeCores: number | null;
+  custoFaca: number | null;
+  custoFrete: number | null;
 }): Promise<PrecificarItemResult> {
   const usuario = await exigirUsuarioAutenticado();
   await exigirEmailVerificado(usuario);
@@ -242,6 +252,10 @@ export async function precificarItem(input: {
     corFrente: input.corFrente,
     corVerso: input.corVerso,
     acabamentoIds: input.acabamentoIds,
+    papelId: input.papelId,
+    quantidadeCores: input.quantidadeCores,
+    custoFaca: input.custoFaca,
+    custoFrete: input.custoFrete,
   });
   if (!resultado.ok) {
     return { ok: false, mensagem: resultado.mensagem };
@@ -349,6 +363,13 @@ export async function criarOrcamento(
     breakdown: Prisma.InputJsonValue | null;
     etiqueta: z.infer<typeof etiquetaEntradaSchema> | null;
     acabamentos: { itemGraficaId: string; qtdBase: string; custoCalculado: string }[];
+    precificacaoEtiqueta: {
+      papelId: string;
+      quantidadeCores: number;
+      custoClicheCalculado: string;
+      custoFaca: string | null;
+      custoFrete: string | null;
+    } | null;
   }[] = [];
 
   // Recalcula cada item no servidor — nunca confia no preço que veio do carrinho
@@ -392,6 +413,10 @@ export async function criarOrcamento(
       corFrente: entrada.corFrente,
       corVerso: entrada.corVerso,
       acabamentoIds: entrada.acabamentoIds,
+      papelId: entrada.papelId,
+      quantidadeCores: entrada.quantidadeCores,
+      custoFaca: entrada.custoFaca,
+      custoFrete: entrada.custoFrete,
     });
     if (!resultado.ok) {
       return { ok: false, mensagem: `Item ${indice + 1}: ${resultado.mensagem}` };
@@ -414,6 +439,7 @@ export async function criarOrcamento(
       breakdown: resultado.breakdown,
       etiqueta: entrada.etiqueta,
       acabamentos: resultado.acabamentos,
+      precificacaoEtiqueta: resultado.precificacaoEtiqueta,
     });
   }
 
@@ -496,6 +522,17 @@ export async function criarOrcamento(
                   })),
                 }
               : undefined,
+          precificacaoEtiqueta: item.precificacaoEtiqueta
+            ? {
+                create: {
+                  papelId: item.precificacaoEtiqueta.papelId,
+                  quantidadeCores: item.precificacaoEtiqueta.quantidadeCores,
+                  custoClicheCalculado: item.precificacaoEtiqueta.custoClicheCalculado,
+                  custoFaca: item.precificacaoEtiqueta.custoFaca,
+                  custoFrete: item.precificacaoEtiqueta.custoFrete,
+                },
+              }
+            : undefined,
         })),
       },
     },

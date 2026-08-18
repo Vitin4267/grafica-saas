@@ -197,9 +197,9 @@ model Filial {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  grafica         Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  orcamentos      Orcamento[]
-  dadosFiscais    DadosFiscaisFilial?
+  grafica      Grafica             @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamentos   Orcamento[]
+  dadosFiscais DadosFiscaisFilial?
 
   @@unique([graficaId, nome])
   @@index([graficaId])
@@ -509,14 +509,14 @@ model Usuario {
   // reativa.
   desativadoEm DateTime?
 
-  grafica                Grafica                 @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  orcamentos             Orcamento[]
-  sessoes                Sessao[]
-  permissoes             PermissaoUsuario[]
-  tokensResetSenha       TokenResetSenha[]
-  tokensVerificacaoEmail TokenVerificacaoEmail[]
-  comissoes              Comissao[]
-  responsaveisEstagio    ResponsavelEstagio[]
+  grafica                    Grafica                     @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamentos                 Orcamento[]
+  sessoes                    Sessao[]
+  permissoes                 PermissaoUsuario[]
+  tokensResetSenha           TokenResetSenha[]
+  tokensVerificacaoEmail     TokenVerificacaoEmail[]
+  comissoes                  Comissao[]
+  responsaveisEstagio        ResponsavelEstagio[]
   responsaveisAdministrativo ResponsavelAdministrativo[]
 
   @@index([graficaId])
@@ -902,10 +902,12 @@ model ItemGrafica {
   itensOrcamento OrcamentoItem[]
   movimentacoes  MovimentacaoEstoque[]
 
-  bobinas                BobinaMaterial[]
-  formatosFolha          FormatoFolha[]
-  configuracaoAcabamento ConfiguracaoAcabamento?
-  usadoComoAcabamento    OrcamentoItemAcabamento[]
+  bobinas                    BobinaMaterial[]
+  formatosFolha              FormatoFolha[]
+  configuracaoAcabamento     ConfiguracaoAcabamento?
+  usadoComoAcabamento        OrcamentoItemAcabamento[]
+  configuracaoClicheEtiqueta ConfiguracaoClicheEtiqueta?
+  usadoComoPapelEtiqueta     OrcamentoItemPrecificacaoEtiqueta[] @relation("PapelDoItemOrcamentoEtiqueta")
 
   // Ficha técnica (spec de baixa automática de estoque): só relevante quando
   // tipo=PRODUTO. fichaTecnica = quais matérias-primas este produto consome;
@@ -1055,6 +1057,22 @@ model ConfiguracaoAcabamento {
   itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id], onDelete: Cascade)
 
   @@map("configuracoes_acabamento")
+}
+
+// Liga/configura o motor de clichê de etiqueta pra um produto M2 — presença
+// da linha = "este produto usa o motor de clichê", mesmo padrão de
+// ConfiguracaoAcabamento pra SERVICO/acabamento (presença = ligado, sem
+// checkbox extra). Só relevante quando ItemGrafica.modeloCalculo=M2.
+model ConfiguracaoClicheEtiqueta {
+  id                  String   @id @default(cuid())
+  itemGraficaId       String   @unique
+  custoClicheUnitario Decimal  @db.Decimal(12, 4) // R$ por clichê (por cor), fixo — não escala com a tiragem
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id], onDelete: Cascade)
+
+  @@map("configuracoes_cliche_etiqueta")
 }
 
 // SAIDA_PRODUCAO e ESTORNO_CANCELAMENTO substituem os antigos valores
@@ -1634,9 +1652,10 @@ model OrcamentoItem {
   orcamento   Orcamento   @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
   itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id])
 
-  acabamentos OrcamentoItemAcabamento[]
-  etiqueta    OrcamentoItemEtiqueta?
-  tinta       OrcamentoItemTinta?
+  acabamentos          OrcamentoItemAcabamento[]
+  etiqueta             OrcamentoItemEtiqueta?
+  tinta                OrcamentoItemTinta?
+  precificacaoEtiqueta OrcamentoItemPrecificacaoEtiqueta?
 
   @@index([orcamentoId])
   @@map("orcamento_itens")
@@ -1790,6 +1809,28 @@ model OrcamentoItemHotStamping {
   @@map("orcamento_item_hot_stampings")
 }
 
+// Snapshot dos dados que ENTRAM na conta de preço de um item M2 com motor de
+// clichê (ConfiguracaoClicheEtiqueta) — separado de OrcamentoItemEtiqueta de
+// propósito (aquela é 100% descritiva/produção, nunca mexe no motor de preço,
+// ver comentário dela acima; misturar quebraria esse invariante). Criada só
+// quando o produto tem a config de clichê presente; nunca recalculada depois
+// — mesmo espírito de OrcamentoItemAcabamento.
+model OrcamentoItemPrecificacaoEtiqueta {
+  id                   String   @id @default(cuid())
+  orcamentoItemId      String   @unique
+  papelId              String // matéria-prima (ItemGrafica tipo=MATERIA_PRIMA) escolhida NESTE orçamento
+  quantidadeCores      Int // nº de cores da arte → nº de clichês
+  custoClicheCalculado Decimal  @db.Decimal(12, 4) // snapshot = quantidadeCores × custoClicheUnitario no momento do cálculo
+  custoFaca            Decimal? @db.Decimal(12, 4) // opcional, R$ livre (ferramental de corte)
+  custoFrete           Decimal? @db.Decimal(12, 4) // opcional, R$ livre
+  createdAt            DateTime @default(now())
+
+  orcamentoItem OrcamentoItem @relation(fields: [orcamentoItemId], references: [id], onDelete: Cascade)
+  papel         ItemGrafica   @relation("PapelDoItemOrcamentoEtiqueta", fields: [papelId], references: [id], onDelete: Restrict)
+
+  @@map("orcamento_item_precificacao_etiquetas")
+}
+
 // Acabamentos estruturados aplicados a um item de orçamento no motor avançado
 // (substitui o texto livre "acabamento" quando modeloCalculo != SIMPLES).
 model OrcamentoItemAcabamento {
@@ -1865,7 +1906,7 @@ model Pedido {
   // quando a arte do orçamento é copiada pro Pedido na aprovação, os
   // achados de preflight são copiados junto (não recalculados, é o mesmo
   // arquivo); um reenvio de arte na Produção recalcula do zero.
-  preflightAvisos Json?
+  preflightAvisos       Json?
   // Nome DECLARADO por quem respondeu pelo link público — não é verificado
   // (quem tem o link digita o que quiser), vale como registro, igual a uma
   // assinatura em formulário de papel. Nunca escrever "confirmado por" na
@@ -2138,7 +2179,7 @@ model ImportacaoPlanilha {
   tipo   TipoImportacaoPlanilha
   status StatusImportacaoPlanilha @default(MAPEANDO)
 
-  nomeArquivo String
+  nomeArquivo     String
   // Pathname no store PRIVADO do Blob — null depois que o arquivo é apagado
   // ao concluir a importação ou expirar sem confirmação (ver
   // expirarImportacoesAbandonadas em src/lib/lifecycle-cron.ts).

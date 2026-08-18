@@ -1,0 +1,101 @@
+"use client";
+
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+
+// Papel escolhido como matéria-prima NESTE orçamento (não fixo no produto,
+// diferente do papelId do modelo Offset) — ver ConfiguracaoClicheEtiqueta e
+// src/lib/pricing/carregar.ts.
+export type PapelDisponivel = {
+  id: string;
+  nome: string;
+  precoCompra: string | null;
+};
+
+export type CamposPrecificacaoEtiqueta = {
+  papelId: string;
+  quantidadeCores: string;
+  custoFaca: string;
+  custoFrete: string;
+};
+
+export function precificacaoEtiquetaInicial(): CamposPrecificacaoEtiqueta {
+  return { papelId: "", quantidadeCores: "", custoFaca: "", custoFrete: "" };
+}
+
+// Campos do motor de clichê de etiqueta — só aparece quando o produto M2
+// escolhido tem ConfiguracaoClicheEtiqueta (usaClicheEtiqueta). Papel e
+// quantidade de cores entram na conta de preço (custo de material vem do
+// papel escolhido, clichê é fixo por cor); faca e frete são R$ livres,
+// opcionais, por item.
+export function CamposPrecificacaoEtiquetaOrcamento({
+  papeisDisponiveis,
+  valores,
+  onChange,
+}: {
+  papeisDisponiveis: PapelDisponivel[];
+  valores: CamposPrecificacaoEtiqueta;
+  onChange: (novo: CamposPrecificacaoEtiqueta) => void;
+}) {
+  const set =
+    (campo: keyof CamposPrecificacaoEtiqueta) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+      onChange({ ...valores, [campo]: e.target.value });
+
+  return (
+    <div className="flex flex-col gap-4 rounded-xl border border-slate-300 p-4 dark:border-slate-700">
+      <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+        Precificação de etiqueta
+      </p>
+
+      {papeisDisponiveis.length === 0 ? (
+        <span className="text-xs text-slate-500">
+          Nenhuma matéria-prima de papel cadastrada ainda — cadastre em Catálogo.
+        </span>
+      ) : (
+        <Select label="Papel" value={valores.papelId} onChange={set("papelId")} required>
+          <option value="" disabled>
+            Selecione o papel
+          </option>
+          {papeisDisponiveis.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.nome}
+              {p.precoCompra ? ` — R$ ${p.precoCompra}/m²` : ""}
+            </option>
+          ))}
+        </Select>
+      )}
+
+      <Input
+        label="Quantidade de cores (clichês)"
+        type="number"
+        min={1}
+        value={valores.quantidadeCores}
+        onChange={set("quantidadeCores")}
+        hint="Um clichê por cor da arte — custo fixo, não muda com a tiragem."
+        required
+      />
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Input
+          label="Custo da faca (R$)"
+          type="number"
+          min={0}
+          step="0.01"
+          value={valores.custoFaca}
+          onChange={set("custoFaca")}
+          placeholder="opcional"
+        />
+        <Input
+          label="Custo de frete (R$)"
+          type="number"
+          min={0}
+          step="0.01"
+          value={valores.custoFrete}
+          onChange={set("custoFrete")}
+          placeholder="opcional"
+        />
+      </div>
+    </div>
+  );
+}

@@ -19,6 +19,8 @@ export type ResultadoComposicao = {
     acabamentos: ItemAcabamentoCalculado[];
     embalagem: Dec;
     frete: Dec;
+    cliche: Dec;
+    faca: Dec;
     overhead: Dec;
     margem: Dec;
   };
@@ -31,6 +33,8 @@ export function comporPreco(params: {
   acabamentosDetalhe?: ItemAcabamentoCalculado[];
   custoEmbalagem?: Dec;
   custoFreteEstimado?: Dec;
+  custoCliche?: Dec; // fixo por cor (clichê de etiqueta) — não escala com a quantidade
+  custoFaca?: Dec; // ferramental de corte, R$ livre por item de orçamento
   parametros: ParametrosTenant;
   margemLucroOverride?: number;
   detalhesExtras?: Partial<{ perda: Dec; setup: Dec; chapas: Dec; rodagem: Dec }>;
@@ -38,11 +42,15 @@ export function comporPreco(params: {
   const custoAcabamentos = params.custoAcabamentos ?? paraDecimal(0);
   const custoEmbalagem = params.custoEmbalagem ?? paraDecimal(0);
   const custoFreteEstimado = params.custoFreteEstimado ?? paraDecimal(0);
+  const custoCliche = params.custoCliche ?? paraDecimal(0);
+  const custoFaca = params.custoFaca ?? paraDecimal(0);
 
   const custoDireto = params.custoBase
     .plus(custoAcabamentos)
     .plus(custoEmbalagem)
-    .plus(custoFreteEstimado);
+    .plus(custoFreteEstimado)
+    .plus(custoCliche)
+    .plus(custoFaca);
 
   const overheadPercent = paraDecimal(params.parametros.overheadPercent);
   const overhead = custoDireto.times(overheadPercent);
@@ -97,6 +105,8 @@ export function comporPreco(params: {
       acabamentos: params.acabamentosDetalhe ?? [],
       embalagem: custoEmbalagem,
       frete: custoFreteEstimado,
+      cliche: custoCliche,
+      faca: custoFaca,
       overhead,
       margem: margemLucro,
     },

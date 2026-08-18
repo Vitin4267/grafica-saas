@@ -12,6 +12,7 @@ import {
   type CamposItemOrcamento,
   type ItemAcabamentoDisponivel,
 } from "../SeletorItemOrcamento";
+import type { PapelDisponivel } from "../CamposPrecificacaoEtiquetaOrcamento";
 import type { UnidadeDimensao } from "@/lib/unidade-dimensao";
 
 export function AdicionarItemForm({
@@ -19,6 +20,7 @@ export function AdicionarItemForm({
   itens,
   unidadePadrao,
   acabamentosDisponiveis,
+  papeisDisponiveis,
 }: {
   orcamentoId: string;
   itens: ItemVenda[];
@@ -26,6 +28,7 @@ export function AdicionarItemForm({
   // camposIniciais em SeletorItemOrcamento.tsx).
   unidadePadrao: UnidadeDimensao;
   acabamentosDisponiveis: ItemAcabamentoDisponivel[];
+  papeisDisponiveis: PapelDisponivel[];
 }) {
   const [campos, setCampos] = useState<CamposItemOrcamento>(() =>
     camposIniciais(itens, unidadePadrao)
@@ -61,6 +64,14 @@ export function AdicionarItemForm({
         {campos.acabamentoIds.map((id) => (
           <input key={id} type="hidden" name="acabamentoIds" value={id} />
         ))}
+        <input type="hidden" name="papelId" value={campos.precificacaoEtiqueta.papelId} />
+        <input
+          type="hidden"
+          name="quantidadeCores"
+          value={campos.precificacaoEtiqueta.quantidadeCores}
+        />
+        <input type="hidden" name="custoFaca" value={campos.precificacaoEtiqueta.custoFaca} />
+        <input type="hidden" name="custoFrete" value={campos.precificacaoEtiqueta.custoFrete} />
         <input type="hidden" name="materialSubstrato" value={campos.etiqueta.materialSubstrato} />
         <input type="hidden" name="materialSubstratoOutro" value={campos.etiqueta.materialSubstratoOutro} />
         <input type="hidden" name="tipoAdesivo" value={campos.etiqueta.tipoAdesivo} />
@@ -125,6 +136,7 @@ export function AdicionarItemForm({
         <SeletorItemOrcamento
           itens={itens}
           acabamentosDisponiveis={acabamentosDisponiveis}
+          papeisDisponiveis={papeisDisponiveis}
           valores={campos}
           onChange={setCampos}
         />

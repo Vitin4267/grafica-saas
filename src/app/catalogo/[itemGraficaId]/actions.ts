@@ -478,6 +478,64 @@ export async function salvarConfiguracaoAcabamento(
   return { ok: true, mensagem: "Configuração salva com sucesso!" };
 }
 
+// Liga/configura o motor de clichê de etiqueta pra um produto M2 — mesma
+// estrutura de salvarConfiguracaoAcabamento acima. Presença da linha
+// (ConfiguracaoClicheEtiqueta) já é o próprio "ligado", sem checkbox extra.
+export async function salvarConfiguracaoClicheEtiqueta(
+  _estadoAnterior: SalvarConfigResult | null,
+  formData: FormData
+): Promise<SalvarConfigResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CATALOGO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar o catálogo." };
+  }
+  const itemGraficaId = String(formData.get("itemGraficaId"));
+
+  const itemGrafica = await prisma.itemGrafica.findFirst({
+    where: { id: itemGraficaId, graficaId: usuario.graficaId },
+  });
+  if (!itemGrafica) {
+    return { ok: false, mensagem: "Item não encontrado." };
+  }
+
+  const custoClicheUnitario = Number(formData.get("custoClicheUnitario"));
+  if (!Number.isFinite(custoClicheUnitario) || custoClicheUnitario < 0) {
+    return { ok: false, mensagem: "Custo do clichê inválido." };
+  }
+
+  const configAntes = await prisma.configuracaoClicheEtiqueta.findUnique({
+    where: { itemGraficaId },
+  });
+
+  await prisma.configuracaoClicheEtiqueta.upsert({
+    where: { itemGraficaId },
+    update: { custoClicheUnitario },
+    create: { itemGraficaId, custoClicheUnitario },
+  });
+
+  const textoAntes = formatarPreco(configAntes?.custoClicheUnitario ?? null);
+  const textoDepois = formatarPreco(custoClicheUnitario);
+  if (textoAntes !== textoDepois) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "catalogo.salvar_config_cliche_etiqueta",
+      entidade: "ItemGrafica",
+      entidadeId: itemGraficaId,
+      descricao: "Configuração de clichê de etiqueta do item atualizada",
+      valorAnterior: `Custo do clichê: ${textoAntes}`,
+      valorNovo: `Custo do clichê: ${textoDepois}`,
+    });
+  }
+
+  revalidatePath(`/catalogo/${itemGraficaId}`);
+  revalidatePath("/catalogo");
+  return { ok: true, mensagem: "Configuração salva com sucesso!" };
+}
+
 export async function salvarFichaTecnica(
   _estadoAnterior: SalvarConfigResult | null,
   formData: FormData

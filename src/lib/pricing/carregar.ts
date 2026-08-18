@@ -55,12 +55,16 @@ export async function carregarParametrosPrensa(
 
 // Nesta fase, um PRODUTO em modo M2/OFFSET carrega suas próprias BobinaMaterial/
 // FormatoFolha e seu próprio precoCompra como custo de material — ainda não existe
-// um vínculo formal "produto usa esta outra matéria-prima do catálogo" (isso é
-// trabalho de UI de uma próxima etapa). Pra "Banner em Lona", por exemplo, o
-// precoCompra do próprio item já representa o custo do m² de lona.
+// um vínculo formal "produto usa esta outra matéria-prima do catálogo", EXCETO
+// quando o produto tem ConfiguracaoClicheEtiqueta (motor de clichê de etiqueta):
+// nesse caso, `dadosEtiqueta.papelId` aponta pra uma matéria-prima escolhida NO
+// ORÇAMENTO, e o custo de material vem de lá, não do precoCompra do produto. Pra
+// "Banner em Lona" (M2 sem essa config), o precoCompra do próprio item continua
+// representando o custo do m² de lona, exatamente como antes.
 export async function carregarContextoPrecificacao(
   itemGraficaId: string,
-  graficaId: string
+  graficaId: string,
+  dadosEtiqueta?: { papelId: string; quantidadeCores: number }
 ): Promise<ContextoPrecificacao> {
   const item = await prisma.itemGrafica.findFirstOrThrow({
     where: { id: itemGraficaId, graficaId },
@@ -69,6 +73,7 @@ export async function carregarContextoPrecificacao(
       formatosFolha: true,
       prensa: true,
       papel: { include: { tabelaPrecoPapel: true } },
+      configuracaoClicheEtiqueta: true,
     },
   });
 
@@ -82,13 +87,45 @@ export async function carregarContextoPrecificacao(
   };
 
   if (item.modeloCalculo === "M2") {
+    let custoM2Material = Number(item.precoCompra ?? 0);
+
+    if (item.configuracaoClicheEtiqueta) {
+      if (!dadosEtiqueta) {
+        throw new ErroPrecificacao(
+          "ETIQUETA_SEM_PAPEL",
+          "Este produto usa o motor de clichê de etiqueta — escolha o papel e o número de cores."
+        );
+      }
+
+      const papel = await prisma.itemGrafica.findFirst({
+        where: {
+          id: dadosEtiqueta.papelId,
+          graficaId,
+          ativo: true,
+          itemCatalogo: { tipo: "MATERIA_PRIMA" },
+        },
+      });
+      if (!papel) {
+        throw new ErroPrecificacao(
+          "PAPEL_INVALIDO",
+          "O papel escolhido não é válido — verifique se ele ainda existe e está ativo no catálogo."
+        );
+      }
+
+      custoM2Material = Number(papel.precoCompra ?? 0);
+      contexto.etiquetaCliche = {
+        quantidadeCores: dadosEtiqueta.quantidadeCores,
+        custoClicheUnitario: Number(item.configuracaoClicheEtiqueta.custoClicheUnitario),
+      };
+    }
+
     contexto.m2 = {
       bobinas: item.bobinas.map((b) => ({
         id: b.id,
         larguraNominal: Number(b.larguraNominal),
         refile: Number(b.refile),
       })),
-      custoM2Material: Number(item.precoCompra ?? 0),
+      custoM2Material,
       custoImpressaoM2: Number(item.custoImpressaoM2 ?? 0),
       areaMinimaFaturavel: Number(item.areaMinimaFaturavel ?? 0),
     };

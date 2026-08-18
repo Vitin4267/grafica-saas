@@ -3,6 +3,7 @@ import { formatoMoeda } from "@/lib/moeda";
 import { slugify } from "@/lib/slug";
 import { linhasEtiqueta, ROTULO_LADO, rotuloTipoHotStamping } from "@/app/orcamento/[id]/EtiquetaResumo";
 import { converterDeCm, ROTULO_UNIDADE_DIMENSAO, type UnidadeDimensao } from "@/lib/unidade-dimensao";
+import { calcularConversoesPreco } from "@/lib/unidade-contagem";
 import type { DadosPdfOrcamento } from "./OrcamentoDocumento";
 
 const ROTULO_TIPO_PEDIDO: Record<string, string> = {
@@ -46,7 +47,11 @@ export type OrcamentoParaPdf = {
     acabamentos: { itemGrafica: { itemCatalogo: { nome: string } } }[];
     precoUnitario: Prisma.Decimal;
     precoTotal: Prisma.Decimal;
-    itemGrafica: { itemCatalogo: { nome: string } };
+    itemGrafica: {
+      itemCatalogo: { nome: string };
+      unidadeContagem: string | null;
+      fatorConversao: Prisma.Decimal | null;
+    };
     etiqueta: {
       materialSubstrato: string | null;
       materialSubstratoOutro: string | null;
@@ -120,6 +125,12 @@ export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
       acabamentosEstruturados: item.acabamentos.map((a) => a.itemGrafica.itemCatalogo.nome),
       precoUnitario: formatoMoeda.format(Number(item.precoUnitario)),
       precoTotal: formatoMoeda.format(Number(item.precoTotal)),
+      conversoesPreco: calcularConversoesPreco({
+        precoUnitario: Number(item.precoUnitario),
+        unidadeContagem: item.itemGrafica.unidadeContagem,
+        fatorConversao: item.itemGrafica.fatorConversao ? Number(item.itemGrafica.fatorConversao) : null,
+        embalagemQtdPorRolo: item.etiqueta?.embalagemQtdPorRolo ?? null,
+      }).map((c) => `${c.valorFormatado} / ${c.rotulo}`),
       etiquetaLinhas: item.etiqueta ? linhasEtiqueta(item.etiqueta) : [],
       hotStampingLinhas: (item.etiqueta?.hotStampings ?? []).map((h) => {
         const partes = [rotuloTipoHotStamping(h), h.medida, h.cor].filter(Boolean);

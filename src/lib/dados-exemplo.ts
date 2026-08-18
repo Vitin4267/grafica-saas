@@ -378,6 +378,10 @@ export async function gerarOrcamentoExemplo(
     corFrente: 4,
     corVerso: 4,
     acabamentoIds: [],
+    papelId: null,
+    quantidadeCores: null,
+    custoFaca: null,
+    custoFrete: null,
   });
   if (!resultadoOffset.ok) {
     return { ok: false, mensagem: `Cartão de visita de exemplo: ${resultadoOffset.mensagem}` };
@@ -390,6 +394,10 @@ export async function gerarOrcamentoExemplo(
     corFrente: null,
     corVerso: null,
     acabamentoIds: [],
+    papelId: null,
+    quantidadeCores: null,
+    custoFaca: null,
+    custoFrete: null,
   });
   if (!resultadoSimples.ok) {
     return { ok: false, mensagem: `Panfleto de exemplo: ${resultadoSimples.mensagem}` };

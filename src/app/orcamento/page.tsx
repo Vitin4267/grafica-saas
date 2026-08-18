@@ -25,14 +25,14 @@ export default async function OrcamentoPage() {
   await exigirVerModulo(usuario, "ORCAMENTO");
   const podeEditar = await podeEditarModulo(usuario, "ORCAMENTO");
 
-  const [itensVendaveis, acabamentosDisponiveis, clientes, filiais, orcamentosRecentes] = await Promise.all([
+  const [itensVendaveis, acabamentosDisponiveis, papeisDisponiveis, clientes, filiais, orcamentosRecentes] = await Promise.all([
     prisma.itemGrafica.findMany({
       where: {
         graficaId: usuario.graficaId,
         ativo: true,
         precoVenda: { not: null },
       },
-      include: { itemCatalogo: true },
+      include: { itemCatalogo: true, configuracaoClicheEtiqueta: { select: { id: true } } },
       orderBy: { itemCatalogo: { nome: "asc" } },
     }),
     prisma.itemGrafica.findMany({
@@ -41,6 +41,18 @@ export default async function OrcamentoPage() {
         ativo: true,
         itemCatalogo: { tipo: "SERVICO" },
         configuracaoAcabamento: { isNot: null },
+      },
+      include: { itemCatalogo: true },
+      orderBy: { itemCatalogo: { nome: "asc" } },
+    }),
+    // Matéria-prima candidata a "papel" no motor de clichê de etiqueta —
+    // qualquer MATERIA_PRIMA ativa da gráfica, sem categoria obrigatória
+    // (mesmo padrão do papel do modelo Offset).
+    prisma.itemGrafica.findMany({
+      where: {
+        graficaId: usuario.graficaId,
+        ativo: true,
+        itemCatalogo: { tipo: "MATERIA_PRIMA" },
       },
       include: { itemCatalogo: true },
       orderBy: { itemCatalogo: { nome: "asc" } },
@@ -116,10 +128,16 @@ export default async function OrcamentoPage() {
               categoria: ig.itemCatalogo.categoria,
               precoVenda: ig.precoVenda!.toString(),
               modeloCalculo: ig.modeloCalculo,
+              usaClicheEtiqueta: ig.configuracaoClicheEtiqueta !== null,
             }))}
             acabamentosDisponiveis={acabamentosDisponiveis.map((ig) => ({
               id: ig.id,
               nome: ig.itemCatalogo.nome,
+            }))}
+            papeisDisponiveis={papeisDisponiveis.map((ig) => ({
+              id: ig.id,
+              nome: ig.itemCatalogo.nome,
+              precoCompra: ig.precoCompra?.toString() ?? null,
             }))}
             // Remapeado pra {id, nome} igual os dois props acima — sem isso,
             // o objeto Cliente/Filial inteiro (CPF/CNPJ, endereço) ia junto
