@@ -9,6 +9,9 @@ import {
 import { carregarParametrosTenant } from "@/lib/pricing/carregar";
 import { prisma } from "@/lib/prisma";
 import { UserNav } from "@/components/UserNav";
+import { Card } from "@/components/ui/Card";
+import { MailIcon } from "@/components/icons";
+import { montarUrlSuporte } from "@/lib/suporte";
 import { ParametrosForm } from "./ParametrosForm";
 
 export default async function ConfiguracoesPage() {
@@ -46,6 +49,12 @@ export default async function ConfiguracoesPage() {
   // não precisa de outra query.
   const unidadePadraoDimensao = usuario.grafica.unidadePadraoDimensao;
 
+  const urlSuporte = montarUrlSuporte({
+    nome: usuario.nome,
+    email: usuario.email,
+    graficaNome: usuario.grafica.nome,
+  });
+
   return (
     <div className="flex flex-1 flex-col">
       <UserNav
@@ -67,6 +76,32 @@ export default async function ConfiguracoesPage() {
             orçamentos calculados com o modelo M2 ou Offset.
           </p>
         </div>
+
+        {urlSuporte && (
+          <Card className="mb-6 flex items-center justify-between gap-4 p-6">
+            <div className="flex items-center gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-100 text-teal-600 dark:bg-teal-950 dark:text-teal-400">
+                <MailIcon className="h-5 w-5" />
+              </span>
+              <div>
+                <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+                  Precisa de ajuda?
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Conte o que está acontecendo — a gente resolve e te avisa por e-mail.
+                </p>
+              </div>
+            </div>
+            <a
+              href={urlSuporte}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex shrink-0 items-center justify-center rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm shadow-teal-600/20 transition-colors hover:bg-teal-700"
+            >
+              Falar com suporte
+            </a>
+          </Card>
+        )}
 
         <ParametrosForm
           parametros={parametros}

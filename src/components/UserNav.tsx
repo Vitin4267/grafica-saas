@@ -10,6 +10,14 @@ import { LogOutIcon, MenuIcon, XIcon } from "@/components/icons";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import type { PapelUsuario, ModuloPermissao } from "@/generated/prisma/enums";
 
+// Lazy pelo mesmo motivo do ChatAssistente/PendenciasConfiguracaoModal
+// abaixo: sem SUPORTE_FORM_URL configurada o link nem aparece, não vale
+// pagar o parse do JS em toda rota só por causa disso.
+const SuporteLink = dynamic(
+  () => import("@/components/SuporteLink").then((m) => m.SuporteLink),
+  { ssr: false }
+);
+
 // Lazy: nem todo ambiente tem ASSISTENTE_WEBHOOK_URL configurado (o próprio
 // componente checa isso e renderiza null), mas sem dynamic() o JS dele
 // (ícones, Card, Button, a máquina de estado do chat) seria parseado em
@@ -140,7 +148,8 @@ export function UserNav({
             </p>
             <p className="text-xs text-slate-500">{graficaNome}</p>
           </div>
-          <div className="hidden sm:block">
+          <div className="hidden items-center gap-2 sm:flex">
+            <SuporteLink />
             <ThemeToggle />
           </div>
           <form action={logout} className="hidden sm:block">
@@ -224,6 +233,7 @@ export function UserNav({
               <p className="text-xs text-slate-500">{graficaNome}</p>
             </div>
             <div className="flex items-center gap-2">
+              <SuporteLink />
               <ThemeToggle />
               <form action={logout}>
                 <button
