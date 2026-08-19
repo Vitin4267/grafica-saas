@@ -61,48 +61,54 @@ export default async function ConfiguracaoItemPage({
   await exigirAssinaturaAtiva(usuario);
   await exigirVerModulo(usuario, "CATALOGO");
 
-  const [itemGrafica, materiasPrimas, prensas, fornecedores] = await Promise.all([
-    prisma.itemGrafica.findFirst({
-      where: { id: itemGraficaId, graficaId: usuario.graficaId },
-      include: {
-        itemCatalogo: true,
-        bobinas: { orderBy: { larguraNominal: "asc" } },
-        formatosFolha: { orderBy: { nome: "asc" } },
-        configuracaoAcabamento: true,
-        configuracaoClicheEtiqueta: true,
-        fichaTecnica: true,
-        tabelaPrecoPapel: { orderBy: { gramatura: "asc" } },
-        variantes: { where: { ativo: true }, orderBy: { rotulo: "asc" } },
-        movimentacoes: {
-          orderBy: { createdAt: "desc" },
-          take: LIMITE_HISTORICO_MOVIMENTACAO,
-          include: { variante: { select: { rotulo: true } }, fornecedor: { select: { nome: true } } },
+  const [itemGrafica, materiasPrimas, prensas, maquinasFlexografia, fornecedores] =
+    await Promise.all([
+      prisma.itemGrafica.findFirst({
+        where: { id: itemGraficaId, graficaId: usuario.graficaId },
+        include: {
+          itemCatalogo: true,
+          bobinas: { orderBy: { larguraNominal: "asc" } },
+          formatosFolha: { orderBy: { nome: "asc" } },
+          configuracaoAcabamento: true,
+          configuracaoClicheEtiqueta: true,
+          configuracaoClicheFlexografia: true,
+          fichaTecnica: true,
+          tabelaPrecoPapel: { orderBy: { gramatura: "asc" } },
+          variantes: { where: { ativo: true }, orderBy: { rotulo: "asc" } },
+          movimentacoes: {
+            orderBy: { createdAt: "desc" },
+            take: LIMITE_HISTORICO_MOVIMENTACAO,
+            include: { variante: { select: { rotulo: true } }, fornecedor: { select: { nome: true } } },
+          },
         },
-      },
-    }),
-    prisma.itemGrafica.findMany({
-      where: {
-        graficaId: usuario.graficaId,
-        ativo: true,
-        itemCatalogo: { tipo: "MATERIA_PRIMA" },
-      },
-      include: {
-        itemCatalogo: true,
-        tabelaPrecoPapel: true,
-        variantes: { where: { ativo: true }, orderBy: { rotulo: "asc" } },
-      },
-      orderBy: { itemCatalogo: { nome: "asc" } },
-    }),
-    prisma.prensa.findMany({
-      where: { graficaId: usuario.graficaId, ativa: true },
-      orderBy: { nome: "asc" },
-    }),
-    prisma.fornecedor.findMany({
-      where: { graficaId: usuario.graficaId, ativo: true },
-      orderBy: { nome: "asc" },
-      select: { id: true, nome: true },
-    }),
-  ]);
+      }),
+      prisma.itemGrafica.findMany({
+        where: {
+          graficaId: usuario.graficaId,
+          ativo: true,
+          itemCatalogo: { tipo: "MATERIA_PRIMA" },
+        },
+        include: {
+          itemCatalogo: true,
+          tabelaPrecoPapel: true,
+          variantes: { where: { ativo: true }, orderBy: { rotulo: "asc" } },
+        },
+        orderBy: { itemCatalogo: { nome: "asc" } },
+      }),
+      prisma.prensa.findMany({
+        where: { graficaId: usuario.graficaId, ativa: true },
+        orderBy: { nome: "asc" },
+      }),
+      prisma.maquinaFlexografia.findMany({
+        where: { graficaId: usuario.graficaId, ativa: true },
+        orderBy: { nome: "asc" },
+      }),
+      prisma.fornecedor.findMany({
+        where: { graficaId: usuario.graficaId, ativo: true },
+        orderBy: { nome: "asc" },
+        select: { id: true, nome: true },
+      }),
+    ]);
 
   if (!itemGrafica) {
     notFound();
@@ -224,6 +230,11 @@ export default async function ConfiguracaoItemPage({
               }))}
               unidadeContagem={itemGrafica.unidadeContagem ?? ""}
               fatorConversao={itemGrafica.fatorConversao?.toString() ?? ""}
+              maquinaFlexografiaId={itemGrafica.maquinaFlexografiaId ?? ""}
+              maquinasFlexografia={maquinasFlexografia.map((m) => ({ id: m.id, nome: m.nome }))}
+              custoClichePorCm2Flexo={
+                itemGrafica.configuracaoClicheFlexografia?.custoClichePorCm2.toString() ?? ""
+              }
             />
             {itemGrafica.modeloCalculo === "M2" && (
               <ConfiguracaoClicheEtiquetaForm

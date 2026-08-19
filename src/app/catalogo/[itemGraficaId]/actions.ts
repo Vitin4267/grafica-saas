@@ -43,7 +43,7 @@ class ErroEstoqueDivergente extends Error {}
 
 export type SalvarConfigResult = { ok: boolean; mensagem: string };
 
-const modeloCalculoSchema = z.enum(["SIMPLES", "M2", "OFFSET"]);
+const modeloCalculoSchema = z.enum(["SIMPLES", "M2", "OFFSET", "FLEXOGRAFIA"]);
 // Sem OUTRO de propósito: unidadeContagem não tem campo "outro" livre (só
 // ItemCatalogo.unidade tem), então OUTRO aqui só mostraria o rótulo genérico
 // "outro" na exibição de preço — melhor nem oferecer a opção.
@@ -165,6 +165,7 @@ export async function salvarModeloProduto(
     SIMPLES: "Simples",
     M2: "M² (flexografia)",
     OFFSET: "Offset",
+    FLEXOGRAFIA: "Flexografia",
   };
   const modeloAntes = ROTULO_MODELO[itemGrafica.modeloCalculo as typeof modeloCalculo] ?? itemGrafica.modeloCalculo;
 
@@ -239,7 +240,7 @@ export async function salvarModeloProduto(
         valorAnterior: `Modelo: ${modeloAntes}, custo impressão/m²: ${formatarPreco(itemGrafica.custoImpressaoM2)}, área mínima: ${formatarQuantidade(itemGrafica.areaMinimaFaturavel)}`,
         valorNovo: `Modelo: ${ROTULO_MODELO.M2}, custo impressão/m²: ${formatarPreco(custoImpressaoM2)}, área mínima: ${formatarQuantidade(areaMinimaFaturavel)}, ${bobinasResult.data.length} bobina${bobinasResult.data.length > 1 ? "s" : ""}`,
       });
-    } else {
+    } else if (modeloCalculo === "OFFSET") {
       const formatosResult = parseJsonArray(
         formData.get("formatosFolhaJson"),
         formatoFolhaSchema
@@ -317,6 +318,70 @@ export async function salvarModeloProduto(
         descricao: "Modelo de cálculo do item atualizado para Offset",
         valorAnterior: `Modelo: ${modeloAntes}, gramatura: ${formatarQuantidade(itemGrafica.gramaturaGm2)}g/m²`,
         valorNovo: `Modelo: ${ROTULO_MODELO.OFFSET}, gramatura: ${formatarQuantidade(gramaturaGm2)}g/m², ${formatosResult.data.length} formato${formatosResult.data.length > 1 ? "s" : ""} de folha`,
+      });
+    } else if (modeloCalculo === "FLEXOGRAFIA") {
+      const bobinasResult = parseJsonArray(formData.get("bobinasJson"), bobinaSchema);
+      if (!bobinasResult.ok) {
+        return { ok: false, mensagem: bobinasResult.mensagem };
+      }
+      if (bobinasResult.data.length === 0) {
+        return {
+          ok: false,
+          mensagem: "Adicione ao menos uma bobina para habilitar o cálculo Flexografia.",
+        };
+      }
+
+      const custoClichePorCm2 = Number(formData.get("custoClichePorCm2Flexo") || 0);
+      if (!Number.isFinite(custoClichePorCm2) || custoClichePorCm2 < 0) {
+        return { ok: false, mensagem: "Custo do clichê inválido." };
+      }
+
+      const maquinaFlexografiaId = String(formData.get("maquinaFlexografiaId") ?? "");
+      if (!maquinaFlexografiaId) {
+        return {
+          ok: false,
+          mensagem: "Selecione uma máquina para habilitar o cálculo Flexografia.",
+        };
+      }
+      const maquinaValida = await prisma.maquinaFlexografia.findFirst({
+        where: { id: maquinaFlexografiaId, graficaId: usuario.graficaId, ativa: true },
+        select: { id: true },
+      });
+      if (!maquinaValida) {
+        return { ok: false, mensagem: "Máquina selecionada é inválida." };
+      }
+
+      await prisma.$transaction([
+        prisma.itemGrafica.update({
+          where: { id: itemGraficaId },
+          data: {
+            modeloCalculo: "FLEXOGRAFIA",
+            maquinaFlexografiaId,
+            unidadeContagem: unidadeContagemFinal,
+            fatorConversao: fatorConversaoFinal,
+          },
+        }),
+        prisma.bobinaMaterial.deleteMany({ where: { itemGraficaId } }),
+        prisma.bobinaMaterial.createMany({
+          data: bobinasResult.data.map((b) => ({ itemGraficaId, ...b })),
+        }),
+        prisma.configuracaoClicheFlexografia.upsert({
+          where: { itemGraficaId },
+          update: { custoClichePorCm2 },
+          create: { itemGraficaId, custoClichePorCm2 },
+        }),
+      ]);
+
+      await registrarAuditoria({
+        graficaId: usuario.graficaId,
+        usuarioId: usuario.id,
+        usuarioNome: usuario.nome,
+        acao: "catalogo.salvar_modelo_calculo",
+        entidade: "ItemGrafica",
+        entidadeId: itemGraficaId,
+        descricao: "Modelo de cálculo do item atualizado para Flexografia",
+        valorAnterior: `Modelo: ${modeloAntes}`,
+        valorNovo: `Modelo: ${ROTULO_MODELO.FLEXOGRAFIA}, custo clichê/cm²: ${formatarPreco(custoClichePorCm2)}, ${bobinasResult.data.length} bobina${bobinasResult.data.length > 1 ? "s" : ""}`,
       });
     }
   } catch {

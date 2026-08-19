@@ -156,6 +156,9 @@ const itemEntradaSchema = z.object({
   unidadeDimensao: unidadeDimensaoSchema,
   corFrente: z.number().int().nullable(),
   corVerso: z.number().int().nullable(),
+  // Motor Flexografia — deliberadamente separado de corFrente/corVerso (ver
+  // src/lib/orcamento-precificacao.ts).
+  numeroCoresFlexo: z.number().int().nullable(),
   cores: z.string().max(60).nullable(),
   acabamento: z.string().max(200).nullable(),
   acabamentoIds: z.array(z.string().min(1)).max(20).default([]),
@@ -175,7 +178,7 @@ export type PrecificarItemResult =
       categoria: string;
       precoUnitario: string;
       precoTotal: string;
-      modeloCalculo: "SIMPLES" | "M2" | "OFFSET";
+      modeloCalculo: "SIMPLES" | "M2" | "OFFSET" | "FLEXOGRAFIA";
     }
   | { ok: false; mensagem: string };
 
@@ -195,6 +198,7 @@ export async function precificarItem(input: {
   unidadeDimensao: string;
   corFrente: number | null;
   corVerso: number | null;
+  numeroCoresFlexo: number | null;
   acabamentoIds: string[];
   papelId: string | null;
   quantidadeCores: number | null;
@@ -251,6 +255,7 @@ export async function precificarItem(input: {
     alturaCm,
     corFrente: input.corFrente,
     corVerso: input.corVerso,
+    numeroCoresFlexo: input.numeroCoresFlexo,
     acabamentoIds: input.acabamentoIds,
     papelId: input.papelId,
     quantidadeCores: input.quantidadeCores,
@@ -357,9 +362,10 @@ export async function criarOrcamento(
     acabamento: string | null;
     precoUnitario: string;
     precoTotal: string;
-    modeloCalculo: "SIMPLES" | "M2" | "OFFSET";
+    modeloCalculo: "SIMPLES" | "M2" | "OFFSET" | "FLEXOGRAFIA";
     corFrente: number | null;
     corVerso: number | null;
+    numeroCoresFlexo: number | null;
     breakdown: Prisma.InputJsonValue | null;
     etiqueta: z.infer<typeof etiquetaEntradaSchema> | null;
     acabamentos: { itemGraficaId: string; qtdBase: string; custoCalculado: string }[];
@@ -412,6 +418,7 @@ export async function criarOrcamento(
       alturaCm,
       corFrente: entrada.corFrente,
       corVerso: entrada.corVerso,
+      numeroCoresFlexo: entrada.numeroCoresFlexo,
       acabamentoIds: entrada.acabamentoIds,
       papelId: entrada.papelId,
       quantidadeCores: entrada.quantidadeCores,
@@ -436,6 +443,7 @@ export async function criarOrcamento(
       modeloCalculo: resultado.modeloCalculo,
       corFrente: resultado.corFrente,
       corVerso: resultado.corVerso,
+      numeroCoresFlexo: resultado.numeroCoresFlexo,
       breakdown: resultado.breakdown,
       etiqueta: entrada.etiqueta,
       acabamentos: resultado.acabamentos,
@@ -465,6 +473,7 @@ export async function criarOrcamento(
           modeloCalculo: item.modeloCalculo,
           corFrente: item.corFrente,
           corVerso: item.corVerso,
+          numeroCoresFlexo: item.numeroCoresFlexo,
           breakdown: item.breakdown ?? undefined,
           // Sempre cria a linha de etiqueta pra item M2 (mesmo com tudo
           // nulo, se o usuário não preencheu nada) — evita "M2 sem

@@ -57,7 +57,7 @@ export function EditarOrcamentoForm({
   orcamentoId: string;
   orcamentoItemId: string;
   itemNome: string;
-  modeloCalculo: "SIMPLES" | "M2" | "OFFSET";
+  modeloCalculo: "SIMPLES" | "M2" | "OFFSET" | "FLEXOGRAFIA";
   // ConfiguracaoClicheEtiqueta presente pro produto deste item — só então
   // mostra o seletor de papel/cores/faca/frete.
   usaClicheEtiqueta: boolean;
@@ -73,6 +73,7 @@ export function EditarOrcamentoForm({
     acabamentoIds: string[];
     corFrente: string;
     corVerso: string;
+    numeroCoresFlexo: string;
     etiqueta: CamposEtiqueta;
     papelId: string;
     quantidadeCores: string;
@@ -194,6 +195,17 @@ export function EditarOrcamentoForm({
               defaultValue={valoresIniciais.corVerso}
             />
           </div>
+        )}
+
+        {modeloCalculo === "FLEXOGRAFIA" && (
+          <Input
+            label="Número de cores"
+            name="numeroCoresFlexo"
+            type="number"
+            min={1}
+            required
+            defaultValue={valoresIniciais.numeroCoresFlexo}
+          />
         )}
 
         <Input

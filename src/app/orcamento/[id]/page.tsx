@@ -370,6 +370,7 @@ export default async function OrcamentoDetalhePage({
                     acabamentoIds: item.acabamentos.map((a) => a.itemGraficaId),
                     corFrente: item.corFrente?.toString() ?? "",
                     corVerso: item.corVerso?.toString() ?? "",
+                    numeroCoresFlexo: item.numeroCoresFlexo?.toString() ?? "",
                     etiqueta: etiquetaParaCampos(item.etiqueta),
                     papelId: item.precificacaoEtiqueta?.papelId ?? "",
                     quantidadeCores: item.precificacaoEtiqueta?.quantidadeCores.toString() ?? "",
@@ -454,6 +455,7 @@ export default async function OrcamentoDetalhePage({
                       Frente/verso: {item.corFrente}x{item.corVerso ?? 0}
                     </span>
                   )}
+                  {item.numeroCoresFlexo !== null && <span>Cores: {item.numeroCoresFlexo}</span>}
                   {item.acabamento && <span>Acabamento: {item.acabamento}</span>}
                   {item.acabamentos.length > 0 && (
                     <span>

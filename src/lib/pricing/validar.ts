@@ -1,5 +1,12 @@
 import { ErroPrecificacao } from "./erros";
-import type { ContextoM2, ContextoOffset, PedidoM2, PedidoOffset } from "./tipos";
+import type {
+  ContextoFlexografia,
+  ContextoM2,
+  ContextoOffset,
+  PedidoFlexografia,
+  PedidoM2,
+  PedidoOffset,
+} from "./tipos";
 
 function validarComum(quantidade: number, larguraM: number, alturaM: number) {
   if (!Number.isInteger(quantidade) || quantidade <= 0) {
@@ -71,6 +78,31 @@ export function validarPedidoOffset(pedido: PedidoOffset, contexto: ContextoOffs
       "GRAMATURA_INVALIDA",
       "A gramatura do papel precisa estar entre 30 e 500 g/m².",
       { gramaturaGm2: contexto.gramaturaGm2 }
+    );
+  }
+}
+
+export function validarPedidoFlexografia(pedido: PedidoFlexografia, contexto: ContextoFlexografia) {
+  validarComum(pedido.quantidade, pedido.larguraM, pedido.alturaM);
+
+  if (!Number.isInteger(pedido.numeroCores) || pedido.numeroCores < 1) {
+    throw new ErroPrecificacao(
+      "DIMENSAO_INVALIDA",
+      "O número de cores precisa ser um inteiro maior ou igual a 1.",
+      { numeroCores: pedido.numeroCores }
+    );
+  }
+  if (contexto.bobinas.length === 0) {
+    throw new ErroPrecificacao(
+      "MATERIAL_SEM_BOBINA",
+      "Este material não tem nenhuma bobina cadastrada."
+    );
+  }
+  if (contexto.custoM2Material <= 0) {
+    throw new ErroPrecificacao(
+      "CUSTO_INVALIDO",
+      "O preço de compra do material precisa ser maior que zero.",
+      { custoM2Material: contexto.custoM2Material }
     );
   }
 }

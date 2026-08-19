@@ -23,7 +23,7 @@ export type ItemVenda = {
   nome: string;
   categoria: string;
   precoVenda: string;
-  modeloCalculo: "SIMPLES" | "M2" | "OFFSET";
+  modeloCalculo: "SIMPLES" | "M2" | "OFFSET" | "FLEXOGRAFIA";
   // ConfiguracaoClicheEtiqueta presente pra este produto — só produtos M2
   // marcados assim mostram o seletor de papel/cores/faca/frete abaixo.
   usaClicheEtiqueta: boolean;
@@ -48,6 +48,7 @@ export type CamposItemOrcamento = {
   unidadeDimensao: UnidadeDimensao;
   corFrente: string;
   corVerso: string;
+  numeroCoresFlexo: string;
   cores: string;
   // Texto livre — só usado quando o item é SIMPLES (ver comentário em
   // OrcamentoItem.acabamento no schema). M2/OFFSET usam acabamentoIds abaixo.
@@ -84,6 +85,7 @@ export function camposIniciais(
     unidadeDimensao: unidadePadrao,
     corFrente: "4",
     corVerso: "0",
+    numeroCoresFlexo: "4",
     cores: "",
     acabamento: "",
     acabamentoIds: [],
@@ -113,7 +115,8 @@ export function SeletorItemOrcamento({
   const itemSelecionado = itens.find((i) => i.id === valores.itemGraficaId);
   const usaModeloM2 = itemSelecionado?.modeloCalculo === "M2";
   const usaModeloOffset = itemSelecionado?.modeloCalculo === "OFFSET";
-  const usaMotorAvancado = usaModeloM2 || usaModeloOffset;
+  const usaModeloFlexografia = itemSelecionado?.modeloCalculo === "FLEXOGRAFIA";
+  const usaMotorAvancado = usaModeloM2 || usaModeloOffset || usaModeloFlexografia;
   const usaClicheEtiqueta = usaModeloM2 && itemSelecionado?.usaClicheEtiqueta === true;
 
   const set =
@@ -138,6 +141,7 @@ export function SeletorItemOrcamento({
       unidadeDimensao: valores.unidadeDimensao,
       corFrente: "4",
       corVerso: "0",
+      numeroCoresFlexo: "4",
       cores: "",
       acabamento: "",
       acabamentoIds: [],
@@ -243,6 +247,16 @@ export function SeletorItemOrcamento({
             hint="0 se for só frente"
           />
         </div>
+      )}
+
+      {usaModeloFlexografia && (
+        <Input
+          label="Número de cores"
+          type="number"
+          min={1}
+          value={valores.numeroCoresFlexo}
+          onChange={set("numeroCoresFlexo")}
+        />
       )}
 
       <Input

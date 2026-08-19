@@ -5,7 +5,7 @@ import { carregarContextoPrecificacao, resolverConfigAcabamentos } from "@/lib/p
 
 type ItemGraficaParaPrecificacao = {
   id: string;
-  modeloCalculo: "SIMPLES" | "M2" | "OFFSET";
+  modeloCalculo: "SIMPLES" | "M2" | "OFFSET" | "FLEXOGRAFIA";
   precoVenda: Prisma.Decimal | null;
 };
 
@@ -25,6 +25,10 @@ export type DadosItemOrcamento = {
   quantidadeCores: number | null;
   custoFaca: number | null;
   custoFrete: number | null;
+  // Só usado por FLEXOGRAFIA — deliberadamente separado de corFrente/corVerso
+  // (semânticos de frente/verso de folha do Offset, lidos em ~20 lugares fora
+  // deste escopo).
+  numeroCoresFlexo: number | null;
 };
 
 export type AcabamentoParaGravar = {
@@ -38,9 +42,10 @@ export type ResultadoItemOrcamento =
       ok: true;
       precoUnitario: string;
       precoTotal: string;
-      modeloCalculo: "SIMPLES" | "M2" | "OFFSET";
+      modeloCalculo: "SIMPLES" | "M2" | "OFFSET" | "FLEXOGRAFIA";
       corFrente: number | null;
       corVerso: number | null;
+      numeroCoresFlexo: number | null;
       breakdown: Prisma.InputJsonValue | null;
       acabamentos: AcabamentoParaGravar[];
       precificacaoEtiqueta: {
@@ -106,6 +111,19 @@ export async function calcularItemOrcamento(
     return { ok: false, mensagem: "Custo de frete inválido." };
   }
 
+  // Guarda de FLEXOGRAFIA — mesmo cuidado das guardas acima: precisa vir ANTES
+  // do branch SIMPLES e seu `return`, senão um item de cálculo flexografia sem
+  // número de cores passava batido (mesmo bug que já aconteceu uma vez com as
+  // guardas de etiqueta neste arquivo).
+  if (itemGrafica.modeloCalculo === "FLEXOGRAFIA") {
+    if (!Number.isInteger(dados.numeroCoresFlexo) || (dados.numeroCoresFlexo ?? 0) < 1) {
+      return {
+        ok: false,
+        mensagem: "Informe o número de cores (mínimo 1) — item de cálculo flexografia.",
+      };
+    }
+  }
+
   if (itemGrafica.modeloCalculo === "SIMPLES") {
     // Number(null) é 0, não erro — sem esta guarda, um produto que ficou sem
     // preço no catálogo (ex: campo limpo por engano numa edição em lote)
@@ -135,13 +153,14 @@ export async function calcularItemOrcamento(
       modeloCalculo: "SIMPLES",
       corFrente: null,
       corVerso: null,
+      numeroCoresFlexo: null,
       breakdown: null,
       acabamentos: [],
       precificacaoEtiqueta: null,
     };
   }
 
-  // Motor avançado (M2/OFFSET): exige dimensões reais da peça.
+  // Motor avançado (M2/OFFSET/FLEXOGRAFIA): exige dimensões reais da peça.
   if (!larguraCm || !alturaCm) {
     return {
       ok: false,
@@ -190,15 +209,26 @@ export async function calcularItemOrcamento(
             },
             acabamentos,
           }
-        : {
-            tipo: "M2",
-            pedido: {
-              larguraM: larguraCm / 100,
-              alturaM: alturaCm / 100,
-              quantidade,
-            },
-            acabamentos,
-          };
+        : itemGrafica.modeloCalculo === "FLEXOGRAFIA"
+          ? {
+              tipo: "FLEXOGRAFIA",
+              pedido: {
+                larguraM: larguraCm / 100,
+                alturaM: alturaCm / 100,
+                quantidade,
+                numeroCores: dados.numeroCoresFlexo!,
+              },
+              acabamentos,
+            }
+          : {
+              tipo: "M2",
+              pedido: {
+                larguraM: larguraCm / 100,
+                alturaM: alturaCm / 100,
+                quantidade,
+              },
+              acabamentos,
+            };
 
     const resultado = precificar(pedido, contexto);
     // decimal.js serializa via toJSON() -> string; o round-trip garante um objeto
@@ -212,6 +242,7 @@ export async function calcularItemOrcamento(
       modeloCalculo: itemGrafica.modeloCalculo,
       corFrente: itemGrafica.modeloCalculo === "OFFSET" ? corFrente! : null,
       corVerso: itemGrafica.modeloCalculo === "OFFSET" ? corVerso! : null,
+      numeroCoresFlexo: itemGrafica.modeloCalculo === "FLEXOGRAFIA" ? dados.numeroCoresFlexo! : null,
       breakdown,
       acabamentos: resultado.detalhes.acabamentos.map((a) => ({
         itemGraficaId: a.itemGraficaId,

@@ -2,6 +2,7 @@ export * from "./tipos";
 export * from "./erros";
 export { calcularM2, type ResultadoM2 } from "./m2";
 export { calcularImposicao, calcularOffset, type ResultadoOffset } from "./offset";
+export { calcularFlexografia, type ResultadoFlexografia } from "./flexografia";
 export {
   calcularQtdBase,
   calcularCustoAcabamento,

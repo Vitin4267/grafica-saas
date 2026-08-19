@@ -1,7 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { validarPedidoM2, validarPedidoOffset, validarSomaEncargos } from "./validar";
+import {
+  validarPedidoFlexografia,
+  validarPedidoM2,
+  validarPedidoOffset,
+  validarSomaEncargos,
+} from "./validar";
 import { ErroPrecificacao } from "./erros";
-import type { ContextoM2, ContextoOffset, PedidoM2, PedidoOffset } from "./tipos";
+import type {
+  ContextoFlexografia,
+  ContextoM2,
+  ContextoOffset,
+  PedidoFlexografia,
+  PedidoM2,
+  PedidoOffset,
+} from "./tipos";
 
 // Fixtures base "tudo válido" — mesma forma de montar os objetos usada em
 // __tests__/golden.test.ts (bobinas/folhas com id+larguraNominal/refile ou
@@ -46,6 +58,26 @@ function contextoOffsetValido(overrides: Partial<ContextoOffset> = {}): Contexto
     gramaturaGm2: 300,
     precoPorKg: 8.5,
     viraFolha: false,
+    ...overrides,
+  };
+}
+
+function pedidoFlexografiaValido(overrides: Partial<PedidoFlexografia> = {}): PedidoFlexografia {
+  return {
+    larguraM: 0.08,
+    alturaM: 0.05,
+    quantidade: 100,
+    numeroCores: 3,
+    ...overrides,
+  };
+}
+
+function contextoFlexografiaValido(
+  overrides: Partial<ContextoFlexografia> = {}
+): ContextoFlexografia {
+  return {
+    bobinas: [{ id: "bobina-0.30", larguraNominal: 0.3, refile: 0.01 }],
+    custoM2Material: 5,
     ...overrides,
   };
 }
@@ -372,5 +404,148 @@ describe("validarSomaEncargos — ENCARGOS_INVALIDOS (limiar: soma >= 0,85 dispa
 
   it("não lança com soma baixa e plausível (ex.: 0,26 = margem 20% + imposto 6%)", () => {
     expect(() => validarSomaEncargos(0.26)).not.toThrow();
+  });
+});
+
+describe("validarPedidoFlexografia — casos válidos (sanity check, não deve lançar)", () => {
+  it("não lança para pedido/contexto totalmente válidos", () => {
+    expect(() =>
+      validarPedidoFlexografia(pedidoFlexografiaValido(), contextoFlexografiaValido())
+    ).not.toThrow();
+  });
+});
+
+describe("validarPedidoFlexografia — QUANTIDADE_INVALIDA e DIMENSAO_INVALIDA (largura/altura, herdados de validarComum)", () => {
+  it("dispara QUANTIDADE_INVALIDA com quantidade zero", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoFlexografia(
+        pedidoFlexografiaValido({ quantidade: 0 }),
+        contextoFlexografiaValido()
+      )
+    );
+    expect(erro).toBe("QUANTIDADE_INVALIDA");
+  });
+
+  it("dispara QUANTIDADE_INVALIDA com quantidade fracionária", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoFlexografia(
+        pedidoFlexografiaValido({ quantidade: 10.5 }),
+        contextoFlexografiaValido()
+      )
+    );
+    expect(erro).toBe("QUANTIDADE_INVALIDA");
+  });
+
+  it("dispara DIMENSAO_INVALIDA com larguraM zero", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoFlexografia(
+        pedidoFlexografiaValido({ larguraM: 0 }),
+        contextoFlexografiaValido()
+      )
+    );
+    expect(erro).toBe("DIMENSAO_INVALIDA");
+  });
+
+  it("dispara DIMENSAO_INVALIDA com alturaM negativa", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoFlexografia(
+        pedidoFlexografiaValido({ alturaM: -0.01 }),
+        contextoFlexografiaValido()
+      )
+    );
+    expect(erro).toBe("DIMENSAO_INVALIDA");
+  });
+});
+
+describe("validarPedidoFlexografia — DIMENSAO_INVALIDA (numeroCores)", () => {
+  it("dispara com numeroCores zero", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoFlexografia(
+        pedidoFlexografiaValido({ numeroCores: 0 }),
+        contextoFlexografiaValido()
+      )
+    );
+    expect(erro).toBe("DIMENSAO_INVALIDA");
+  });
+
+  it("dispara com numeroCores negativo", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoFlexografia(
+        pedidoFlexografiaValido({ numeroCores: -1 }),
+        contextoFlexografiaValido()
+      )
+    );
+    expect(erro).toBe("DIMENSAO_INVALIDA");
+  });
+
+  it("dispara com numeroCores fracionário", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoFlexografia(
+        pedidoFlexografiaValido({ numeroCores: 1.5 }),
+        contextoFlexografiaValido()
+      )
+    );
+    expect(erro).toBe("DIMENSAO_INVALIDA");
+  });
+
+  it("fronteira válida: numeroCores = 1 (mínimo permitido) não lança", () => {
+    expect(() =>
+      validarPedidoFlexografia(
+        pedidoFlexografiaValido({ numeroCores: 1 }),
+        contextoFlexografiaValido()
+      )
+    ).not.toThrow();
+  });
+});
+
+describe("validarPedidoFlexografia — MATERIAL_SEM_BOBINA", () => {
+  it("dispara quando a lista de bobinas está vazia", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoFlexografia(
+        pedidoFlexografiaValido(),
+        contextoFlexografiaValido({ bobinas: [] })
+      )
+    );
+    expect(erro).toBe("MATERIAL_SEM_BOBINA");
+  });
+
+  it("não lança quando há pelo menos uma bobina cadastrada", () => {
+    expect(() =>
+      validarPedidoFlexografia(
+        pedidoFlexografiaValido(),
+        contextoFlexografiaValido({ bobinas: [{ id: "b1", larguraNominal: 0.3, refile: 0.01 }] })
+      )
+    ).not.toThrow();
+  });
+});
+
+describe("validarPedidoFlexografia — CUSTO_INVALIDO (custoM2Material)", () => {
+  it("dispara com custoM2Material zero", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoFlexografia(
+        pedidoFlexografiaValido(),
+        contextoFlexografiaValido({ custoM2Material: 0 })
+      )
+    );
+    expect(erro).toBe("CUSTO_INVALIDO");
+  });
+
+  it("dispara com custoM2Material negativo", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoFlexografia(
+        pedidoFlexografiaValido(),
+        contextoFlexografiaValido({ custoM2Material: -5 })
+      )
+    );
+    expect(erro).toBe("CUSTO_INVALIDO");
+  });
+
+  it("fronteira válida: custoM2Material ligeiramente acima de zero não lança", () => {
+    expect(() =>
+      validarPedidoFlexografia(
+        pedidoFlexografiaValido(),
+        contextoFlexografiaValido({ custoM2Material: 0.01 })
+      )
+    ).not.toThrow();
   });
 });

@@ -13,7 +13,7 @@ import { construirEnvelope } from "@/lib/webhook-envelope";
 
 export type JobParaAnaliseTinta = {
   produtoNome: string;
-  modeloCalculo: "SIMPLES" | "M2" | "OFFSET";
+  modeloCalculo: "SIMPLES" | "M2" | "OFFSET" | "FLEXOGRAFIA";
   quantidade: number;
   larguraCm: number | null;
   alturaCm: number | null;

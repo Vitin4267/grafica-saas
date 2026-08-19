@@ -1,24 +1,29 @@
 import { paraDecimal } from "./decimal";
 import { calcularM2 } from "./m2";
 import { calcularOffset } from "./offset";
+import { calcularFlexografia } from "./flexografia";
 import { calcularAcabamentos } from "./acabamento";
 import { comporPreco, type ResultadoComposicao } from "./compor";
 import { ErroPrecificacao } from "./erros";
 import type {
   ConfigAcabamento,
   ContextoAcabamento,
+  ContextoFlexografia,
   ContextoM2,
   ContextoOffset,
   ModeloCalculo,
+  ParametrosMaquinaFlexo,
   ParametrosPrensa,
   ParametrosTenant,
+  PedidoFlexografia,
   PedidoM2,
   PedidoOffset,
 } from "./tipos";
 
 export type PedidoPrecificacao =
   | { tipo: "M2"; pedido: PedidoM2; acabamentos: ConfigAcabamento[] }
-  | { tipo: "OFFSET"; pedido: PedidoOffset; acabamentos: ConfigAcabamento[] };
+  | { tipo: "OFFSET"; pedido: PedidoOffset; acabamentos: ConfigAcabamento[] }
+  | { tipo: "FLEXOGRAFIA"; pedido: PedidoFlexografia; acabamentos: ConfigAcabamento[] };
 
 export type ContextoPrecificacao = {
   itemGraficaId: string;
@@ -26,9 +31,12 @@ export type ContextoPrecificacao = {
   viraFolha: boolean;
   m2?: ContextoM2;
   offset?: ContextoOffset;
+  flexografia?: ContextoFlexografia;
   parametros: ParametrosTenant;
   parametrosPrensa?: ParametrosPrensa;
   prensaUsada?: { id: string; nome: string };
+  parametrosMaquinaFlexo?: ParametrosMaquinaFlexo;
+  maquinaFlexoUsada?: { id: string; nome: string };
   margemLucroOverride?: number;
   custoEmbalagem?: number;
   custoFreteEstimado?: number;
@@ -39,6 +47,10 @@ export type ContextoPrecificacao = {
   // reais: mesma etiqueta, mesmo nº de cores, custo de clichê idêntico
   // independente de imprimir 1.000 ou 60.000 unidades).
   etiquetaCliche?: { quantidadeCores: number; custoClichePorCm2: number };
+  // Mesma lógica do clichê de etiqueta acima, mas pro motor Flexografia —
+  // custoClichePorCm2 × área da peça × nº de cores do pedido, também sem
+  // escalar com a quantidade.
+  clicheFlexo?: { custoClichePorCm2: number };
   custoFaca?: number; // ferramental de corte, R$ livre, por item de orçamento
 };
 
@@ -115,63 +127,137 @@ export function precificar(
     };
   }
 
-  // OFFSET
-  if (!contexto.offset) {
+  if (pedido.tipo === "OFFSET") {
+    if (!contexto.offset) {
+      throw new ErroPrecificacao(
+        "MATERIAL_SEM_FOLHA",
+        "Contexto OFFSET não fornecido para um item com modeloCalculo=OFFSET."
+      );
+    }
+    if (!contexto.parametrosPrensa) {
+      throw new ErroPrecificacao(
+        "PRENSA_NAO_CONFIGURADA",
+        "Parâmetros de prensa não fornecidos para um item com modeloCalculo=OFFSET."
+      );
+    }
+
+    const resultado = calcularOffset(
+      pedido.pedido,
+      { ...contexto.offset, viraFolha: contexto.viraFolha },
+      contexto.parametrosPrensa
+    );
+
+    const ctxAcabamento: ContextoAcabamento = {
+      quantidade: pedido.pedido.quantidade,
+      larguraEfetivaM: resultado.larguraEfetivaM.toNumber(),
+      alturaEfetivaM: resultado.alturaEfetivaM.toNumber(),
+      folhasBoas: resultado.folhasBoas,
+      folhasPerda: resultado.folhasPerda,
+    };
+    const acabamentos = calcularAcabamentos(pedido.acabamentos, ctxAcabamento);
+
+    const composicao = comporPreco({
+      quantidade: pedido.pedido.quantidade,
+      custoBase: resultado.custoBase,
+      custoAcabamentos: acabamentos.total,
+      acabamentosDetalhe: acabamentos.itens,
+      custoEmbalagem: contexto.custoEmbalagem ? paraDecimal(contexto.custoEmbalagem) : undefined,
+      custoFreteEstimado: contexto.custoFreteEstimado
+        ? paraDecimal(contexto.custoFreteEstimado)
+        : undefined,
+      parametros: contexto.parametros,
+      margemLucroOverride: contexto.margemLucroOverride,
+      detalhesExtras: {
+        chapas: resultado.custoChapas,
+        rodagem: resultado.custoRodagem,
+        setup: resultado.custoSetup,
+      },
+    });
+
+    return {
+      ...composicao,
+      metricas: {
+        nUp: resultado.nUp,
+        rotacionado: resultado.rotacionado,
+        entradas: resultado.entradas,
+        folhasTotais: resultado.folhasTotais,
+        folhaEscolhida: resultado.folhaEscolhida,
+        pesoTotalPedidoKg: resultado.pesoTotalPedidoKg.toNumber(),
+        prensaUsada: contexto.prensaUsada ?? null,
+      },
+    };
+  }
+
+  // FLEXOGRAFIA
+  if (!contexto.flexografia) {
     throw new ErroPrecificacao(
-      "MATERIAL_SEM_FOLHA",
-      "Contexto OFFSET não fornecido para um item com modeloCalculo=OFFSET."
+      "MATERIAL_SEM_BOBINA",
+      "Contexto Flexografia não fornecido para um item com modeloCalculo=FLEXOGRAFIA."
     );
   }
-  if (!contexto.parametrosPrensa) {
+  if (!contexto.parametrosMaquinaFlexo) {
     throw new ErroPrecificacao(
-      "PRENSA_NAO_CONFIGURADA",
-      "Parâmetros de prensa não fornecidos para um item com modeloCalculo=OFFSET."
+      "MAQUINA_FLEXO_NAO_CONFIGURADA",
+      "Parâmetros de máquina flexo não fornecidos para um item com modeloCalculo=FLEXOGRAFIA."
     );
   }
 
-  const resultado = calcularOffset(
+  const resultado = calcularFlexografia(
     pedido.pedido,
-    { ...contexto.offset, viraFolha: contexto.viraFolha },
-    contexto.parametrosPrensa
+    contexto.flexografia,
+    contexto.parametrosMaquinaFlexo,
+    {
+      margemSegurancaPadrao: contexto.parametros.margemSegurancaPadrao,
+      gapPecasPadrao: contexto.parametros.gapPecasPadrao,
+    }
   );
 
   const ctxAcabamento: ContextoAcabamento = {
     quantidade: pedido.pedido.quantidade,
     larguraEfetivaM: resultado.larguraEfetivaM.toNumber(),
     alturaEfetivaM: resultado.alturaEfetivaM.toNumber(),
-    folhasBoas: resultado.folhasBoas,
-    folhasPerda: resultado.folhasPerda,
   };
   const acabamentos = calcularAcabamentos(pedido.acabamentos, ctxAcabamento);
+
+  // Mesma fórmula do clichê de etiqueta (M2): área da PEÇA (não a área com
+  // margem de segurança) × custoClichePorCm2 × nº de cores do pedido — fixo,
+  // não escala com a quantidade.
+  const areaClicheCm2 = paraDecimal(pedido.pedido.larguraM)
+    .times(pedido.pedido.alturaM)
+    .times(10_000);
+  const custoCliche = contexto.clicheFlexo
+    ? paraDecimal(pedido.pedido.numeroCores)
+        .times(contexto.clicheFlexo.custoClichePorCm2)
+        .times(areaClicheCm2)
+    : undefined;
 
   const composicao = comporPreco({
     quantidade: pedido.pedido.quantidade,
     custoBase: resultado.custoBase,
     custoAcabamentos: acabamentos.total,
     acabamentosDetalhe: acabamentos.itens,
-    custoEmbalagem: contexto.custoEmbalagem ? paraDecimal(contexto.custoEmbalagem) : undefined,
-    custoFreteEstimado: contexto.custoFreteEstimado
-      ? paraDecimal(contexto.custoFreteEstimado)
-      : undefined,
+    custoEmbalagem:
+      contexto.custoEmbalagem !== undefined ? paraDecimal(contexto.custoEmbalagem) : undefined,
+    custoFreteEstimado:
+      contexto.custoFreteEstimado !== undefined
+        ? paraDecimal(contexto.custoFreteEstimado)
+        : undefined,
+    custoCliche,
+    custoFaca: contexto.custoFaca !== undefined ? paraDecimal(contexto.custoFaca) : undefined,
     parametros: contexto.parametros,
     margemLucroOverride: contexto.margemLucroOverride,
-    detalhesExtras: {
-      chapas: resultado.custoChapas,
-      rodagem: resultado.custoRodagem,
-      setup: resultado.custoSetup,
-    },
+    detalhesExtras: { rodagem: resultado.custoRodagem, setup: resultado.custoSetup },
   });
 
   return {
     ...composicao,
     metricas: {
       nUp: resultado.nUp,
-      rotacionado: resultado.rotacionado,
       entradas: resultado.entradas,
-      folhasTotais: resultado.folhasTotais,
-      folhaEscolhida: resultado.folhaEscolhida,
-      pesoTotalPedidoKg: resultado.pesoTotalPedidoKg.toNumber(),
-      prensaUsada: contexto.prensaUsada ?? null,
+      numRevolucoes: resultado.numRevolucoes,
+      metragemLinearM: resultado.metragemLinearM.toNumber(),
+      bobinaEscolhida: resultado.bobinaEscolhida,
+      maquinaFlexoUsada: contexto.maquinaFlexoUsada ?? null,
     },
   };
 }

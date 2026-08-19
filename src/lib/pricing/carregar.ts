@@ -3,7 +3,13 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { ErroPrecificacao } from "./erros";
 import { resolverPrecoPapel } from "./papel";
-import type { ConfigAcabamento, ContextoPrecificacao, ParametrosPrensa, ParametrosTenant } from "./index";
+import type {
+  ConfigAcabamento,
+  ContextoPrecificacao,
+  ParametrosMaquinaFlexo,
+  ParametrosPrensa,
+  ParametrosTenant,
+} from "./index";
 
 // Único arquivo do motor que toca Prisma. Cruza Decimal do Prisma → number sempre
 // aqui (via toString()/Number()), nunca dentro de src/lib/pricing/*.ts puro.
@@ -53,6 +59,30 @@ export async function carregarParametrosPrensa(
   };
 }
 
+// Diferente de carregarParametrosTenant, não é self-healing — uma máquina flexo só
+// existe se o usuário criou uma em Configurações > Máquinas Flexo. Chamador
+// (carregarContextoPrecificacao) já garante que só chama isso com um id real.
+export async function carregarParametrosMaquinaFlexografia(
+  maquinaFlexografiaId: string,
+  graficaId: string
+): Promise<ParametrosMaquinaFlexo> {
+  const registro = await prisma.maquinaFlexografia.findFirstOrThrow({
+    where: { id: maquinaFlexografiaId, graficaId },
+  });
+
+  return {
+    custoHoraMaq: Number(registro.custoHoraMaq),
+    numeroEstacoesCores: registro.numeroEstacoesCores,
+    larguraMaquinaM: Number(registro.larguraMaquinaM),
+    passoCilindroM: Number(registro.passoCilindroM),
+    tempoAcertoH: Number(registro.tempoAcertoH),
+    metrosAcerto: Number(registro.metrosAcerto),
+    custoMetroLinearRod: Number(registro.custoMetroLinearRod),
+    rodagemMinima: Number(registro.rodagemMinima),
+    perdaPercentPadrao: Number(registro.perdaPercentPadrao),
+  };
+}
+
 // Nesta fase, um PRODUTO em modo M2/OFFSET carrega suas próprias BobinaMaterial/
 // FormatoFolha e seu próprio precoCompra como custo de material — ainda não existe
 // um vínculo formal "produto usa esta outra matéria-prima do catálogo", EXCETO
@@ -74,6 +104,8 @@ export async function carregarContextoPrecificacao(
       prensa: true,
       papel: { include: { tabelaPrecoPapel: true } },
       configuracaoClicheEtiqueta: true,
+      maquinaFlexografia: true,
+      configuracaoClicheFlexografia: true,
     },
   });
 
@@ -165,6 +197,36 @@ export async function carregarContextoPrecificacao(
     };
     contexto.parametrosPrensa = await carregarParametrosPrensa(item.prensa.id, graficaId);
     contexto.prensaUsada = { id: item.prensa.id, nome: item.prensa.nome };
+  } else if (item.modeloCalculo === "FLEXOGRAFIA") {
+    if (!item.maquinaFlexografia) {
+      throw new ErroPrecificacao(
+        "MAQUINA_FLEXO_NAO_CONFIGURADA",
+        "Este produto usa o modelo Flexografia mas não tem uma máquina selecionada — configure isso na tela do produto, no catálogo."
+      );
+    }
+    if (!item.configuracaoClicheFlexografia) {
+      throw new ErroPrecificacao(
+        "CLICHE_FLEXO_NAO_CONFIGURADO",
+        "Este produto usa o modelo Flexografia mas não tem o custo de clichê configurado — configure isso na tela do produto, no catálogo."
+      );
+    }
+
+    contexto.flexografia = {
+      bobinas: item.bobinas.map((b) => ({
+        id: b.id,
+        larguraNominal: Number(b.larguraNominal),
+        refile: Number(b.refile),
+      })),
+      custoM2Material: Number(item.precoCompra ?? 0),
+    };
+    contexto.parametrosMaquinaFlexo = await carregarParametrosMaquinaFlexografia(
+      item.maquinaFlexografia.id,
+      graficaId
+    );
+    contexto.maquinaFlexoUsada = { id: item.maquinaFlexografia.id, nome: item.maquinaFlexografia.nome };
+    contexto.clicheFlexo = {
+      custoClichePorCm2: Number(item.configuracaoClicheFlexografia.custoClichePorCm2),
+    };
   }
 
   return contexto;

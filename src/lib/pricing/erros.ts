@@ -14,7 +14,9 @@ export type CodigoErroPrecificacao =
   | "ENCARGOS_INVALIDOS"
   | "PRECO_ABAIXO_DO_CUSTO"
   | "ETIQUETA_SEM_PAPEL"
-  | "PAPEL_INVALIDO";
+  | "PAPEL_INVALIDO"
+  | "MAQUINA_FLEXO_NAO_CONFIGURADA"
+  | "CLICHE_FLEXO_NAO_CONFIGURADO";
 
 // Erro estruturado: o motor nunca retorna NaN ou um preço silenciosamente errado —
 // sempre um código + mensagem + detalhes que a UI pode mostrar de forma útil.

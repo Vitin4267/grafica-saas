@@ -1,4 +1,4 @@
-export type ModeloCalculo = "SIMPLES" | "M2" | "OFFSET";
+export type ModeloCalculo = "SIMPLES" | "M2" | "OFFSET" | "FLEXOGRAFIA";
 export type BaseCobranca =
   | "UNIDADE"
   | "M2"
@@ -107,6 +107,37 @@ export type ParametrosPrensa = {
   folhasAcerto: number;
   tempoAcertoH: number;
   custoMilheiroRod: number;
+  rodagemMinima: number;
+  perdaPercentPadrao: number;
+};
+
+// ---------- Cenário 4 (flexografia / bobina, nesting 1D) ----------
+
+export type PedidoFlexografia = {
+  larguraM: number; // w
+  alturaM: number; // h — comparado contra o passo do cilindro, não nesteado
+  quantidade: number; // Q
+  numeroCores: number;
+  perdaPercent?: number; // p_perda — usa o default da máquina se omitido
+  margemSeguranca?: number; // s — usa o default do tenant se omitido
+  gapPecas?: number; // g — usa o default do tenant se omitido
+};
+
+export type ContextoFlexografia = {
+  bobinas: Bobina[];
+  custoM2Material: number; // ItemGrafica.precoCompra do material em bobina
+};
+
+// ---------- Parâmetros da máquina flexo (custo de máquina, só FLEXOGRAFIA) ----------
+
+export type ParametrosMaquinaFlexo = {
+  custoHoraMaq: number;
+  numeroEstacoesCores: number;
+  larguraMaquinaM: number;
+  passoCilindroM: number;
+  tempoAcertoH: number;
+  metrosAcerto: number;
+  custoMetroLinearRod: number;
   rodagemMinima: number;
   perdaPercentPadrao: number;
 };

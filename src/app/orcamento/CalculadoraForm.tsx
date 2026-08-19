@@ -135,12 +135,13 @@ type ItemCarrinho = {
   unidadeDimensao: CamposItemOrcamento["unidadeDimensao"];
   corFrente: number | null;
   corVerso: number | null;
+  numeroCoresFlexo: number | null;
   cores: string | null;
   acabamento: string | null;
   acabamentoIds: string[];
   precoUnitario: string;
   precoTotal: string;
-  modeloCalculo: "SIMPLES" | "M2" | "OFFSET";
+  modeloCalculo: "SIMPLES" | "M2" | "OFFSET" | "FLEXOGRAFIA";
   etiqueta: CamposEtiqueta;
   precificacaoEtiqueta: CamposPrecificacaoEtiqueta;
 };
@@ -181,7 +182,9 @@ export function CalculadoraForm({
 
   const itemSelecionado = itens.find((i) => i.id === campos.itemGraficaId);
   const usaMotorAvancado =
-    itemSelecionado?.modeloCalculo === "M2" || itemSelecionado?.modeloCalculo === "OFFSET";
+    itemSelecionado?.modeloCalculo === "M2" ||
+    itemSelecionado?.modeloCalculo === "OFFSET" ||
+    itemSelecionado?.modeloCalculo === "FLEXOGRAFIA";
 
   // Prévia instantânea, sem round-trip, só pra itens SIMPLES (matemática pura,
   // igual a src/lib/orcamento.ts). M2/Offset só têm preço real depois de
@@ -226,6 +229,8 @@ export function CalculadoraForm({
     const altura = campos.altura ? Number(campos.altura) : null;
     const corFrente = campos.corFrente !== "" ? Number(campos.corFrente) : null;
     const corVerso = campos.corVerso !== "" ? Number(campos.corVerso) : null;
+    const numeroCoresFlexo =
+      campos.numeroCoresFlexo !== "" ? Number(campos.numeroCoresFlexo) : null;
     const papelId = campos.precificacaoEtiqueta.papelId || null;
     const quantidadeCores =
       campos.precificacaoEtiqueta.quantidadeCores !== ""
@@ -249,6 +254,7 @@ export function CalculadoraForm({
       unidadeDimensao: campos.unidadeDimensao,
       corFrente,
       corVerso,
+      numeroCoresFlexo,
       acabamentoIds: campos.acabamentoIds,
       papelId,
       quantidadeCores,
@@ -275,6 +281,7 @@ export function CalculadoraForm({
         unidadeDimensao: campos.unidadeDimensao,
         corFrente,
         corVerso,
+        numeroCoresFlexo,
         cores: campos.cores.trim() || null,
         acabamento: campos.acabamento.trim() || null,
         acabamentoIds: campos.acabamentoIds,
@@ -301,6 +308,7 @@ export function CalculadoraForm({
       unidadeDimensao: i.unidadeDimensao,
       corFrente: i.corFrente,
       corVerso: i.corVerso,
+      numeroCoresFlexo: i.numeroCoresFlexo,
       cores: i.cores,
       acabamento: i.acabamento,
       acabamentoIds: i.acabamentoIds,

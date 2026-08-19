@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { precificar, type PedidoPrecificacao, type ContextoPrecificacao } from "../precificar";
 import { ErroPrecificacao } from "../erros";
-import type { ParametrosPrensa, ParametrosTenant } from "../tipos";
+import type { ParametrosMaquinaFlexo, ParametrosPrensa, ParametrosTenant } from "../tipos";
 
 // Fixture de parâmetros de tenant — números plausíveis, não "oficiais" de mercado.
 // O que importa nos testes é o COMPORTAMENTO relativo (qual bobina/folha vence,
@@ -28,6 +28,19 @@ const PARAMS_PRENSA: ParametrosPrensa = {
   tempoAcertoH: 0.5,
   custoMilheiroRod: 40,
   rodagemMinima: 30,
+  perdaPercentPadrao: 0.03,
+};
+
+// Fixture de parâmetros de uma máquina flexo — usada só no cenário FLEXOGRAFIA.
+const PARAMS_MAQUINA_FLEXO: ParametrosMaquinaFlexo = {
+  custoHoraMaq: 150,
+  numeroEstacoesCores: 6,
+  larguraMaquinaM: 0.5,
+  passoCilindroM: 0.4,
+  tempoAcertoH: 0.5,
+  metrosAcerto: 20,
+  custoMetroLinearRod: 0.8,
+  rodagemMinima: 25,
   perdaPercentPadrao: 0.03,
 };
 
@@ -186,5 +199,47 @@ describe("golden #4 — lona 3,00×2,00m excede todas as bobinas cadastradas", (
       expect(erro).toBeInstanceOf(ErroPrecificacao);
       expect((erro as ErroPrecificacao).codigo).toBe("PECA_EXCEDE_BOBINA");
     }
+  });
+});
+
+describe("golden #5 — rótulo flexo 8×5cm 3 cores: clichê fixo por cor/área, não escala com a tiragem", () => {
+  function precificarRotulo(quantidade: number) {
+    const contexto: ContextoPrecificacao = {
+      itemGraficaId: "rotulo-flexo",
+      modeloCalculo: "FLEXOGRAFIA",
+      viraFolha: false,
+      parametros: PARAMS,
+      parametrosMaquinaFlexo: PARAMS_MAQUINA_FLEXO,
+      flexografia: {
+        bobinas: [{ id: "bobina-0.30", larguraNominal: 0.3, refile: 0.01 }],
+        custoM2Material: 5,
+      },
+      clicheFlexo: { custoClichePorCm2: 1 },
+    };
+
+    const pedido: PedidoPrecificacao = {
+      tipo: "FLEXOGRAFIA",
+      pedido: { larguraM: 0.08, alturaM: 0.05, quantidade, numeroCores: 3 },
+      acabamentos: [],
+    };
+
+    return precificar(pedido, contexto);
+  }
+
+  it("custo de clichê é IDÊNTICO em tiragens bem diferentes (por área×cor, não por quantidade)", () => {
+    // Rótulo 8×5cm = 40cm². 3 cores × R$1,00/cm² × 40cm² = R$120.
+    const resultadoPequeno = precificarRotulo(100);
+    const resultadoGrande = precificarRotulo(50_000);
+
+    expect(resultadoPequeno.detalhes.cliche.toNumber()).toBe(120);
+    expect(resultadoGrande.detalhes.cliche.toNumber()).toBe(120);
+  });
+
+  it("expõe nUp/entradas/bobinaEscolhida nas métricas, ponta a ponta via precificar()", () => {
+    const resultado = precificarRotulo(100);
+
+    expect(resultado.metricas.bobinaEscolhida).toMatchObject({ id: "bobina-0.30" });
+    expect(resultado.metricas.entradas).toBe(1); // ceil(3/6)
+    expect(resultado.metricas.maquinaFlexoUsada).toBeNull(); // não informado neste cenário
   });
 });

@@ -326,6 +326,11 @@ export async function editarOrcamento(
   const acabamento = String(formData.get("acabamento") || "").slice(0, 200);
   const corFrente = formData.get("corFrente") ? Number(formData.get("corFrente")) : null;
   const corVerso = formData.get("corVerso") ? Number(formData.get("corVerso")) : null;
+  // Motor Flexografia — deliberadamente separado de corFrente/corVerso (ver
+  // src/lib/orcamento-precificacao.ts).
+  const numeroCoresFlexo = formData.get("numeroCoresFlexo")
+    ? Number(formData.get("numeroCoresFlexo"))
+    : null;
   // Motor de clichê de etiqueta (só M2 com ConfiguracaoClicheEtiqueta) — ver
   // src/lib/orcamento-precificacao.ts.
   const papelId = String(formData.get("papelId") || "").trim() || null;
@@ -371,6 +376,7 @@ export async function editarOrcamento(
     alturaCm,
     corFrente,
     corVerso,
+    numeroCoresFlexo,
     acabamentoIds,
     papelId,
     quantidadeCores,
@@ -436,6 +442,7 @@ export async function editarOrcamento(
             aprovadoPorId: null,
             corFrente: resultado.corFrente,
             corVerso: resultado.corVerso,
+            numeroCoresFlexo: resultado.numeroCoresFlexo,
             breakdown: resultado.breakdown ?? undefined,
           },
         });
@@ -1175,6 +1182,11 @@ export async function adicionarItemOrcamento(
   const acabamentoIds = formData.getAll("acabamentoIds").map(String).filter(Boolean).slice(0, 20);
   const corFrente = formData.get("corFrente") ? Number(formData.get("corFrente")) : null;
   const corVerso = formData.get("corVerso") ? Number(formData.get("corVerso")) : null;
+  // Motor Flexografia — deliberadamente separado de corFrente/corVerso (ver
+  // src/lib/orcamento-precificacao.ts).
+  const numeroCoresFlexo = formData.get("numeroCoresFlexo")
+    ? Number(formData.get("numeroCoresFlexo"))
+    : null;
   // Motor de clichê de etiqueta (só M2 com ConfiguracaoClicheEtiqueta) — ver
   // src/lib/orcamento-precificacao.ts.
   const papelId = String(formData.get("papelId") || "").trim() || null;
@@ -1226,6 +1238,7 @@ export async function adicionarItemOrcamento(
     alturaCm,
     corFrente,
     corVerso,
+    numeroCoresFlexo,
     acabamentoIds,
     papelId,
     quantidadeCores,
@@ -1270,6 +1283,7 @@ export async function adicionarItemOrcamento(
             modeloCalculo: resultado.modeloCalculo,
             corFrente: resultado.corFrente,
             corVerso: resultado.corVerso,
+            numeroCoresFlexo: resultado.numeroCoresFlexo,
             breakdown: resultado.breakdown ?? undefined,
             etiqueta:
               resultado.modeloCalculo === "M2"

@@ -25,6 +25,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       quantidadeCores: null,
       custoFaca: null,
       custoFrete: null,
+      numeroCoresFlexo: null,
     });
     expect(resultado.ok).toBe(true);
     if (resultado.ok) {
@@ -44,6 +45,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       quantidadeCores: null,
       custoFaca: null,
       custoFrete: null,
+      numeroCoresFlexo: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -60,6 +62,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       quantidadeCores: null,
       custoFaca: null,
       custoFrete: null,
+      numeroCoresFlexo: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -76,6 +79,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       quantidadeCores: null,
       custoFaca: null,
       custoFrete: null,
+      numeroCoresFlexo: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -92,6 +96,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       quantidadeCores: null,
       custoFaca: null,
       custoFrete: null,
+      numeroCoresFlexo: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -108,6 +113,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       quantidadeCores: null,
       custoFaca: null,
       custoFrete: null,
+      numeroCoresFlexo: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -124,6 +130,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       quantidadeCores: null,
       custoFaca: null,
       custoFrete: null,
+      numeroCoresFlexo: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -140,6 +147,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       quantidadeCores: null,
       custoFaca: null,
       custoFrete: null,
+      numeroCoresFlexo: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -161,6 +169,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       quantidadeCores: 1.5,
       custoFaca: null,
       custoFrete: null,
+      numeroCoresFlexo: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -177,6 +186,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       quantidadeCores: 0,
       custoFaca: null,
       custoFrete: null,
+      numeroCoresFlexo: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -193,6 +203,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       quantidadeCores: null,
       custoFaca: -1,
       custoFrete: null,
+      numeroCoresFlexo: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -209,6 +220,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       quantidadeCores: null,
       custoFaca: null,
       custoFrete: -1,
+      numeroCoresFlexo: null,
     });
     expect(resultado.ok).toBe(false);
   });

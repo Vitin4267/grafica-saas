@@ -11,7 +11,7 @@ import { gerarChave } from "@/lib/chave-local";
 import { ROTULO_UNIDADE } from "@/lib/unidade";
 import { salvarModeloProduto } from "./actions";
 
-type ModeloCalculo = "SIMPLES" | "M2" | "OFFSET";
+type ModeloCalculo = "SIMPLES" | "M2" | "OFFSET" | "FLEXOGRAFIA";
 
 // Mesmo conjunto de unidadeContagemSchema em actions.ts — sem OUTRO (sem
 // campo de texto livre pra essa, ficaria só "outro" na exibição de preço).
@@ -205,6 +205,9 @@ export function ConfiguracaoProdutoForm({
   formatosFolha: formatosIniciais,
   unidadeContagem: unidadeContagemInicial,
   fatorConversao: fatorConversaoInicial,
+  maquinaFlexografiaId: maquinaFlexografiaIdInicial,
+  maquinasFlexografia,
+  custoClichePorCm2Flexo: custoClichePorCm2FlexoInicial,
 }: {
   itemGraficaId: string;
   modeloCalculo: ModeloCalculo;
@@ -222,6 +225,9 @@ export function ConfiguracaoProdutoForm({
   // só exibição, nunca muda o motor de preço. Vazio = comportamento atual.
   unidadeContagem: string;
   fatorConversao: string;
+  maquinaFlexografiaId: string;
+  maquinasFlexografia: { id: string; nome: string }[];
+  custoClichePorCm2Flexo: string;
 }) {
   const [modeloCalculo, setModeloCalculo] = useState<ModeloCalculo>(modeloCalculoInicial);
   const [bobinas, setBobinas] = useState<BobinaLinha[]>(() =>
@@ -238,7 +244,8 @@ export function ConfiguracaoProdutoForm({
 
   const gramaturasDoPapel = papeis.find((p) => p.id === papelId)?.gramaturas ?? [];
 
-  const temBobinasOrfas = modeloCalculo !== "M2" && bobinas.length > 0;
+  const temBobinasOrfas =
+    modeloCalculo !== "M2" && modeloCalculo !== "FLEXOGRAFIA" && bobinas.length > 0;
   const temFormatosOrfaos = modeloCalculo !== "OFFSET" && formatos.length > 0;
 
   return (
@@ -274,6 +281,7 @@ export function ConfiguracaoProdutoForm({
           <option value="SIMPLES">Simples (preço direto)</option>
           <option value="M2">M2 — grande formato em bobina</option>
           <option value="OFFSET">Offset — impressão em folha</option>
+          <option value="FLEXOGRAFIA">Flexografia — impressão em bobina</option>
         </Select>
 
         <div className="grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 dark:border-slate-800">
@@ -439,10 +447,54 @@ export function ConfiguracaoProdutoForm({
           </div>
         )}
 
+        {modeloCalculo === "FLEXOGRAFIA" && (
+          <div className="flex flex-col gap-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+            {maquinasFlexografia.length === 0 ? (
+              <Alert variant="error">
+                Nenhuma máquina cadastrada ainda. Cadastre uma em{" "}
+                <Link href="/configuracoes/maquinas" className="underline">
+                  Configurações → Máquinas
+                </Link>{" "}
+                antes de usar o modelo Flexografia.
+              </Alert>
+            ) : (
+              <Select
+                label="Máquina"
+                name="maquinaFlexografiaId"
+                defaultValue={maquinaFlexografiaIdInicial}
+                hint="Define o custo de máquina, acerto e rodagem usados no cálculo deste produto."
+              >
+                <option value="">Selecione uma máquina</option>
+                {maquinasFlexografia.map((maquina) => (
+                  <option key={maquina.id} value={maquina.id}>
+                    {maquina.nome}
+                  </option>
+                ))}
+              </Select>
+            )}
+            <Input
+              label="Custo do clichê por cm² (R$)"
+              name="custoClichePorCm2Flexo"
+              type="number"
+              step="0.0001"
+              min="0"
+              required
+              defaultValue={custoClichePorCm2FlexoInicial}
+              hint="Multiplicado pela área do clichê e pelo nº de cores — mesma lógica de uma chapa offset, só que por área."
+            />
+            {bobinas.length === 0 && (
+              <Alert variant="error">
+                Adicione ao menos uma bobina para habilitar o cálculo Flexografia.
+              </Alert>
+            )}
+            <BobinasEditor itens={bobinas} onChange={setBobinas} />
+          </div>
+        )}
+
         {(temBobinasOrfas || temFormatosOrfaos) && (
           <Alert variant="error">
             {temBobinasOrfas &&
-              `Existem ${bobinas.length} bobina(s) de uma configuração anterior — elas não são usadas enquanto o modelo não for M2.`}
+              `Existem ${bobinas.length} bobina(s) de uma configuração anterior — elas não são usadas enquanto o modelo não for M2 ou Flexografia.`}
             {temBobinasOrfas && temFormatosOrfaos && " "}
             {temFormatosOrfaos &&
               `Existem ${formatos.length} formato(s) de folha de uma configuração anterior — eles não são usados enquanto o modelo não for Offset.`}

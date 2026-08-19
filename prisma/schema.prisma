@@ -65,6 +65,7 @@ model Grafica {
   pedidos               Pedido[]
   parametros            ParametrosGrafica?
   prensas               Prensa[]
+  maquinasFlexografia   MaquinaFlexografia[]
   dadosFiscais          DadosFiscaisGrafica?
   notasFiscais          NotaFiscal[]
   automacao             AutomacaoGrafica?
@@ -180,6 +181,52 @@ model Prensa {
   @@unique([graficaId, nome])
   @@index([graficaId])
   @@map("prensas")
+}
+
+// Uma máquina flexográfica física do tenant. Produtos com modeloCalculo=FLEXOGRAFIA
+// escolhem uma máquina específica em ItemGrafica.maquinaFlexografiaId — mesma
+// filosofia da Prensa (custo de hora-máquina, setup e rodagem por máquina, não por
+// gráfica). Tabela separada de Prensa (não polimórfica) de propósito: o projeto já
+// trata SIMPLES/M2/OFFSET como caminhos paralelos não-unificados, e unificar Prensa
+// numa estrutura polimórfica arriscaria migrar dado real de produção do Offset à
+// toa. Nesting de material é 1D (largura da bobina, reaproveitando BobinaMaterial
+// tal como já existe pro M2), não 2D como o Offset — a bobina define a largura útil,
+// o cilindro define o comprimento fixo consumido por volta (passoCilindroM).
+model MaquinaFlexografia {
+  id        String  @id @default(cuid())
+  graficaId String
+  nome      String
+  ativa     Boolean @default(true)
+
+  // Teto físico de largura útil de impressão da máquina — usado como limite superior
+  // no nesting (min contra a largura útil da bobina escolhida no produto), não como
+  // a largura em si (essa vem da BobinaMaterial, igual M2).
+  larguraMaquinaM     Decimal @default(0) @db.Decimal(6, 3)
+  // Repeat do cilindro instalado — comprimento fixo consumido a cada volta,
+  // independente do tamanho da peça (v1 assume 1 repeat por volta, ver
+  // calcularFlexografia).
+  passoCilindroM      Decimal @default(0) @db.Decimal(6, 3)
+  // Nº de estações/cores da máquina — teto de cores por passagem, mesmo papel de
+  // Prensa.torres.
+  numeroEstacoesCores Int     @default(6)
+  custoHoraMaq        Decimal @default(0) @db.Decimal(12, 4)
+  tempoAcertoH        Decimal @default(1) @db.Decimal(6, 4)
+  // Metros lineares de bobina perdidos no acerto/registro por entrada — equivalente
+  // contínuo de Prensa.folhasAcerto (que é um nº de folhas, não de metros).
+  metrosAcerto        Decimal @default(0) @db.Decimal(6, 3)
+  custoMetroLinearRod Decimal @default(0) @db.Decimal(12, 4)
+  rodagemMinima       Decimal @default(0) @db.Decimal(12, 4)
+  perdaPercentPadrao  Decimal @default(0.03) @db.Decimal(5, 4)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica  Grafica       @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  produtos ItemGrafica[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("maquinas_flexografia")
 }
 
 // Uma filial/unidade física da gráfica. COMPARTILHA catálogo, estoque e
@@ -752,12 +799,14 @@ enum TipoItemCatalogo {
 }
 
 // Modelo de cálculo de um PRODUTO: SIMPLES é o preço direto (precoVenda × área/quantidade,
-// como sempre funcionou); M2 e OFFSET acionam o motor avançado (src/lib/pricing) e exigem
-// configuração extra (bobinas ou formatos de folha). Sempre opt-in por item, nunca default.
+// como sempre funcionou); M2, OFFSET e FLEXOGRAFIA acionam o motor avançado (src/lib/pricing)
+// e exigem configuração extra (bobinas, formatos de folha, ou máquina flexo + clichê).
+// Sempre opt-in por item, nunca default.
 enum ModeloCalculo {
   SIMPLES
   M2
   OFFSET
+  FLEXOGRAFIA
 }
 
 // Como um acabamento (SERVICO) é cobrado — spec §3. FOLHA_IMPRESSA é o caso mais sutil:
@@ -858,6 +907,10 @@ model ItemGrafica {
   // ainda em uso por algum produto.
   prensaId String?
 
+  // Qual máquina flexo produz este item — só relevante/obrigatório (na aplicação)
+  // quando modeloCalculo=FLEXOGRAFIA. Mesma regra de prensaId (onDelete=Restrict).
+  maquinaFlexografiaId String?
+
   // Gramatura escolhida — só relevante quando modeloCalculo=OFFSET (produto) ou
   // quando este item é usado como papel de outro produto (matéria-prima). No
   // produto, alimenta tanto o peso físico real da folha quanto a busca (com
@@ -891,23 +944,25 @@ model ItemGrafica {
   unidadeContagem UnidadeMedida?
   fatorConversao  Decimal?       @db.Decimal(12, 4)
 
-  grafica        Grafica         @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  itemCatalogo   ItemCatalogo    @relation(fields: [itemCatalogoId], references: [id])
-  prensa         Prensa?         @relation(fields: [prensaId], references: [id], onDelete: Restrict)
-  papel          ItemGrafica?    @relation("PapelDoProdutoOffset", fields: [papelId], references: [id], onDelete: Restrict)
+  grafica            Grafica             @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  itemCatalogo       ItemCatalogo        @relation(fields: [itemCatalogoId], references: [id])
+  prensa             Prensa?             @relation(fields: [prensaId], references: [id], onDelete: Restrict)
+  maquinaFlexografia MaquinaFlexografia? @relation(fields: [maquinaFlexografiaId], references: [id], onDelete: Restrict)
+  papel              ItemGrafica?        @relation("PapelDoProdutoOffset", fields: [papelId], references: [id], onDelete: Restrict)
   // SetNull: desativar/remover a categoria de custo não pode travar a
   // matéria-prima — ela só volta a cair na categoria padrão da gráfica.
-  categoriaCusto CategoriaCusto? @relation(fields: [categoriaCustoId], references: [id], onDelete: SetNull)
+  categoriaCusto     CategoriaCusto?     @relation(fields: [categoriaCustoId], references: [id], onDelete: SetNull)
 
   itensOrcamento OrcamentoItem[]
   movimentacoes  MovimentacaoEstoque[]
 
-  bobinas                    BobinaMaterial[]
-  formatosFolha              FormatoFolha[]
-  configuracaoAcabamento     ConfiguracaoAcabamento?
-  usadoComoAcabamento        OrcamentoItemAcabamento[]
-  configuracaoClicheEtiqueta ConfiguracaoClicheEtiqueta?
-  usadoComoPapelEtiqueta     OrcamentoItemPrecificacaoEtiqueta[] @relation("PapelDoItemOrcamentoEtiqueta")
+  bobinas                       BobinaMaterial[]
+  formatosFolha                 FormatoFolha[]
+  configuracaoAcabamento        ConfiguracaoAcabamento?
+  usadoComoAcabamento           OrcamentoItemAcabamento[]
+  configuracaoClicheEtiqueta    ConfiguracaoClicheEtiqueta?
+  configuracaoClicheFlexografia ConfiguracaoClicheFlexografia?
+  usadoComoPapelEtiqueta        OrcamentoItemPrecificacaoEtiqueta[] @relation("PapelDoItemOrcamentoEtiqueta")
 
   // Ficha técnica (spec de baixa automática de estoque): só relevante quando
   // tipo=PRODUTO. fichaTecnica = quais matérias-primas este produto consome;
@@ -1078,6 +1133,25 @@ model ConfiguracaoClicheEtiqueta {
   itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id], onDelete: Cascade)
 
   @@map("configuracoes_cliche_etiqueta")
+}
+
+// Custo de clichê pro modelo FLEXOGRAFIA — mesma fórmula/unidade de
+// ConfiguracaoClicheEtiqueta (R$/cm² × nº de cores × área da peça, achada na mesma
+// análise de dados reais), mas tabela PARALELA, não reaproveitada: ao contrário do
+// M2 (onde a presença da linha liga/desliga um motor opcional, configurado num card
+// próprio), aqui é OBRIGATÓRIO pra todo produto FLEXOGRAFIA e configurado inline
+// junto com máquina/bobina em ConfiguracaoProdutoForm.tsx, não como card
+// independente.
+model ConfiguracaoClicheFlexografia {
+  id                String   @id @default(cuid())
+  itemGraficaId     String   @unique
+  custoClichePorCm2 Decimal  @db.Decimal(12, 4)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id], onDelete: Cascade)
+
+  @@map("configuracoes_cliche_flexografia")
 }
 
 // SAIDA_PRODUCAO e ESTORNO_CANCELAMENTO substituem os antigos valores
@@ -1647,12 +1721,18 @@ model OrcamentoItem {
   // LogAuditoria.usuarioNome: sobrevive à remoção do usuário).
   aprovadoPorId         String?
 
-  // Motor avançado (M2/OFFSET): snapshot do modelo usado + árvore de custo auditável
-  // (spec §0d). Fica null pra itens SIMPLES — nada muda no caminho existente.
-  modeloCalculo ModeloCalculo @default(SIMPLES)
-  corFrente     Int?
-  corVerso      Int?
-  breakdown     Json?
+  // Motor avançado (M2/OFFSET/FLEXOGRAFIA): snapshot do modelo usado + árvore de
+  // custo auditável (spec §0d). Fica null pra itens SIMPLES — nada muda no caminho
+  // existente.
+  modeloCalculo    ModeloCalculo @default(SIMPLES)
+  corFrente        Int?
+  corVerso         Int?
+  // Nº de cores da arte — modeloCalculo=FLEXOGRAFIA only. Deliberadamente separado
+  // de corFrente/corVerso (que têm semântica de "frente/verso de folha", lida em
+  // ~20 lugares — PDF, webhook-tinta.ts, pedido-aprovacao.ts) pra não arriscar bug
+  // silencioso de significado errado nesses consumidores.
+  numeroCoresFlexo Int?
+  breakdown        Json?
 
   orcamento   Orcamento   @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
   itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id])

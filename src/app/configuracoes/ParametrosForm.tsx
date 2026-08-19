@@ -240,16 +240,16 @@ export function ParametrosForm({
       <Card className="flex items-center justify-between gap-4 p-6">
         <div>
           <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-            Prensas offset
+            Máquinas
           </h2>
           <p className="mt-1 text-sm text-slate-500">
             Custo de máquina, torres, chapas e rodagem agora são configurados por
-            prensa — uma gráfica pode ter mais de uma.
+            máquina (offset ou flexografia) — uma gráfica pode ter mais de uma.
           </p>
         </div>
-        <Link href="/configuracoes/prensas">
+        <Link href="/configuracoes/maquinas">
           <Button type="button" variant="outline">
-            Gerenciar prensas
+            Gerenciar máquinas
           </Button>
         </Link>
       </Card>

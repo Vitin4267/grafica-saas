@@ -149,9 +149,13 @@ type ComponenteCusto = { chave: "material" | "chapas" | "impressao"; valor: Dec 
 // OFFSET: detalhes.material é o custoBase INTEIRO (papel + chapas + rodagem
 // + setup somados — ver calcularOffset()), não só o papel. O papel isolado
 // é obtido por subtração: material − chapas − rodagem − setup.
+//
+// FLEXOGRAFIA: não tem conceito de "chapas" no breakdown (sem clichê pra
+// isolar), então detalhes.material já é só o custo de material — sem
+// subtração nenhuma. rodagem/setup lidos igual ao branch OFFSET.
 function componentesCustoBreakdown(
   breakdown: Prisma.JsonValue,
-  modeloCalculo: "M2" | "OFFSET"
+  modeloCalculo: "M2" | "OFFSET" | "FLEXOGRAFIA"
 ): ComponenteCusto[] | null {
   if (!breakdown || typeof breakdown !== "object" || Array.isArray(breakdown)) return null;
   const raiz = breakdown as Record<string, unknown>;
@@ -176,6 +180,17 @@ function componentesCustoBreakdown(
       return componentes;
     }
     return materialTotal.gt(0) ? [{ chave: "material", valor: materialTotal }] : [];
+  }
+
+  if (modeloCalculo === "FLEXOGRAFIA") {
+    const rodagem = lerDecimalDeJson(detalhes.rodagem) ?? paraDecimal(0);
+    const setup = lerDecimalDeJson(detalhes.setup) ?? paraDecimal(0);
+
+    const componentes: ComponenteCusto[] = [];
+    if (materialTotal.gt(0)) componentes.push({ chave: "material", valor: materialTotal });
+    const impressao = rodagem.plus(setup);
+    if (impressao.gt(0)) componentes.push({ chave: "impressao", valor: impressao });
+    return componentes;
   }
 
   // OFFSET
@@ -334,7 +349,7 @@ export async function calcularPrevisaoAprovacaoPedido(
       continue;
     }
 
-    // M2 ou OFFSET
+    // M2, OFFSET ou FLEXOGRAFIA
     const componentes = item.breakdown ? componentesCustoBreakdown(item.breakdown, item.modeloCalculo) : null;
     if (!componentes) {
       itensSemPrevisao.push(`${nomeItem} (breakdown do motor de precificação ausente ou inválido)`);
