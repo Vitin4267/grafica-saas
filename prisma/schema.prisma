@@ -82,6 +82,7 @@ model Grafica {
   contasPrepagas        ContaPrepaga[]
   contasReceber         ContaReceber[]
   importacoesPlanilha   ImportacaoPlanilha[]
+  solicitacoesCompra    SolicitacaoCompra[]
 
   @@map("graficas")
 }
@@ -565,6 +566,8 @@ model Usuario {
   comissoes                  Comissao[]
   responsaveisEstagio        ResponsavelEstagio[]
   responsaveisAdministrativo ResponsavelAdministrativo[]
+  solicitacoesCompraFeitas   SolicitacaoCompra[]         @relation("SolicitacoesCompraSolicitadas")
+  solicitacoesCompraAprovadas SolicitacaoCompra[]        @relation("SolicitacoesCompraAprovadas")
 
   @@index([graficaId])
   @@map("usuarios")
@@ -586,6 +589,10 @@ enum ModuloPermissao {
   // precisar lançar retrabalho sem enxergar o P&L do pedido (ver fase
   // "custo real", fase-custo-real.md §2.6).
   CUSTOS
+  // Módulo de COMPRAS (SolicitacaoCompra) — separado de PRODUCAO/CATALOGO de
+  // propósito: quem compra matéria-prima nem sempre é quem opera a produção
+  // ou mexe no catálogo.
+  COMPRAS
 }
 
 model PermissaoUsuario {
@@ -979,6 +986,10 @@ model ItemGrafica {
   // (ex: espessura de chapa) — ver comentário do model VarianteMateriaPrima.
   variantes VarianteMateriaPrima[] @relation("VariantesDaMateriaPrima")
 
+  // Pedidos de compra (workflow SOLICITADO→...→CONFERIDO) que têm esta
+  // matéria-prima como alvo — ver model SolicitacaoCompra.
+  solicitacoesCompra SolicitacaoCompra[]
+
   @@unique([graficaId, itemCatalogoId])
   @@index([graficaId])
   @@index([categoriaCustoId])
@@ -1058,8 +1069,9 @@ model VarianteMateriaPrima {
 
   itemGrafica ItemGrafica @relation("VariantesDaMateriaPrima", fields: [itemGraficaId], references: [id], onDelete: Cascade)
 
-  fichaTecnica  FichaTecnicaItem[]
-  movimentacoes MovimentacaoEstoque[]
+  fichaTecnica       FichaTecnicaItem[]
+  movimentacoes      MovimentacaoEstoque[]
+  solicitacoesCompra SolicitacaoCompra[]
 
   @@unique([itemGraficaId, rotulo])
   @@index([itemGraficaId])
@@ -1217,6 +1229,16 @@ model MovimentacaoEstoque {
   // toda compra, e histórico de compras sem fornecedor continua válido.
   fornecedorId String?
 
+  // Qual SolicitacaoCompra gerou esta entrada (quando aplicável) — mesmo
+  // papel de `pedidoId` só que do lado de compras: liga a ENTRADA_COMPRA ao
+  // pedido de compra que a originou (ver avancarStatusCompra em
+  // src/app/compras/status-transicao.ts). @unique porque uma solicitação só
+  // gera no máximo uma entrada de estoque, ao confirmar RECEBIDO — CONFERIDO
+  // (a etapa seguinte) é só a auditoria do que já entrou, não gera outra.
+  // null pra toda movimentação que não veio de uma solicitação de compra
+  // (compra avulsa lançada direto, ajuste manual, etc.).
+  solicitacaoCompraId String? @unique
+
   // Restrict (não Cascade) porque isso é o histórico de movimentação de
   // estoque em si — apagar o ItemGrafica junto apagaria o próprio registro
   // que a movimentação existe pra preservar. Não é SetNull (como pedido/
@@ -1232,6 +1254,9 @@ model MovimentacaoEstoque {
   // SetNull: desativar/apagar um fornecedor não pode apagar o histórico de
   // compra em si, só perde a referência de quem vendeu.
   fornecedor  Fornecedor?           @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
+  // SetNull: mesma razão de `pedido` acima — apagar a solicitação (hoje não
+  // existe fluxo que apague) não pode invalidar o histórico de estoque.
+  solicitacaoCompra SolicitacaoCompra? @relation(fields: [solicitacaoCompraId], references: [id], onDelete: SetNull)
 
   @@index([itemGraficaId])
   @@index([pedidoId])
@@ -1255,12 +1280,105 @@ model Fornecedor {
   ativo     Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  grafica       Grafica               @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  movimentacoes MovimentacaoEstoque[]
+  grafica            Grafica               @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  movimentacoes      MovimentacaoEstoque[]
+  solicitacoesCompra SolicitacaoCompra[]
 
   @@unique([graficaId, nome])
   @@index([graficaId])
   @@map("fornecedores")
+}
+
+// Fluxo estruturado de compra de matéria-prima: SOLICITADO→COTANDO→APROVADO→
+// COMPRADO→RECEBIDO→CONFERIDO, com CANCELADO alcançável a partir de qualquer
+// estado antes de RECEBIDO (ver TRANSICOES_VALIDAS em
+// src/lib/compras-status.ts, mesmo padrão de StatusOrcamento/orcamento-status.ts).
+// Diferente de MovimentacaoEstoque tipo ENTRADA_COMPRA (que já existia, um
+// registro simples de "isso entrou no estoque"): este model é o PEDIDO DE
+// COMPRA em si, existe desde ANTES de qualquer coisa física acontecer, e só
+// gera a MovimentacaoEstoque de entrada quando o material de fato chega
+// (RECEBIDO) — CONFERIDO é só a conferência/auditoria do que já entrou,
+// nunca gera uma segunda entrada.
+enum StatusSolicitacaoCompra {
+  SOLICITADO
+  COTANDO
+  APROVADO
+  COMPRADO
+  RECEBIDO
+  CONFERIDO
+  CANCELADO
+}
+
+model SolicitacaoCompra {
+  id        String                  @id @default(cuid())
+  graficaId String
+  status    StatusSolicitacaoCompra @default(SOLICITADO)
+
+  itemGraficaId String // a matéria-prima (ItemGrafica tipo=MATERIA_PRIMA)
+  // Qual variante (ex: espessura de chapa) quando a matéria-prima tem
+  // VarianteMateriaPrima cadastrada — mesmo padrão opcional de
+  // FichaTecnicaItem.varianteId. null = matéria-prima sem variantes.
+  varianteId String?
+  // Pode nascer sem fornecedor definido (ainda em SOLICITADO/COTANDO) — só
+  // costuma ser preenchido a partir de APROVADO.
+  fornecedorId String?
+
+  quantidade Decimal @db.Decimal(12, 4)
+  // Estimativa no momento da solicitação/cotação — informativa, nunca usada
+  // pra decrementar caixa nem pra gravar o custo da entrada de estoque.
+  // valorFinal é o que de fato foi pago, preenchido ao confirmar COMPRADO —
+  // é ele (não o estimado) que vira o custo snapshotado na MovimentacaoEstoque
+  // gerada em RECEBIDO.
+  valorEstimado Decimal? @db.Decimal(12, 2)
+  valorFinal    Decimal? @db.Decimal(12, 2)
+
+  observacao String? // texto livre — ex: motivo da solicitação, condição de pagamento
+
+  usuarioSolicitanteId String
+  usuarioAprovadorId   String?
+
+  // Datas de cada transição relevante. LogAuditoria (registrarAuditoria) já
+  // cobre "quem fez o quê e quando" de forma genérica pra toda a aplicação,
+  // mas a tela de detalhe desta solicitação precisa montar sua própria linha
+  // do tempo sem depender de outra tabela — por isso datas dedicadas aqui,
+  // igual o resto do schema faz (ex: Pedido.arteAprovadaEm). SOLICITADO
+  // nasce preenchido (solicitadoEm = createdAt); as demais começam null e são
+  // preenchidas por avancarStatusCompra na hora de cada transição.
+  solicitadoEm DateTime  @default(now())
+  cotandoEm    DateTime?
+  aprovadoEm   DateTime?
+  compradoEm   DateTime?
+  recebidoEm   DateTime?
+  conferidoEm  DateTime?
+  canceladoEm  DateTime?
+
+  // Nº da nota fiscal da compra — mesmo papel de MovimentacaoEstoque.documento;
+  // copiado pra lá quando a entrada é gerada em RECEBIDO.
+  documento String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica            Grafica               @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  // Restrict, mesmo raciocínio de MovimentacaoEstoque.itemGrafica: hoje não
+  // existe fluxo que apague um ItemGrafica, isto é só defensivo.
+  itemGrafica        ItemGrafica           @relation(fields: [itemGraficaId], references: [id], onDelete: Restrict)
+  // SetNull: desativar/apagar uma variante não pode apagar a solicitação —
+  // ela só perde a referência de qual variante era o alvo.
+  variante           VarianteMateriaPrima? @relation(fields: [varianteId], references: [id], onDelete: SetNull)
+  fornecedor         Fornecedor?           @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
+  usuarioSolicitante Usuario               @relation("SolicitacoesCompraSolicitadas", fields: [usuarioSolicitanteId], references: [id])
+  usuarioAprovador   Usuario?              @relation("SolicitacoesCompraAprovadas", fields: [usuarioAprovadorId], references: [id])
+  // Lado inverso de MovimentacaoEstoque.solicitacaoCompraId (FK mora lá, não
+  // aqui) — a entrada de estoque gerada ao confirmar RECEBIDO.
+  movimentacaoEstoque MovimentacaoEstoque?
+
+  @@index([graficaId, status])
+  @@index([itemGraficaId])
+  @@index([varianteId])
+  @@index([fornecedorId])
+  @@index([usuarioSolicitanteId])
+  @@map("solicitacoes_compra")
 }
 
 enum StatusOrcamento {
