@@ -83,6 +83,7 @@ model Grafica {
   contasReceber         ContaReceber[]
   importacoesPlanilha   ImportacaoPlanilha[]
   solicitacoesCompra    SolicitacaoCompra[]
+  entregas              Entrega[]
 
   @@map("graficas")
 }
@@ -2196,9 +2197,59 @@ model Pedido {
   movimentacoes  MovimentacaoEstoque[]
   custos         CustoPedido[]
   custosPrevisto PedidoCustoPrevisto[]
+  entrega        Entrega?
 
   @@index([graficaId])
   @@map("pedidos")
+}
+
+enum StatusEntrega {
+  AGUARDANDO
+  EM_TRANSITO
+  ENTREGUE
+  // Estado lateral, alcançável a partir de qualquer status ATIVO
+  // (AGUARDANDO ou EM_TRANSITO) — nunca terminal: a tela permite resolver o
+  // problema e voltar pro fluxo normal (ver TRANSICOES_VALIDAS em
+  // src/lib/entrega-status.ts).
+  PROBLEMA
+}
+
+// Status ESTRUTURADO da entrega física de um pedido — substitui o texto
+// livre que hoje só existe em Orcamento.frete/transportadora/localEntrega
+// (preenchido uma vez na aprovação do orçamento, nunca mais atualizado).
+// 1:1 com Pedido (não com Orcamento): entrega só faz sentido depois que o
+// pedido existe e está em produção/pronto — ver StatusPedido.PRONTO. Não
+// confundir com StatusPedido.ENTREGUE (que marca a PRODUÇÃO como concluída
+// e fora da fila) — este model é o rastreamento OPERACIONAL da entrega em
+// si (motorista, quando saiu, quando chegou), independente e mais granular.
+model Entrega {
+  id        String        @id @default(cuid())
+  graficaId String
+  pedidoId  String        @unique
+  status    StatusEntrega @default(AGUARDANDO)
+
+  // Texto livre, não cadastro relacional — mesmo princípio de
+  // Despesa.categoria: motorista de entrega (motoboy da Lalamove, alguém da
+  // equipe) não repete o bastante numa gráfica rápida pra justificar uma
+  // tabela própria.
+  motorista String?
+
+  dataSaida   DateTime?
+  dataEntrega DateTime?
+
+  // Detalhe do problema (quando status === PROBLEMA) ou qualquer observação
+  // livre sobre a entrega — nunca obrigatório no schema, mas a tela exige
+  // preenchido antes de mandar pra PROBLEMA (ver EntregaPedidoSecao.tsx).
+  observacoes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  pedido  Pedido  @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+
+  @@index([graficaId])
+  @@map("entregas")
 }
 
 // Categoria de custo configurável por gráfica, usada pra lançar custos reais
