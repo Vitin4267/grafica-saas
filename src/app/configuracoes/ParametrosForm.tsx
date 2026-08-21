@@ -228,6 +228,28 @@ export function ParametrosForm({
       <Card className="flex flex-col gap-4 p-6">
         <div>
           <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Validade do orçamento
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Quantos dias um orçamento fica válido depois de enviado — depois
+            disso o cliente não consegue mais aprovar pelo link, precisa
+            pedir um novo ou você renovar a validade.
+          </p>
+        </div>
+        <Input
+          label="Dias de validade do orçamento"
+          name="diasValidadeOrcamentoPadrao"
+          type="number"
+          step="1"
+          min="1"
+          defaultValue={diasValidadeOrcamentoPadrao}
+          className="max-w-xs"
+        />
+      </Card>
+
+      <Card className="flex flex-col gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
             Termos e condições do PDF
           </h2>
           <p className="mt-1 text-sm text-slate-500">
