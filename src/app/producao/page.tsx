@@ -120,6 +120,7 @@ export default async function ProducaoPage({
           include: { categoriaCusto: true },
           orderBy: { createdAt: "desc" },
         },
+        entrega: true,
       },
       orderBy: { createdAt: "asc" },
     }),
@@ -261,6 +262,18 @@ export default async function ProducaoPage({
                   createdAt: custo.createdAt.toISOString(),
                 }))}
                 lucro={podeVerCustos ? lucroDoPedidoListado(pedido) : null}
+                entrega={
+                  pedido.entrega
+                    ? {
+                        id: pedido.entrega.id,
+                        status: pedido.entrega.status,
+                        motorista: pedido.entrega.motorista,
+                        dataSaida: pedido.entrega.dataSaida ? pedido.entrega.dataSaida.toISOString() : null,
+                        dataEntrega: pedido.entrega.dataEntrega ? pedido.entrega.dataEntrega.toISOString() : null,
+                        observacoes: pedido.entrega.observacoes,
+                      }
+                    : null
+                }
               />
             </div>
           );

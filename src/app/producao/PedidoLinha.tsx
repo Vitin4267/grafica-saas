@@ -19,6 +19,7 @@ import {
 } from "./IniciarImpressaoConfirm";
 import { EnviarArteForm } from "./EnviarArteForm";
 import { CustosPedidoSecao } from "./CustosPedidoSecao";
+import { EntregaPedidoSecao, type EntregaResumo } from "./EntregaPedidoSecao";
 import { cancelarPedido, avancarPedido } from "./actions";
 
 type Custo = {
@@ -56,6 +57,7 @@ export function PedidoLinha({
   categoriasCustoAtivas,
   custos,
   lucro,
+  entrega,
 }: {
   pedidoId: string;
   orcamentoId: string;
@@ -98,6 +100,10 @@ export function PedidoLinha({
   categoriasCustoAtivas: { id: string; nome: string }[];
   custos: Custo[];
   lucro: number | null;
+  // null quando o pedido ainda está em FILA (entrega ainda não faz sentido,
+  // ver EntregaPedidoSecao.tsx) — a seção inteira nem é renderizada nesse
+  // caso, mesmo critério de "ainda não construído" que o resto da tela usa.
+  entrega: EntregaResumo | null;
 }) {
   const [state, formAction, isPending] = useActionState(cancelarPedido, null);
   const [confirmando, setConfirmando] = useState(false);
@@ -216,6 +222,14 @@ export function PedidoLinha({
         podeEditarCustos={podeEditarCustos}
         podeVer={podeVerCustos}
       />
+
+      {/* Entrega só faz sentido depois que o pedido saiu de FILA (já tem
+          algo físico produzido/em produção) — antes disso a seção nem
+          renderiza, pra não confundir com "criar entrega" num pedido que
+          ainda nem começou. */}
+      {status !== "FILA" && (
+        <EntregaPedidoSecao pedidoId={pedidoId} entrega={entrega} podeEditar={podeEditar} />
+      )}
 
       {iniciarImpressao.estado.tipo === "confirmando" && (
         <PainelConfirmacaoImpressao

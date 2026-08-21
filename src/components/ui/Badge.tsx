@@ -50,16 +50,32 @@ const ROTULOS_COMPRA: Record<string, string> = {
   CANCELADO: "Cancelado",
 };
 
+const CORES_ENTREGA: Record<string, string> = {
+  AGUARDANDO: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  EM_TRANSITO: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
+  ENTREGUE: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+  PROBLEMA: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
+};
+
+const ROTULOS_ENTREGA: Record<string, string> = {
+  AGUARDANDO: "Aguardando",
+  EM_TRANSITO: "Em trânsito",
+  ENTREGUE: "Entregue",
+  PROBLEMA: "Problema",
+};
+
 export function StatusBadge({
   status,
   tipo = "orcamento",
 }: {
   status: string;
-  tipo?: "orcamento" | "pedido" | "compra";
+  tipo?: "orcamento" | "pedido" | "compra" | "entrega";
 }) {
-  const cores = tipo === "pedido" ? CORES_PEDIDO : tipo === "compra" ? CORES_COMPRA : CORES_ORCAMENTO;
-  const rotulos = tipo === "pedido" ? ROTULOS_PEDIDO : tipo === "compra" ? ROTULOS_COMPRA : ROTULOS_ORCAMENTO;
-  const fallback = tipo === "pedido" ? CORES_PEDIDO.FILA : tipo === "compra" ? CORES_COMPRA.SOLICITADO : CORES_ORCAMENTO.RASCUNHO;
+  const mapaCores = { pedido: CORES_PEDIDO, compra: CORES_COMPRA, entrega: CORES_ENTREGA, orcamento: CORES_ORCAMENTO };
+  const mapaRotulos = { pedido: ROTULOS_PEDIDO, compra: ROTULOS_COMPRA, entrega: ROTULOS_ENTREGA, orcamento: ROTULOS_ORCAMENTO };
+  const cores = mapaCores[tipo];
+  const rotulos = mapaRotulos[tipo];
+  const fallback = tipo === "pedido" ? CORES_PEDIDO.FILA : tipo === "compra" ? CORES_COMPRA.SOLICITADO : tipo === "entrega" ? CORES_ENTREGA.AGUARDANDO : CORES_ORCAMENTO.RASCUNHO;
 
   return (
     <span
