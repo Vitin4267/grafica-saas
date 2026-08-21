@@ -136,6 +136,13 @@ export function PedidoLinha({
             >
               Ver orçamento
             </Link>
+            {" · "}
+            <a
+              href={`/producao/${pedidoId}/ordem-producao`}
+              className="text-xs text-teal-700 hover:underline dark:text-teal-400"
+            >
+              Ordem de produção (PDF)
+            </a>
             {/* CUSTOS.podeVer (não PRODUCAO) — mesma prop já usada pra
                 controlar valor/lucro nesta linha (ver fase-custo-real.md
                 §2.6 / PR-5). Link pra /producao/[pedidoId]/fechamento. */}
