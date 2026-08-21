@@ -44,6 +44,7 @@ export const LINKS = [
   { href: "/clientes", label: "Clientes", modulo: "CLIENTES" as const },
   { href: "/producao", label: "Produção", modulo: "PRODUCAO" as const },
   { href: "/catalogo", label: "Catálogo", modulo: "CATALOGO" as const },
+  { href: "/compras", label: "Compras", modulo: "COMPRAS" as const },
   { href: "/financeiro", label: "Financeiro", modulo: "FINANCEIRO" as const },
   { href: "/configuracoes", label: "Configurações", modulo: "CONFIGURACOES" as const },
 ];
