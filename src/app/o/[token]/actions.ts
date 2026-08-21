@@ -464,12 +464,13 @@ export async function solicitarAjusteOrcamento(
   }
 
   // CAS: mesmo cuidado de responderOrcamentoPublico — só reabre se o status
-  // AINDA for o que acabamos de validar. validoAteEm volta a null na MESMA
-  // operação: um RASCUNHO não tem prazo de validade (só é calculado de novo
-  // quando o vendedor reenviar), então não pode sobreviver zumbi no banco.
+  // AINDA for o que acabamos de validar. validoAteEm e enviadoEm voltam a
+  // null na MESMA operação: um RASCUNHO não tem prazo de validade nem entra
+  // na lista de "parados" (só recalculados do zero quando o vendedor
+  // reenviar), então nenhum dos dois pode sobreviver zumbi no banco.
   const cas = await prisma.orcamento.updateMany({
     where: { id: orcamento.id, status: orcamento.status },
-    data: { status: "RASCUNHO", validoAteEm: null },
+    data: { status: "RASCUNHO", validoAteEm: null, enviadoEm: null },
   });
   if (cas.count === 0) {
     return { ok: false, mensagem: "Este orçamento não pode mais ser respondido." };

@@ -14,7 +14,7 @@ import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/Badge";
-import { ReceiptIcon, SlidersIcon } from "@/components/icons";
+import { ReceiptIcon, SlidersIcon, AlertTriangleIcon } from "@/components/icons";
 import { CalculadoraForm } from "./CalculadoraForm";
 import { MarcarEnviadoButton } from "./MarcarEnviadoButton";
 
@@ -79,6 +79,28 @@ export default async function OrcamentoPage() {
     }),
   ]);
 
+  // "Orçamentos parados" (ver orcamentoEstaParado em
+  // src/lib/orcamento-status.ts e /orcamento/parados/page.tsx) — só a
+  // CONTAGEM aqui, pra decidir se mostra o banner; a lista completa mora na
+  // tela dedicada. Consulta separada porque diasAlertaOrcamentoParado
+  // (configurável por gráfica) precisa ser resolvido antes de montar o
+  // corte de data usado no where.
+  const diasAlertaOrcamentoParado =
+    (
+      await prisma.parametrosGrafica.findUnique({
+        where: { graficaId: usuario.graficaId },
+        select: { diasAlertaOrcamentoParado: true },
+      })
+    )?.diasAlertaOrcamentoParado ?? 5;
+  const totalOrcamentosParados = await prisma.orcamento.count({
+    where: {
+      graficaId: usuario.graficaId,
+      status: "ENVIADO",
+      respostaPublicaEm: null,
+      enviadoEm: { not: null, lte: new Date(Date.now() - diasAlertaOrcamentoParado * 86_400_000) },
+    },
+  });
+
   return (
     <div className="flex flex-1 flex-col">
       <UserNav
@@ -101,6 +123,31 @@ export default async function OrcamentoPage() {
               : "Acompanhe os orçamentos da gráfica."}
           </p>
         </div>
+
+        {totalOrcamentosParados > 0 && (
+          <Card className="mb-8 flex flex-col items-start justify-between gap-4 p-6 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400">
+                <AlertTriangleIcon className="h-5 w-5" />
+              </span>
+              <div>
+                <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+                  {totalOrcamentosParados}{" "}
+                  {totalOrcamentosParados === 1 ? "orçamento parado" : "orçamentos parados"}
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Enviados há {diasAlertaOrcamentoParado}+ dias sem resposta do cliente — cobre antes
+                  que expirem.
+                </p>
+              </div>
+            </div>
+            <Link href="/orcamento/parados" className="shrink-0">
+              <Button type="button" variant="outline">
+                Ver lista
+              </Button>
+            </Link>
+          </Card>
+        )}
 
         {!podeEditar ? null : clientes.length === 0 || itensVendaveis.length === 0 ? (
           <Card className="flex flex-col items-center gap-3 p-10 text-center">

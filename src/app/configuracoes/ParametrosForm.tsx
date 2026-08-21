@@ -20,6 +20,7 @@ export function ParametrosForm({
   comissaoVendedorBase,
   custoTintaPorMl,
   diasValidadeOrcamentoPadrao,
+  diasAlertaOrcamentoParado,
   unidadePadraoDimensao,
   alertaPrazoAtivo,
   alertaPrazoLimiar1Dias,
@@ -30,6 +31,7 @@ export function ParametrosForm({
   comissaoVendedorBase: BaseComissao;
   custoTintaPorMl: number | null;
   diasValidadeOrcamentoPadrao: number;
+  diasAlertaOrcamentoParado: number;
   unidadePadraoDimensao: UnidadeDimensao;
   alertaPrazoAtivo: boolean;
   alertaPrazoLimiar1Dias: number;
@@ -219,6 +221,31 @@ export function ParametrosForm({
           Precisam estar em ordem decrescente (ex: 5, 3, 0) — o 1º aviso é o
           mais folgado, o 3º é o mais urgente.
         </p>
+      </Card>
+
+      <Card className="flex flex-col gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Orçamentos parados
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Depois de quantos dias sem resposta um orçamento &quot;Enviado&quot;
+            entra na lista de{" "}
+            <Link href="/orcamento/parados" className="underline">
+              orçamentos parados
+            </Link>
+            , pra você cobrar o cliente antes que a proposta expire.
+          </p>
+        </div>
+        <Input
+          label="Dias sem resposta até virar &quot;parado&quot;"
+          name="diasAlertaOrcamentoParado"
+          type="number"
+          step="1"
+          min="1"
+          defaultValue={diasAlertaOrcamentoParado}
+          className="max-w-xs"
+        />
       </Card>
 
       <Card className="flex items-center justify-between gap-4 p-6">
