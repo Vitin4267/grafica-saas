@@ -6,6 +6,11 @@ import { calcularPrevisaoEstoque } from "@/lib/previsao-estoque-db";
 import { LIMITE_DIAS_ALERTA } from "@/lib/previsao-estoque";
 import { D } from "@/lib/pricing/decimal";
 import { inicioMesAtualBrasilia, inicioMesAtualLiteralBrasilia } from "@/lib/data";
+import {
+  calcularTaxaConversao,
+  calcularTempoMedioAprovacaoDias,
+  type TaxaConversaoOrcamentos,
+} from "@/lib/funil-conversao";
 
 const SEMANAS_SERIE_FATURAMENTO = 8;
 const MS_POR_SEMANA = 1000 * 60 * 60 * 24 * 7;
@@ -57,6 +62,12 @@ export type VisaoGeralNegocio = {
   faturamentoMes: { total: number; quantidadeAprovados: number };
   funilOrcamentos: FaixaStatus[];
   totalOrcamentos: number;
+  // Sobre TODOS os orçamentos da gráfica, mesmo escopo (sem filtro de mês)
+  // que funilOrcamentos/totalOrcamentos acima — ver calcularTaxaConversao.
+  taxaConversaoOrcamentos: TaxaConversaoOrcamentos;
+  // Em dias, só considerando orçamentos aprovados pelo link público (ver
+  // calcularTempoMedioAprovacaoDias); null sem nenhum dado disponível.
+  tempoMedioAprovacaoDias: number | null;
   pipelineProducao: FaixaStatus[];
   totalPedidos: number;
   // Alerta unifica dois sinais: já abaixo do mínimo cadastrado (reativo) OU
@@ -123,6 +134,7 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
     despesasPendentesAgregado,
     despesasPagasAgregado,
     orcamentosParaSerie,
+    orcamentosAprovadosParaTempoResposta,
   ] = await Promise.all([
     prisma.orcamento.aggregate({
       where: { graficaId, status: "APROVADO", createdAt: { gte: inicioDoMesReal } },
@@ -163,6 +175,13 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
       where: { graficaId, status: "APROVADO", createdAt: { gte: inicioSerieFaturamento } },
       select: { createdAt: true, total: true },
     }),
+    // Sem filtro de mês, de propósito — mesmo escopo (todo o histórico) de
+    // funilBruto acima, pra taxa de conversão e tempo médio não ficarem
+    // desalinhados do funil que a tela já mostra.
+    prisma.orcamento.findMany({
+      where: { graficaId, status: "APROVADO" },
+      select: { createdAt: true, respostaPublicaEm: true },
+    }),
   ]);
 
   const contagemPorStatusOrcamento = new Map(
@@ -174,6 +193,10 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
     quantidade: contagemPorStatusOrcamento.get(status) ?? 0,
   }));
   const totalOrcamentos = funilOrcamentos.reduce((soma, f) => soma + f.quantidade, 0);
+  const taxaConversaoOrcamentos = calcularTaxaConversao(funilOrcamentos);
+  const tempoMedioAprovacaoDias = calcularTempoMedioAprovacaoDias(
+    orcamentosAprovadosParaTempoResposta
+  );
 
   const contagemPorStatusPedido = new Map(pipelineBruto.map((g) => [g.status, g._count]));
   const pipelineProducao = ORDEM_STATUS_PEDIDO.map((status) => ({
@@ -228,6 +251,8 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
     },
     funilOrcamentos,
     totalOrcamentos,
+    taxaConversaoOrcamentos,
+    tempoMedioAprovacaoDias,
     pipelineProducao,
     totalPedidos,
     alertasEstoque,

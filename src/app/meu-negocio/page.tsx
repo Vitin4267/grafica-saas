@@ -189,9 +189,43 @@ export default async function MeuNegocioPage() {
                 rotuloCta="Criar orçamento"
               />
             ) : (
-              <Card className="p-6">
-                <ProportionBar faixas={faixasOrcamento} total={visaoGeral.totalOrcamentos} />
-              </Card>
+              <>
+                <Card className="p-6">
+                  <ProportionBar faixas={faixasOrcamento} total={visaoGeral.totalOrcamentos} />
+                </Card>
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <StatTile
+                    label="Taxa de conversão"
+                    value={
+                      visaoGeral.taxaConversaoOrcamentos.percentual !== null
+                        ? `${visaoGeral.taxaConversaoOrcamentos.percentual
+                            .toFixed(0)}%`
+                        : "—"
+                    }
+                    caption={
+                      visaoGeral.taxaConversaoOrcamentos.percentual !== null
+                        ? `${visaoGeral.taxaConversaoOrcamentos.aprovados} de ${visaoGeral.taxaConversaoOrcamentos.saidosDeRascunho} orçamentos enviados viraram pedido`
+                        : "Sem orçamentos enviados ainda"
+                    }
+                    tone={
+                      visaoGeral.taxaConversaoOrcamentos.percentual !== null ? "positive" : "neutral"
+                    }
+                    icon={<CheckCircleIcon className="h-4 w-4" />}
+                  />
+                  <StatTile
+                    label="Tempo médio até aprovação"
+                    value={
+                      visaoGeral.tempoMedioAprovacaoDias !== null
+                        ? `${visaoGeral.tempoMedioAprovacaoDias.toFixed(1).replace(".", ",")} dia${
+                            visaoGeral.tempoMedioAprovacaoDias >= 2 ? "s" : ""
+                          }`
+                        : "—"
+                    }
+                    caption="Do envio até o cliente aprovar pelo link"
+                    icon={<ReceiptIcon className="h-4 w-4" />}
+                  />
+                </div>
+              </>
             )}
           </div>
 
