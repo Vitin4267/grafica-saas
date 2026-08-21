@@ -280,7 +280,9 @@ export async function atualizarStatusOrcamento(
     // continua sendo a única fonte de verdade sobre se a transição valeu).
     // RASCUNHO (reabertura por solicitarAjusteOrcamento) zera de volta —
     // sem isso, um orçamento reaberto continuaria com uma validoAteEm
-    // órfã do envio anterior até o próximo reenvio recalcular.
+    // órfã do envio anterior até o próximo reenvio recalcular. enviadoEm
+    // segue o mesmo ciclo — é a âncora da lista de "orçamentos parados"
+    // (ver orcamentoEstaParado em src/lib/orcamento-status.ts).
     const data: Prisma.OrcamentoUpdateManyMutationInput = { status: novoStatus };
     if (novoStatus === "ENVIADO") {
       const parametros = await prisma.parametrosGrafica.findUnique({
@@ -290,8 +292,10 @@ export async function atualizarStatusOrcamento(
       data.validoAteEm = new Date(
         Date.now() + (parametros?.diasValidadeOrcamentoPadrao ?? 15) * 86_400_000
       );
+      data.enviadoEm = new Date();
     } else if (novoStatus === "RASCUNHO") {
       data.validoAteEm = null;
+      data.enviadoEm = null;
     }
 
     const cas = await prisma.orcamento.updateMany({
@@ -1786,8 +1790,10 @@ export type DuplicarOrcamentoResult = { ok: boolean; mensagem: string };
 //
 // Nunca copiados de propósito: status (sempre nasce RASCUNHO),
 // linkPublicoToken, respostaPublica* (aceite/recusa é de UM pedido
-// específico), validoAteEm (validade da proposta ANTERIOR não se estende à
-// nova), as etapas de produção (etapaXxxEm/Responsavel — começam do zero),
+// específico), validoAteEm/enviadoEm (validade e data de envio da proposta
+// ANTERIOR não se estendem à nova — o duplicado só entra na lista de
+// "parados" depois de ser enviado de novo), as etapas de produção
+// (etapaXxxEm/Responsavel — começam do zero),
 // arteUrl/preflightAvisos (a arte antiga provavelmente não serve pro pedido
 // novo — se servir, o vendedor reanexa manualmente) e OrcamentoItemTinta
 // (análise de IA sobre a imagem da arte ANTIGA, sem sentido sem ela).
@@ -2166,6 +2172,11 @@ export async function gerarLinkPublico(
         validoAteEm: new Date(
           Date.now() + (parametros?.diasValidadeOrcamentoPadrao ?? 15) * 86_400_000
         ),
+        // Âncora da lista de "orçamentos parados" (ver orcamentoEstaParado
+        // em src/lib/orcamento-status.ts) — mesmo campo setado em
+        // atualizarStatusOrcamento acima, só um dos dois caminhos roda por
+        // transição.
+        enviadoEm: new Date(),
       },
     });
     revalidatePath("/orcamento");

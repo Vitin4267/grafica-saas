@@ -148,6 +148,15 @@ model ParametrosGrafica {
   alertaPrazoLimiar2Dias Int     @default(3)
   alertaPrazoLimiar3Dias Int     @default(0)
 
+  // Quantos dias um orçamento ENVIADO fica sem resposta do cliente até
+  // aparecer na lista de "parados" (ver Orcamento.enviadoEm e
+  // orcamentoEstaParado em src/lib/orcamento-status.ts). Distinto de
+  // diasValidadeOrcamentoPadrao acima: expiração é o prazo em que a proposta
+  // deixa de valer, este é um aviso ANTERIOR pro vendedor cobrar o cliente
+  // antes de chegar lá — pesquisa de mercado aponta "mandei e o cliente
+  // sumiu" como o padrão mais comum de venda perdida numa gráfica.
+  diasAlertaOrcamentoParado Int @default(5)
+
   // Bloco de termos e condições impresso no rodapé do PDF de orçamento
   // (src/lib/pdf/OrcamentoDocumento.tsx), usado tanto em /orcamento/[id]/pdf
   // quanto no link público /o/[token]/pdf. Null = gráfica nunca configurou
@@ -1435,6 +1444,17 @@ model Orcamento {
   // interno justamente onde ele precisa ser firme.
   respostaPublicaNome   String?
   respostaPublicaEm     DateTime?
+  // Quando o orçamento virou ENVIADO pela última vez (gerarLinkPublico ou
+  // atualizarStatusOrcamento) — âncora da lista de "orçamentos parados"
+  // (ver orcamentoEstaParado em src/lib/orcamento-status.ts). Zerado quando
+  // o cliente pede ajuste (volta pra RASCUNHO) e recalculado do zero ao
+  // reenviar, mesmo ciclo de vida de validoAteEm logo abaixo — mas
+  // deliberadamente um campo PRÓPRIO, não derivado de validoAteEm menos
+  // diasValidadeOrcamentoPadrao: esse cálculo quebraria se a gráfica mudasse
+  // diasValidadeOrcamentoPadrao depois do envio, ou quando renovarValidadeOrcamento
+  // empurra validoAteEm pra frente sem reenviar de fato. null = nunca foi
+  // enviado (RASCUNHO) ou orçamento criado antes desta feature.
+  enviadoEm             DateTime?
   // Motivo escrito PELO CLIENTE ao recusar, no próprio link público.
   // Diferente de `observacoes` (nota interna da gráfica, logo abaixo): este
   // texto veio de fora e é o que o vendedor precisa ler pra saber se perdeu
@@ -1546,6 +1566,9 @@ model Orcamento {
   @@index([graficaId])
   @@index([filialId])
   @@index([duplicadoDeId])
+  // Query da lista de "orçamentos parados" (ver /orcamento/parados) —
+  // filtra por graficaId+status=ENVIADO e ordena por enviadoEm.
+  @@index([graficaId, status, enviadoEm])
   @@map("orcamentos")
 }
 

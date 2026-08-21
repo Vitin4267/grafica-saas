@@ -157,6 +157,23 @@ export async function salvarParametros(
     };
   }
 
+  // Mesmo cuidado do bloco de diasValidadeOrcamentoPadrao acima: checar
+  // presença antes de Number(). Alimenta a lista de "orçamentos parados"
+  // (ver /orcamento/parados/page.tsx e orcamentoEstaParado em
+  // src/lib/orcamento-status.ts) — quantos dias um ENVIADO fica sem resposta
+  // até aparecer lá pro vendedor cobrar.
+  const diasAlertaOrcamentoParadoBruto = formData.get("diasAlertaOrcamentoParado");
+  if (typeof diasAlertaOrcamentoParadoBruto !== "string" || diasAlertaOrcamentoParadoBruto.trim() === "") {
+    return { ok: false, mensagem: 'Preencha o campo "Dias para orçamento parado".' };
+  }
+  const diasAlertaOrcamentoParado = Number(diasAlertaOrcamentoParadoBruto);
+  if (!Number.isInteger(diasAlertaOrcamentoParado) || diasAlertaOrcamentoParado <= 0) {
+    return {
+      ok: false,
+      mensagem: 'Dias para orçamento parado precisa ser um número inteiro maior que zero.',
+    };
+  }
+
   // Alerta de prazo por e-mail (ver src/lib/alerta-prazo-email.ts): liga/
   // desliga geral + os 3 limiares, em dias antes do prazo. 0 é um valor
   // válido (dia do prazo/atrasado), por isso valida >= 0 em vez de > 0 como
@@ -249,6 +266,7 @@ export async function salvarParametros(
       custoTintaPorMl,
       termosCondicoesPdf,
       diasValidadeOrcamentoPadrao,
+      diasAlertaOrcamentoParado,
       alertaPrazoAtivo,
       alertaPrazoLimiar1Dias: limiaresPrazo.alertaPrazoLimiar1Dias,
       alertaPrazoLimiar2Dias: limiaresPrazo.alertaPrazoLimiar2Dias,
@@ -297,6 +315,12 @@ export async function salvarParametros(
   if (diasValidadeOrcamentoPadraoAntes !== diasValidadeOrcamentoPadrao) {
     antesTextos.push(`Dias de validade do orçamento: ${diasValidadeOrcamentoPadraoAntes}`);
     depoisTextos.push(`Dias de validade do orçamento: ${diasValidadeOrcamentoPadrao}`);
+  }
+
+  const diasAlertaOrcamentoParadoAntes = parametrosAntes?.diasAlertaOrcamentoParado ?? 5;
+  if (diasAlertaOrcamentoParadoAntes !== diasAlertaOrcamentoParado) {
+    antesTextos.push(`Dias para orçamento parado: ${diasAlertaOrcamentoParadoAntes}`);
+    depoisTextos.push(`Dias para orçamento parado: ${diasAlertaOrcamentoParado}`);
   }
 
   if ((graficaAntes?.unidadePadraoDimensao ?? "CM") !== unidadePadraoDimensao) {
