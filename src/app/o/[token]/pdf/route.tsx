@@ -16,7 +16,11 @@ export async function GET(
     where: { linkPublicoToken: token },
     include: {
       cliente: true,
-      grafica: true,
+      // include (não select) pra manter os campos escalares de Grafica de
+      // hoje (nome, logoUrl, corPrimaria...) — só a relação `parametros` é
+      // restrita a `select`, pra nunca puxar overhead/margem/comissão (dado
+      // comercial interno) pra dentro do processo que gera o PDF público.
+      grafica: { include: { parametros: { select: { termosCondicoesPdf: true } } } },
       itens: {
         include: {
           itemGrafica: { include: { itemCatalogo: true } },
