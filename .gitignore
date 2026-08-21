@@ -49,3 +49,6 @@ next-env.d.ts
 
 # dossiê/relatório de análise pra colar em outro chat — não é código do projeto
 RELATORIO-DOSSIE-FABLE5.md
+
+# permissões locais do Claude Code (pessoal, não é config do time)
+.claude/settings.local.json
