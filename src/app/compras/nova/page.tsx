@@ -8,6 +8,7 @@ import { podeVerMeuNegocio, exigirEditarModulo, obterModulosVisiveis } from "@/l
 import { UserNav } from "@/components/UserNav";
 import { ArrowLeftIcon } from "@/components/icons";
 import { rotuloUnidade } from "@/lib/unidade";
+import { buscarComparativoFornecedores } from "@/lib/comparativo-fornecedores-db";
 import { NovaSolicitacaoForm } from "./NovaSolicitacaoForm";
 
 // alvoId vem do link "Solicitar compra" da sugestão de estoque baixo em
@@ -51,7 +52,7 @@ export default async function NovaSolicitacaoCompraPage({
 
   const { alvoId } = await searchParams;
 
-  const [materiais, fornecedores, alvoPreSelecionado] = await Promise.all([
+  const [materiais, fornecedores, alvoPreSelecionado, comparativoPorChave] = await Promise.all([
     prisma.itemGrafica.findMany({
       where: { graficaId: usuario.graficaId, ativo: true, itemCatalogo: { tipo: "MATERIA_PRIMA" } },
       include: { itemCatalogo: true, variantes: { where: { ativo: true }, orderBy: { rotulo: "asc" } } },
@@ -63,7 +64,22 @@ export default async function NovaSolicitacaoCompraPage({
       select: { id: true, nome: true },
     }),
     resolverAlvoPreSelecionado(alvoId, usuario.graficaId),
+    buscarComparativoFornecedores(usuario.graficaId),
   ]);
+
+  // Serializa o Map pra objeto simples (chave = itemGraficaId ou varianteId,
+  // ver chaveComparativo) e as datas pra ISO — o client component só
+  // reformata pra exibição, nunca recalcula nada daqui.
+  const comparativoSerializado = Object.fromEntries(
+    Array.from(comparativoPorChave.entries()).map(([chave, linhas]) => [
+      chave,
+      linhas.map((linha) => ({
+        ...linha,
+        ultimaCompraEm: linha.ultimaCompraEm.toISOString(),
+        historico: linha.historico.map((h) => ({ preco: h.preco, data: h.data.toISOString() })),
+      })),
+    ])
+  );
 
   return (
     <div className="flex flex-1 flex-col">
@@ -111,6 +127,7 @@ export default async function NovaSolicitacaoCompraPage({
             fornecedores={fornecedores}
             itemGraficaIdInicial={alvoPreSelecionado.itemGraficaId}
             varianteIdInicial={alvoPreSelecionado.varianteId}
+            comparativoPorChave={comparativoSerializado}
           />
         )}
       </main>
