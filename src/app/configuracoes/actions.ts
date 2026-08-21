@@ -203,6 +203,23 @@ export async function salvarParametros(
     custoTintaPorMl = valor;
   }
 
+  // Bloco de termos e condições do PDF de orçamento (ver
+  // src/lib/pdf/OrcamentoDocumento.tsx). Igual custoTintaPorMl acima, em
+  // branco é um estado válido — mas aqui significa "voltar a usar o texto
+  // padrão do sistema" (TERMOS_CONDICOES_PDF_PADRAO), nunca "PDF sem
+  // cláusula nenhuma" (exposição jurídica se um pedido for contestado).
+  let termosCondicoesPdf: string | null = null;
+  const termosCondicoesPdfBruto = formData.get("termosCondicoesPdf");
+  if (typeof termosCondicoesPdfBruto === "string" && termosCondicoesPdfBruto.trim() !== "") {
+    if (termosCondicoesPdfBruto.length > 4000) {
+      return {
+        ok: false,
+        mensagem: 'Termos e condições do PDF muito longos — máximo de 4.000 caracteres.',
+      };
+    }
+    termosCondicoesPdf = termosCondicoesPdfBruto.trim();
+  }
+
   const somaEncargos =
     dados.margemPadrao +
     dados.impostoPercent +
@@ -230,6 +247,7 @@ export async function salvarParametros(
       ...dados,
       comissaoVendedorBase,
       custoTintaPorMl,
+      termosCondicoesPdf,
       diasValidadeOrcamentoPadrao,
       alertaPrazoAtivo,
       alertaPrazoLimiar1Dias: limiaresPrazo.alertaPrazoLimiar1Dias,
@@ -264,6 +282,15 @@ export async function salvarParametros(
   if (custoTintaAntes !== custoTintaPorMl) {
     antesTextos.push(`Custo do ml de tinta: ${custoTintaAntes === null ? "—" : formatoMoeda.format(custoTintaAntes)}`);
     depoisTextos.push(`Custo do ml de tinta: ${custoTintaPorMl === null ? "—" : formatoMoeda.format(custoTintaPorMl)}`);
+  }
+
+  // Log só se mudou de "padrão do sistema" pra "personalizado" (ou vice-
+  // versa) — nunca o texto completo em si, pra não inflar o log de
+  // auditoria com blocos de texto jurídico a cada edição pontual.
+  const termosCondicoesPdfAntes = parametrosAntes?.termosCondicoesPdf ?? null;
+  if (termosCondicoesPdfAntes !== termosCondicoesPdf) {
+    antesTextos.push(`Termos e condições do PDF: ${termosCondicoesPdfAntes ? "personalizado" : "padrão do sistema"}`);
+    depoisTextos.push(`Termos e condições do PDF: ${termosCondicoesPdf ? "personalizado" : "padrão do sistema"}`);
   }
 
   const diasValidadeOrcamentoPadraoAntes = parametrosAntes?.diasValidadeOrcamentoPadrao ?? 15;

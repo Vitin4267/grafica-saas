@@ -32,6 +32,7 @@ export default async function ConfiguracoesPage() {
     alertaPrazoLimiar1Dias,
     alertaPrazoLimiar2Dias,
     alertaPrazoLimiar3Dias,
+    termosCondicoesPdf,
   } = await prisma.parametrosGrafica.findUniqueOrThrow({
     where: { graficaId: usuario.graficaId },
     select: {
@@ -42,6 +43,7 @@ export default async function ConfiguracoesPage() {
       alertaPrazoLimiar1Dias: true,
       alertaPrazoLimiar2Dias: true,
       alertaPrazoLimiar3Dias: true,
+      termosCondicoesPdf: true,
     },
   });
   // unidadePadraoDimensao mora em Grafica (não em ParametrosGrafica): não é
@@ -115,6 +117,7 @@ export default async function ConfiguracoesPage() {
           alertaPrazoLimiar1Dias={alertaPrazoLimiar1Dias}
           alertaPrazoLimiar2Dias={alertaPrazoLimiar2Dias}
           alertaPrazoLimiar3Dias={alertaPrazoLimiar3Dias}
+          termosCondicoesPdf={termosCondicoesPdf}
         />
       </main>
     </div>

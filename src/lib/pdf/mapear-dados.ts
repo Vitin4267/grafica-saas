@@ -28,7 +28,16 @@ export type OrcamentoParaPdf = {
   respostaPublicaEm: Date | null;
   validoAteEm: Date | null;
   cliente: { nome: string };
-  grafica: { nome: string; logoUrl: string | null; corPrimaria: string | null };
+  grafica: {
+    nome: string;
+    logoUrl: string | null;
+    corPrimaria: string | null;
+    // Só o texto de termos e condições — nunca os demais campos de
+    // ParametrosGrafica (overhead, margem, comissão etc.), que são dado
+    // comercial interno e não podem chegar no PDF (nem no autenticado, nem
+    // no público). Ver comentário equivalente no topo de DadosPdfOrcamento.
+    parametros: { termosCondicoesPdf: string | null } | null;
+  };
   // Bloco 1 (dados gerais) — seguros pro cliente ver, ao contrário de
   // observações (interno) e etapas de produção (interno), que nunca entram
   // aqui de propósito (ver comentário em DadosPdfOrcamento).
@@ -117,6 +126,7 @@ export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
     validoAteEm: orcamento.validoAteEm,
     total: formatoMoeda.format(Number(orcamento.total)),
     dadosPedido: temDadosPedido ? dadosPedido : null,
+    termosCondicoesPdf: orcamento.grafica.parametros?.termosCondicoesPdf ?? null,
     itens: orcamento.itens.map((item) => ({
       nome: item.itemGrafica.itemCatalogo.nome,
       quantidade: item.quantidade,

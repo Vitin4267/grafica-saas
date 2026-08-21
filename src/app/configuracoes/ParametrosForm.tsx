@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useActionState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
+import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { salvarParametros } from "./actions";
@@ -14,6 +15,7 @@ import {
   ROTULO_UNIDADE_DIMENSAO,
   type UnidadeDimensao,
 } from "@/lib/unidade-dimensao";
+import { TERMOS_CONDICOES_PDF_PADRAO } from "@/lib/pdf/termos-padrao";
 
 export function ParametrosForm({
   parametros,
@@ -25,6 +27,7 @@ export function ParametrosForm({
   alertaPrazoLimiar1Dias,
   alertaPrazoLimiar2Dias,
   alertaPrazoLimiar3Dias,
+  termosCondicoesPdf,
 }: {
   parametros: ParametrosTenant;
   comissaoVendedorBase: BaseComissao;
@@ -35,6 +38,7 @@ export function ParametrosForm({
   alertaPrazoLimiar1Dias: number;
   alertaPrazoLimiar2Dias: number;
   alertaPrazoLimiar3Dias: number;
+  termosCondicoesPdf: string | null;
 }) {
   const [state, formAction, isPending] = useActionState(salvarParametros, null);
 
@@ -219,6 +223,28 @@ export function ParametrosForm({
           Precisam estar em ordem decrescente (ex: 5, 3, 0) — o 1º aviso é o
           mais folgado, o 3º é o mais urgente.
         </p>
+      </Card>
+
+      <Card className="flex flex-col gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Termos e condições do PDF
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Texto impresso no rodapé do PDF de orçamento (o mesmo baixado por
+            você e visto pelo cliente no link público). Já vem preenchido com
+            um texto padrão cobrindo validade da proposta, política de
+            reimpressão por erro de arte e condições de pagamento — edite à
+            vontade ou apague tudo pra voltar a usar o padrão do sistema.
+          </p>
+        </div>
+        <Textarea
+          label="Texto exibido no rodapé"
+          name="termosCondicoesPdf"
+          rows={6}
+          defaultValue={termosCondicoesPdf ?? TERMOS_CONDICOES_PDF_PADRAO}
+          hint="Deixe em branco pra usar o texto padrão do sistema"
+        />
       </Card>
 
       <Card className="flex items-center justify-between gap-4 p-6">

@@ -1,5 +1,6 @@
 import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
 import { formatoInstanteReal, formatoInstanteRealHora, formatoInstanteRealComHora } from "@/lib/data";
+import { TERMOS_CONDICOES_PDF_PADRAO } from "./termos-padrao";
 
 // Mesmo recorte de informação do link público (/o/[token]) — nunca inclui
 // breakdown (custo/margem), que é dado comercial sensível da gráfica.
@@ -45,6 +46,12 @@ export type DadosPdfOrcamento = {
   itens: ItemPdfOrcamento[];
   total: string;
   dadosPedido: DadosPdfPedido | null;
+  // Texto livre configurado pela gráfica em /configuracoes (ver
+  // ParametrosGrafica.termosCondicoesPdf). Null = gráfica nunca configurou —
+  // o rodapé usa TERMOS_CONDICOES_PDF_PADRAO em vez de ficar em branco.
+  // Mesmo recorte seguro do resto do tipo: dado que a própria gráfica
+  // escreveu sobre política comercial, nunca custo/margem interno.
+  termosCondicoesPdf: string | null;
 };
 
 const ROTULO_STATUS: Record<string, string> = {
@@ -192,6 +199,13 @@ const estilos = StyleSheet.create({
   },
   totalLabel: { fontSize: 10, color: "#0f766e", fontWeight: "bold" },
   totalValor: { fontSize: 18, color: "#134e4a", fontWeight: "bold" },
+  termosBox: {
+    marginTop: 16,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#e2e8f0",
+  },
+  termosTexto: { fontSize: 7, color: "#94a3b8", lineHeight: 1.4 },
   rodape: {
     position: "absolute",
     bottom: 30,
@@ -338,6 +352,12 @@ export function OrcamentoDocumento({ dados }: { dados: DadosPdfOrcamento }) {
         <View style={[estilos.totalBox, { backgroundColor: cores.clara }]}>
           <Text style={[estilos.totalLabel, { color: cores.escura }]}>Total do orçamento</Text>
           <Text style={[estilos.totalValor, { color: cores.maisEscura }]}>{dados.total}</Text>
+        </View>
+
+        <View style={estilos.termosBox}>
+          <Text style={estilos.termosTexto}>
+            {dados.termosCondicoesPdf || TERMOS_CONDICOES_PDF_PADRAO}
+          </Text>
         </View>
 
         <Text style={estilos.rodape} fixed>
