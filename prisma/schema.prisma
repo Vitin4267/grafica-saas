@@ -1506,20 +1506,35 @@ model Orcamento {
   etapaEntregaEm                           DateTime?
   etapaEntregaResponsavel                  String?
 
-  grafica    Grafica         @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  cliente    Cliente         @relation(fields: [clienteId], references: [id])
-  usuario    Usuario         @relation(fields: [usuarioId], references: [id])
-  filial     Filial?         @relation(fields: [filialId], references: [id], onDelete: SetNull)
-  itens      OrcamentoItem[]
-  pedido     Pedido?
-  notaFiscal NotaFiscal?
-  comissao   Comissao?
+  // Preenchido quando este orçamento nasceu do botão "Pedir de novo" (ver
+  // duplicarOrcamento em src/app/orcamento/[id]/actions.ts) — rastreio pra um
+  // futuro relatório de "quantos pedidos são reposição". Nunca influencia
+  // preço/itens do novo orçamento (esses são sempre recalculados do zero a
+  // partir do catálogo atual, nunca copiados) — é só um vínculo informativo.
+  // SetNull: hoje só é possível apagar um Orcamento em RASCUNHO
+  // (cancelarOrcamento), e "Pedir de novo" só é oferecido a partir de
+  // APROVADO/REJEITADO, então isto não deveria disparar na prática — mas se
+  // um dia mudar, o duplicado não pode ficar travado por causa disso, só
+  // perde a referência.
+  duplicadoDeId String?
+
+  grafica      Grafica         @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  cliente      Cliente         @relation(fields: [clienteId], references: [id])
+  usuario      Usuario         @relation(fields: [usuarioId], references: [id])
+  filial       Filial?         @relation(fields: [filialId], references: [id], onDelete: SetNull)
+  itens        OrcamentoItem[]
+  pedido       Pedido?
+  notaFiscal   NotaFiscal?
+  comissao     Comissao?
+  duplicadoDe  Orcamento?      @relation("DuplicacaoOrcamento", fields: [duplicadoDeId], references: [id], onDelete: SetNull)
+  duplicados   Orcamento[]     @relation("DuplicacaoOrcamento")
 
   pagamentos    Pagamento[]
   contasReceber ContaReceber[]
 
   @@index([graficaId])
   @@index([filialId])
+  @@index([duplicadoDeId])
   @@map("orcamentos")
 }
 
