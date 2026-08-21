@@ -129,6 +129,12 @@ model ParametrosGrafica {
   margemFaixaBoa                Decimal @default(25) @db.Decimal(5, 2) // % — acima disso o medidor mostra verde
   descontoMaxSemAprovacao       Decimal @default(100) @db.Decimal(5, 2) // % — 100 = sem trava (comportamento de hoje)
   diasPrecoInsumoDesatualizado  Int     @default(90)
+  // Quantos dias um orçamento fica válido depois de virar ENVIADO (ver
+  // Orcamento.validoAteEm e orcamentoEstaExpirado em
+  // src/lib/orcamento-status.ts). Nullable + default(15) de propósito: o
+  // form sempre manda um inteiro, mas o nullable deixa espaço pra uma
+  // futura opção de "sem expiração" sem precisar de sentinela mágico.
+  diasValidadeOrcamentoPadrao   Int?    @default(15)
 
   // Limiares do alerta de prazo por e-mail (ver src/lib/alerta-prazo-email.ts)
   // — antes fixos em 5/3/0 dias no código. Uma gráfica com ciclo de produção
@@ -1319,17 +1325,31 @@ model Orcamento {
   // depois que o cliente já aprovou, e nenhum desses campos entra na conta
   // de preço). contatoNome/contatoEmail são um snapshot específico DESTE
   // pedido, diferente de Cliente.nome/Cliente.email (que são o cadastro).
-  vendedor           String?
-  tipoPedido         TipoPedidoOrcamento?
-  contatoNome        String?
-  contatoEmail       String?
-  condicoesPagamento String?
-  frete              TipoFrete?
-  transportadora     String?
-  localEntrega       String?
+  vendedor                 String?
+  tipoPedido               TipoPedidoOrcamento?
+  contatoNome              String?
+  contatoEmail             String?
+  condicoesPagamento       String?
+  frete                    TipoFrete?
+  transportadora           String?
+  localEntrega             String?
+  // Estimativa em DIAS, preenchida pelo vendedor ANTES do cliente decidir —
+  // distinto de Pedido.prazoEntrega (data CONFIRMADA, só existe depois da
+  // aprovação). Um é promessa pré-venda em dias, o outro é compromisso
+  // pós-venda com data fixa — nunca unificar os dois.
+  prazoEntregaEstimadoDias Int?
+  // Data-limite computada até quando a proposta vale — não é um novo valor
+  // de StatusOrcamento (evita cron job): orcamentoEstaExpirado() em
+  // src/lib/orcamento-status.ts considera o orçamento vencido mesmo com
+  // status=ENVIADO no banco. Calculado uma vez, quando o orçamento vira
+  // ENVIADO (gerarLinkPublico/atualizarStatusOrcamento), a partir de
+  // ParametrosGrafica.diasValidadeOrcamentoPadrao. Zerado quando o cliente
+  // pede ajuste (volta pra RASCUNHO) e recalculado do zero ao reenviar.
+  // null = nunca expira (todo orçamento criado antes desta feature).
+  validoAteEm              DateTime?
   // Nota interna — nunca aparece no PDF nem no link público (ver
   // src/lib/pdf/mapear-dados.ts), só na tela autenticada da gráfica.
-  observacoes        String?
+  observacoes              String?
 
   // Arte anexada já na criação do orçamento, pro cliente ver junto da
   // proposta (ver /o/[token]). Só visualização — a APROVAÇÃO de arte de

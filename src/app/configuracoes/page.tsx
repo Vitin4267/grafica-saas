@@ -27,6 +27,7 @@ export default async function ConfiguracoesPage() {
   const {
     comissaoVendedorBase,
     custoTintaPorMl,
+    diasValidadeOrcamentoPadrao,
     alertaPrazoAtivo,
     alertaPrazoLimiar1Dias,
     alertaPrazoLimiar2Dias,
@@ -36,6 +37,7 @@ export default async function ConfiguracoesPage() {
     select: {
       comissaoVendedorBase: true,
       custoTintaPorMl: true,
+      diasValidadeOrcamentoPadrao: true,
       alertaPrazoAtivo: true,
       alertaPrazoLimiar1Dias: true,
       alertaPrazoLimiar2Dias: true,
@@ -107,6 +109,7 @@ export default async function ConfiguracoesPage() {
           parametros={parametros}
           comissaoVendedorBase={comissaoVendedorBase}
           custoTintaPorMl={custoTintaPorMl ? Number(custoTintaPorMl) : null}
+          diasValidadeOrcamentoPadrao={diasValidadeOrcamentoPadrao ?? 15}
           unidadePadraoDimensao={unidadePadraoDimensao}
           alertaPrazoAtivo={alertaPrazoAtivo}
           alertaPrazoLimiar1Dias={alertaPrazoLimiar1Dias}

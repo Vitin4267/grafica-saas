@@ -29,6 +29,7 @@ export type DadosPdfPedido = {
   frete: string | null;
   transportadora: string | null;
   localEntrega: string | null;
+  prazoEntregaEstimadoDias: number | null;
 };
 
 export type DadosPdfOrcamento = {
@@ -40,6 +41,7 @@ export type DadosPdfOrcamento = {
   criadoEm: Date;
   respostaPublicaNome: string | null;
   respostaPublicaEm: Date | null;
+  validoAteEm: Date | null;
   itens: ItemPdfOrcamento[];
   total: string;
   dadosPedido: DadosPdfPedido | null;
@@ -135,6 +137,7 @@ const estilos = StyleSheet.create({
   tituloCliente: { fontSize: 14, fontWeight: "bold", marginBottom: 2 },
   dataCriacao: { fontSize: 9, color: "#64748b" },
   respostaPublica: { fontSize: 9, color: "#0f766e", marginTop: 2 },
+  validoAte: { fontSize: 9, color: "#64748b", marginTop: 2 },
   tabela: { borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 4 },
   linhaCabecalho: {
     flexDirection: "row",
@@ -241,6 +244,11 @@ export function OrcamentoDocumento({ dados }: { dados: DadosPdfOrcamento }) {
                   ` em ${formatoInstanteRealComHora.format(dados.respostaPublicaEm)}`}
               </Text>
             )}
+          {dados.validoAteEm !== null && (
+            <Text style={estilos.validoAte}>
+              Válido até {formatoInstanteRealComHora.format(dados.validoAteEm)}
+            </Text>
+          )}
         </View>
 
         {dados.dadosPedido && (
@@ -254,6 +262,12 @@ export function OrcamentoDocumento({ dados }: { dados: DadosPdfOrcamento }) {
                 ["Frete", dados.dadosPedido.frete],
                 ["Transportadora", dados.dadosPedido.transportadora],
                 ["Local de entrega", dados.dadosPedido.localEntrega],
+                [
+                  "Prazo estimado de entrega",
+                  dados.dadosPedido.prazoEntregaEstimadoDias !== null
+                    ? `${dados.dadosPedido.prazoEntregaEstimadoDias} dias úteis após aprovação`
+                    : null,
+                ],
               ]
                 .filter((par): par is [string, string] => par[1] !== null)
                 .map(([rotulo, valor]) => (

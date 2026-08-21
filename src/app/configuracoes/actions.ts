@@ -142,6 +142,21 @@ export async function salvarParametros(
     return { ok: false, mensagem: "Incremento de arredondamento deve ser maior que zero." };
   }
 
+  // Mesmo cuidado do loop de CAMPOS_DECIMAL acima: checar presença antes de
+  // Number(), senão campo ausente/"" vira 0 e passaria como "válido" numa
+  // checagem que só testasse isFinite.
+  const diasValidadeOrcamentoPadraoBruto = formData.get("diasValidadeOrcamentoPadrao");
+  if (typeof diasValidadeOrcamentoPadraoBruto !== "string" || diasValidadeOrcamentoPadraoBruto.trim() === "") {
+    return { ok: false, mensagem: "Preencha o campo \"Dias de validade do orçamento\"." };
+  }
+  const diasValidadeOrcamentoPadrao = Number(diasValidadeOrcamentoPadraoBruto);
+  if (!Number.isInteger(diasValidadeOrcamentoPadrao) || diasValidadeOrcamentoPadrao <= 0) {
+    return {
+      ok: false,
+      mensagem: "Dias de validade do orçamento precisa ser um número inteiro maior que zero.",
+    };
+  }
+
   // Alerta de prazo por e-mail (ver src/lib/alerta-prazo-email.ts): liga/
   // desliga geral + os 3 limiares, em dias antes do prazo. 0 é um valor
   // válido (dia do prazo/atrasado), por isso valida >= 0 em vez de > 0 como
@@ -215,6 +230,7 @@ export async function salvarParametros(
       ...dados,
       comissaoVendedorBase,
       custoTintaPorMl,
+      diasValidadeOrcamentoPadrao,
       alertaPrazoAtivo,
       alertaPrazoLimiar1Dias: limiaresPrazo.alertaPrazoLimiar1Dias,
       alertaPrazoLimiar2Dias: limiaresPrazo.alertaPrazoLimiar2Dias,
@@ -248,6 +264,12 @@ export async function salvarParametros(
   if (custoTintaAntes !== custoTintaPorMl) {
     antesTextos.push(`Custo do ml de tinta: ${custoTintaAntes === null ? "—" : formatoMoeda.format(custoTintaAntes)}`);
     depoisTextos.push(`Custo do ml de tinta: ${custoTintaPorMl === null ? "—" : formatoMoeda.format(custoTintaPorMl)}`);
+  }
+
+  const diasValidadeOrcamentoPadraoAntes = parametrosAntes?.diasValidadeOrcamentoPadrao ?? 15;
+  if (diasValidadeOrcamentoPadraoAntes !== diasValidadeOrcamentoPadrao) {
+    antesTextos.push(`Dias de validade do orçamento: ${diasValidadeOrcamentoPadraoAntes}`);
+    depoisTextos.push(`Dias de validade do orçamento: ${diasValidadeOrcamentoPadrao}`);
   }
 
   if ((graficaAntes?.unidadePadraoDimensao ?? "CM") !== unidadePadraoDimensao) {

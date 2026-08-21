@@ -19,6 +19,7 @@ export function ParametrosForm({
   parametros,
   comissaoVendedorBase,
   custoTintaPorMl,
+  diasValidadeOrcamentoPadrao,
   unidadePadraoDimensao,
   alertaPrazoAtivo,
   alertaPrazoLimiar1Dias,
@@ -28,6 +29,7 @@ export function ParametrosForm({
   parametros: ParametrosTenant;
   comissaoVendedorBase: BaseComissao;
   custoTintaPorMl: number | null;
+  diasValidadeOrcamentoPadrao: number;
   unidadePadraoDimensao: UnidadeDimensao;
   alertaPrazoAtivo: boolean;
   alertaPrazoLimiar1Dias: number;

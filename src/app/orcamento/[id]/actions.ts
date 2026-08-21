@@ -39,7 +39,7 @@ import { dispararEventoEmail } from "@/lib/email/webhook-email";
 import { templateResponsavelNotaFiscal } from "@/lib/email/templates";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { formatoMoeda } from "@/lib/moeda";
-import { dataInputParaUTC, dataHoraInputParaUTC } from "@/lib/data";
+import { dataInputParaUTC, dataHoraInputParaUTC, formatoInstanteReal } from "@/lib/data";
 import {
   ETAPAS_ORCAMENTO,
   nomeCampoEtapaEm,
@@ -274,9 +274,28 @@ export async function atualizarStatusOrcamento(
       }
     }
   } else {
+    // ENVIADO precisa da mesma validade calculada em gerarLinkPublico (só
+    // um dos dois caminhos roda por transição, nunca os dois — CAS abaixo
+    // continua sendo a única fonte de verdade sobre se a transição valeu).
+    // RASCUNHO (reabertura por solicitarAjusteOrcamento) zera de volta —
+    // sem isso, um orçamento reaberto continuaria com uma validoAteEm
+    // órfã do envio anterior até o próximo reenvio recalcular.
+    const data: Prisma.OrcamentoUpdateManyMutationInput = { status: novoStatus };
+    if (novoStatus === "ENVIADO") {
+      const parametros = await prisma.parametrosGrafica.findUnique({
+        where: { graficaId: usuario.graficaId },
+        select: { diasValidadeOrcamentoPadrao: true },
+      });
+      data.validoAteEm = new Date(
+        Date.now() + (parametros?.diasValidadeOrcamentoPadrao ?? 15) * 86_400_000
+      );
+    } else if (novoStatus === "RASCUNHO") {
+      data.validoAteEm = null;
+    }
+
     const cas = await prisma.orcamento.updateMany({
       where: { id: orcamentoId, status: orcamento.status },
-      data: { status: novoStatus },
+      data,
     });
     if (cas.count === 0) {
       return { ok: false, mensagem: "Este orçamento já teve o status alterado. Atualize a página." };
@@ -1786,9 +1805,18 @@ export async function gerarLinkPublico(
   // concorrente, ex: vendedor gerando o link enquanto outra aba já avançou
   // o status por outro caminho.
   if (TRANSICOES_VALIDAS[orcamento.status as StatusOrcamento]?.includes("ENVIADO")) {
+    const parametros = await prisma.parametrosGrafica.findUnique({
+      where: { graficaId: usuario.graficaId },
+      select: { diasValidadeOrcamentoPadrao: true },
+    });
     await prisma.orcamento.updateMany({
       where: { id: orcamentoId, status: orcamento.status },
-      data: { status: "ENVIADO" },
+      data: {
+        status: "ENVIADO",
+        validoAteEm: new Date(
+          Date.now() + (parametros?.diasValidadeOrcamentoPadrao ?? 15) * 86_400_000
+        ),
+      },
     });
     revalidatePath("/orcamento");
   }
@@ -1840,6 +1868,62 @@ export async function revogarLinkPublico(
 
   revalidatePath(`/orcamento/${orcamentoId}`);
   return { ok: true, mensagem: "Link revogado — quem tinha o link anterior não acessa mais." };
+}
+
+export type RenovarValidadeResult = { ok: boolean; mensagem: string };
+
+// Único jeito de "destravar" um orçamento ENVIADO vencido sem reabrir pra
+// RASCUNHO (isso perderia o link já compartilhado — ver comentário de
+// TRANSICOES_VALIDAS) — só empurra validoAteEm pra frente, status e o resto
+// do orçamento continuam intactos. Sem CAS de status porque não muda status.
+export async function renovarValidadeOrcamento(
+  _estadoAnterior: RenovarValidadeResult | null,
+  formData: FormData
+): Promise<RenovarValidadeResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
+  }
+  const orcamentoId = String(formData.get("orcamentoId"));
+
+  const orcamento = await prisma.orcamento.findFirst({
+    where: { id: orcamentoId, graficaId: usuario.graficaId },
+  });
+  if (!orcamento) {
+    return { ok: false, mensagem: "Orçamento não encontrado." };
+  }
+  if (orcamento.status !== "ENVIADO") {
+    return { ok: false, mensagem: "Só é possível renovar a validade de um orçamento enviado." };
+  }
+
+  const parametros = await prisma.parametrosGrafica.findUnique({
+    where: { graficaId: usuario.graficaId },
+    select: { diasValidadeOrcamentoPadrao: true },
+  });
+  const validoAteEm = new Date(
+    Date.now() + (parametros?.diasValidadeOrcamentoPadrao ?? 15) * 86_400_000
+  );
+
+  await prisma.orcamento.update({
+    where: { id: orcamentoId },
+    data: { validoAteEm },
+  });
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "orcamento.renovar_validade",
+    entidade: "Orcamento",
+    entidadeId: orcamentoId,
+    descricao: `Validade do orçamento #${orcamentoId.slice(-6)} renovada até ${formatoInstanteReal.format(validoAteEm)}`,
+  });
+
+  revalidatePath(`/orcamento/${orcamentoId}`);
+
+  return { ok: true, mensagem: "Validade renovada." };
 }
 
 const formaPagamentoSchema = z.enum([

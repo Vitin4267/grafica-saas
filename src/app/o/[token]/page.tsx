@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { formatoMoeda } from "@/lib/moeda";
 import { formatoInstanteRealComHora } from "@/lib/data";
+import { orcamentoEstaExpirado } from "@/lib/orcamento-status";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/Badge";
@@ -67,7 +68,8 @@ export default async function OrcamentoPublicoPage({
           orcamento.condicoesPagamento ||
           orcamento.frete ||
           orcamento.transportadora ||
-          orcamento.localEntrega) && (
+          orcamento.localEntrega ||
+          orcamento.prazoEntregaEstimadoDias) && (
           <Card className="mb-6 p-5">
             <p className="mb-3 text-sm font-medium text-slate-500">Dados do pedido</p>
             <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
@@ -113,6 +115,14 @@ export default async function OrcamentoPublicoPage({
                 <div>
                   <dt className="text-slate-500">Local de entrega</dt>
                   <dd className="font-medium text-slate-800 dark:text-slate-100">{orcamento.localEntrega}</dd>
+                </div>
+              )}
+              {orcamento.prazoEntregaEstimadoDias && (
+                <div>
+                  <dt className="text-slate-500">Prazo estimado</dt>
+                  <dd className="font-medium text-slate-800 dark:text-slate-100">
+                    {orcamento.prazoEntregaEstimadoDias} dias úteis após aprovação
+                  </dd>
                 </div>
               )}
             </dl>
@@ -183,7 +193,13 @@ export default async function OrcamentoPublicoPage({
           </Button>
         </a>
 
-        {orcamento.status === "ENVIADO" && (
+        {orcamento.status === "ENVIADO" && orcamentoEstaExpirado(orcamento) && (
+          <p className="text-sm text-amber-600 dark:text-amber-400">
+            Este orçamento venceu em {formatoInstanteRealComHora.format(orcamento.validoAteEm!)} — entre em
+            contato com a gráfica para receber um novo.
+          </p>
+        )}
+        {orcamento.status === "ENVIADO" && !orcamentoEstaExpirado(orcamento) && (
           <RespostaPublica token={token} nomeSugerido={orcamento.contatoNome} />
         )}
         {orcamento.status === "APROVADO" && (

@@ -364,6 +364,50 @@ export function templateOrcamentoRecusado(
   };
 }
 
+// Disparado por solicitarAjusteOrcamento (src/app/o/[token]/actions.ts)
+// quando o cliente pede ajuste no orçamento pelo link público — mesmo
+// destinatário de templateOrcamentoAprovado/templateOrcamentoRecusado
+// (vendedor + donos), mas diferente delas no tom: não é notícia de um
+// resultado, é AÇÃO NECESSÁRIA (o orçamento já voltou pra RASCUNHO, esperando
+// o vendedor editar e reenviar), daí a cor âmbar em vez do verde/vermelho das
+// outras duas. mensagem é texto livre e OBRIGATÓRIO (diferente do motivo
+// opcional da recusa) — sempre escapado, mesmo motivo de todo texto livre
+// vindo de formulário público sem autenticação.
+export function templateSolicitacaoAjusteOrcamento(
+  graficaNome: string,
+  clienteNome: string,
+  nomeSolicitante: string,
+  valorTotal: number,
+  mensagem: string,
+  linkOrcamento: string,
+  corPrimaria?: string | null
+): { assunto: string; html: string; texto: string } {
+  const cor = resolverCorPrimaria(corPrimaria);
+  const valorFormatado = formatarValorBRL(valorTotal);
+
+  return {
+    assunto: `Ajuste solicitado — ${removerQuebrasDeLinha(clienteNome)} pediu mudança no orçamento — ${removerQuebrasDeLinha(graficaNome)}`,
+    texto: `O orçamento voltou para rascunho — edite e reenvie o link para o cliente.\n\n${nomeSolicitante} pediu um ajuste no orçamento de ${clienteNome} (${valorFormatado}) pelo link público.\n\nMensagem do cliente:\n${mensagem}\n\nVeja o orçamento em: ${linkOrcamento}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2 style="color: #b45309;">Ajuste solicitado</h2>
+        <p style="color: #334155;">O orçamento voltou para rascunho — edite e reenvie o link para o cliente.</p>
+        <p style="color: #334155;"><strong>${escapeHtml(nomeSolicitante)}</strong> pediu um ajuste no orçamento de <strong>${escapeHtml(clienteNome)}</strong> pelo link público.</p>
+        <p style="color: #0f172a; font-size: 22px; font-weight: 700;">${valorFormatado}</p>
+        <p style="color: #334155; margin-bottom: 4px;">Mensagem do cliente:</p>
+        <blockquote style="margin: 0; padding: 12px 16px; border-left: 3px solid #f59e0b; background: #fffbeb; color: #0f172a;">
+          ${escapeHtml(mensagem)}
+        </blockquote>
+        <p>
+          <a href="${linkOrcamento}" style="display: inline-block; background: ${cor}; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 600; margin-top: 16px;">
+            Ver orçamento
+          </a>
+        </p>
+      </div>
+    `,
+  };
+}
+
 // Disparado pelos dois caminhos de aprovação de orçamento
 // (atualizarStatusOrcamento em src/app/orcamento/[id]/actions.ts e
 // responderOrcamentoPublico em src/app/o/[token]/actions.ts) pra quem está

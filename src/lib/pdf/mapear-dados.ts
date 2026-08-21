@@ -26,6 +26,7 @@ export type OrcamentoParaPdf = {
   // a partir disto, só "aprovado/recusado por".
   respostaPublicaNome: string | null;
   respostaPublicaEm: Date | null;
+  validoAteEm: Date | null;
   cliente: { nome: string };
   grafica: { nome: string; logoUrl: string | null; corPrimaria: string | null };
   // Bloco 1 (dados gerais) — seguros pro cliente ver, ao contrário de
@@ -37,6 +38,7 @@ export type OrcamentoParaPdf = {
   frete: string | null;
   transportadora: string | null;
   localEntrega: string | null;
+  prazoEntregaEstimadoDias: number | null;
   itens: {
     quantidade: number;
     larguraCm: Prisma.Decimal | null;
@@ -99,6 +101,7 @@ export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
     frete: orcamento.frete ? (ROTULO_FRETE[orcamento.frete] ?? orcamento.frete) : null,
     transportadora: orcamento.transportadora,
     localEntrega: orcamento.localEntrega,
+    prazoEntregaEstimadoDias: orcamento.prazoEntregaEstimadoDias,
   };
   const temDadosPedido = Object.values(dadosPedido).some((v) => v !== null);
 
@@ -111,6 +114,7 @@ export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
     criadoEm: orcamento.createdAt,
     respostaPublicaNome: orcamento.respostaPublicaNome,
     respostaPublicaEm: orcamento.respostaPublicaEm,
+    validoAteEm: orcamento.validoAteEm,
     total: formatoMoeda.format(Number(orcamento.total)),
     dadosPedido: temDadosPedido ? dadosPedido : null,
     itens: orcamento.itens.map((item) => ({
