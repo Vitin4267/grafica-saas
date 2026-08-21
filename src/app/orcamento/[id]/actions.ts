@@ -65,6 +65,7 @@ import {
 import { calcularPrevisaoAprovacaoPedido, gravarPrevisaoAprovacaoPedido } from "@/lib/pedido-aprovacao";
 import { UNIDADES_DIMENSAO, converterParaCm } from "@/lib/unidade-dimensao";
 import { paraDecimal, type Dec } from "@/lib/pricing/decimal";
+import { montarDadosItemParaRecalculo, calcularDescontoHerdado } from "@/lib/orcamento-duplicar";
 
 // Nunca confia na unidade que vem do formulário — validada contra as únicas
 // 3 que existem (ver src/lib/unidade-dimensao.ts) antes de converter pra
@@ -1741,6 +1742,355 @@ export async function cancelarOrcamento(
   updateTag(`uso-${usuario.graficaId}`); // orçamento removido muda a contagem do mês (ver src/lib/billing/uso.ts)
   revalidatePath("/orcamento");
   redirect("/orcamento");
+}
+
+export type DuplicarOrcamentoResult = { ok: boolean; mensagem: string };
+
+// "Pedir de novo": cria um orçamento NOVO em RASCUNHO com o mesmo cliente e os
+// mesmos itens/quantidades/configurações/acabamentos do orçamento de origem —
+// só oferecido a partir de APROVADO/REJEITADO (ver OrcamentoAcoes.tsx);
+// RASCUNHO/ENVIADO já estão "abertos", duplicar não faz sentido. O vendedor
+// ajusta o rascunho gerado (ex: muda quantidade) antes de reenviar.
+//
+// Preço de cada item é SEMPRE recalculado do zero via calcularItemOrcamento —
+// nunca copiado do item antigo — porque matéria-prima pode ter mudado de
+// preço desde então (mesmo princípio de "preço nunca confiado do cliente,
+// sempre re-derivado no servidor", aplicado aqui ao histórico do próprio
+// sistema, não só à entrada de um formulário). Quando o item original tinha
+// desconto negociado, o MESMO PERCENTUAL efetivo é reaplicado sobre o novo
+// preço sugerido (ver calcularDescontoHerdado em src/lib/orcamento-duplicar.ts)
+// — sujeito às duas mesmas travas de aplicarDescontoItemOrcamento (preço
+// nunca abaixo do custo direto recalculado; desconto acima do limite da
+// gráfica só é aplicado se quem duplicou for DONO/ADMIN). Se qualquer trava
+// barrar, o item nasce sem desconto (preço cheio) em vez de abortar a
+// duplicação inteira — é só um rascunho, o vendedor decide o resto.
+//
+// Nunca copiados de propósito: status (sempre nasce RASCUNHO),
+// linkPublicoToken, respostaPublica* (aceite/recusa é de UM pedido
+// específico), validoAteEm (validade da proposta ANTERIOR não se estende à
+// nova), as etapas de produção (etapaXxxEm/Responsavel — começam do zero),
+// arteUrl/preflightAvisos (a arte antiga provavelmente não serve pro pedido
+// novo — se servir, o vendedor reanexa manualmente) e OrcamentoItemTinta
+// (análise de IA sobre a imagem da arte ANTIGA, sem sentido sem ela).
+// `observacoes` (nota interna) também fica de fora: em geral descreve
+// contexto específico do pedido concluído (ex: "cliente atrasou pagamento"),
+// enganoso se herdado sem revisão. `tipoPedido` nasce fixo em
+// REPETICAO_SEM_ALTERACAO — é literalmente o que este botão representa.
+export async function duplicarOrcamento(
+  _estadoAnterior: DuplicarOrcamentoResult | null,
+  formData: FormData
+): Promise<DuplicarOrcamentoResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra criar orçamentos." };
+  }
+
+  const orcamentoId = String(formData.get("orcamentoId"));
+
+  const original = await prisma.orcamento.findFirst({
+    where: { id: orcamentoId, graficaId: usuario.graficaId },
+    include: {
+      itens: {
+        include: {
+          itemGrafica: { select: { id: true, itemCatalogo: { select: { nome: true } } } },
+          acabamentos: true,
+          etiqueta: { include: { hotStampings: true } },
+          precificacaoEtiqueta: true,
+        },
+      },
+    },
+  });
+  if (!original) {
+    return { ok: false, mensagem: "Orçamento não encontrado." };
+  }
+  if (original.status !== "APROVADO" && original.status !== "REJEITADO") {
+    return {
+      ok: false,
+      mensagem: "Só é possível pedir de novo a partir de um orçamento aprovado ou rejeitado.",
+    };
+  }
+  if (original.itens.length === 0) {
+    return { ok: false, mensagem: "Este orçamento não tem itens pra duplicar." };
+  }
+
+  const parametros = await prisma.parametrosGrafica.findUnique({
+    where: { graficaId: usuario.graficaId },
+    select: { descontoMaxSemAprovacao: true },
+  });
+  const limiteDescontoSemAprovacao = parametros
+    ? paraDecimal(parametros.descontoMaxSemAprovacao.toString())
+    : paraDecimal(100);
+  const podeAprovarDesconto = usuario.papel === "DONO" || usuario.papel === "ADMIN";
+
+  let total = paraDecimal(0);
+  const itensParaCriar: {
+    itemGraficaId: string;
+    quantidade: number;
+    larguraCm: Prisma.Decimal | null;
+    alturaCm: Prisma.Decimal | null;
+    unidadeDimensao: (typeof UNIDADES_DIMENSAO)[number];
+    cores: string | null;
+    acabamento: string | null;
+    precoUnitario: string;
+    precoTotal: string;
+    precoSugeridoUnitario: string;
+    descontoTipo: "PERCENTUAL" | null;
+    descontoValor: string | null;
+    motivoDesconto: string | null;
+    aprovadoPorId: string | null;
+    modeloCalculo: "SIMPLES" | "M2" | "OFFSET" | "FLEXOGRAFIA";
+    corFrente: number | null;
+    corVerso: number | null;
+    numeroCoresFlexo: number | null;
+    breakdown: Prisma.InputJsonValue | null;
+    etiqueta: (typeof original.itens)[number]["etiqueta"];
+    acabamentosParaGravar: { itemGraficaId: string; qtdBase: string; custoCalculado: string }[];
+    precificacaoEtiquetaParaGravar: {
+      papelId: string;
+      quantidadeCores: number;
+      custoClicheCalculado: string;
+      custoFaca: string | null;
+      custoFrete: string | null;
+    } | null;
+  }[] = [];
+
+  for (const [indice, itemOriginal] of original.itens.entries()) {
+    const nomeItem = itemOriginal.itemGrafica.itemCatalogo.nome;
+
+    // Refetch: nunca confia no ItemGrafica carregado junto do orçamento
+    // antigo — o produto pode ter sido desativado ou perdido o preço desde
+    // então (mesmo cuidado de adicionarItemOrcamento/criarOrcamento).
+    const itemGraficaFresh = await prisma.itemGrafica.findFirst({
+      where: { id: itemOriginal.itemGraficaId, graficaId: usuario.graficaId, ativo: true },
+    });
+    if (!itemGraficaFresh) {
+      return {
+        ok: false,
+        mensagem: `Item ${indice + 1} ("${nomeItem}"): produto ou serviço não está mais disponível no catálogo — remova este item do orçamento original ou reative o produto antes de pedir de novo.`,
+      };
+    }
+    if (!itemGraficaFresh.precoVenda) {
+      return {
+        ok: false,
+        mensagem: `Item ${indice + 1} ("${nomeItem}"): está sem preço de venda configurado no catálogo — configure o preço antes de pedir de novo.`,
+      };
+    }
+
+    const dados = montarDadosItemParaRecalculo({
+      quantidade: itemOriginal.quantidade,
+      larguraCm: itemOriginal.larguraCm,
+      alturaCm: itemOriginal.alturaCm,
+      corFrente: itemOriginal.corFrente,
+      corVerso: itemOriginal.corVerso,
+      numeroCoresFlexo: itemOriginal.numeroCoresFlexo,
+      acabamentos: itemOriginal.acabamentos,
+      precificacaoEtiqueta: itemOriginal.precificacaoEtiqueta,
+    });
+
+    const resultado = await calcularItemOrcamento(itemGraficaFresh, usuario.graficaId, dados);
+    if (!resultado.ok) {
+      return { ok: false, mensagem: `Item ${indice + 1} ("${nomeItem}"): ${resultado.mensagem}` };
+    }
+
+    let precoUnitario = paraDecimal(resultado.precoUnitario);
+    let precoTotal = paraDecimal(resultado.precoTotal);
+    let descontoTipo: "PERCENTUAL" | null = null;
+    let descontoValor: string | null = null;
+    let motivoDesconto: string | null = null;
+    let aprovadoPorId: string | null = null;
+
+    if (itemOriginal.descontoTipo && itemOriginal.precoSugeridoUnitario) {
+      const herdado = calcularDescontoHerdado({
+        precoSugeridoOriginal: itemOriginal.precoSugeridoUnitario.toString(),
+        precoUnitarioOriginalComDesconto: itemOriginal.precoUnitario.toString(),
+        novoPrecoSugeridoUnitario: resultado.precoUnitario,
+        quantidade: itemOriginal.quantidade,
+      });
+
+      if (herdado) {
+        // Mesma trava de preço mínimo de aplicarDescontoItemOrcamento: nunca
+        // vende abaixo do custo direto deste item, já recalculado.
+        const breakdown = resultado.breakdown as { custoTotal?: string } | null;
+        const custoDiretoNumero = breakdown?.custoTotal
+          ? Number(breakdown.custoTotal)
+          : itemGraficaFresh.precoCompra
+            ? Number(itemGraficaFresh.precoCompra) * itemOriginal.quantidade
+            : 0;
+        const custoDireto = paraDecimal(custoDiretoNumero);
+
+        // Mesma trava de aprovação: desconto acima do limite da gráfica só
+        // um DONO/ADMIN aplica. Não há como pedir aprovação no meio de uma
+        // criação automática — se quem duplicou não pode aprovar, o item
+        // nasce sem desconto (preço cheio) em vez de bloquear tudo.
+        const precisaAprovacao = herdado.percentual.gt(limiteDescontoSemAprovacao);
+
+        if (herdado.precoTotal.gte(custoDireto) && (!precisaAprovacao || podeAprovarDesconto)) {
+          precoUnitario = herdado.precoUnitario;
+          precoTotal = herdado.precoTotal;
+          descontoTipo = "PERCENTUAL";
+          descontoValor = herdado.percentual.toFixed(4);
+          motivoDesconto = itemOriginal.motivoDesconto
+            ? `${itemOriginal.motivoDesconto} (herdado do orçamento original)`
+            : "Desconto herdado do orçamento original";
+          aprovadoPorId = precisaAprovacao ? usuario.id : null;
+        }
+      }
+    }
+
+    total = total.plus(precoTotal);
+
+    itensParaCriar.push({
+      itemGraficaId: itemGraficaFresh.id,
+      quantidade: itemOriginal.quantidade,
+      larguraCm: itemOriginal.larguraCm,
+      alturaCm: itemOriginal.alturaCm,
+      unidadeDimensao: itemOriginal.unidadeDimensao,
+      cores: itemOriginal.cores,
+      acabamento: itemOriginal.acabamento,
+      precoUnitario: precoUnitario.toFixed(2),
+      precoTotal: precoTotal.toFixed(2),
+      precoSugeridoUnitario: resultado.precoUnitario,
+      descontoTipo,
+      descontoValor,
+      motivoDesconto,
+      aprovadoPorId,
+      modeloCalculo: resultado.modeloCalculo,
+      corFrente: resultado.corFrente,
+      corVerso: resultado.corVerso,
+      numeroCoresFlexo: resultado.numeroCoresFlexo,
+      breakdown: resultado.breakdown ?? null,
+      etiqueta: itemOriginal.etiqueta,
+      acabamentosParaGravar: resultado.acabamentos,
+      precificacaoEtiquetaParaGravar: resultado.precificacaoEtiqueta,
+    });
+  }
+
+  const novoOrcamento = await prisma.orcamento.create({
+    data: {
+      graficaId: usuario.graficaId,
+      clienteId: original.clienteId,
+      usuarioId: usuario.id,
+      filialId: original.filialId,
+      duplicadoDeId: original.id,
+      total: total.toFixed(2),
+      vendedor: original.vendedor,
+      tipoPedido: "REPETICAO_SEM_ALTERACAO",
+      contatoNome: original.contatoNome,
+      contatoEmail: original.contatoEmail,
+      condicoesPagamento: original.condicoesPagamento,
+      frete: original.frete,
+      transportadora: original.transportadora,
+      localEntrega: original.localEntrega,
+      itens: {
+        create: itensParaCriar.map((item) => ({
+          itemGraficaId: item.itemGraficaId,
+          quantidade: item.quantidade,
+          larguraCm: item.larguraCm,
+          alturaCm: item.alturaCm,
+          unidadeDimensao: item.unidadeDimensao,
+          cores: item.cores,
+          acabamento: item.acabamento,
+          precoUnitario: item.precoUnitario,
+          precoTotal: item.precoTotal,
+          precoSugeridoUnitario: item.precoSugeridoUnitario,
+          descontoTipo: item.descontoTipo,
+          descontoValor: item.descontoValor,
+          motivoDesconto: item.motivoDesconto,
+          aprovadoPorId: item.aprovadoPorId,
+          modeloCalculo: item.modeloCalculo,
+          corFrente: item.corFrente,
+          corVerso: item.corVerso,
+          numeroCoresFlexo: item.numeroCoresFlexo,
+          breakdown: item.breakdown ?? undefined,
+          // Descritivo de produção (nunca entra na conta de preço, ver
+          // OrcamentoItemEtiqueta no schema) — copiado literalmente do item
+          // original quando M2, mesmo padrão de "sempre cria a linha pra
+          // item M2" de criarOrcamento (evita "M2 sem etiqueta" como estado
+          // possível no resto do código).
+          etiqueta:
+            item.modeloCalculo === "M2"
+              ? {
+                  create: {
+                    materialSubstrato: item.etiqueta?.materialSubstrato ?? null,
+                    materialSubstratoOutro: item.etiqueta?.materialSubstratoOutro ?? null,
+                    tipoAdesivo: item.etiqueta?.tipoAdesivo ?? null,
+                    tipoAdesivoOutro: item.etiqueta?.tipoAdesivoOutro ?? null,
+                    superficieAplicacao: item.etiqueta?.superficieAplicacao ?? null,
+                    superficieAplicacaoOutro: item.etiqueta?.superficieAplicacaoOutro ?? null,
+                    formatoEtiqueta: item.etiqueta?.formatoEtiqueta ?? null,
+                    coresRotulo: item.etiqueta?.coresRotulo ?? null,
+                    coresContraRotulo: item.etiqueta?.coresContraRotulo ?? null,
+                    embalagemQtdPorRolo: item.etiqueta?.embalagemQtdPorRolo ?? null,
+                    tubeteMedida: item.etiqueta?.tubeteMedida ?? null,
+                    rotulagem: item.etiqueta?.rotulagem ?? null,
+                    serrilha: item.etiqueta?.serrilha ?? null,
+                    serrilhaOutro: item.etiqueta?.serrilhaOutro ?? null,
+                    vernizRotuloTotal: item.etiqueta?.vernizRotuloTotal ?? false,
+                    vernizRotuloReserva: item.etiqueta?.vernizRotuloReserva ?? false,
+                    vernizRotuloTipo: item.etiqueta?.vernizRotuloTipo ?? null,
+                    vernizRotuloTipoOutro: item.etiqueta?.vernizRotuloTipoOutro ?? null,
+                    vernizContraRotuloTotal: item.etiqueta?.vernizContraRotuloTotal ?? false,
+                    vernizContraRotuloReserva: item.etiqueta?.vernizContraRotuloReserva ?? false,
+                    vernizContraRotuloTipo: item.etiqueta?.vernizContraRotuloTipo ?? null,
+                    vernizContraRotuloTipoOutro: item.etiqueta?.vernizContraRotuloTipoOutro ?? null,
+                    laminacaoRotulo: item.etiqueta?.laminacaoRotulo ?? null,
+                    laminacaoRotuloOutro: item.etiqueta?.laminacaoRotuloOutro ?? null,
+                    laminacaoContraRotulo: item.etiqueta?.laminacaoContraRotulo ?? null,
+                    laminacaoContraRotuloOutro: item.etiqueta?.laminacaoContraRotuloOutro ?? null,
+                    rebobinamento: item.etiqueta?.rebobinamento ?? null,
+                    hotStampings: {
+                      create: (item.etiqueta?.hotStampings ?? []).map((h) => ({
+                        lado: h.lado,
+                        tipo: h.tipo,
+                        tipoOutro: h.tipoOutro,
+                        medida: h.medida,
+                        cor: h.cor,
+                      })),
+                    },
+                  },
+                }
+              : undefined,
+          acabamentos:
+            item.acabamentosParaGravar.length > 0
+              ? {
+                  create: item.acabamentosParaGravar.map((a) => ({
+                    itemGraficaId: a.itemGraficaId,
+                    qtdBase: a.qtdBase,
+                    custoCalculado: a.custoCalculado,
+                  })),
+                }
+              : undefined,
+          precificacaoEtiqueta: item.precificacaoEtiquetaParaGravar
+            ? {
+                create: {
+                  papelId: item.precificacaoEtiquetaParaGravar.papelId,
+                  quantidadeCores: item.precificacaoEtiquetaParaGravar.quantidadeCores,
+                  custoClicheCalculado: item.precificacaoEtiquetaParaGravar.custoClicheCalculado,
+                  custoFaca: item.precificacaoEtiquetaParaGravar.custoFaca,
+                  custoFrete: item.precificacaoEtiquetaParaGravar.custoFrete,
+                },
+              }
+            : undefined,
+        })),
+      },
+    },
+  });
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "orcamento.duplicar",
+    entidade: "Orcamento",
+    entidadeId: novoOrcamento.id,
+    descricao: `Pediu de novo a partir do orçamento #${original.id.slice(-6)} — criou o orçamento #${novoOrcamento.id.slice(-6)} em rascunho, ${itensParaCriar.length} ${itensParaCriar.length === 1 ? "item" : "itens"}, total recalculado em ${formatoMoeda.format(total.toNumber())}.`,
+  });
+
+  updateTag(`uso-${usuario.graficaId}`); // orçamento novo muda a contagem do mês (ver src/lib/billing/uso.ts)
+  revalidatePath("/orcamento");
+  redirect(`/orcamento/${novoOrcamento.id}`);
 }
 
 export type GerarLinkResult = { ok: boolean; mensagem: string; url?: string };

@@ -6,7 +6,7 @@ import { Alert } from "@/components/ui/Alert";
 import { Input } from "@/components/ui/Input";
 import { CheckCircleIcon } from "@/components/icons";
 import { useAoMudar } from "@/lib/hooks/useAoMudar";
-import { atualizarStatusOrcamento, cancelarOrcamento } from "./actions";
+import { atualizarStatusOrcamento, cancelarOrcamento, duplicarOrcamento } from "./actions";
 
 // Ícone de "aprovado" com um pop de escala rápido e sutil ao aparecer — puro
 // CSS (transition de transform/opacity disparada no frame seguinte ao mount),
@@ -46,6 +46,11 @@ export function OrcamentoAcoes({
     cancelarOrcamento,
     null
   );
+  // duplicarOrcamento redireciona pro novo orçamento em caso de sucesso (a
+  // navegação acontece dentro da própria Server Action) — este estado só é
+  // lido de fato quando a duplicação FALHA (o redirect nunca deixa o estado
+  // de sucesso chegar a ser renderizado aqui).
+  const [estadoDuplicacao, acaoDuplicar, duplicandoPending] = useActionState(duplicarOrcamento, null);
   const [confirmandoRejeicao, setConfirmandoRejeicao] = useState(false);
   const [confirmandoCancelamento, setConfirmandoCancelamento] = useState(false);
 
@@ -63,21 +68,32 @@ export function OrcamentoAcoes({
   });
 
   if (status === "APROVADO" || status === "REJEITADO") {
-    if (status === "REJEITADO") {
-      return (
-        <p className="text-sm text-slate-500">
-          Este orçamento está rejeitado e não muda mais de status.
-        </p>
-      );
-    }
     return (
-      <div className="flex items-center gap-2.5">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
-          <CheckCircleIcon className="h-4 w-4" />
-        </span>
-        <p className="text-sm text-slate-500">
-          Este orçamento está aprovado e não muda mais de status.
-        </p>
+      <div className="flex flex-col gap-3">
+        {status === "REJEITADO" ? (
+          <p className="text-sm text-slate-500">
+            Este orçamento está rejeitado e não muda mais de status.
+          </p>
+        ) : (
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+              <CheckCircleIcon className="h-4 w-4" />
+            </span>
+            <p className="text-sm text-slate-500">
+              Este orçamento está aprovado e não muda mais de status.
+            </p>
+          </div>
+        )}
+
+        {estadoDuplicacao && !estadoDuplicacao.ok && (
+          <Alert variant="error">{estadoDuplicacao.mensagem}</Alert>
+        )}
+        <form action={acaoDuplicar}>
+          <input type="hidden" name="orcamentoId" value={orcamentoId} />
+          <Button type="submit" variant="outline" loading={duplicandoPending}>
+            Pedir de novo
+          </Button>
+        </form>
       </div>
     );
   }
