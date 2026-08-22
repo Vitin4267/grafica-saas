@@ -18,6 +18,7 @@ import { formatoMoeda } from "@/lib/moeda";
 import { D } from "@/lib/pricing/decimal";
 import { montarChavePerda } from "@/lib/perda-fixa-producao";
 import { analisarPreflight } from "@/lib/preflight";
+import { cancelarCandidatosDoPedido } from "@/lib/gang-run-servico";
 import { avancarStatusPedido, buscarOrcamentoParaBaixa } from "./status-transicao";
 import {
   validarArquivoArte,
@@ -257,6 +258,11 @@ export async function cancelarPedido(
         if (resultado.count === 0) {
           throw new ErroPedidoJaAlterado();
         }
+
+        // Tira este pedido da fila de gang run (só quem ainda estiver
+        // AGUARDANDO — um candidato já COMBINADO não é desfeito aqui, ver
+        // comentário em cancelarCandidatosDoPedido).
+        await cancelarCandidatosDoPedido(tx, pedidoId, "Pedido cancelado");
 
         // Estorna pelo HISTÓRICO real de saídas (MovimentacaoEstoque), não
         // recalculando pela ficha técnica de novo — a ficha pode ter mudado

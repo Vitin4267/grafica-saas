@@ -85,6 +85,8 @@ model Grafica {
   importacoesPlanilha   ImportacaoPlanilha[]
   solicitacoesCompra    SolicitacaoCompra[]
   entregas              Entrega[]
+  filaGangRun           FilaGangRun[]
+  gruposGangRun         GrupoGangRun[]
 
   @@map("graficas")
 }
@@ -1985,6 +1987,7 @@ model OrcamentoItem {
   etiqueta             OrcamentoItemEtiqueta?
   tinta                OrcamentoItemTinta?
   precificacaoEtiqueta OrcamentoItemPrecificacaoEtiqueta?
+  filaGangRun          FilaGangRun?
 
   @@index([orcamentoId])
   @@map("orcamento_itens")
@@ -2278,6 +2281,7 @@ model Pedido {
   custos         CustoPedido[]
   custosPrevisto PedidoCustoPrevisto[]
   entrega        Entrega?
+  filaGangRun    FilaGangRun[]
 
   @@index([graficaId])
   @@map("pedidos")
@@ -2364,6 +2368,10 @@ enum OrigemCusto {
   CONSUMO_ESTOQUE
   COMISSAO
   SERVICO_INSUMO
+  // Rateio do custo de chapa + acerto de máquina entre os pedidos que
+  // dividiram uma mesma chapa no gang run (ver GrupoGangRun/FilaGangRun
+  // abaixo e combinarGrupoGangRun em src/lib/gang-run-servico.ts).
+  GANG_RUN
 }
 
 // Um lançamento de custo REAL incorrido num pedido específico — diferente do
@@ -2445,6 +2453,145 @@ model PedidoCustoPrevisto {
   @@index([graficaId, pedidoId])
   @@index([categoriaCustoId])
   @@map("pedido_custo_previsto")
+}
+
+enum StatusFilaGangRun {
+  // Esperando outros itens compatíveis aparecerem — aparece na tela
+  // /producao/gang-run agrupado com outros candidatos do mesmo
+  // papel+gramatura+prensa+folha+cores.
+  AGUARDANDO
+  // Um operador decidiu rodar o grupo junto (ver GrupoGangRun) — o rateio
+  // de chapa/acerto já foi lançado como CustoPedido (origem=GANG_RUN).
+  COMBINADO
+  // Saiu da fila sem ser combinado: o pedido foi cancelado, ou avançou pra
+  // IMPRESSAO sozinho (o operador decidiu não esperar, ver
+  // cancelarCandidatosDoPedido em src/lib/gang-run-servico.ts).
+  CANCELADO
+}
+
+// Um evento de "rodar junto" — quando um operador decide, na tela
+// /producao/gang-run, combinar um grupo de candidatos que compartilham
+// papel+gramatura+prensa+folha+cores numa mesma chapa física. Existe como
+// registro próprio (não só um campo em FilaGangRun) pra guardar o custo
+// TOTAL de chapa+acerto rateado entre os itens combinados — auditável depois
+// (ver combinarGrupoGangRun em src/lib/gang-run-servico.ts).
+//
+// MVP: não otimiza automaticamente QUAIS candidatos combinar nem em quantas
+// chapas físicas eles cabem juntos (bin-packing 2D é NP-difícil) — o
+// operador escolhe manualmente quando o grupo já tem candidatos suficientes
+// pra valer a pena rodar, e o sistema assume que 1 chapa é compartilhada
+// entre todos os itens do grupo (ver custoChapas/custoSetup abaixo, que já
+// são fixos por combo cor+prensa no motor Offset, independentes da
+// quantidade — ver src/lib/pricing/offset.ts).
+model GrupoGangRun {
+  id        String @id @default(cuid())
+  graficaId String
+
+  // Chave de compatibilidade física — mesma folha/prensa/papel/cores, ver
+  // comentário de FilaGangRun abaixo.
+  papelId      String
+  gramaturaGm2 Decimal @db.Decimal(6, 1)
+  prensaId     String
+  folhaId      String
+  corFrente    Int
+  corVerso     Int
+
+  // Custo TOTAL de chapa(s) + acerto de máquina da rodada compartilhada —
+  // pago UMA vez pelo grupo inteiro (não por item), rateado
+  // proporcionalmente ao espaço de cada item na folha (ver
+  // FilaGangRun.custoRateado). Snapshot de um dos itens do grupo no momento
+  // da combinação (todos têm o mesmo valor, por construção da chave acima).
+  custoChapasTotal Decimal @db.Decimal(12, 2)
+  custoSetupTotal  Decimal @db.Decimal(12, 2)
+
+  combinadoEm    DateTime @default(now())
+  combinadoPorId String?
+
+  grafica Grafica       @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  itens   FilaGangRun[]
+
+  @@index([graficaId])
+  @@map("grupos_gang_run")
+}
+
+// Candidato a gang run: um OrcamentoItem com modeloCalculo=OFFSET cuja
+// quantidade sozinha não preenche uma chapa/folha inteira (fracaoFolha < 1,
+// ver ehCandidatoGangRun em src/lib/gang-run.ts) — em vez de rodar uma
+// chapa exclusiva só pra ele, fica esperando outros pedidos da MESMA
+// gráfica com o MESMO papel+gramatura+prensa+folha+cores (ver
+// chaveGrupoGangRun) pra dividir o custo fixo de chapa+acerto. Criado uma
+// vez, na aprovação do orçamento (junto com o Pedido, ver
+// registrarCandidatosGangRun) — nunca recalculado depois, mesmo que o
+// motor de precificação mude.
+//
+// 1:1 com OrcamentoItem (um item Offset entra na fila no máximo uma vez).
+// pedidoId é denormalizado do Orcamento (Pedido.orcamentoId é @unique) só
+// pra não precisar de join toda vez que a fila lê/atualiza por pedido (ex:
+// cancelarPedido cancelando os candidatos deste pedido).
+model FilaGangRun {
+  id              String            @id @default(cuid())
+  graficaId       String
+  orcamentoItemId String            @unique
+  pedidoId        String
+  status          StatusFilaGangRun @default(AGUARDANDO)
+
+  // Chave de compatibilidade física: só itens com os MESMOS seis valores
+  // abaixo podem compartilhar uma chapa/folha (ver chaveGrupoGangRun em
+  // src/lib/gang-run.ts). papelId/prensaId vêm de ItemGrafica (matéria-prima
+  // e prensa do produto, ver schema de ItemGrafica); folhaId é o
+  // FormatoFolha que o motor de nesting ESCOLHEU pra este item específico
+  // (metricas.folhaEscolhida.id do breakdown salvo em OrcamentoItem —
+  // produtos com mais de um formato cadastrado podem escolher formatos
+  // diferentes conforme o tamanho da peça). Sem FK formal pra
+  // papel/prensa/folha de propósito: isto é um snapshot de agrupamento, não
+  // um vínculo que precise ser mantido consistente se o cadastro mudar
+  // depois (mesmo princípio de CategoriaCusto.nome livre em Despesa).
+  papelId      String
+  gramaturaGm2 Decimal @db.Decimal(6, 1)
+  prensaId     String
+  folhaId      String
+  corFrente    Int
+  corVerso     Int
+
+  // nUp = quantas peças deste item cabem numa folha (motor de nesting já
+  // existente, calcularImposicao em src/lib/pricing/offset.ts).
+  // fracaoFolha = quantidade/nUp — quanto da capacidade de UMA folha este
+  // item sozinho ocupa (< 1 é o que faz dele um candidato, ver
+  // ehCandidatoGangRun). Soma de fracaoFolha do grupo >= 1 é o sinal
+  // (informativo, não automático) de "já dá pra encher uma chapa juntando
+  // estes pedidos".
+  nUpPeca        Int
+  quantidadePeca Int
+  fracaoFolha    Decimal @db.Decimal(8, 4)
+
+  // Snapshot do que chapa+acerto custariam se este item rodasse SOZINHO
+  // (igual ao que já foi orçado em OrcamentoItem.breakdown.detalhes.chapas/
+  // setup) — usado só pra mostrar "quanto está economizando" na tela depois
+  // de combinado; nunca é o valor efetivamente cobrado (esse é
+  // custoRateado, abaixo).
+  custoChapasIndividual Decimal @db.Decimal(12, 2)
+  custoSetupIndividual  Decimal @db.Decimal(12, 2)
+
+  grupoGangRunId String?
+  // Fatia do GrupoGangRun.custoChapasTotal+custoSetupTotal atribuída a este
+  // item (proporcional a fracaoFolha, ver ratearCustoSetup) — preenchido só
+  // quando status=COMBINADO. O mesmo valor é lançado como CustoPedido
+  // (origem=GANG_RUN) no Pedido deste item.
+  custoRateado   Decimal? @db.Decimal(12, 2)
+
+  criadoEm           DateTime  @default(now())
+  canceladoEm        DateTime?
+  motivoCancelamento String?
+
+  grafica       Grafica       @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamentoItem OrcamentoItem @relation(fields: [orcamentoItemId], references: [id], onDelete: Cascade)
+  pedido        Pedido        @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  grupo         GrupoGangRun? @relation(fields: [grupoGangRunId], references: [id], onDelete: SetNull)
+
+  @@index([graficaId, status])
+  @@index([graficaId, papelId, gramaturaGm2, prensaId, folhaId, corFrente, corVerso, status])
+  @@index([pedidoId])
+  @@map("fila_gang_run")
 }
 
 // Atribuição gráfica-wide (não por Pedido individual) de quem é responsável
