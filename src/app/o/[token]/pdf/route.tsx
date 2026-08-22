@@ -21,7 +21,12 @@ export async function GET(
       // restrita a `select`, pra nunca puxar overhead/margem/comissão (dado
       // comercial interno) pra dentro do processo que gera o PDF público.
       grafica: { include: { parametros: { select: { termosCondicoesPdf: true } } } },
+      // opcaoId: null — o PDF sempre representa a opção-base ("Opção A").
+      // MVP não gera PDF por opção alternativa (ver model OrcamentoOpcao no
+      // schema.prisma); sem este filtro, itens de opções alternativas
+      // apareceriam misturados aqui, inflando o total do PDF.
       itens: {
+        where: { opcaoId: null },
         include: {
           itemGrafica: { include: { itemCatalogo: true } },
           etiqueta: { include: { hotStampings: true } },

@@ -63,6 +63,7 @@ import {
   cancelarReserva,
 } from "@/lib/billing/armazenamento";
 import { calcularPrevisaoAprovacaoPedido, gravarPrevisaoAprovacaoPedido } from "@/lib/pedido-aprovacao";
+import { resolverOpcoesNaAprovacao, descartarOpcoesAlternativas } from "@/lib/orcamento-opcoes";
 import { UNIDADES_DIMENSAO, converterParaCm } from "@/lib/unidade-dimensao";
 import { paraDecimal, type Dec } from "@/lib/pricing/decimal";
 import { montarDadosItemParaRecalculo, calcularDescontoHerdado } from "@/lib/orcamento-duplicar";
@@ -126,15 +127,36 @@ export async function atualizarStatusOrcamento(
         ? dataInputParaUTC(prazoEntregaBruto)
         : undefined;
 
+    // Qual opção o vendedor está aprovando em nome do cliente (ver
+    // src/lib/orcamento-opcoes.ts) — string vazia (orçamento sem opções
+    // alternativas, o caso de sempre; OrcamentoAcoes.tsx só renderiza o
+    // seletor quando existem) vira null, a opção-base. Validada contra o
+    // banco ANTES de qualquer leitura/transação: um id que não pertence a
+    // este orçamento nunca deveria promover nada.
+    const opcaoIdBruto = String(formData.get("opcaoId") || "").trim();
+    const opcaoEscolhidaId = opcaoIdBruto || null;
+    if (opcaoEscolhidaId) {
+      const opcaoValida = await prisma.orcamentoOpcao.findFirst({
+        where: { id: opcaoEscolhidaId, orcamentoId },
+        select: { id: true },
+      });
+      if (!opcaoValida) {
+        return { ok: false, mensagem: "Opção escolhida não encontrada neste orçamento." };
+      }
+    }
+
     // Leitura fora da transação de propósito (mesmo cuidado de avancarPedido
     // em src/app/producao/actions.ts): ficha de custo/comissão não muda por
     // causa de uma corrida de atualizarStatusOrcamento, então não precisa
     // fazer parte da transação — mantém ela curta. Mesmo cuidado vale pra
     // previsaoCusto (fase "custo real", §3.1): a leitura de breakdown/ficha
-    // técnica também não muda por causa desta corrida.
+    // técnica também não muda por causa desta corrida. opcaoId:
+    // opcaoEscolhidaId — sempre os itens da opção ESCOLHIDA (base ou
+    // alternativa), nunca "todos os itens do orçamento" (que incluiria
+    // opções perdedoras, se houver mais de uma).
     const [orcamentoComItens, usuarioVendedor, parametros, previsaoCusto] = await Promise.all([
       prisma.orcamentoItem.findMany({
-        where: { orcamentoId },
+        where: { orcamentoId, opcaoId: opcaoEscolhidaId },
         include: { itemGrafica: { select: { precoCompra: true } } },
       }),
       prisma.usuario.findUnique({
@@ -145,8 +167,17 @@ export async function atualizarStatusOrcamento(
         where: { graficaId: usuario.graficaId },
         select: { comissaoVendedorBase: true },
       }),
-      calcularPrevisaoAprovacaoPedido(orcamentoId, usuario.graficaId),
+      calcularPrevisaoAprovacaoPedido(orcamentoId, usuario.graficaId, undefined, opcaoEscolhidaId),
     ]);
+
+    // Total da opção ESCOLHIDA — nunca orcamento.total direto: antes da
+    // promoção (que só acontece dentro da transação abaixo, via
+    // resolverOpcoesNaAprovacao), orcamento.total ainda reflete só a
+    // opção-base, mesmo que uma alternativa tenha sido a escolhida.
+    const totalEscolhidoNumero = orcamentoComItens.reduce(
+      (soma, item) => soma + Number(item.precoTotal),
+      0
+    );
 
     const percentualVendedor = usuarioVendedor?.comissaoPercent
       ? Number(usuarioVendedor.comissaoPercent)
@@ -170,7 +201,7 @@ export async function atualizarStatusOrcamento(
                   : 0;
               return { precoTotal: Number(item.precoTotal), custoTotal };
             });
-            const valorBase = calcularValorBase(Number(orcamento.total), itensComCusto, baseCalculo);
+            const valorBase = calcularValorBase(totalEscolhidoNumero, itensComCusto, baseCalculo);
             const valorComissao = calcularComissao(valorBase, percentualVendedor);
             return { baseCalculo, valorBase, valorComissao };
           })()
@@ -187,6 +218,15 @@ export async function atualizarStatusOrcamento(
         data: { status: "APROVADO" },
       });
       if (cas.count === 0) return false;
+
+      // Promove a opção escolhida (descarta as outras — ver
+      // src/lib/orcamento-opcoes.ts) e grava o total/nome final ANTES do
+      // upsert de Pedido abaixo, que já depende do total correto.
+      const resolucaoOpcoes = await resolverOpcoesNaAprovacao(tx, { orcamentoId, opcaoEscolhidaId });
+      await tx.orcamento.update({
+        where: { id: orcamentoId },
+        data: { total: resolucaoOpcoes.total, opcaoEscolhidaNome: resolucaoOpcoes.opcaoEscolhidaNome },
+      });
 
       await tx.pedido.upsert({
         where: { orcamentoId },
@@ -273,6 +313,24 @@ export async function atualizarStatusOrcamento(
           })
         );
       }
+    }
+  } else if (novoStatus === "REJEITADO") {
+    // Nenhuma opção foi escolhida — mas o invariante "orçamento em status
+    // terminal nunca tem OrcamentoOpcao" ainda precisa valer (ver
+    // src/lib/orcamento-opcoes.ts). Base nunca é tocada. Precisa de
+    // transação (a CAS sozinha, como as outras transições abaixo, não basta
+    // mais aqui: tem uma segunda escrita condicionada ao mesmo sucesso).
+    const rejeitado = await prisma.$transaction(async (tx) => {
+      const cas = await tx.orcamento.updateMany({
+        where: { id: orcamentoId, status: orcamento.status },
+        data: { status: novoStatus },
+      });
+      if (cas.count === 0) return false;
+      await descartarOpcoesAlternativas(tx, orcamentoId);
+      return true;
+    });
+    if (!rejeitado) {
+      return { ok: false, mensagem: "Este orçamento já teve o status alterado. Atualize a página." };
     }
   } else {
     // ENVIADO precisa da mesma validade calculada em gerarLinkPublico (só
@@ -370,7 +428,11 @@ export async function editarOrcamento(
 
   const orcamento = await prisma.orcamento.findFirst({
     where: { id: orcamentoId, graficaId: usuario.graficaId },
-    include: { itens: { include: { itemGrafica: true } } },
+    // opcaoId: null — esta action só edita a opção-base ("Opção A"). Um item
+    // de opção alternativa (ver model OrcamentoOpcao no schema.prisma) não é
+    // editável incrementalmente; a alternativa inteira é removida e recriada
+    // (ver src/app/orcamento/[id]/opcoes.actions.ts).
+    include: { itens: { where: { opcaoId: null }, include: { itemGrafica: true } } },
   });
   if (!orcamento) {
     return { ok: false, mensagem: "Orçamento não encontrado." };
@@ -572,8 +634,11 @@ export async function editarOrcamento(
           }
         }
 
+        // opcaoId: null — total da opção-base é sempre só a soma dos itens
+        // dela; itens de opções alternativas (ver OrcamentoOpcao) têm seu
+        // próprio total, calculado à parte (ver opcoes.actions.ts).
         const agregado = await tx.orcamentoItem.aggregate({
-          where: { orcamentoId },
+          where: { orcamentoId, opcaoId: null },
           _sum: { precoTotal: true },
         });
         await tx.orcamento.update({
@@ -1375,8 +1440,11 @@ export async function adicionarItemOrcamento(
               : undefined,
           },
         });
+        // opcaoId: null — mesmo cuidado de editarOrcamento acima. Item novo
+        // criado por esta action nunca leva opcaoId (nasce sempre na
+        // opção-base, ver create acima).
         const agregado = await tx.orcamentoItem.aggregate({
-          where: { orcamentoId },
+          where: { orcamentoId, opcaoId: null },
           _sum: { precoTotal: true },
         });
         await tx.orcamento.update({
@@ -1414,7 +1482,10 @@ export async function removerItemOrcamento(
   const orcamentoItemId = String(formData.get("orcamentoItemId"));
 
   const item = await prisma.orcamentoItem.findFirst({
-    where: { id: orcamentoItemId, orcamento: { graficaId: usuario.graficaId } },
+    // opcaoId: null — esta action só remove item da opção-base; um item de
+    // opção alternativa só sai junto da opção inteira (removerOpcaoOrcamento
+    // em opcoes.actions.ts).
+    where: { id: orcamentoItemId, opcaoId: null, orcamento: { graficaId: usuario.graficaId } },
     include: { orcamento: true },
   });
   if (!item) {
@@ -1430,9 +1501,11 @@ export async function removerItemOrcamento(
         // Contagem refeita AQUI DENTRO (não a partir de uma leitura solta) —
         // sob Serializable, duas remoções concorrentes no mesmo orçamento não
         // conseguem as duas passar por essa checagem: uma é abortada com
-        // conflito de serialização (ver catch abaixo).
+        // conflito de serialização (ver catch abaixo). opcaoId: null — só
+        // conta itens da opção-base; ela precisa ter pelo menos 1 item
+        // independente de quantas opções alternativas existirem.
         const quantidadeItens = await tx.orcamentoItem.count({
-          where: { orcamentoId: item.orcamentoId },
+          where: { orcamentoId: item.orcamentoId, opcaoId: null },
         });
         if (quantidadeItens <= 1) {
           throw new ErroUltimoItemOrcamento();
@@ -1441,7 +1514,7 @@ export async function removerItemOrcamento(
         await tx.orcamentoItem.delete({ where: { id: orcamentoItemId } });
 
         const agregado = await tx.orcamentoItem.aggregate({
-          where: { orcamentoId: item.orcamentoId },
+          where: { orcamentoId: item.orcamentoId, opcaoId: null },
           _sum: { precoTotal: true },
         });
         await tx.orcamento.update({
@@ -1515,7 +1588,10 @@ export async function aplicarDescontoItemOrcamento(
   const motivo = String(formData.get("motivo") || "").trim().slice(0, 300);
 
   const item = await prisma.orcamentoItem.findFirst({
-    where: { id: orcamentoItemId, orcamento: { graficaId: usuario.graficaId } },
+    // opcaoId: null — desconto negociado só se aplica na opção-base; uma
+    // opção alternativa não tem edição incremental de item (ver comentário
+    // em removerItemOrcamento acima).
+    where: { id: orcamentoItemId, opcaoId: null, orcamento: { graficaId: usuario.graficaId } },
     include: {
       orcamento: { select: { status: true } },
       itemGrafica: { select: { precoCompra: true } },
@@ -1665,8 +1741,11 @@ export async function aplicarDescontoItemOrcamento(
             aprovadoPorId,
           },
         });
+        // opcaoId: null — mesmo cuidado dos outros três pontos de agregação
+        // deste arquivo (ver editarOrcamento/adicionarItemOrcamento/
+        // removerItemOrcamento acima).
         const agregado = await tx.orcamentoItem.aggregate({
-          where: { orcamentoId: item.orcamentoId },
+          where: { orcamentoId: item.orcamentoId, opcaoId: null },
           _sum: { precoTotal: true },
         });
         await tx.orcamento.update({

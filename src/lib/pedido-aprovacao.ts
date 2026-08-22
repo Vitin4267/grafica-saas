@@ -57,9 +57,12 @@ type ItemParaPrevisao = Prisma.OrcamentoItemGetPayload<{
   };
 }>;
 
-async function buscarItensParaPrevisao(orcamentoId: string): Promise<ItemParaPrevisao[]> {
+async function buscarItensParaPrevisao(
+  orcamentoId: string,
+  opcaoId: string | null
+): Promise<ItemParaPrevisao[]> {
   return prisma.orcamentoItem.findMany({
-    where: { orcamentoId },
+    where: { orcamentoId, opcaoId },
     select: {
       quantidade: true,
       precoTotal: true,
@@ -240,13 +243,20 @@ export type PrevisaoAprovacaoPedido = {
 // aplicado ao cálculo de comissão nos dois pontos de aprovação (ficha de
 // custo não muda por causa de uma corrida desta leitura, então não precisa
 // participar da transação Serializable; mantém ela curta).
+// opcaoId: qual conjunto de itens usar quando o orçamento tem múltiplas
+// opções (ver src/lib/orcamento-opcoes.ts) — null pra opção-base (Opção A,
+// caso de sempre) ou o id da OrcamentoOpcao que o cliente escolheu. Quem
+// chama já resolveu essa escolha ANTES de chegar aqui (ver
+// resolverOpcoesNaAprovacao, chamado antes na mesma transação de aprovação);
+// esta função só lê, nunca decide.
 export async function calcularPrevisaoAprovacaoPedido(
   orcamentoId: string,
   graficaId: string,
-  agora: Date = new Date()
+  agora: Date = new Date(),
+  opcaoId: string | null = null
 ): Promise<PrevisaoAprovacaoPedido> {
   const [itens, resolutor] = await Promise.all([
-    buscarItensParaPrevisao(orcamentoId),
+    buscarItensParaPrevisao(orcamentoId, opcaoId),
     montarResolutorCategoria(graficaId),
   ]);
 

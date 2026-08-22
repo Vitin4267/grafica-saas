@@ -28,6 +28,8 @@ import {
   LIMIAR_MARGEM_ATENCAO,
 } from "@/lib/orcamento-margem";
 import { OrcamentoAcoes } from "./OrcamentoAcoes";
+import { OpcoesOrcamento } from "./OpcoesOrcamento";
+import { MAX_OPCOES_ALTERNATIVAS } from "@/lib/orcamento-opcoes";
 import { EditarOrcamentoForm } from "./EditarOrcamentoForm";
 import { DescontoItemForm } from "./DescontoItemForm";
 import { AdicionarItemForm } from "./AdicionarItemForm";
@@ -85,7 +87,12 @@ export default async function OrcamentoDetalhePage({
         cliente: true,
         pedido: true,
         notaFiscal: true,
+        // opcaoId: null — só a opção-base ("Opção A"). Opções alternativas
+        // (ver model OrcamentoOpcao) vêm à parte, no include `opcoes`
+        // abaixo, com um shape bem mais simples (não precisam de tinta,
+        // preflight etc — são só pra exibir lado a lado com um total).
         itens: {
+          where: { opcaoId: null },
           include: {
             itemGrafica: {
               include: { itemCatalogo: true, configuracaoClicheEtiqueta: { select: { id: true } } },
@@ -94,6 +101,12 @@ export default async function OrcamentoDetalhePage({
             tinta: true,
             acabamentos: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
             precificacaoEtiqueta: true,
+          },
+        },
+        opcoes: {
+          orderBy: { ordem: "asc" },
+          include: {
+            itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
           },
         },
         pagamentos: { orderBy: { createdAt: "desc" } },
@@ -149,6 +162,26 @@ export default async function OrcamentoDetalhePage({
   if (!orcamento) {
     notFound();
   }
+
+  // Opções alternativas (ver model OrcamentoOpcao no schema.prisma) — cada
+  // uma com seu próprio conjunto de itens/total, exibidas lado a lado com a
+  // opção-base. podeAdicionarOpcao segue o mesmo gate de RASCUNHO que o
+  // resto da edição de itens, mais o teto do MVP.
+  const opcoesFormatadas = orcamento.opcoes.map((opcao) => ({
+    id: opcao.id,
+    nome: opcao.nome,
+    total: opcao.total.toString(),
+    itens: opcao.itens.map((item) => ({
+      id: item.id,
+      nome: item.itemGrafica.itemCatalogo.nome,
+      quantidade: item.quantidade,
+      precoTotal: item.precoTotal.toString(),
+    })),
+  }));
+  const podeAdicionarOpcao =
+    orcamento.status === "RASCUNHO" && orcamento.opcoes.length < MAX_OPCOES_ALTERNATIVAS;
+  // "Opção B" na primeira alternativa, "Opção C" na segunda (código 66="B").
+  const proximaSugestaoNomeOpcao = `Opção ${String.fromCharCode(66 + orcamento.opcoes.length)}`;
 
   // Gate de plano do Cálculo de tinta com IA — avaliado uma vez aqui
   // (síncrono) e passado como prop; a Server Action (AnaliseTinta.actions.ts)
@@ -497,7 +530,9 @@ export default async function OrcamentoDetalhePage({
         )}
 
         <Card className="mb-6 flex items-center justify-between p-5">
-          <p className="text-sm font-medium text-slate-500">Total do orçamento</p>
+          <p className="text-sm font-medium text-slate-500">
+            {opcoesFormatadas.length > 0 ? "Total — Opção A" : "Total do orçamento"}
+          </p>
           <p className="text-2xl font-bold text-slate-900 dark:text-white">
             {formatoMoeda.format(Number(orcamento.total))}
           </p>
@@ -524,6 +559,32 @@ export default async function OrcamentoDetalhePage({
               </p>
             )}
           </Card>
+        )}
+
+        {/* Fora de RASCUNHO, opcoesFormatadas fica sempre vazio na prática
+            (resolverOpcoesNaAprovacao/descartarOpcoesAlternativas garantem
+            que nenhum orçamento em status terminal tem OrcamentoOpcao — ver
+            src/lib/orcamento-opcoes.ts) EXCETO em ENVIADO, onde as opções
+            ainda existem aguardando a decisão do cliente — mostradas aqui em
+            modo só-leitura (podeAdicionar sempre false fora de RASCUNHO). */}
+        {(orcamento.status === "RASCUNHO" || opcoesFormatadas.length > 0) && (
+          <OpcoesOrcamento
+            orcamentoId={orcamento.id}
+            opcoes={opcoesFormatadas}
+            podeAdicionar={podeAdicionarOpcao}
+            proximaSugestaoNome={proximaSugestaoNomeOpcao}
+            itensVendaveis={itensVendaveis.map((ig) => ({
+              id: ig.id,
+              nome: ig.itemCatalogo.nome,
+              categoria: ig.itemCatalogo.categoria,
+              precoVenda: ig.precoVenda!.toString(),
+              modeloCalculo: ig.modeloCalculo,
+              usaClicheEtiqueta: ig.configuracaoClicheEtiqueta !== null,
+            }))}
+            acabamentosDisponiveis={acabamentosDisponiveis}
+            papeisDisponiveis={papeisDisponiveis}
+            unidadePadrao={usuario.grafica.unidadePadraoDimensao}
+          />
         )}
 
         <Card className="mb-6 p-5">
@@ -606,7 +667,12 @@ export default async function OrcamentoDetalhePage({
           />
         )}
 
-        <OrcamentoAcoes orcamentoId={orcamento.id} status={orcamento.status} />
+        <OrcamentoAcoes
+          orcamentoId={orcamento.id}
+          status={orcamento.status}
+          opcoes={opcoesFormatadas.map((o) => ({ id: o.id, nome: o.nome, total: o.total }))}
+          totalOpcaoBase={orcamento.total.toString()}
+        />
       </main>
     </div>
   );

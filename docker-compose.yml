@@ -5,9 +5,9 @@ services:
     environment:
       POSTGRES_USER: grafica
       POSTGRES_PASSWORD: grafica
-      POSTGRES_DB: grafica_saas
+      POSTGRES_DB: grafica_saas_pacotes
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
 

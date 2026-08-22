@@ -8,6 +8,7 @@ import { responderOrcamentoPublico } from "./actions";
 export function RespostaPublica({
   token,
   nomeSugerido,
+  opcaoId = null,
 }: {
   token: string;
   // Orcamento.contatoNome, quando cadastrado — pré-preenche o campo pra
@@ -15,6 +16,11 @@ export function RespostaPublica({
   // aprovar (é o botão onde atrito custa mais caro). Continua editável: quem
   // está com o link na mão pode não ser o contato cadastrado.
   nomeSugerido: string | null;
+  // Qual opção está selecionada na aba acima (ver OpcoesPublicasTabs.tsx) —
+  // null/omitido pra opção-base ou orçamento sem opções alternativas (o caso
+  // de sempre). Só importa pra decisao=APROVADO; enviado de qualquer forma
+  // (vazio) na recusa, que ignora o campo.
+  opcaoId?: string | null;
 }) {
   const [state, formAction, isPending] = useActionState(responderOrcamentoPublico, null);
   const [confirmandoRecusa, setConfirmandoRecusa] = useState(false);
@@ -48,6 +54,7 @@ export function RespostaPublica({
             <input type="hidden" name="token" value={token} />
             <input type="hidden" name="decisao" value="APROVADO" />
             <input type="hidden" name="nome" value={nome} />
+            <input type="hidden" name="opcaoId" value={opcaoId ?? ""} />
             <Button type="submit" loading={isPending} disabled={!nomeValido}>
               Aprovar orçamento
             </Button>

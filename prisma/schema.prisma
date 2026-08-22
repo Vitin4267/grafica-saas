@@ -1549,11 +1549,21 @@ model Orcamento {
   // perde a referência.
   duplicadoDeId String?
 
-  grafica      Grafica         @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  cliente      Cliente         @relation(fields: [clienteId], references: [id])
-  usuario      Usuario         @relation(fields: [usuarioId], references: [id])
-  filial       Filial?         @relation(fields: [filialId], references: [id], onDelete: SetNull)
+  // Nome da OrcamentoOpcao (ou "Opção A" pra opção-base) que o cliente
+  // escolheu, congelado no momento da aprovação — só preenchido quando o
+  // orçamento chegou a ter opções alternativas (ver model OrcamentoOpcao).
+  // null pra todo orçamento que nunca teve opção nenhuma (o caso de sempre),
+  // inclusive todo orçamento aprovado ANTES desta feature — snapshot, nunca
+  // uma FK (a OrcamentoOpcao escolhida é apagada na promoção, ver
+  // src/lib/orcamento-opcoes.ts), mesmo princípio de Comissao.baseCalculo.
+  opcaoEscolhidaNome String?
+
+  grafica      Grafica          @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  cliente      Cliente          @relation(fields: [clienteId], references: [id])
+  usuario      Usuario          @relation(fields: [usuarioId], references: [id])
+  filial       Filial?          @relation(fields: [filialId], references: [id], onDelete: SetNull)
   itens        OrcamentoItem[]
+  opcoes       OrcamentoOpcao[]
   pedido       Pedido?
   notaFiscal   NotaFiscal?
   comissao     Comissao?
@@ -1872,9 +1882,58 @@ enum TipoDesconto {
   PRECO_FINAL // usuário digita o preço fechado, sistema deriva o desconto
 }
 
+// Opção alternativa de proposta dentro do MESMO orçamento/link público — ex:
+// "Pacote Econômico" vs. "Pacote Premium", cada uma com seu próprio conjunto
+// de itens e total. A opção-base (o que hoje já é Orcamento.itens/total) NÃO
+// tem uma linha aqui — continua vivendo direto em OrcamentoItem com
+// opcaoId=null, exatamente como todo orçamento desde sempre. Por isso não há
+// migração de dado nenhuma: um orçamento existente simplesmente nunca tem
+// nenhuma OrcamentoOpcao, e o resto do sistema (edição, PDF, link público,
+// aprovação) continua enxergando só a opção-base até o dia em que a gráfica
+// adicionar a primeira opção alternativa (ver adicionarOpcaoOrcamento em
+// src/app/orcamento/[id]/opcoes.actions.ts). MVP: no máximo
+// MAX_OPCOES_ALTERNATIVAS (2) linhas por orçamento — 3 opções no total
+// contando a base (ver src/lib/orcamento-opcoes.ts).
+//
+// Ao aprovar, a opção escolhida pelo cliente (ou pelo vendedor, no painel) é
+// PROMOVIDA: seus itens têm opcaoId zerado (viram a opção-base) e todas as
+// outras opções (e a base perdedora, se uma alternativa foi escolhida) são
+// descartadas — ver resolverOpcoesNaAprovacao em src/lib/orcamento-opcoes.ts.
+// Depois da promoção, o orçamento aprovado é indistinguível de um orçamento
+// de opção única de sempre: Pedido, Comissao, PDF, relatórios e ficha técnica
+// nunca precisam saber que opções existiram. Ao rejeitar, todas as opções
+// alternativas são descartadas do mesmo jeito (só a base permanece) — um
+// orçamento em status terminal (APROVADO/REJEITADO) nunca tem linha aqui.
+model OrcamentoOpcao {
+  id        String   @id @default(cuid())
+  orcamentoId String
+  nome      String // "Opção B", "Pacote Premium" etc — texto livre, editável
+  // Cache = soma de itens.precoTotal, mesmo padrão de Orcamento.total —
+  // mantido em sincronia pela action que cria a opção (criada de uma vez só,
+  // como um carrinho — ver adicionarOpcaoOrcamento; MVP não tem edição
+  // incremental de item dentro de uma opção já criada, só remover a opção
+  // inteira e recriar).
+  total     Decimal  @default(0) @db.Decimal(12, 2)
+  ordem     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orcamento Orcamento       @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+  itens     OrcamentoItem[]
+
+  @@index([orcamentoId])
+  @@map("orcamento_opcoes")
+}
+
 model OrcamentoItem {
   id              String          @id @default(cuid())
   orcamentoId     String
+  // null = pertence à opção-base do orçamento (Orcamento.itens/total de
+  // sempre, "Opção A" na UI) — comportamento de todo item já existente,
+  // sem migração nenhuma. Preenchido = pertence a uma OrcamentoOpcao
+  // alternativa (ver comentário do model acima); orcamentoId continua
+  // apontando pro orçamento-pai nos dois casos, nunca só opcaoId.
+  opcaoId         String?
   itemGraficaId   String
   quantidade      Int
   larguraCm       Decimal?        @db.Decimal(8, 2)
@@ -1921,8 +1980,9 @@ model OrcamentoItem {
   numeroCoresFlexo Int?
   breakdown        Json?
 
-  orcamento   Orcamento   @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
-  itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id])
+  orcamento   Orcamento       @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+  opcao       OrcamentoOpcao? @relation(fields: [opcaoId], references: [id], onDelete: Cascade)
+  itemGrafica ItemGrafica     @relation(fields: [itemGraficaId], references: [id])
 
   acabamentos          OrcamentoItemAcabamento[]
   etiqueta             OrcamentoItemEtiqueta?
@@ -1930,6 +1990,7 @@ model OrcamentoItem {
   precificacaoEtiqueta OrcamentoItemPrecificacaoEtiqueta?
 
   @@index([orcamentoId])
+  @@index([opcaoId])
   @@map("orcamento_itens")
 }
 

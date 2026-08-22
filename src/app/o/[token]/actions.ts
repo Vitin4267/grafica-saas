@@ -20,6 +20,7 @@ import {
 } from "@/lib/email/templates";
 import { assinaturaEstaLiberada } from "@/lib/billing/status";
 import { calcularPrevisaoAprovacaoPedido, gravarPrevisaoAprovacaoPedido } from "@/lib/pedido-aprovacao";
+import { resolverOpcoesNaAprovacao, descartarOpcoesAlternativas } from "@/lib/orcamento-opcoes";
 import { prepararNotificacaoNotaFiscal } from "@/lib/nota-fiscal";
 import { registrarAuditoria } from "@/lib/auditoria";
 
@@ -89,6 +90,13 @@ export async function responderOrcamentoPublico(
   if (motivo.length > MOTIVO_MAX) {
     return { ok: false, mensagem: "Motivo muito longo — resuma em até 2000 caracteres." };
   }
+
+  // Qual opção o cliente está aprovando (ver src/lib/orcamento-opcoes.ts) —
+  // string vazia (orçamento sem opções alternativas, o caso de sempre; ou o
+  // cliente ficou na aba "Opção A") vira null, a opção-base. Só faz sentido
+  // no caminho de aprovação; ignorado na recusa (rejeitar não escolhe nada).
+  const opcaoIdBruto = String(formData.get("opcaoId") ?? "").trim();
+  const opcaoEscolhidaId = opcaoIdBruto || null;
 
   const orcamento = await prisma.orcamento.findUnique({
     where: { linkPublicoToken: token },
@@ -176,16 +184,30 @@ export async function responderOrcamentoPublico(
   const agora = new Date();
 
   if (decisao === "APROVADO") {
+    // Validado ANTES de qualquer leitura pesada — um id que não pertence a
+    // este orçamento nunca deveria promover nada (mesmo cuidado da action
+    // autenticada, atualizarStatusOrcamento).
+    if (opcaoEscolhidaId) {
+      const opcaoValida = await prisma.orcamentoOpcao.findFirst({
+        where: { id: opcaoEscolhidaId, orcamentoId: orcamento.id },
+        select: { id: true },
+      });
+      if (!opcaoValida) {
+        return { ok: false, mensagem: "Opção escolhida não encontrada neste orçamento." };
+      }
+    }
+
     // Leitura fora da transação de propósito (mesmo cuidado de
     // atualizarStatusOrcamento em src/app/orcamento/[id]/actions.ts): ficha de
     // custo/comissão não muda por causa de uma corrida de
     // responderOrcamentoPublico, então não precisa fazer parte da transação —
     // mantém ela curta. Sem usuário autenticado aqui (link público), o
     // vendedor vem de orcamento.usuarioId e os parâmetros da própria gráfica
-    // do orçamento.
+    // do orçamento. opcaoId: opcaoEscolhidaId — sempre os itens da opção
+    // ESCOLHIDA (base ou alternativa), nunca "todos os itens do orçamento".
     const [orcamentoComItens, usuarioVendedor, parametros, previsaoCusto] = await Promise.all([
       prisma.orcamentoItem.findMany({
-        where: { orcamentoId: orcamento.id },
+        where: { orcamentoId: orcamento.id, opcaoId: opcaoEscolhidaId },
         include: { itemGrafica: { select: { precoCompra: true } } },
       }),
       prisma.usuario.findUnique({
@@ -200,8 +222,15 @@ export async function responderOrcamentoPublico(
       // técnica fica FORA da transação (ver fase-custo-real.md §3.1 e
       // src/lib/pedido-aprovacao.ts). Reaproveita o mesmo `agora` desta
       // resposta pra aprovadoEm bater com respostaPublicaEm.
-      calcularPrevisaoAprovacaoPedido(orcamento.id, orcamento.graficaId, agora),
+      calcularPrevisaoAprovacaoPedido(orcamento.id, orcamento.graficaId, agora, opcaoEscolhidaId),
     ]);
+
+    // Total da opção ESCOLHIDA — nunca orcamento.total direto (ver mesmo
+    // comentário em atualizarStatusOrcamento).
+    const totalEscolhidoNumero = orcamentoComItens.reduce(
+      (soma, item) => soma + Number(item.precoTotal),
+      0
+    );
 
     const percentualVendedor = usuarioVendedor?.comissaoPercent
       ? Number(usuarioVendedor.comissaoPercent)
@@ -225,7 +254,7 @@ export async function responderOrcamentoPublico(
                   : 0;
               return { precoTotal: Number(item.precoTotal), custoTotal };
             });
-            const valorBase = calcularValorBase(Number(orcamento.total), itensComCusto, baseCalculo);
+            const valorBase = calcularValorBase(totalEscolhidoNumero, itensComCusto, baseCalculo);
             const valorComissao = calcularComissao(valorBase, percentualVendedor);
             return { baseCalculo, valorBase, valorComissao };
           })()
@@ -241,6 +270,20 @@ export async function responderOrcamentoPublico(
         data: { status: "APROVADO", respostaPublicaNome: nome, respostaPublicaEm: agora },
       });
       if (cas.count === 0) return false;
+
+      // Promove a opção escolhida pelo cliente (descarta as outras — ver
+      // src/lib/orcamento-opcoes.ts) e grava o total/nome final ANTES do
+      // upsert de Pedido abaixo, que já depende do total correto. Mesmo
+      // passo da action autenticada (atualizarStatusOrcamento).
+      const resolucaoOpcoes = await resolverOpcoesNaAprovacao(tx, {
+        orcamentoId: orcamento.id,
+        opcaoEscolhidaId,
+      });
+      await tx.orcamento.update({
+        where: { id: orcamento.id },
+        data: { total: resolucaoOpcoes.total, opcaoEscolhidaNome: resolucaoOpcoes.opcaoEscolhidaNome },
+      });
+
       await tx.pedido.upsert({
         where: { orcamentoId: orcamento.id },
         update: {},
@@ -297,7 +340,7 @@ export async function responderOrcamentoPublico(
       orcamento.grafica.nome,
       orcamento.cliente.nome,
       nome,
-      Number(orcamento.total),
+      totalEscolhidoNumero,
       `${origem}/orcamento/${orcamento.id}`,
       orcamento.grafica.corPrimaria
     );
@@ -340,16 +383,26 @@ export async function responderOrcamentoPublico(
     // deixando status mudado sem motivo registrado. Vazio vira `null`
     // (nunca string vazia) pra distinguir de forma limpa "campo não
     // preenchido" no e-mail e em qualquer tela futura que leia este campo.
-    const cas = await prisma.orcamento.updateMany({
-      where: { id: orcamento.id, status: orcamento.status },
-      data: {
-        status: "REJEITADO",
-        respostaPublicaNome: nome,
-        respostaPublicaEm: agora,
-        respostaPublicaMotivo: motivo || null,
-      },
+    // Transação (não updateMany solto): nenhuma opção foi escolhida, mas o
+    // invariante "orçamento em status terminal nunca tem OrcamentoOpcao"
+    // ainda precisa valer (ver src/lib/orcamento-opcoes.ts) — base nunca é
+    // tocada. Mesmo cuidado do branch REJEITADO da action autenticada
+    // (atualizarStatusOrcamento).
+    const rejeitado = await prisma.$transaction(async (tx) => {
+      const cas = await tx.orcamento.updateMany({
+        where: { id: orcamento.id, status: orcamento.status },
+        data: {
+          status: "REJEITADO",
+          respostaPublicaNome: nome,
+          respostaPublicaEm: agora,
+          respostaPublicaMotivo: motivo || null,
+        },
+      });
+      if (cas.count === 0) return false;
+      await descartarOpcoesAlternativas(tx, orcamento.id);
+      return true;
     });
-    if (cas.count === 0) {
+    if (!rejeitado) {
       return { ok: false, mensagem: "Este orçamento não pode mais ser respondido." };
     }
 
