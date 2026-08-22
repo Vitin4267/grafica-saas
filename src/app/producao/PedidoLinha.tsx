@@ -149,6 +149,21 @@ export function PedidoLinha({
             >
               Ordem de produção (PDF)
             </a>
+            {/* Gate de EDIÇÃO na própria rota (podeEditarModulo, não só
+                podeVerModulo como ordem-producao acima) — escondida aqui
+                pra quem só tem acesso de leitura em vez de deixar clicar e
+                cair num 403 (ver comentário em etiqueta/route.tsx). */}
+            {podeEditar && (
+              <>
+                {" · "}
+                <a
+                  href={`/producao/${pedidoId}/etiqueta`}
+                  className="text-xs text-teal-700 hover:underline dark:text-teal-400"
+                >
+                  Etiqueta com QR (PDF)
+                </a>
+              </>
+            )}
             {/* CUSTOS.podeVer (não PRODUCAO) — mesma prop já usada pra
                 controlar valor/lucro nesta linha (ver fase-custo-real.md
                 §2.6 / PR-5). Link pra /producao/[pedidoId]/fechamento. */}
