@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/Badge";
 import { Logo } from "@/components/Logo";
 import { RespostaPublica } from "./RespostaPublica";
-import { EtiquetaResumo } from "@/app/orcamento/[id]/EtiquetaResumo";
+import { OpcoesPublicasTabs, type OpcaoPublica } from "./OpcoesPublicasTabs";
+import { EtiquetaResumo, type EtiquetaResumoDados } from "@/app/orcamento/[id]/EtiquetaResumo";
 import { converterDeCm, ROTULO_UNIDADE_DIMENSAO } from "@/lib/unidade-dimensao";
 
 const ROTULO_TIPO_PEDIDO: Record<string, string> = {
@@ -31,10 +32,24 @@ export default async function OrcamentoPublicoPage({
     include: {
       cliente: true,
       grafica: true,
+      // opcaoId: null — só a opção-base ("Opção A"). Opções alternativas
+      // (ver model OrcamentoOpcao) vêm à parte, no include `opcoes` abaixo.
       itens: {
+        where: { opcaoId: null },
         include: {
           itemGrafica: { include: { itemCatalogo: true } },
           etiqueta: { include: { hotStampings: true } },
+        },
+      },
+      opcoes: {
+        orderBy: { ordem: "asc" },
+        include: {
+          itens: {
+            include: {
+              itemGrafica: { include: { itemCatalogo: true } },
+              etiqueta: { include: { hotStampings: true } },
+            },
+          },
         },
       },
     },
@@ -45,6 +60,43 @@ export default async function OrcamentoPublicoPage({
   }
 
   const ehPdf = orcamento.arteUrl?.toLowerCase().endsWith(".pdf") ?? false;
+
+  // Mapeia um conjunto de OrcamentoItem (base ou de uma opção alternativa)
+  // pro shape simples que OpcoesPublicasTabs consome — mesmos campos que a
+  // renderização de sempre (abaixo, pro caso sem opções alternativas) usa.
+  function mapearItensParaOpcaoPublica(
+    itens: NonNullable<typeof orcamento>["itens"][number][]
+  ): OpcaoPublica["itens"] {
+    return itens.map((item) => ({
+      id: item.id,
+      nome: item.itemGrafica.itemCatalogo.nome,
+      quantidade: item.quantidade,
+      precoUnitario: item.precoUnitario.toString(),
+      precoTotal: item.precoTotal.toString(),
+      larguraCm: item.larguraCm ? Number(item.larguraCm) : null,
+      alturaCm: item.alturaCm ? Number(item.alturaCm) : null,
+      unidadeDimensao: item.unidadeDimensao,
+      cores: item.cores,
+      acabamento: item.acabamento,
+      etiqueta: item.etiqueta as EtiquetaResumoDados | null,
+    }));
+  }
+
+  // opcao-base sempre em [0] (id: null) — OpcoesPublicasTabs só é renderizado
+  // quando opcoesPublicas.length > 1 é irrelevante pra abas; o gate real é
+  // orcamento.opcoes.length > 0 mais abaixo.
+  const opcoesPublicas: OpcaoPublica[] =
+    orcamento.opcoes.length > 0
+      ? [
+          { id: null, nome: "Opção A", total: orcamento.total.toString(), itens: mapearItensParaOpcaoPublica(orcamento.itens) },
+          ...orcamento.opcoes.map((opcao) => ({
+            id: opcao.id,
+            nome: opcao.nome,
+            total: opcao.total.toString(),
+            itens: mapearItensParaOpcaoPublica(opcao.itens),
+          })),
+        ]
+      : [];
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 dark:bg-slate-950">
@@ -131,34 +183,49 @@ export default async function OrcamentoPublicoPage({
 
         {/* Nunca renderiza item.breakdown aqui — custo de material, margens etc.
             são dado comercial sensível da gráfica, não algo que o cliente final vê. */}
-        <Card className="mb-6 divide-y divide-slate-100 dark:divide-slate-800">
-          {orcamento.itens.map((item) => (
-            <div key={item.id} className="flex flex-col gap-2 p-5">
-              <div className="flex items-center justify-between gap-4">
-                <p className="font-medium text-slate-900 dark:text-white">
-                  {item.itemGrafica.itemCatalogo.nome}
-                </p>
-                <p className="font-semibold text-slate-900 dark:text-white">
-                  {formatoMoeda.format(Number(item.precoTotal))}
-                </p>
+        {opcoesPublicas.length === 0 ? (
+          <Card className="mb-6 divide-y divide-slate-100 dark:divide-slate-800">
+            {orcamento.itens.map((item) => (
+              <div key={item.id} className="flex flex-col gap-2 p-5">
+                <div className="flex items-center justify-between gap-4">
+                  <p className="font-medium text-slate-900 dark:text-white">
+                    {item.itemGrafica.itemCatalogo.nome}
+                  </p>
+                  <p className="font-semibold text-slate-900 dark:text-white">
+                    {formatoMoeda.format(Number(item.precoTotal))}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                  <span>Qtd: {item.quantidade}</span>
+                  {item.larguraCm && item.alturaCm && (
+                    <span>
+                      {converterDeCm(Number(item.larguraCm), item.unidadeDimensao)} ×{" "}
+                      {converterDeCm(Number(item.alturaCm), item.unidadeDimensao)}{" "}
+                      {ROTULO_UNIDADE_DIMENSAO[item.unidadeDimensao]}
+                    </span>
+                  )}
+                  {item.cores && <span>Cores: {item.cores}</span>}
+                  {item.acabamento && <span>Acabamento: {item.acabamento}</span>}
+                  <span>Unitário: {formatoMoeda.format(Number(item.precoUnitario))}</span>
+                </div>
+                {item.etiqueta && <EtiquetaResumo etiqueta={item.etiqueta} />}
               </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-                <span>Qtd: {item.quantidade}</span>
-                {item.larguraCm && item.alturaCm && (
-                  <span>
-                    {converterDeCm(Number(item.larguraCm), item.unidadeDimensao)} ×{" "}
-                    {converterDeCm(Number(item.alturaCm), item.unidadeDimensao)}{" "}
-                    {ROTULO_UNIDADE_DIMENSAO[item.unidadeDimensao]}
-                  </span>
-                )}
-                {item.cores && <span>Cores: {item.cores}</span>}
-                {item.acabamento && <span>Acabamento: {item.acabamento}</span>}
-                <span>Unitário: {formatoMoeda.format(Number(item.precoUnitario))}</span>
-              </div>
-              {item.etiqueta && <EtiquetaResumo etiqueta={item.etiqueta} />}
-            </div>
-          ))}
-        </Card>
+            ))}
+          </Card>
+        ) : (
+          // Múltiplas opções — itens, total E o formulário de resposta ficam
+          // todos dentro de OpcoesPublicasTabs (o opcaoId aprovado tem que
+          // nascer sincronizado com a aba visível). Substitui tanto o Card de
+          // itens quanto o Card de total logo abaixo E a RespostaPublica
+          // solta mais adiante nesta página (ver os dois `length === 0` perto
+          // do fim deste arquivo).
+          <OpcoesPublicasTabs
+            token={token}
+            nomeSugerido={orcamento.contatoNome}
+            opcoes={opcoesPublicas}
+            mostrarResposta={orcamento.status === "ENVIADO" && !orcamentoEstaExpirado(orcamento)}
+          />
+        )}
 
         {orcamento.arteUrl && (
           <Card className="mb-6 flex flex-col items-center gap-4 p-5">
@@ -180,12 +247,14 @@ export default async function OrcamentoPublicoPage({
           </Card>
         )}
 
-        <Card className="mb-6 flex items-center justify-between p-5">
-          <p className="text-sm font-medium text-slate-500">Total</p>
-          <p className="text-2xl font-bold text-slate-900 dark:text-white">
-            {formatoMoeda.format(Number(orcamento.total))}
-          </p>
-        </Card>
+        {opcoesPublicas.length === 0 && (
+          <Card className="mb-6 flex items-center justify-between p-5">
+            <p className="text-sm font-medium text-slate-500">Total</p>
+            <p className="text-2xl font-bold text-slate-900 dark:text-white">
+              {formatoMoeda.format(Number(orcamento.total))}
+            </p>
+          </Card>
+        )}
 
         <a href={`/o/${token}/pdf`} className="mb-6 block">
           <Button type="button" variant="outline" className="w-full">
@@ -199,9 +268,14 @@ export default async function OrcamentoPublicoPage({
             contato com a gráfica para receber um novo.
           </p>
         )}
-        {orcamento.status === "ENVIADO" && !orcamentoEstaExpirado(orcamento) && (
-          <RespostaPublica token={token} nomeSugerido={orcamento.contatoNome} />
-        )}
+        {/* Com opções alternativas, a RespostaPublica já foi renderizada
+            dentro de OpcoesPublicasTabs acima (opcaoId precisa nascer
+            sincronizado com a aba selecionada) — nunca duplicada aqui. */}
+        {opcoesPublicas.length === 0 &&
+          orcamento.status === "ENVIADO" &&
+          !orcamentoEstaExpirado(orcamento) && (
+            <RespostaPublica token={token} nomeSugerido={orcamento.contatoNome} />
+          )}
         {orcamento.status === "APROVADO" && (
           <p className="text-sm text-emerald-600 dark:text-emerald-400">
             {orcamento.respostaPublicaNome

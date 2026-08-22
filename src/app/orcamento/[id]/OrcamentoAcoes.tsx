@@ -4,9 +4,12 @@ import { useActionState, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { Input } from "@/components/ui/Input";
+import { formatoMoeda } from "@/lib/moeda";
 import { CheckCircleIcon } from "@/components/icons";
 import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { atualizarStatusOrcamento, cancelarOrcamento, duplicarOrcamento } from "./actions";
+
+type OpcaoParaAprovar = { id: string; nome: string; total: string };
 
 // Ícone de "aprovado" com um pop de escala rápido e sutil ao aparecer — puro
 // CSS (transition de transform/opacity disparada no frame seguinte ao mount),
@@ -37,11 +40,20 @@ function CheckAprovadoAnimado() {
 export function OrcamentoAcoes({
   orcamentoId,
   status,
+  opcoes = [],
+  totalOpcaoBase,
 }: {
   orcamentoId: string;
   status: string;
+  // Opções alternativas deste orçamento (ver model OrcamentoOpcao) — vazio
+  // pra todo orçamento de opção única, o caso de sempre. Quando não vazio, o
+  // vendedor precisa escolher qual delas está aprovando em nome do cliente
+  // (mesma escolha que o link público oferece, ver src/app/o/[token]).
+  opcoes?: OpcaoParaAprovar[];
+  totalOpcaoBase: string;
 }) {
   const [state, formAction, isPending] = useActionState(atualizarStatusOrcamento, null);
+  const [opcaoEscolhidaId, setOpcaoEscolhidaId] = useState("");
   const [estadoCancelamento, acaoCancelar, cancelandoPending] = useActionState(
     cancelarOrcamento,
     null
@@ -151,31 +163,67 @@ export function OrcamentoAcoes({
       )}
 
       {status === "ENVIADO" && !confirmandoRejeicao && (
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <form action={formAction} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <input type="hidden" name="orcamentoId" value={orcamentoId} />
-            <input type="hidden" name="novoStatus" value="APROVADO" />
+        <div className="flex flex-col gap-3">
+          {opcoes.length > 0 && !aprovacaoAcabouDeAcontecer && (
+            <fieldset className="flex flex-col gap-2 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+              <legend className="px-1 text-xs font-medium text-slate-500">
+                Qual opção o cliente escolheu?
+              </legend>
+              <label className="flex items-center justify-between gap-3 text-sm">
+                <span className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="opcaoEscolhidaRadio"
+                    checked={opcaoEscolhidaId === ""}
+                    onChange={() => setOpcaoEscolhidaId("")}
+                  />
+                  Opção A
+                </span>
+                <span className="text-slate-500">{formatoMoeda.format(Number(totalOpcaoBase))}</span>
+              </label>
+              {opcoes.map((opcao) => (
+                <label key={opcao.id} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="opcaoEscolhidaRadio"
+                      checked={opcaoEscolhidaId === opcao.id}
+                      onChange={() => setOpcaoEscolhidaId(opcao.id)}
+                    />
+                    {opcao.nome}
+                  </span>
+                  <span className="text-slate-500">{formatoMoeda.format(Number(opcao.total))}</span>
+                </label>
+              ))}
+            </fieldset>
+          )}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <form action={formAction} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <input type="hidden" name="orcamentoId" value={orcamentoId} />
+              <input type="hidden" name="novoStatus" value="APROVADO" />
+              <input type="hidden" name="opcaoId" value={opcaoEscolhidaId} />
+              {!aprovacaoAcabouDeAcontecer && (
+                <Input
+                  label="Prazo de entrega (opcional)"
+                  name="prazoEntrega"
+                  type="date"
+                  hint="Se preenchido, um alerta de atraso pode ser disparado depois dessa data."
+                />
+              )}
+              {aprovacaoAcabouDeAcontecer ? (
+                <CheckAprovadoAnimado />
+              ) : (
+                <Button type="submit" loading={isPending}>
+                  Aprovar
+                </Button>
+              )}
+            </form>
             {!aprovacaoAcabouDeAcontecer && (
-              <Input
-                label="Prazo de entrega (opcional)"
-                name="prazoEntrega"
-                type="date"
-                hint="Se preenchido, um alerta de atraso pode ser disparado depois dessa data."
-              />
-            )}
-            {aprovacaoAcabouDeAcontecer ? (
-              <CheckAprovadoAnimado />
-            ) : (
-              <Button type="submit" loading={isPending}>
-                Aprovar
+              <Button type="button" variant="outline" onClick={() => setConfirmandoRejeicao(true)}>
+                Rejeitar
               </Button>
             )}
-          </form>
-          {!aprovacaoAcabouDeAcontecer && (
-            <Button type="button" variant="outline" onClick={() => setConfirmandoRejeicao(true)}>
-              Rejeitar
-            </Button>
-          )}
+          </div>
         </div>
       )}
 

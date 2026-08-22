@@ -13,6 +13,7 @@ import { parseJsonArray } from "@/lib/form-json";
 import { D } from "@/lib/pricing/decimal";
 import { revalidatePath, updateTag } from "next/cache";
 import { UNIDADES_DIMENSAO, converterParaCm } from "@/lib/unidade-dimensao";
+import { itemEntradaSchema, etiquetaEntradaSchema } from "@/lib/orcamento-item-entrada";
 
 // Nunca confia na unidade que vem do formulário/JSON — validada contra as
 // únicas 3 que existem (ver src/lib/unidade-dimensao.ts) antes de converter
@@ -29,147 +30,11 @@ const tipoPedidoSchema = z.enum([
 ]);
 const freteSchema = z.enum(["EMITENTE", "DESTINATARIO"]);
 
-// Detalhe descritivo/de produção de etiqueta (OrcamentoItemEtiqueta) — só
-// relevante quando o item usa modeloCalculo=M2 (flexografia). NÃO entra na
-// conta de preço (ver src/lib/pricing/m2.ts), então esse bloco fica solto do
-// resto do cálculo, só carregado até o create no fim de criarOrcamento.
-const ladoEtiquetaSchema = z.enum(["ROTULO", "CONTRA_ROTULO"]);
-const materialSubstratoSchema = z.enum([
-  "PAPEL_TERMICO",
-  "COUCHE_C_ROT",
-  "BOPP_METALIZADO_ROT",
-  "BOPP_BCO_PEROLIZADO",
-  "BOPP_BCO_FOSCO",
-  "BOPP_TRANSPARENTE",
-  "L2_SEM_ADESIVO",
-  "POLIETILENO_BRANCO",
-  "POLIETILENO_TRANSPARENTE",
-  "POLIESTER_BRANCO",
-  "POLIESTER_TRANSPARENTE",
-  "POLIESTER_CROMO_FOSCO",
-  "ELETROSTATICO_SEM_COLA",
-  "OUTRO",
-]);
-const tipoAdesivoSchema = z.enum([
-  "ACRILICO_20G",
-  "ACRILICO_30G",
-  "BORRACHA_20G",
-  "BORRACHA_25G",
-  "BORRACHA_30G",
-  "BORRACHA_50G",
-  "OUTRO",
-]);
-const superficieAplicacaoSchema = z.enum(["VIDRO", "PLASTICO", "METAL", "PAPEL", "PAPELAO", "OUTROS"]);
-const tipoRotulagemSchema = z.enum(["MANUAL", "AUTOMATICA"]);
-const tipoSerrilhaSchema = z.enum(["SERRILHA", "MICRO_SERRILHA", "GAP", "OUTRO"]);
-const tipoLaminacaoSchema = z.enum(["BRILHO", "FOSCO", "OUTRO"]);
-const tipoAcabamentoVernizSchema = z.enum(["BRILHO", "FOSCO", "RIBBON", "OUTRO"]);
-const tipoHotStampingSchema = z.enum(["HOT", "COLD", "OUTRO"]);
-
-const hotStampingEntradaSchema = z
-  .object({
-    lado: ladoEtiquetaSchema,
-    tipo: tipoHotStampingSchema,
-    tipoOutro: z.string().max(60).nullable(),
-    medida: z.string().max(60).nullable(),
-    cor: z.string().max(60).nullable(),
-  })
-  .refine((dados) => dados.tipo !== "OUTRO" || Boolean(dados.tipoOutro?.trim()), {
-    message: 'Descreva o tipo quando escolher "Outro" como tipo de hot/cold stamping.',
-  });
-
-const etiquetaEntradaSchema = z
-  .object({
-    materialSubstrato: materialSubstratoSchema.nullable(),
-    materialSubstratoOutro: z.string().max(120).nullable(),
-    tipoAdesivo: tipoAdesivoSchema.nullable(),
-    tipoAdesivoOutro: z.string().max(120).nullable(),
-    superficieAplicacao: superficieAplicacaoSchema.nullable(),
-    superficieAplicacaoOutro: z.string().max(120).nullable(),
-    formatoEtiqueta: z.string().max(120).nullable(),
-    coresRotulo: z.number().int().min(0).nullable(),
-    coresContraRotulo: z.number().int().min(0).nullable(),
-    embalagemQtdPorRolo: z.number().int().min(0).nullable(),
-    tubeteMedida: z.string().max(60).nullable(),
-    rotulagem: tipoRotulagemSchema.nullable(),
-    serrilha: tipoSerrilhaSchema.nullable(),
-    serrilhaOutro: z.string().max(120).nullable(),
-    vernizRotuloTotal: z.boolean(),
-    vernizRotuloReserva: z.boolean(),
-    vernizRotuloTipo: tipoAcabamentoVernizSchema.nullable(),
-    vernizRotuloTipoOutro: z.string().max(120).nullable(),
-    vernizContraRotuloTotal: z.boolean(),
-    vernizContraRotuloReserva: z.boolean(),
-    vernizContraRotuloTipo: tipoAcabamentoVernizSchema.nullable(),
-    vernizContraRotuloTipoOutro: z.string().max(120).nullable(),
-    laminacaoRotulo: tipoLaminacaoSchema.nullable(),
-    laminacaoRotuloOutro: z.string().max(120).nullable(),
-    laminacaoContraRotulo: tipoLaminacaoSchema.nullable(),
-    laminacaoContraRotuloOutro: z.string().max(120).nullable(),
-    rebobinamento: z.number().int().min(1).max(8).nullable(),
-    // Teto generoso (ninguém cadastra 20 variações de hot stamping num item de
-    // verdade) só pra impedir um POST forjado com milhares de linhas.
-    hotStampings: hotStampingEntradaSchema.array().max(20),
-  })
-  .refine(
-    (dados) => dados.materialSubstrato !== "OUTRO" || Boolean(dados.materialSubstratoOutro?.trim()),
-    { message: 'Descreva o material quando escolher "Outro" como substrato.' }
-  )
-  .refine((dados) => dados.tipoAdesivo !== "OUTRO" || Boolean(dados.tipoAdesivoOutro?.trim()), {
-    message: 'Descreva o adesivo quando escolher "Outro" como tipo de adesivo.',
-  })
-  .refine(
-    (dados) => dados.superficieAplicacao !== "OUTROS" || Boolean(dados.superficieAplicacaoOutro?.trim()),
-    { message: 'Descreva a superfície quando escolher "Outros" como superfície de aplicação.' }
-  )
-  .refine((dados) => dados.serrilha !== "OUTRO" || Boolean(dados.serrilhaOutro?.trim()), {
-    message: 'Descreva a serrilha quando escolher "Outro" como serrilha.',
-  })
-  .refine(
-    (dados) => dados.vernizRotuloTipo !== "OUTRO" || Boolean(dados.vernizRotuloTipoOutro?.trim()),
-    { message: 'Descreva o acabamento de verniz do rótulo quando escolher "Outro".' }
-  )
-  .refine(
-    (dados) =>
-      dados.vernizContraRotuloTipo !== "OUTRO" || Boolean(dados.vernizContraRotuloTipoOutro?.trim()),
-    { message: 'Descreva o acabamento de verniz do contra-rótulo quando escolher "Outro".' }
-  )
-  .refine((dados) => dados.laminacaoRotulo !== "OUTRO" || Boolean(dados.laminacaoRotuloOutro?.trim()), {
-    message: 'Descreva a laminação do rótulo quando escolher "Outro".',
-  })
-  .refine(
-    (dados) => dados.laminacaoContraRotulo !== "OUTRO" || Boolean(dados.laminacaoContraRotuloOutro?.trim()),
-    { message: 'Descreva a laminação do contra-rótulo quando escolher "Outro".' }
-  );
-
-// Item já digitado/computado no carrinho local (client) — o servidor NUNCA confia
-// nos preços vindos daqui, só nos dados de entrada; recalcula tudo de novo com
-// calcularItemOrcamento antes de gravar (ver criarOrcamento).
-const itemEntradaSchema = z.object({
-  itemGraficaId: z.string().min(1),
-  quantidade: z.number().int().positive().max(1_000_000, "Quantidade não pode passar de 1.000.000 unidades."),
-  // Valor DIGITADO na unidade abaixo — NÃO é necessariamente centímetro (ver
-  // SeletorItemOrcamento.tsx). Convertido pra cm logo no início de
-  // criarOrcamento, antes de qualquer validação/cálculo.
-  largura: z.number().positive().nullable(),
-  altura: z.number().positive().nullable(),
-  unidadeDimensao: unidadeDimensaoSchema,
-  corFrente: z.number().int().nullable(),
-  corVerso: z.number().int().nullable(),
-  // Motor Flexografia — deliberadamente separado de corFrente/corVerso (ver
-  // src/lib/orcamento-precificacao.ts).
-  numeroCoresFlexo: z.number().int().nullable(),
-  cores: z.string().max(60).nullable(),
-  acabamento: z.string().max(200).nullable(),
-  acabamentoIds: z.array(z.string().min(1)).max(20).default([]),
-  etiqueta: etiquetaEntradaSchema.nullable(),
-  // Motor de clichê de etiqueta (só M2 com ConfiguracaoClicheEtiqueta) — ver
-  // src/lib/orcamento-precificacao.ts.
-  papelId: z.string().min(1).nullable(),
-  quantidadeCores: z.number().int().positive().nullable(),
-  custoFaca: z.number().min(0).nullable(),
-  custoFrete: z.number().min(0).nullable(),
-});
+// itemEntradaSchema/etiquetaEntradaSchema (carrinho de itens) vivem em
+// src/lib/orcamento-item-entrada.ts — reaproveitado por
+// adicionarOpcaoOrcamento (src/app/orcamento/[id]/opcoes.actions.ts), que
+// monta um carrinho igual a este pra uma opção alternativa dentro de um
+// orçamento já existente.
 
 export type PrecificarItemResult =
   | {
