@@ -57,8 +57,9 @@ export type PrevisaoBaixaEstoqueResult =
 
 // Leitura pura pra alimentar a tela de confirmação de "Iniciar impressão"
 // (IniciarImpressaoConfirm.tsx) — replica os mesmos gates de avancarPedido
-// (permissão, pedido precisa estar em FILA, arte aprovada) pra nunca abrir
-// uma confirmação que seria rejeitada no submit de qualquer forma.
+// (permissão, pedido precisa estar em CLICHE_FACA — a etapa que baixa
+// estoque ao avançar pra PRODUCAO) pra nunca abrir uma confirmação que seria
+// rejeitada no submit de qualquer forma.
 export async function previsaoBaixaEstoque(pedidoId: string): Promise<PrevisaoBaixaEstoqueResult> {
   const usuario = await exigirUsuarioAutenticado();
   await exigirEmailVerificado(usuario);
@@ -73,14 +74,8 @@ export async function previsaoBaixaEstoque(pedidoId: string): Promise<PrevisaoBa
   if (!pedido) {
     return { ok: false, mensagem: "Pedido não encontrado." };
   }
-  if (pedido.status !== "FILA") {
-    return { ok: false, mensagem: "Este pedido não está na fila de impressão." };
-  }
-  if (pedido.arteUrl && !pedido.arteAprovadaEm) {
-    return {
-      ok: false,
-      mensagem: "A arte precisa ser aprovada pelo cliente antes de iniciar a impressão.",
-    };
+  if (pedido.status !== "CLICHE_FACA") {
+    return { ok: false, mensagem: "Este pedido não está pronto pra iniciar a produção." };
   }
 
   const orcamentoComItens = await buscarOrcamentoParaBaixa(pedido.orcamentoId);
@@ -207,7 +202,7 @@ class ErroPedidoJaAlterado extends Error {}
 
 // Cancela um pedido em qualquer estágio ANTES de ENTREGUE (produto já saiu,
 // cancelar não desfaz uma entrega física — ver comentário no enum
-// StatusPedido) e, se ele já tinha passado por FILA→IMPRESSAO (baixa
+// StatusPedido) e, se ele já tinha passado por CLICHE_FACA→PRODUCAO (baixa
 // automática de estoque, ver avancarPedido acima), ESTORNA automaticamente
 // a matéria-prima decrementada. Essa era a lacuna crítica documentada no
 // comentário de avancarPedido: sem isso, cancelar um pedido em produção
@@ -267,8 +262,9 @@ export async function cancelarPedido(
         // Estorna pelo HISTÓRICO real de saídas (MovimentacaoEstoque), não
         // recalculando pela ficha técnica de novo — a ficha pode ter mudado
         // desde a baixa original, e o histórico é sempre a fonte da verdade
-        // do que de fato foi decrementado. Se o pedido nunca saiu de FILA,
-        // não existe nenhuma SAIDA pra este pedidoId e o loop não faz nada.
+        // do que de fato foi decrementado. Se o pedido nunca saiu de
+        // CLICHE_FACA, não existe nenhuma SAIDA pra este pedidoId e o loop
+        // não faz nada.
         const saidas = await tx.movimentacaoEstoque.findMany({
           where: { pedidoId, tipo: "SAIDA_PRODUCAO" },
         });
@@ -531,13 +527,13 @@ export async function enviarArte(
   if (!pedido) {
     return { ok: false, mensagem: "Pedido não encontrado." };
   }
-  // A tela só mostra este formulário com status === "FILA", mas isso não é
+  // A tela só mostra este formulário com status === "ARTE", mas isso não é
   // proteção real — um POST direto pra esta action com o id de um pedido já
   // ENTREGUE/CANCELADO subiria arte, geraria link de aprovação novo e
   // zeraria arteAprovadaEm pra um pedido que já acabou (ver comentário sobre
   // defesa em profundidade em src/lib/auth/permissoes.ts).
-  if (pedido.status !== "FILA") {
-    return { ok: false, mensagem: "Só é possível enviar/remover arte enquanto o pedido está na fila." };
+  if (pedido.status !== "ARTE") {
+    return { ok: false, mensagem: "Só é possível enviar/remover arte enquanto o pedido está em Arte." };
   }
 
   // Reserva o espaço ANTES do put() — nunca depois, senão um upload rejeitado
@@ -644,9 +640,9 @@ export async function removerArte(
     return { ok: false, mensagem: "Pedido não encontrado." };
   }
   // Mesmo gate de enviarArte acima: a tela só mostra o botão com
-  // status === "FILA", mas isso não é proteção real por si só.
-  if (pedido.status !== "FILA") {
-    return { ok: false, mensagem: "Só é possível enviar/remover arte enquanto o pedido está na fila." };
+  // status === "ARTE", mas isso não é proteção real por si só.
+  if (pedido.status !== "ARTE") {
+    return { ok: false, mensagem: "Só é possível enviar/remover arte enquanto o pedido está em Arte." };
   }
   if (!pedido.arteUrl) {
     return { ok: false, mensagem: "Este pedido não tem arte enviada." };

@@ -19,7 +19,7 @@ vi.mock("next/cache", () => ({
 // Teste de INTEGRAÇÃO de verdade (toca o Postgres de dev via DATABASE_URL,
 // mesmo padrão de src/lib/catalogo-ncm.test.ts) — cobre o critério de
 // aceite do PR-3 da fase "custo real" (fase-custo-real.md §5): geração
-// automática de CustoPedido na baixa Fila→Impressão, idempotência,
+// automática de CustoPedido na baixa Clichê/Faca→Produção, idempotência,
 // possivelDuplicidade sem soma calada, custoAutomaticoConsumo=false
 // preservando o comportamento antigo, e exclusão de custo estornado da
 // soma de lucro/relatórios. Timeout 30s por teste: cada um faz vários
@@ -97,7 +97,13 @@ async function criarFixture(opts?: { custoAutomaticoConsumo?: boolean }): Promis
     },
   });
 
-  const pedido = await prisma.pedido.create({ data: { graficaId: grafica.id, orcamentoId: orcamento.id } });
+  // status explícito CLICHE_FACA (não o @default ARTE) — é a partir daqui
+  // que avancarStatusPedido dispara a baixa automática de estoque (ver
+  // pedidoParaAvanco abaixo, que precisa bater com o status GRAVADO no
+  // banco pro CAS de avancarStatusPedido não zerar linhas).
+  const pedido = await prisma.pedido.create({
+    data: { graficaId: grafica.id, orcamentoId: orcamento.id, status: "CLICHE_FACA" },
+  });
 
   graficaIdsParaLimpar.push(grafica.id);
 
@@ -121,7 +127,7 @@ function pedidoParaAvanco(f: Fixture): PedidoParaAvanco {
     id: f.pedidoId,
     graficaId: f.graficaId,
     orcamentoId: f.orcamentoId,
-    status: "FILA",
+    status: "CLICHE_FACA",
     arteUrl: null,
     arteAprovadaEm: null,
     producaoLinkToken: null,
@@ -167,7 +173,7 @@ afterEach(async () => {
 
 describe("custo automático da baixa de produção (fase custo real, PR-3)", () => {
   it(
-    "gera um CustoPedido CONSUMO_ESTOQUE coerente ao avançar Fila→Impressão, com fallback pra 1ª categoria ativa",
+    "gera um CustoPedido CONSUMO_ESTOQUE coerente ao avançar Clichê/Faca→Produção, com fallback pra 1ª categoria ativa",
     async () => {
       const f = await criarFixture();
       const resultado = await avancarStatusPedido(pedidoParaAvanco(f), perdasJson(f));
@@ -195,9 +201,9 @@ describe("custo automático da baixa de produção (fase custo real, PR-3)", () 
       const primeira = await avancarStatusPedido(pedidoParaAvanco(f), perdasJson(f));
       expect(primeira.ok).toBe(true);
 
-      // Mesmo objeto "stale" (ainda alegando status FILA) — replica duas
-      // abas/clique duplo. O CAS em avancarStatusPedido já barra isso antes
-      // de qualquer criação de MovimentacaoEstoque/CustoPedido nova.
+      // Mesmo objeto "stale" (ainda alegando status CLICHE_FACA) — replica
+      // duas abas/clique duplo. O CAS em avancarStatusPedido já barra isso
+      // antes de qualquer criação de MovimentacaoEstoque/CustoPedido nova.
       const segunda = await avancarStatusPedido(pedidoParaAvanco(f), perdasJson(f));
       expect(segunda.ok).toBe(false);
 

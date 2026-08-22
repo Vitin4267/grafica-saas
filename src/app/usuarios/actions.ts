@@ -329,7 +329,7 @@ export type SalvarResponsaveisEstagioResult = { ok: boolean; mensagem: string };
 // célula) — mas ResponsavelEstagio não tem flag boolean pra fazer upsert em
 // cima (diferente de PermissaoUsuario): a PRESENÇA da linha é o "marcado".
 // Por isso apaga tudo do tenant e recria só o que veio marcado, em vez de
-// upsert por célula — é uma lista pequena (funcionários × 3 etapas), sem
+// upsert por célula — é uma lista pequena (funcionários × 5 etapas), sem
 // histórico a preservar.
 export async function salvarResponsaveisEstagio(
   _estadoAnterior: SalvarResponsaveisEstagioResult | null,

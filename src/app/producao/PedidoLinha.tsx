@@ -73,13 +73,13 @@ export function PedidoLinha({
   podeVerCustos: boolean;
   // Responsável atribuído (ver ResponsavelEstagio) pela etapa ATUAL deste
   // pedido — libera o botão de avançar mesmo sem PRODUCAO.podeEditar
-  // completo. Nunca true pra FILA (não é uma etapa atribuível, ver
-  // ESTAGIOS_ATRIBUIVEIS), então IniciarImpressaoBotao abaixo continua
+  // completo. Nunca true pra ARTE/CLICHE_FACA (não são etapas atribuíveis,
+  // ver ESTAGIOS_ATRIBUIVEIS), então IniciarImpressaoBotao abaixo continua
   // exigindo podeEditar puro.
   souResponsavelDesteStatus: boolean;
   // Nomes de TODOS os funcionários atribuídos como responsável pela etapa
   // ATUAL deste pedido (ver ResponsavelEstagio) — não só o usuário logado.
-  // Sempre [] pra FILA/ENTREGUE/CANCELADO (ver ESTAGIOS_ATRIBUIVEIS).
+  // Sempre [] pra ARTE/CLICHE_FACA/ENTREGUE/CANCELADO (ver ESTAGIOS_ATRIBUIVEIS).
   responsaveisEtapa: string[];
   chipAtraso: ReactNode;
   arteUrl: string | null;
@@ -100,18 +100,21 @@ export function PedidoLinha({
   categoriasCustoAtivas: { id: string; nome: string }[];
   custos: Custo[];
   lucro: number | null;
-  // null quando o pedido ainda está em FILA (entrega ainda não faz sentido,
-  // ver EntregaPedidoSecao.tsx) — a seção inteira nem é renderizada nesse
-  // caso, mesmo critério de "ainda não construído" que o resto da tela usa.
+  // null quando o pedido ainda está em ARTE ou CLICHE_FACA (pré-produção —
+  // entrega ainda não faz sentido, ver EntregaPedidoSecao.tsx e
+  // ESTAGIOS_PRE_PRODUCAO em src/lib/producao-estagios.ts) — a seção inteira
+  // nem é renderizada nesse caso, mesmo critério de "ainda não construído"
+  // que o resto da tela usa.
   entrega: EntregaResumo | null;
 }) {
   const [state, formAction, isPending] = useActionState(cancelarPedido, null);
   const [confirmando, setConfirmando] = useState(false);
   const podeCancelar = status !== "ENTREGUE" && status !== "CANCELADO";
 
-  // FILA é a única transição que baixa estoque (ver avancarPedido) — por
-  // isso é a única que passa por uma tela de confirmação editável em vez do
-  // botão de um clique só que AvancarPedidoButton usa pros outros status.
+  // CLICHE_FACA→PRODUCAO é a única transição que baixa estoque (ver
+  // avancarStatusPedido) — por isso é a única que passa por uma tela de
+  // confirmação editável em vez do botão de um clique só que
+  // AvancarPedidoButton usa pros outros status.
   const iniciarImpressao = useIniciarImpressao(pedidoId);
   const [avancarState, avancarFormAction, avancarPending] = useActionState(avancarPedido, null);
   useAoMudar(avancarState, (estado) => {
@@ -183,7 +186,7 @@ export function PedidoLinha({
         <div className="flex items-center gap-3">
           {chipAtraso}
           <StatusBadge status={status} tipo="pedido" />
-          {status === "FILA"
+          {status === "CLICHE_FACA"
             ? podeEditar && (
                 <IniciarImpressaoBotao estado={iniciarImpressao.estado} onIniciar={iniciarImpressao.iniciar} />
               )
@@ -203,7 +206,7 @@ export function PedidoLinha({
         </div>
       </div>
 
-      {podeEditar && status === "FILA" && (
+      {podeEditar && status === "ARTE" && (
         <EnviarArteForm
           pedidoId={pedidoId}
           arteUrl={arteUrl}
@@ -224,7 +227,7 @@ export function PedidoLinha({
       {/* Nome é declarado, não verificado (ver comentário do prop acima) —
           por isso "aprovada por", nunca "confirmada por". Mostrado
           independente de status/podeEditar: mesmo depois do pedido sair de
-          FILA, "quem aprovou essa arte" continua sendo informação relevante
+          ARTE, "quem aprovou essa arte" continua sendo informação relevante
           numa disputa. */}
       {arteAprovadaEm && arteRespondidaPor && (
         <p className="text-xs text-slate-500">
@@ -245,11 +248,11 @@ export function PedidoLinha({
         podeVer={podeVerCustos}
       />
 
-      {/* Entrega só faz sentido depois que o pedido saiu de FILA (já tem
-          algo físico produzido/em produção) — antes disso a seção nem
-          renderiza, pra não confundir com "criar entrega" num pedido que
-          ainda nem começou. */}
-      {status !== "FILA" && (
+      {/* Entrega só faz sentido depois que o pedido saiu da pré-produção
+          (ARTE/CLICHE_FACA — já tem algo físico produzido/em produção, ver
+          ESTAGIOS_PRE_PRODUCAO) — antes disso a seção nem renderiza, pra não
+          confundir com "criar entrega" num pedido que ainda nem começou. */}
+      {status !== "ARTE" && status !== "CLICHE_FACA" && (
         <EntregaPedidoSecao pedidoId={pedidoId} entrega={entrega} podeEditar={podeEditar} />
       )}
 
@@ -267,7 +270,7 @@ export function PedidoLinha({
       {confirmando && (
         <ConfirmarExclusao
           pergunta={
-            status === "FILA"
+            status === "ARTE" || status === "CLICHE_FACA"
               ? "Cancelar este pedido? Nenhuma matéria-prima foi baixada ainda."
               : "Cancelar este pedido? A matéria-prima já baixada pra produção volta pro estoque automaticamente."
           }

@@ -74,8 +74,8 @@ export async function confirmarEstagioPublico(
   }
 
   // Só as etapas atribuíveis podem ser confirmadas por aqui — mesma regra
-  // de page.tsx (evita confirmar FILA sem a tela de perda de material, e
-  // ENTREGUE/CANCELADO não têm o que confirmar).
+  // de page.tsx (evita confirmar CLICHE_FACA sem a tela de perda de
+  // material, e ENTREGUE/CANCELADO não têm o que confirmar).
   const confirmavel = ESTAGIOS_ATRIBUIVEIS.some((estagio) => estagio.valor === pedido.status);
   if (!confirmavel) {
     return { ok: false, mensagem: "Este pedido não tem nenhuma etapa pra confirmar agora." };

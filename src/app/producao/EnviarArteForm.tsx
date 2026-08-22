@@ -9,7 +9,7 @@ import { CopiarLinkButton } from "@/app/orcamento/[id]/CopiarLinkButton";
 import { validarArquivoArte } from "@/lib/upload-validacao";
 import { enviarArte, removerArte } from "./actions";
 
-// Só aparece com o pedido em FILA (ver PedidoLinha) — gate de negócio real
+// Só aparece com o pedido em ARTE (ver PedidoLinha) — gate de negócio real
 // fica em avancarPedido (producao/actions.ts): aqui é só a UI de enviar o
 // arquivo e compartilhar o link de aprovação, nunca o que decide se a
 // impressão pode começar.

@@ -31,10 +31,10 @@ export default async function ConfirmarEstagioPage({
   }
 
   // Só as etapas atribuíveis têm uma confirmação de verdade pra fazer aqui
-  // (ver ESTAGIOS_ATRIBUIVEIS) — FILA fica de fora de propósito (a
-  // transição que baixa estoque exige a tela de confirmação de perda de
-  // material, não dá pra fazer isso num link sem login), e
-  // ENTREGUE/CANCELADO são terminais.
+  // (ver ESTAGIOS_ATRIBUIVEIS) — ARTE e CLICHE_FACA ficam de fora de
+  // propósito (CLICHE_FACA é a transição que baixa estoque e exige a tela
+  // de confirmação de perda de material, não dá pra fazer isso num link sem
+  // login), e ENTREGUE/CANCELADO são terminais.
   const confirmavel = ESTAGIOS_ATRIBUIVEIS.some((estagio) => estagio.valor === pedido.status);
 
   return (

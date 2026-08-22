@@ -134,8 +134,8 @@ export function AutomacaoForm({
   "graficaNome": "Gráfica Vitor Ltda",
   "clienteNome": "Padaria Bom Pão",
   "clienteTelefone": "5541999998888",
-  "statusAnterior": "IMPRESSAO",
-  "statusNovo": "PRONTO",
+  "statusAnterior": "PRODUCAO",
+  "statusNovo": "ACABAMENTO",
   "orcamentoId": "clx1a2b3c..."
 }`}
           </pre>
@@ -164,7 +164,7 @@ export function AutomacaoForm({
   "graficaNome": "Gráfica Vitor Ltda",
   "clienteNome": "Padaria Bom Pão",
   "clienteTelefone": "5541999998888",
-  "status": "IMPRESSAO",
+  "status": "PRODUCAO",
   "prazoEntrega": "2026-07-10",
   "diasAtraso": 2,
   "orcamentoId": "clx1a2b3c..."

@@ -248,7 +248,7 @@ export async function responderOrcamentoPublico(
         create: {
           graficaId: orcamento.graficaId,
           orcamentoId: orcamento.id,
-          status: "FILA",
+          status: "ARTE",
           producaoLinkToken: randomBytes(20).toString("base64url"),
           // Copia a URL como referência (mesmo comportamento do caminho
           // autenticado em src/app/orcamento/[id]/actions.ts) — o arquivo

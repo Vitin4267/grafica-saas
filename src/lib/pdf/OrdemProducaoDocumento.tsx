@@ -41,10 +41,13 @@ export type DadosPdfOrdemProducao = {
 };
 
 const ROTULO_STATUS: Record<string, string> = {
-  FILA: "Na fila",
-  IMPRESSAO: "Impressão",
+  ARTE: "Arte",
+  CLICHE_FACA: "Clichê/Faca",
+  PRODUCAO: "Produção",
   ACABAMENTO: "Acabamento",
-  PRONTO: "Pronto",
+  CONFERENCIA: "Conferência",
+  EMBALAGEM: "Embalagem",
+  EXPEDICAO: "Expedição",
   ENTREGUE: "Entregue",
   CANCELADO: "Cancelado",
 };

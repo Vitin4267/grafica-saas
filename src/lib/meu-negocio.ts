@@ -2,6 +2,7 @@ import "server-only";
 
 import { prisma } from "@/lib/prisma";
 import { ROTULOS_STATUS_ORCAMENTO, type StatusOrcamento } from "@/lib/orcamento-status";
+import { SEQUENCIA_STATUS_PEDIDO, ROTULOS_STATUS_PEDIDO } from "@/lib/producao-estagios";
 import { calcularPrevisaoEstoque } from "@/lib/previsao-estoque-db";
 import { LIMITE_DIAS_ALERTA } from "@/lib/previsao-estoque";
 import { D } from "@/lib/pricing/decimal";
@@ -46,15 +47,11 @@ const ORDEM_STATUS_ORCAMENTO: StatusOrcamento[] = [
   "REJEITADO",
 ];
 
-const ORDEM_STATUS_PEDIDO = ["FILA", "IMPRESSAO", "ACABAMENTO", "PRONTO", "ENTREGUE"] as const;
-
-const ROTULOS_STATUS_PEDIDO: Record<(typeof ORDEM_STATUS_PEDIDO)[number], string> = {
-  FILA: "Na fila",
-  IMPRESSAO: "Impressão",
-  ACABAMENTO: "Acabamento",
-  PRONTO: "Pronto",
-  ENTREGUE: "Entregue",
-};
+// Reaproveita a sequência/rótulos canônicos de src/lib/producao-estagios.ts
+// (fonte de verdade única do StatusPedido) — não duplica os 8 estágios
+// aqui. CANCELADO fica de fora do funil de pipeline por vir de fora da
+// sequência linear (mesmo raciocínio de SEQUENCIA_STATUS_PEDIDO).
+const ORDEM_STATUS_PEDIDO = SEQUENCIA_STATUS_PEDIDO;
 
 export type FaixaStatus = { status: string; rotulo: string; quantidade: number };
 
