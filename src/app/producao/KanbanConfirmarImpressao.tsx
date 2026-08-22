@@ -6,13 +6,13 @@ import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { useIniciarImpressao, PainelConfirmacaoImpressao } from "./IniciarImpressaoConfirm";
 import { avancarPedido } from "./actions";
 
-// Solta um card de "Fila" em "Impressão" no Kanban precisa abrir EXATAMENTE
-// o mesmo fluxo que IniciarImpressaoBotao usa na visão de lista (ver
-// PedidoLinha.tsx) — FILA→IMPRESSAO baixa estoque automaticamente e pode
-// envolver ajuste de perda de material, nunca é um "solta e pronto" como as
-// outras transições. Reaproveita o hook e o painel de confirmação já
-// existentes (useIniciarImpressao / PainelConfirmacaoImpressao), só troca o
-// empacotamento visual — painel inline na linha vira modal aqui.
+// Solta um card de "Clichê/Faca" em "Produção" no Kanban precisa abrir
+// EXATAMENTE o mesmo fluxo que IniciarImpressaoBotao usa na visão de lista
+// (ver PedidoLinha.tsx) — CLICHE_FACA→PRODUCAO baixa estoque
+// automaticamente e pode envolver ajuste de perda de material, nunca é um
+// "solta e pronto" como as outras transições. Reaproveita o hook e o painel
+// de confirmação já existentes (useIniciarImpressao / PainelConfirmacaoImpressao),
+// só troca o empacotamento visual — painel inline na linha vira modal aqui.
 export function ModalConfirmarImpressao({
   pedidoId,
   onFechar,

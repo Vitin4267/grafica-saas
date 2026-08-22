@@ -5,18 +5,19 @@ import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { confirmarEstagioPublico } from "./actions";
 
-// Frase de confirmação por etapa — "Confirmar {rotulo.toLowerCase()} pronta"
-// soava natural só pra Impressão ("confirmar impressão pronta"); nas outras
-// duas dava "confirmar acabamento pronta" (concordância errada) e "confirmar
-// pronto pronta" (redundante/sem sentido, já que o rótulo da etapa PRONTO já
-// é "Pronto"). Chaveado pelo rótulo (e não pelo StatusPedido) porque é só o
-// que esse componente recebe de page.tsx — os 3 valores vêm de
+// Frase de confirmação por etapa — mesmo raciocínio de
+// FRASES_CONFIRMACAO_ESTAGIO em src/lib/email/templates.ts (concordância de
+// gênero e sentido variam por rótulo, nunca dá pra interpolar
+// genericamente). Chaveado pelo rótulo (e não pelo StatusPedido) porque é só
+// o que esse componente recebe de page.tsx — os 5 valores vêm de
 // ESTAGIOS_ATRIBUIVEIS em producao-estagios.ts. Fallback genérico cobre uma
 // eventual etapa nova sem quebrar a build.
 const FRASES_CONFIRMACAO: Record<string, string> = {
-  Impressão: "Confirmar impressão concluída",
+  Produção: "Confirmar produção concluída",
   Acabamento: "Confirmar acabamento concluído",
-  Pronto: "Confirmar pedido pronto",
+  Conferência: "Confirmar conferência concluída",
+  Embalagem: "Confirmar embalagem concluída",
+  Expedição: "Confirmar pedido expedido",
 };
 
 export function ConfirmarEstagioPublico({

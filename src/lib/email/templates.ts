@@ -219,20 +219,21 @@ export function templateArteAprovada(
 // etapa — diferente de templateArteAprovada/templateArteAlteracaoSolicitada,
 // que sempre vão pro(s) DONO(s). linkConfirmar é o link evergreen
 // /p/[token] (sem login) que confirma a etapa atual e avança o pedido.
-// "Confirmar {rotulo.toLowerCase()} pronta" só soava natural pra Impressão
-// ("confirmar impressão pronta"); nas outras duas etapas dava "confirmar
-// acabamento pronta" (concordância errada, "acabamento" é masculino) e
-// "confirmar pronto pronta" (redundante — o rótulo da etapa PRONTO já é
-// "Pronto"). Chaveado pelo rótulo (não pelo StatusPedido) porque é só o que
-// esta função recebe — o call site (avancarStatusPedido em
-// producao/status-transicao.ts) passa ROTULOS_STATUS_PEDIDO[proximoStatus],
-// e os 3 valores possíveis vêm de ESTAGIOS_ATRIBUIVEIS em
-// producao-estagios.ts. Fallback genérico cobre uma eventual etapa nova sem
-// quebrar o envio do e-mail.
+// "Confirmar {rotulo.toLowerCase()} pronta/concluída" não soa natural em
+// todos os 5 rótulos (concordância de gênero varia, e "Expedição"/
+// "Conferência" pedem frase diferente de "concluído/a") — por isso cada um
+// tem frase própria em vez de interpolar o rótulo cru. Chaveado pelo rótulo
+// (não pelo StatusPedido) porque é só o que esta função recebe — o call
+// site (avancarStatusPedido em producao/status-transicao.ts) passa
+// ROTULOS_STATUS_PEDIDO[proximoStatus], e os 5 valores possíveis vêm de
+// ESTAGIOS_ATRIBUIVEIS em producao-estagios.ts. Fallback genérico cobre uma
+// eventual etapa nova sem quebrar o envio do e-mail.
 const FRASES_CONFIRMACAO_ESTAGIO: Record<string, string> = {
-  Impressão: "Confirmar impressão concluída",
+  Produção: "Confirmar produção concluída",
   Acabamento: "Confirmar acabamento concluído",
-  Pronto: "Confirmar pedido pronto",
+  Conferência: "Confirmar conferência concluída",
+  Embalagem: "Confirmar embalagem concluída",
+  Expedição: "Confirmar pedido expedido",
 };
 
 export function templateEstagioResponsavel(

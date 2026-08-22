@@ -115,7 +115,7 @@ async function criarFixture(opts: {
     data: {
       graficaId: grafica.id,
       orcamentoId: orcamento.id,
-      status: "FILA",
+      status: "ARTE",
       prazoEntrega: prazoEmDias(opts.diasAtePrazo),
       alertaPrazoUltimoLimiarDias: opts.alertaPrazoUltimoLimiarDias ?? null,
     },

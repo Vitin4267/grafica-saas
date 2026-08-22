@@ -32,10 +32,13 @@ const CORES_BARRA_ORCAMENTO: Record<string, string> = {
 };
 
 const CORES_BARRA_PEDIDO: Record<string, string> = {
-  FILA: "bg-slate-300 dark:bg-slate-600",
-  IMPRESSAO: "bg-blue-500",
+  ARTE: "bg-slate-300 dark:bg-slate-600",
+  CLICHE_FACA: "bg-orange-500",
+  PRODUCAO: "bg-blue-500",
   ACABAMENTO: "bg-amber-500",
-  PRONTO: "bg-violet-500",
+  CONFERENCIA: "bg-violet-500",
+  EMBALAGEM: "bg-indigo-500",
+  EXPEDICAO: "bg-cyan-500",
   ENTREGUE: "bg-emerald-500",
 };
 

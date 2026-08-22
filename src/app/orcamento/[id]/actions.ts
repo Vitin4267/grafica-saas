@@ -194,7 +194,7 @@ export async function atualizarStatusOrcamento(
         create: {
           graficaId: usuario.graficaId,
           orcamentoId,
-          status: "FILA",
+          status: "ARTE",
           prazoEntrega,
           producaoLinkToken: randomBytes(20).toString("base64url"),
           // Copia a URL como referência — o arquivo continua "pertencendo"

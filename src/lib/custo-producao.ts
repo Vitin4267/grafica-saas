@@ -1,6 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
+import { ESTAGIOS_PRE_PRODUCAO } from "@/lib/producao-estagios";
 
 export type ItemCustoComparado = {
   materiaPrimaId: string;
@@ -48,9 +49,10 @@ export async function buscarCustoRealVsOrcado(
     },
   });
 
-  // Baixa de estoque só acontece na transição FILA→IMPRESSAO — antes disso
-  // não há consumo real pra comparar.
-  if (!pedido || pedido.status === "FILA") {
+  // Baixa de estoque só acontece na transição CLICHE_FACA→PRODUCAO — antes
+  // disso (ARTE ou CLICHE_FACA, ver ESTAGIOS_PRE_PRODUCAO) não há consumo
+  // real pra comparar.
+  if (!pedido || ESTAGIOS_PRE_PRODUCAO.includes(pedido.status)) {
     return null;
   }
 

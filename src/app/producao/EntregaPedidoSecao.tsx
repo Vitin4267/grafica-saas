@@ -116,8 +116,9 @@ function FormularioAvancoEntrega({ entrega }: { entrega: EntregaResumo }) {
 // texto livre de Orcamento.frete/transportadora/localEntrega por algo com
 // histórico e auditoria. Fica dentro de um <details> (mesmo padrão de
 // CustosPedidoSecao.tsx) e só é renderizada pelo pai (PedidoLinha.tsx)
-// quando o pedido já saiu de FILA (está em produção ou pronto/entregue) —
-// antes disso não há nada físico ainda pra sair pra entrega.
+// quando o pedido já saiu da pré-produção (ARTE/CLICHE_FACA, ver
+// ESTAGIOS_PRE_PRODUCAO em src/lib/producao-estagios.ts) — antes disso não
+// há nada físico ainda pra sair pra entrega.
 export function EntregaPedidoSecao({
   pedidoId,
   entrega,

@@ -237,8 +237,8 @@ export async function avancarStatusPedido(
   // Gate opt-in: só bloqueia se ESTA gráfica enviou uma arte pra este
   // pedido (arteUrl preenchido) — pedidos sem arte enviada avançam
   // normalmente, sem exigir nada novo. Uma vez enviada, exige aprovação do
-  // cliente (ver /a/[token]) antes de sair de FILA.
-  if (pedido.status === "FILA" && pedido.arteUrl && !pedido.arteAprovadaEm) {
+  // cliente (ver /a/[token]) antes de sair de ARTE.
+  if (pedido.status === "ARTE" && pedido.arteUrl && !pedido.arteAprovadaEm) {
     return {
       ok: false,
       mensagem: "A arte precisa ser aprovada pelo cliente antes de iniciar a impressão.",
@@ -247,10 +247,10 @@ export async function avancarStatusPedido(
 
   const indiceAtual = SEQUENCIA_STATUS_PEDIDO.indexOf(pedido.status);
   if (indiceAtual === -1) {
-    // Defensivo: hoje inalcançável (status é enum do banco restrito aos 5
-    // valores de SEQUENCIA_STATUS_PEDIDO), mas sem essa checagem um status
-    // fora da lista faria [-1+1] resolver silenciosamente pro índice 0
-    // ("FILA") — regredindo o pedido em vez de dar erro.
+    // Defensivo: hoje inalcançável (status é enum do banco restrito aos 8
+    // valores de SEQUENCIA_STATUS_PEDIDO, fora CANCELADO), mas sem essa
+    // checagem um status fora da lista faria [-1+1] resolver silenciosamente
+    // pro índice 0 ("ARTE") — regredindo o pedido em vez de dar erro.
     return { ok: false, mensagem: "Status do pedido inválido." };
   }
   if (indiceAtual === SEQUENCIA_STATUS_PEDIDO.length - 1) {
@@ -265,10 +265,11 @@ export async function avancarStatusPedido(
   const automacao = await buscarAutomacaoGrafica(pedido.graficaId);
 
   try {
-    // Baixa automática de estoque: só na entrada em produção física (FILA→IMPRESSAO),
-    // e só nessa transição específica. Sem mecanismo de estorno automático aqui —
-    // ver cancelarPedido em producao/actions.ts, que cobre isso.
-    if (pedido.status === "FILA" && proximoStatus === "IMPRESSAO") {
+    // Baixa automática de estoque: só na entrada em produção física
+    // (CLICHE_FACA→PRODUCAO), e só nessa transição específica. Sem
+    // mecanismo de estorno automático aqui — ver cancelarPedido em
+    // producao/actions.ts, que cobre isso.
+    if (pedido.status === "CLICHE_FACA" && proximoStatus === "PRODUCAO") {
       // Leitura só-consulta (ficha técnica não muda por causa de uma corrida
       // desta função) — fica FORA da transação de propósito, pra manter a
       // transação curta e reduzir chance de conflito de serialização. O
@@ -393,7 +394,7 @@ export async function avancarStatusPedido(
           // descontarem o estoque duas vezes: se outra requisição concorrente
           // já mudou o status entre a leitura lá em cima e aqui, count vem 0
           // e abortamos — em vez de decrementar de novo por cima de um pedido
-          // que já não está mais em FILA.
+          // que já não está mais em CLICHE_FACA.
           const resultado = await tx.pedido.updateMany({
             where: { id: pedido.id, status: statusAnterior },
             data: { status: proximoStatus },
@@ -708,7 +709,7 @@ export async function avancarStatusPedido(
   }
 
   // E-mail aos responsáveis pela etapa que o pedido acabou de ENTRAR — só
-  // pras 3 etapas atribuíveis (ver ESTAGIOS_ATRIBUIVEIS); ENTREGUE nunca
+  // pras 5 etapas atribuíveis (ver ESTAGIOS_ATRIBUIVEIS); ENTREGUE nunca
   // dispara isso porque não há mais nenhuma transição a confirmar depois.
   if (ESTAGIOS_ATRIBUIVEIS.some((estagio) => estagio.valor === proximoStatus)) {
     const responsaveis = await prisma.usuario.findMany({

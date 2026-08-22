@@ -2119,16 +2119,32 @@ model OrcamentoItemAcabamento {
   @@map("orcamento_item_acabamentos")
 }
 
+// FSM linear completa do Pedido (visão de produto 2026-08-21): Arte →
+// Clichê/Faca → Produção → Acabamento → Conferência → Embalagem → Expedição
+// → Entregue — os dois estágios anteriores (Orçamento/Aprovado) são
+// StatusOrcamento, não entram aqui, porque um Pedido só nasce quando o
+// Orçamento já está Aprovado. Expandido de 5 pros 8 estágios abaixo (mais
+// CANCELADO) na migration 20260821230000_expande_status_pedido_10_etapas via
+// ALTER TYPE RENAME VALUE (não recriação do enum): FILA→ARTE,
+// IMPRESSAO→PRODUCAO, PRONTO→EXPEDICAO preservam o dado de pedidos
+// existentes automaticamente; CLICHE_FACA/CONFERENCIA/EMBALAGEM são
+// estágios novos, sem pedido nenhum neles até que algum avance até lá pela
+// primeira vez. Ver SEQUENCIA_STATUS_PEDIDO em src/lib/producao-estagios.ts
+// pra ordem canônica (a ordem de declaração aqui só espelha ela, não é a
+// fonte de verdade — a aplicação nunca depende de ordem de enum do Postgres).
 enum StatusPedido {
-  FILA
-  IMPRESSAO
+  ARTE
+  CLICHE_FACA
+  PRODUCAO
   ACABAMENTO
-  PRONTO
+  CONFERENCIA
+  EMBALAGEM
+  EXPEDICAO
   ENTREGUE
   // Terminal, assim como ENTREGUE — mas ao contrário dela, cancelar um
-  // pedido que já passou por FILA→IMPRESSAO estorna automaticamente a
+  // pedido que já passou por Clichê/Faca→Produção estorna automaticamente a
   // matéria-prima baixada (ver cancelarPedido em src/app/producao/actions.ts).
-  // Só alcançável a partir de FILA/IMPRESSAO/ACABAMENTO/PRONTO — nunca de
+  // Alcançável a partir de qualquer estágio ANTES de ENTREGUE — nunca de
   // ENTREGUE (produto já saiu, cancelar não desfaz uma entrega física).
   CANCELADO
 }
@@ -2138,7 +2154,7 @@ model Pedido {
   id          String       @id @default(cuid())
   graficaId   String
   orcamentoId String       @unique
-  status      StatusPedido @default(FILA)
+  status      StatusPedido @default(ARTE)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
@@ -2240,11 +2256,13 @@ enum StatusEntrega {
 // Status ESTRUTURADO da entrega física de um pedido — substitui o texto
 // livre que hoje só existe em Orcamento.frete/transportadora/localEntrega
 // (preenchido uma vez na aprovação do orçamento, nunca mais atualizado).
-// 1:1 com Pedido (não com Orcamento): entrega só faz sentido depois que o
-// pedido existe e está em produção/pronto — ver StatusPedido.PRONTO. Não
-// confundir com StatusPedido.ENTREGUE (que marca a PRODUÇÃO como concluída
-// e fora da fila) — este model é o rastreamento OPERACIONAL da entrega em
-// si (motorista, quando saiu, quando chegou), independente e mais granular.
+// 1:1 com Pedido (não com Orcamento): entrega só faz sentido depois que a
+// produção física começou — ver ESTAGIOS_PRE_PRODUCAO em
+// src/lib/producao-estagios.ts (Arte/Clichê-Faca ainda não têm nada físico
+// pra rastrear). Não confundir com StatusPedido.ENTREGUE (que marca a
+// PRODUÇÃO como concluída e fora da fila) — este model é o rastreamento
+// OPERACIONAL da entrega em si (motorista, quando saiu, quando chegou),
+// independente e mais granular.
 model Entrega {
   id        String        @id @default(cuid())
   graficaId String
@@ -2396,10 +2414,12 @@ model PedidoCustoPrevisto {
 // avancarStatusPedido em src/app/producao/status-transicao.ts), (2) bypass
 // de permissão pra confirmar em app sem precisar de PRODUCAO.podeEditar
 // completo (ver podeConfirmarEstagio em src/lib/auth/permissoes.ts). Só
-// cobre as 3 etapas "vivas" atribuíveis (IMPRESSAO/ACABAMENTO/PRONTO, ver
-// ESTAGIOS_ATRIBUIVEIS) — FILA fica de fora (decisão do produto: evita
-// expor a tela de perda de material do estoque a um link sem login) e
-// ENTREGUE/CANCELADO são terminais, sem transição de "confirmar" alguma.
+// cobre as 5 etapas "vivas" atribuíveis (PRODUCAO/ACABAMENTO/CONFERENCIA/
+// EMBALAGEM/EXPEDICAO, ver ESTAGIOS_ATRIBUIVEIS) — ARTE (estágio inicial) e
+// CLICHE_FACA (etapa que baixa matéria-prima do estoque ao ser deixada)
+// ficam de fora (decisão do produto: evita expor a tela de perda de
+// material do estoque a um link sem login) e ENTREGUE/CANCELADO são
+// terminais, sem transição de "confirmar" alguma.
 model ResponsavelEstagio {
   id        String       @id @default(cuid())
   usuarioId String

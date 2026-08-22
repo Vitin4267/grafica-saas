@@ -38,7 +38,7 @@ export type PedidoKanban = {
   lucro: number | null;
   // Responsável atribuído (ResponsavelEstagio) pela etapa ATUAL deste
   // pedido — mesmo campo que libera AvancarPedidoButton em PedidoLinha.tsx
-  // sem PRODUCAO.podeEditar completo. Nunca relevante pra FILA.
+  // sem PRODUCAO.podeEditar completo. Nunca relevante pra ARTE/CLICHE_FACA.
   souResponsavelDesteStatus: boolean;
 };
 
@@ -47,11 +47,12 @@ export type PedidoKanban = {
 // porque pedidosKanban (montado na page) já nem inclui esses status.
 const COLUNAS: StatusPedido[] = SEQUENCIA_STATUS_PEDIDO.filter((status) => status !== "ENTREGUE");
 
-// A máquina de estado é linear e só anda pra frente (StatusPedido: FILA →
-// IMPRESSAO → ACABAMENTO → PRONTO → ENTREGUE) — este é o único lugar do
-// Kanban que decide "pra onde este card pode ir", reaproveitando a mesma
-// sequência que avancarStatusPedido usa no servidor (defesa em profundidade,
-// não a única linha de defesa: o servidor rejeita de qualquer forma).
+// A máquina de estado é linear e só anda pra frente (StatusPedido: ARTE →
+// CLICHE_FACA → PRODUCAO → ACABAMENTO → CONFERENCIA → EMBALAGEM →
+// EXPEDICAO → ENTREGUE) — este é o único lugar do Kanban que decide "pra
+// onde este card pode ir", reaproveitando a mesma sequência que
+// avancarStatusPedido usa no servidor (defesa em profundidade, não a única
+// linha de defesa: o servidor rejeita de qualquer forma).
 function proximoStatus(status: StatusPedido): StatusPedido | null {
   const indice = SEQUENCIA_STATUS_PEDIDO.indexOf(status);
   if (indice === -1 || indice === SEQUENCIA_STATUS_PEDIDO.length - 1) return null;
@@ -59,12 +60,13 @@ function proximoStatus(status: StatusPedido): StatusPedido | null {
 }
 
 // Mesma regra de permissão que já decide se PedidoLinha.tsx mostra
-// IniciarImpressaoBotao/AvancarPedidoButton — FILA não é uma etapa
-// "atribuível" (ver ESTAGIOS_ATRIBUIVEIS em lib/producao-estagios.ts), então
-// só quem tem PRODUCAO.podeEditar completo pode iniciar a impressão. Nas
-// outras colunas, um responsável só por aquela etapa também pode arrastar.
+// IniciarImpressaoBotao/AvancarPedidoButton — ARTE e CLICHE_FACA não são
+// etapas "atribuíveis" (ver ESTAGIOS_ATRIBUIVEIS em
+// lib/producao-estagios.ts), então só quem tem PRODUCAO.podeEditar completo
+// pode arrastar esses dois cards. Nas outras colunas, um responsável só por
+// aquela etapa também pode arrastar.
 function podeArrastar(pedido: PedidoKanban, podeEditar: boolean): boolean {
-  if (pedido.status === "FILA") return podeEditar;
+  if (pedido.status === "ARTE" || pedido.status === "CLICHE_FACA") return podeEditar;
   return podeEditar || pedido.souResponsavelDesteStatus;
 }
 
@@ -80,7 +82,8 @@ export function KanbanBoard({
   // Nomes de quem está atribuído a cada etapa (ver ResponsavelEstagio,
   // configurado em /usuarios) — mostrado no cabeçalho da coluna, já que é
   // uma característica da ETAPA, não de um pedido individual. Sempre
-  // ausente/[] pra FILA (não é etapa atribuível, ver ESTAGIOS_ATRIBUIVEIS).
+  // ausente/[] pra ARTE/CLICHE_FACA (não são etapas atribuíveis, ver
+  // ESTAGIOS_ATRIBUIVEIS).
   responsaveisPorEtapa: Partial<Record<StatusPedido, string[]>>;
 }) {
   // Status otimista aplicado localmente enquanto a Server Action ainda não
@@ -193,11 +196,11 @@ export function KanbanBoard({
     if (!proximo || destino !== proximo) return;
     if (!podeArrastar(pedido, podeEditar)) return;
 
-    // FILA→IMPRESSAO baixa estoque automaticamente e pode envolver perda de
-    // material — precisa abrir o MESMO fluxo de confirmação que
+    // CLICHE_FACA→PRODUCAO baixa estoque automaticamente e pode envolver
+    // perda de material — precisa abrir o MESMO fluxo de confirmação que
     // IniciarImpressaoBotao usa na lista (ver KanbanConfirmarImpressao.tsx),
     // nunca completar a transição direto feito as outras.
-    if (statusAtual === "FILA" && proximo === "IMPRESSAO") {
+    if (statusAtual === "CLICHE_FACA" && proximo === "PRODUCAO") {
       setPedidoConfirmando(pedidoId);
       return;
     }

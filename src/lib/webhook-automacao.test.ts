@@ -96,8 +96,8 @@ describe("dispararEventoAutomacao", () => {
         graficaNome: "Gráfica Teste",
         clienteNome: "Cliente Teste",
         clienteTelefone: null,
-        statusAnterior: "FILA",
-        statusNovo: "IMPRESSAO",
+        statusAnterior: "ARTE",
+        statusNovo: "CLICHE_FACA",
         orcamentoId: "orc_1",
       })
     ).resolves.toBeUndefined();
