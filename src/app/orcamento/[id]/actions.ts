@@ -63,6 +63,7 @@ import {
   cancelarReserva,
 } from "@/lib/billing/armazenamento";
 import { calcularPrevisaoAprovacaoPedido, gravarPrevisaoAprovacaoPedido } from "@/lib/pedido-aprovacao";
+import { registrarCandidatosGangRun } from "@/lib/gang-run-servico";
 import { UNIDADES_DIMENSAO, converterParaCm } from "@/lib/unidade-dimensao";
 import { paraDecimal, type Dec } from "@/lib/pricing/decimal";
 import { montarDadosItemParaRecalculo, calcularDescontoHerdado } from "@/lib/orcamento-duplicar";
@@ -188,7 +189,7 @@ export async function atualizarStatusOrcamento(
       });
       if (cas.count === 0) return false;
 
-      await tx.pedido.upsert({
+      const pedido = await tx.pedido.upsert({
         where: { orcamentoId },
         update: {},
         create: {
@@ -219,6 +220,16 @@ export async function atualizarStatusOrcamento(
         graficaId: usuario.graficaId,
         orcamentoId,
         previsao: previsaoCusto,
+      });
+
+      // Candidata itens OFFSET pequenos demais pra encher uma chapa sozinhos
+      // à fila de gang run (ver src/lib/gang-run-servico.ts) — mesma
+      // transação que cria o Pedido, mesmo princípio de
+      // gravarPrevisaoAprovacaoPedido logo acima.
+      await registrarCandidatosGangRun(tx, {
+        graficaId: usuario.graficaId,
+        orcamentoId,
+        pedidoId: pedido.id,
       });
 
       if (dadosComissao) {

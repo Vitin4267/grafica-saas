@@ -20,6 +20,7 @@ import {
 } from "@/lib/email/templates";
 import { assinaturaEstaLiberada } from "@/lib/billing/status";
 import { calcularPrevisaoAprovacaoPedido, gravarPrevisaoAprovacaoPedido } from "@/lib/pedido-aprovacao";
+import { registrarCandidatosGangRun } from "@/lib/gang-run-servico";
 import { prepararNotificacaoNotaFiscal } from "@/lib/nota-fiscal";
 import { registrarAuditoria } from "@/lib/auditoria";
 
@@ -241,7 +242,7 @@ export async function responderOrcamentoPublico(
         data: { status: "APROVADO", respostaPublicaNome: nome, respostaPublicaEm: agora },
       });
       if (cas.count === 0) return false;
-      await tx.pedido.upsert({
+      const pedido = await tx.pedido.upsert({
         where: { orcamentoId: orcamento.id },
         update: {},
         create: {
@@ -269,6 +270,14 @@ export async function responderOrcamentoPublico(
         graficaId: orcamento.graficaId,
         orcamentoId: orcamento.id,
         previsao: previsaoCusto,
+      });
+
+      // Mesmo comportamento do caminho autenticado
+      // (src/app/orcamento/[id]/actions.ts) — ver src/lib/gang-run-servico.ts.
+      await registrarCandidatosGangRun(tx, {
+        graficaId: orcamento.graficaId,
+        orcamentoId: orcamento.id,
+        pedidoId: pedido.id,
       });
 
       if (dadosComissao) {

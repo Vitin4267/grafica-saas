@@ -19,7 +19,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
-import { PrinterIcon } from "@/components/icons";
+import { PrinterIcon, LayersIcon } from "@/components/icons";
 import { PedidoLinha } from "./PedidoLinha";
 import { ProducaoVisualizacao } from "./ProducaoVisualizacao";
 import type { PedidoKanban } from "./KanbanBoard";
@@ -153,6 +153,15 @@ export default async function ProducaoPage({
     where: { graficaId: usuario.graficaId, ativa: true },
     orderBy: { ordem: "asc" },
     select: { id: true, nome: true },
+  });
+
+  // Só a CONTAGEM aqui, pra decidir se mostra o banner de gang run — a fila
+  // completa (agrupada por compatibilidade física) mora em
+  // /producao/gang-run (ver listarFilaGangRunAgrupada em
+  // src/lib/gang-run-servico.ts). Mesmo padrão do banner de "orçamentos
+  // parados" em src/app/orcamento/page.tsx.
+  const totalCandidatosGangRun = await prisma.filaGangRun.count({
+    where: { graficaId: usuario.graficaId, status: "AGUARDANDO" },
   });
 
   // Quem só entrou aqui pela responsabilidade de etapa (sem PRODUCAO.podeVer
@@ -302,6 +311,33 @@ export default async function ProducaoPage({
             Entregues e cancelados ficam no fim da lista.
           </p>
         </div>
+
+        {totalCandidatosGangRun > 0 && (
+          <Card className="mb-8 flex flex-col items-start justify-between gap-4 p-6 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400">
+                <LayersIcon className="h-5 w-5" />
+              </span>
+              <div>
+                <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+                  {totalCandidatosGangRun}{" "}
+                  {totalCandidatosGangRun === 1
+                    ? "item esperando gang run"
+                    : "itens esperando gang run"}
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Peças Offset pequenas demais pra encher uma chapa sozinhas — combine com
+                  pedidos compatíveis pra dividir o custo.
+                </p>
+              </div>
+            </div>
+            <Link href="/producao/gang-run" className="shrink-0">
+              <Button type="button" variant="outline">
+                Ver fila de gang run
+              </Button>
+            </Link>
+          </Card>
+        )}
 
         <form className="mb-6 flex flex-wrap items-end gap-3">
           <div className="min-w-[220px] flex-1">
