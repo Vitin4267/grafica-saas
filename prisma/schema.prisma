@@ -2255,6 +2255,23 @@ model Pedido {
   // isso como "nada pra confirmar agora", não como link inválido.
   producaoLinkToken String? @unique
 
+  // QR físico colado no produto, pra atualizar status direto do chão de
+  // fábrica sem voltar ao desktop (ver src/app/q/[token]). Mesmo princípio
+  // de producaoLinkToken (token evergreen, "credencial" = posse do token),
+  // mas token PRÓPRIO e deliberadamente mais permissivo: só existe depois
+  // que um usuário autenticado da gráfica baixa a etiqueta pela primeira vez
+  // (gerado inline em src/app/producao/[pedidoId]/etiqueta/route.tsx — nunca
+  // em massa na criação do Pedido, só sob demanda), e a tela /q/[token]
+  // (src/app/q/[token]/actions.ts) não aplica rate limit nem a checagem de
+  // "etapaEsperada" que producaoLinkToken tem (ver confirmarEstagioPublico)
+  // — a etiqueta impressa circula só
+  // fisicamente dentro da própria gráfica, ao contrário do link por e-mail
+  // que pode ficar aberto numa aba esquecida por dias. Mesma restrição de
+  // ESTAGIOS_ATRIBUIVEIS continua valendo (nunca avança a partir de FILA por
+  // aqui — essa transição baixa estoque e exige a tela de confirmação de
+  // perda de material, que não existe nesta versão mobile).
+  qrToken String? @unique
+
   // Data da aprovação do orçamento (autenticada ou pelo link público) — até
   // esta fase, o dashboard somava faturamento por createdAt do orçamento
   // porque este campo não existia. Também é o gatilho que congela
