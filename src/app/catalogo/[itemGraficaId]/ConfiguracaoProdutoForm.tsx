@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Select } from "@/components/ui/Select";
 import { Input } from "@/components/ui/Input";
@@ -218,7 +218,7 @@ export function ConfiguracaoProdutoForm({
   papelId: string;
   papeis: { id: string; nome: string; gramaturas: number[] }[];
   prensaId: string;
-  prensas: { id: string; nome: string }[];
+  prensas: { id: string; nome: string; emManutencao: boolean }[];
   bobinas: { larguraNominal: string; refile: string }[];
   formatosFolha: { nome: string; larguraFolha: string; alturaFolha: string }[];
   // Unidade em que a gráfica VENDE este produto (ex: rótulo por milheiro) —
@@ -226,7 +226,7 @@ export function ConfiguracaoProdutoForm({
   unidadeContagem: string;
   fatorConversao: string;
   maquinaFlexografiaId: string;
-  maquinasFlexografia: { id: string; nome: string }[];
+  maquinasFlexografia: { id: string; nome: string; emManutencao: boolean }[];
   custoClichePorCm2Flexo: string;
 }) {
   const [modeloCalculo, setModeloCalculo] = useState<ModeloCalculo>(modeloCalculoInicial);
@@ -237,9 +237,25 @@ export function ConfiguracaoProdutoForm({
     formatosIniciais.map((f) => ({ chave: gerarChave(), ...f }))
   );
   const [papelId, setPapelId] = useState(papelIdInicial);
+  const [prensaId, setPrensaId] = useState(prensaIdInicial);
+  const [maquinaFlexografiaId, setMaquinaFlexografiaId] = useState(maquinaFlexografiaIdInicial);
   const [state, formAction, isPending] = useActionState(salvarModeloProduto, null);
   const [mostrarAvancadoM2, setMostrarAvancadoM2] = useState(
     Boolean(areaMinimaFaturavelInicial)
+  );
+
+  // Avisa (não bloqueia) quando a prensa/máquina escolhida está com uma
+  // parada em andamento AGORA — o produto continua salvável, é só um alerta
+  // pra quem está configurando não ser pego de surpresa depois. Cadastro
+  // desatualizado é comum o bastante (ver comentário na Server Action de
+  // manutenção) pra bloquear ser mais frustrante que ajudar.
+  const prensaEmManutencao = useMemo(
+    () => prensas.find((p) => p.id === prensaId)?.emManutencao ?? false,
+    [prensas, prensaId]
+  );
+  const maquinaEmManutencao = useMemo(
+    () => maquinasFlexografia.find((m) => m.id === maquinaFlexografiaId)?.emManutencao ?? false,
+    [maquinasFlexografia, maquinaFlexografiaId]
   );
 
   const gramaturasDoPapel = papeis.find((p) => p.id === papelId)?.gramaturas ?? [];
@@ -364,19 +380,33 @@ export function ConfiguracaoProdutoForm({
                 antes de usar o modelo Offset.
               </Alert>
             ) : (
-              <Select
-                label="Prensa"
-                name="prensaId"
-                defaultValue={prensaIdInicial}
-                hint="Define o custo de máquina, chapas e rodagem usados no cálculo deste produto."
-              >
-                <option value="">Selecione uma prensa</option>
-                {prensas.map((prensa) => (
-                  <option key={prensa.id} value={prensa.id}>
-                    {prensa.nome}
-                  </option>
-                ))}
-              </Select>
+              <>
+                <Select
+                  label="Prensa"
+                  name="prensaId"
+                  value={prensaId}
+                  onChange={(e) => setPrensaId(e.target.value)}
+                  hint="Define o custo de máquina, chapas e rodagem usados no cálculo deste produto."
+                >
+                  <option value="">Selecione uma prensa</option>
+                  {prensas.map((prensa) => (
+                    <option key={prensa.id} value={prensa.id}>
+                      {prensa.nome}
+                      {prensa.emManutencao ? " (em manutenção)" : ""}
+                    </option>
+                  ))}
+                </Select>
+                {prensaEmManutencao && (
+                  <Alert variant="warning">
+                    Esta prensa está com uma parada em andamento agora. Você ainda pode
+                    salvar o produto assim configurado, mas confira em{" "}
+                    <Link href="/configuracoes/maquinas/manutencao" className="underline">
+                      Configurações → Máquinas → Manutenção
+                    </Link>{" "}
+                    antes de produzir.
+                  </Alert>
+                )}
+              </>
             )}
             <label className="flex items-center gap-2">
               <input
@@ -458,19 +488,33 @@ export function ConfiguracaoProdutoForm({
                 antes de usar o modelo Flexografia.
               </Alert>
             ) : (
-              <Select
-                label="Máquina"
-                name="maquinaFlexografiaId"
-                defaultValue={maquinaFlexografiaIdInicial}
-                hint="Define o custo de máquina, acerto e rodagem usados no cálculo deste produto."
-              >
-                <option value="">Selecione uma máquina</option>
-                {maquinasFlexografia.map((maquina) => (
-                  <option key={maquina.id} value={maquina.id}>
-                    {maquina.nome}
-                  </option>
-                ))}
-              </Select>
+              <>
+                <Select
+                  label="Máquina"
+                  name="maquinaFlexografiaId"
+                  value={maquinaFlexografiaId}
+                  onChange={(e) => setMaquinaFlexografiaId(e.target.value)}
+                  hint="Define o custo de máquina, acerto e rodagem usados no cálculo deste produto."
+                >
+                  <option value="">Selecione uma máquina</option>
+                  {maquinasFlexografia.map((maquina) => (
+                    <option key={maquina.id} value={maquina.id}>
+                      {maquina.nome}
+                      {maquina.emManutencao ? " (em manutenção)" : ""}
+                    </option>
+                  ))}
+                </Select>
+                {maquinaEmManutencao && (
+                  <Alert variant="warning">
+                    Esta máquina está com uma parada em andamento agora. Você ainda pode
+                    salvar o produto assim configurado, mas confira em{" "}
+                    <Link href="/configuracoes/maquinas/manutencao" className="underline">
+                      Configurações → Máquinas → Manutenção
+                    </Link>{" "}
+                    antes de produzir.
+                  </Alert>
+                )}
+              </>
             )}
             <Input
               label="Custo do clichê por cm² (R$)"

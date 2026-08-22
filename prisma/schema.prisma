@@ -66,6 +66,7 @@ model Grafica {
   parametros            ParametrosGrafica?
   prensas               Prensa[]
   maquinasFlexografia   MaquinaFlexografia[]
+  registrosManutencao   RegistroManutencao[]
   dadosFiscais          DadosFiscaisGrafica?
   notasFiscais          NotaFiscal[]
   automacao             AutomacaoGrafica?
@@ -202,8 +203,9 @@ model Prensa {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  grafica  Grafica       @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  produtos ItemGrafica[]
+  grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  produtos            ItemGrafica[]
+  registrosManutencao RegistroManutencao[]
 
   @@unique([graficaId, nome])
   @@index([graficaId])
@@ -248,12 +250,67 @@ model MaquinaFlexografia {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  grafica  Grafica       @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  produtos ItemGrafica[]
+  grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  produtos            ItemGrafica[]
+  registrosManutencao RegistroManutencao[]
 
   @@unique([graficaId, nome])
   @@index([graficaId])
   @@map("maquinas_flexografia")
+}
+
+enum TipoRegistroManutencao {
+  PREVENTIVA // manutenção agendada, planejada com antecedência
+  QUEBRA // parada não planejada — máquina quebrou ou precisou parar de repente
+}
+
+// Um período em que uma Prensa OU MaquinaFlexografia ficou indisponível pra
+// produção — cobre tanto manutenção PREVENTIVA agendada quanto QUEBRA/parada
+// reativa (o `tipo` só existe pra segmentar isso em relatórios; o
+// comportamento de "está parada agora" é sempre baseado em dataFim, nunca em
+// tipo). dataFim null = parada ainda em andamento; é o que
+// buscarManutencoesAtivas (src/lib/manutencao-maquina.ts) usa pra decidir
+// exibir o aviso "essa máquina está parada" na tela de Máquinas e no cadastro
+// de produto Offset/Flexografia. Duas FKs opcionais, nunca as duas
+// preenchidas na mesma linha (validado na Server Action, não há CHECK no
+// banco — mesmo padrão de validação em app do resto do schema) — mesmo
+// princípio de ItemGrafica.prensaId/maquinaFlexografiaId: Prensa e
+// MaquinaFlexografia são tabelas paralelas não-unificadas de propósito (ver
+// comentário em MaquinaFlexografia), então o registro de parada segue a
+// mesma filosofia em vez de virar o ponto que força uma hierarquia comum
+// entre as duas. onDelete=Cascade (diferente do Restrict em
+// ItemGrafica.prensaId): um histórico de manutenção sem a máquina que ele
+// descreve não tem valor — não faz sentido travar a exclusão da máquina por
+// causa disso.
+model RegistroManutencao {
+  id        String @id @default(cuid())
+  graficaId String
+
+  prensaId             String?
+  maquinaFlexografiaId String?
+
+  tipo   TipoRegistroManutencao @default(QUEBRA)
+  motivo String // texto livre — "trocou o rolo de tinta", "manutenção preventiva trimestral" etc.
+
+  dataInicio DateTime  @default(now())
+  dataFim    DateTime? // null = parada ainda em andamento
+
+  // Quem registrou — sem FK direta pra Usuario (mesmo padrão de
+  // MovimentacaoEstoque.criadoPorId): resolvido em batch na tela quando
+  // precisa exibir o nome, pra não travar o registro se o usuário for removido.
+  registradoPorId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica            Grafica             @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  prensa             Prensa?             @relation(fields: [prensaId], references: [id], onDelete: Cascade)
+  maquinaFlexografia MaquinaFlexografia? @relation(fields: [maquinaFlexografiaId], references: [id], onDelete: Cascade)
+
+  @@index([graficaId])
+  @@index([prensaId])
+  @@index([maquinaFlexografiaId])
+  @@map("registros_manutencao")
 }
 
 // Uma filial/unidade física da gráfica. COMPARTILHA catálogo, estoque e
@@ -583,17 +640,17 @@ model Usuario {
   // reativa.
   desativadoEm DateTime?
 
-  grafica                    Grafica                     @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  orcamentos                 Orcamento[]
-  sessoes                    Sessao[]
-  permissoes                 PermissaoUsuario[]
-  tokensResetSenha           TokenResetSenha[]
-  tokensVerificacaoEmail     TokenVerificacaoEmail[]
-  comissoes                  Comissao[]
-  responsaveisEstagio        ResponsavelEstagio[]
-  responsaveisAdministrativo ResponsavelAdministrativo[]
-  solicitacoesCompraFeitas   SolicitacaoCompra[]         @relation("SolicitacoesCompraSolicitadas")
-  solicitacoesCompraAprovadas SolicitacaoCompra[]        @relation("SolicitacoesCompraAprovadas")
+  grafica                     Grafica                     @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamentos                  Orcamento[]
+  sessoes                     Sessao[]
+  permissoes                  PermissaoUsuario[]
+  tokensResetSenha            TokenResetSenha[]
+  tokensVerificacaoEmail      TokenVerificacaoEmail[]
+  comissoes                   Comissao[]
+  responsaveisEstagio         ResponsavelEstagio[]
+  responsaveisAdministrativo  ResponsavelAdministrativo[]
+  solicitacoesCompraFeitas    SolicitacaoCompra[]         @relation("SolicitacoesCompraSolicitadas")
+  solicitacoesCompraAprovadas SolicitacaoCompra[]         @relation("SolicitacoesCompraAprovadas")
 
   @@index([graficaId])
   @@map("usuarios")
@@ -1273,16 +1330,16 @@ model MovimentacaoEstoque {
   // que apague um ItemGrafica, então isso é defensivo — mas se um dia
   // existir, Restrict força uma decisão explícita em vez de apagar
   // histórico financeiro/estoque silenciosamente.
-  itemGrafica ItemGrafica           @relation(fields: [itemGraficaId], references: [id], onDelete: Restrict)
-  pedido      Pedido?               @relation(fields: [pedidoId], references: [id], onDelete: SetNull)
-  variante    VarianteMateriaPrima? @relation(fields: [varianteId], references: [id], onDelete: SetNull)
-  custoPedido CustoPedido?
+  itemGrafica       ItemGrafica           @relation(fields: [itemGraficaId], references: [id], onDelete: Restrict)
+  pedido            Pedido?               @relation(fields: [pedidoId], references: [id], onDelete: SetNull)
+  variante          VarianteMateriaPrima? @relation(fields: [varianteId], references: [id], onDelete: SetNull)
+  custoPedido       CustoPedido?
   // SetNull: desativar/apagar um fornecedor não pode apagar o histórico de
   // compra em si, só perde a referência de quem vendeu.
-  fornecedor  Fornecedor?           @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
+  fornecedor        Fornecedor?           @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
   // SetNull: mesma razão de `pedido` acima — apagar a solicitação (hoje não
   // existe fluxo que apague) não pode invalidar o histórico de estoque.
-  solicitacaoCompra SolicitacaoCompra? @relation(fields: [solicitacaoCompraId], references: [id], onDelete: SetNull)
+  solicitacaoCompra SolicitacaoCompra?    @relation(fields: [solicitacaoCompraId], references: [id], onDelete: SetNull)
 
   @@index([itemGraficaId])
   @@index([pedidoId])
@@ -1344,12 +1401,12 @@ model SolicitacaoCompra {
   // Qual variante (ex: espessura de chapa) quando a matéria-prima tem
   // VarianteMateriaPrima cadastrada — mesmo padrão opcional de
   // FichaTecnicaItem.varianteId. null = matéria-prima sem variantes.
-  varianteId String?
+  varianteId    String?
   // Pode nascer sem fornecedor definido (ainda em SOLICITADO/COTANDO) — só
   // costuma ser preenchido a partir de APROVADO.
-  fornecedorId String?
+  fornecedorId  String?
 
-  quantidade Decimal @db.Decimal(12, 4)
+  quantidade    Decimal  @db.Decimal(12, 4)
   // Estimativa no momento da solicitação/cotação — informativa, nunca usada
   // pra decrementar caixa nem pra gravar o custo da entrada de estoque.
   // valorFinal é o que de fato foi pago, preenchido ao confirmar COMPRADO —
@@ -1385,16 +1442,16 @@ model SolicitacaoCompra {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  grafica            Grafica               @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  grafica             Grafica               @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   // Restrict, mesmo raciocínio de MovimentacaoEstoque.itemGrafica: hoje não
   // existe fluxo que apague um ItemGrafica, isto é só defensivo.
-  itemGrafica        ItemGrafica           @relation(fields: [itemGraficaId], references: [id], onDelete: Restrict)
+  itemGrafica         ItemGrafica           @relation(fields: [itemGraficaId], references: [id], onDelete: Restrict)
   // SetNull: desativar/apagar uma variante não pode apagar a solicitação —
   // ela só perde a referência de qual variante era o alvo.
-  variante           VarianteMateriaPrima? @relation(fields: [varianteId], references: [id], onDelete: SetNull)
-  fornecedor         Fornecedor?           @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
-  usuarioSolicitante Usuario               @relation("SolicitacoesCompraSolicitadas", fields: [usuarioSolicitanteId], references: [id])
-  usuarioAprovador   Usuario?              @relation("SolicitacoesCompraAprovadas", fields: [usuarioAprovadorId], references: [id])
+  variante            VarianteMateriaPrima? @relation(fields: [varianteId], references: [id], onDelete: SetNull)
+  fornecedor          Fornecedor?           @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
+  usuarioSolicitante  Usuario               @relation("SolicitacoesCompraSolicitadas", fields: [usuarioSolicitanteId], references: [id])
+  usuarioAprovador    Usuario?              @relation("SolicitacoesCompraAprovadas", fields: [usuarioAprovadorId], references: [id])
   // Lado inverso de MovimentacaoEstoque.solicitacaoCompraId (FK mora lá, não
   // aqui) — a entrada de estoque gerada ao confirmar RECEBIDO.
   movimentacaoEstoque MovimentacaoEstoque?
@@ -1549,16 +1606,16 @@ model Orcamento {
   // perde a referência.
   duplicadoDeId String?
 
-  grafica      Grafica         @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  cliente      Cliente         @relation(fields: [clienteId], references: [id])
-  usuario      Usuario         @relation(fields: [usuarioId], references: [id])
-  filial       Filial?         @relation(fields: [filialId], references: [id], onDelete: SetNull)
-  itens        OrcamentoItem[]
-  pedido       Pedido?
-  notaFiscal   NotaFiscal?
-  comissao     Comissao?
-  duplicadoDe  Orcamento?      @relation("DuplicacaoOrcamento", fields: [duplicadoDeId], references: [id], onDelete: SetNull)
-  duplicados   Orcamento[]     @relation("DuplicacaoOrcamento")
+  grafica     Grafica         @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  cliente     Cliente         @relation(fields: [clienteId], references: [id])
+  usuario     Usuario         @relation(fields: [usuarioId], references: [id])
+  filial      Filial?         @relation(fields: [filialId], references: [id], onDelete: SetNull)
+  itens       OrcamentoItem[]
+  pedido      Pedido?
+  notaFiscal  NotaFiscal?
+  comissao    Comissao?
+  duplicadoDe Orcamento?      @relation("DuplicacaoOrcamento", fields: [duplicadoDeId], references: [id], onDelete: SetNull)
+  duplicados  Orcamento[]     @relation("DuplicacaoOrcamento")
 
   pagamentos    Pagamento[]
   contasReceber ContaReceber[]
