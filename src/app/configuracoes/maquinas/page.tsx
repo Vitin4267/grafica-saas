@@ -14,6 +14,7 @@ import { Card } from "@/components/ui/Card";
 import { ArrowLeftIcon } from "@/components/icons";
 import { NovaPrensaForm } from "../prensas/NovaPrensaForm";
 import { NovaMaquinaFlexografiaForm } from "./flexografia/NovaMaquinaFlexografiaForm";
+import { indexarManutencoesAtivasPorMaquina } from "@/lib/manutencao-maquina";
 
 export default async function MaquinasPage() {
   const usuario = await exigirUsuarioAutenticado();
@@ -22,7 +23,7 @@ export default async function MaquinasPage() {
   await exigirVerModulo(usuario, "CONFIGURACOES");
   const podeEditar = await podeEditarModulo(usuario, "CONFIGURACOES");
 
-  const [prensas, maquinasFlexografia] = await Promise.all([
+  const [prensas, maquinasFlexografia, registrosAtivos] = await Promise.all([
     prisma.prensa.findMany({
       where: { graficaId: usuario.graficaId },
       orderBy: { nome: "asc" },
@@ -31,7 +32,15 @@ export default async function MaquinasPage() {
       where: { graficaId: usuario.graficaId },
       orderBy: { nome: "asc" },
     }),
+    prisma.registroManutencao.findMany({
+      where: { graficaId: usuario.graficaId, dataFim: null },
+      select: { prensaId: true, maquinaFlexografiaId: true },
+    }),
   ]);
+  // Só pra saber QUAIS máquinas estão paradas agora (badge de aviso) — o
+  // registro completo (motivo, tipo, desde quando) fica na tela dedicada de
+  // manutenção, pra não sobrecarregar esta lista.
+  const ativasPorMaquina = indexarManutencoesAtivasPorMaquina(registrosAtivos);
 
   return (
     <div className="flex flex-1 flex-col">
@@ -53,12 +62,20 @@ export default async function MaquinasPage() {
           Voltar a Configurações
         </Link>
 
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Máquinas</h1>
-          <p className="mt-1 text-slate-500">
-            Cada máquina tem seu próprio custo e rodagem. Produtos do catálogo
-            escolhem uma máquina específica conforme o modelo de cálculo.
-          </p>
+        <div className="mb-8 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Máquinas</h1>
+            <p className="mt-1 text-slate-500">
+              Cada máquina tem seu próprio custo e rodagem. Produtos do catálogo
+              escolhem uma máquina específica conforme o modelo de cálculo.
+            </p>
+          </div>
+          <Link
+            href="/configuracoes/maquinas/manutencao"
+            className="shrink-0 whitespace-nowrap rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            Manutenção
+          </Link>
         </div>
 
         <div className="mb-10">
@@ -85,15 +102,22 @@ export default async function MaquinasPage() {
                       de máquina
                     </p>
                   </div>
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                      prensa.ativa
-                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
-                        : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
-                    }`}
-                  >
-                    {prensa.ativa ? "Ativa" : "Inativa"}
-                  </span>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {ativasPorMaquina.has(prensa.id) && (
+                      <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+                        Em manutenção
+                      </span>
+                    )}
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                        prensa.ativa
+                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+                          : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                      }`}
+                    >
+                      {prensa.ativa ? "Ativa" : "Inativa"}
+                    </span>
+                  </div>
                 </Card>
               </Link>
             ))}
@@ -137,15 +161,22 @@ export default async function MaquinasPage() {
                       {Number(maquina.custoHoraMaq).toFixed(2)}/h de máquina
                     </p>
                   </div>
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                      maquina.ativa
-                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
-                        : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
-                    }`}
-                  >
-                    {maquina.ativa ? "Ativa" : "Inativa"}
-                  </span>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {ativasPorMaquina.has(maquina.id) && (
+                      <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+                        Em manutenção
+                      </span>
+                    )}
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                        maquina.ativa
+                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+                          : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                      }`}
+                    >
+                      {maquina.ativa ? "Ativa" : "Inativa"}
+                    </span>
+                  </div>
                 </Card>
               </Link>
             ))}

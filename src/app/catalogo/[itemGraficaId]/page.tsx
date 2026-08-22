@@ -25,6 +25,7 @@ import { ROTULOS_TIPO_MOVIMENTACAO } from "@/lib/estoque-manual";
 import { rotuloUnidade } from "@/lib/unidade";
 import { formatoMoeda } from "@/lib/moeda";
 import { formatoInstanteRealComHora } from "@/lib/data";
+import { indexarManutencoesAtivasPorMaquina } from "@/lib/manutencao-maquina";
 import type { TipoMovimentacao } from "@/generated/prisma/enums";
 
 const LIMITE_HISTORICO_MOVIMENTACAO = 100;
@@ -61,7 +62,7 @@ export default async function ConfiguracaoItemPage({
   await exigirAssinaturaAtiva(usuario);
   await exigirVerModulo(usuario, "CATALOGO");
 
-  const [itemGrafica, materiasPrimas, prensas, maquinasFlexografia, fornecedores] =
+  const [itemGrafica, materiasPrimas, prensas, maquinasFlexografia, fornecedores, registrosAtivos] =
     await Promise.all([
       prisma.itemGrafica.findFirst({
         where: { id: itemGraficaId, graficaId: usuario.graficaId },
@@ -108,11 +109,22 @@ export default async function ConfiguracaoItemPage({
         orderBy: { nome: "asc" },
         select: { id: true, nome: true },
       }),
+      // Só pra avisar (não bloquear) na seleção de prensa/máquina abaixo se a
+      // escolhida está com uma parada em andamento agora — ver
+      // ManutencaoMaquinaAlerta em ConfiguracaoProdutoForm.
+      prisma.registroManutencao.findMany({
+        where: { graficaId: usuario.graficaId, dataFim: null },
+        select: { prensaId: true, maquinaFlexografiaId: true },
+      }),
     ]);
 
   if (!itemGrafica) {
     notFound();
   }
+
+  const idsMaquinasEmManutencao = new Set(
+    indexarManutencoesAtivasPorMaquina(registrosAtivos).keys()
+  );
 
   // Resolve criadoPorId -> nome pro histórico de movimentação (a tabela não
   // tem relação direta com Usuario — ver comentário do campo no schema).
@@ -218,7 +230,11 @@ export default async function ConfiguracaoItemPage({
                 gramaturas: m.tabelaPrecoPapel.map((l) => l.gramatura).sort((a, b) => a - b),
               }))}
               prensaId={itemGrafica.prensaId ?? ""}
-              prensas={prensas.map((p) => ({ id: p.id, nome: p.nome }))}
+              prensas={prensas.map((p) => ({
+                id: p.id,
+                nome: p.nome,
+                emManutencao: idsMaquinasEmManutencao.has(p.id),
+              }))}
               bobinas={itemGrafica.bobinas.map((b) => ({
                 larguraNominal: b.larguraNominal.toString(),
                 refile: b.refile.toString(),
@@ -231,7 +247,11 @@ export default async function ConfiguracaoItemPage({
               unidadeContagem={itemGrafica.unidadeContagem ?? ""}
               fatorConversao={itemGrafica.fatorConversao?.toString() ?? ""}
               maquinaFlexografiaId={itemGrafica.maquinaFlexografiaId ?? ""}
-              maquinasFlexografia={maquinasFlexografia.map((m) => ({ id: m.id, nome: m.nome }))}
+              maquinasFlexografia={maquinasFlexografia.map((m) => ({
+                id: m.id,
+                nome: m.nome,
+                emManutencao: idsMaquinasEmManutencao.has(m.id),
+              }))}
               custoClichePorCm2Flexo={
                 itemGrafica.configuracaoClicheFlexografia?.custoClichePorCm2.toString() ?? ""
               }
