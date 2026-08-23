@@ -1,7 +1,8 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
-import type { DadosFiscaisGrafica } from "@/generated/prisma/client";
+import type { DadosFiscaisGrafica, Prisma } from "@/generated/prisma/client";
+import type { RegimeTributario } from "@/generated/prisma/enums";
 
 // Dados fiscais "resolvidos" pra um orçamento/filial — DadosFiscaisFilial
 // espelha DadosFiscaisGrafica campo a campo (só troca graficaId por
@@ -41,6 +42,11 @@ export type DadosFiscaisParaChecagem = {
   enderecoMunicipio: string | null;
   enderecoUf: string | null;
   enderecoCep: string | null;
+  regimeTributario: RegimeTributario;
+  cstIcmsPadrao: string | null;
+  icmsAliquotaPadrao: Prisma.Decimal | null;
+  icmsModalidadeBaseCalculoPadrao: string | null;
+  pisCofinsSituacaoTributariaPadrao: string | null;
 } | null;
 
 export type ClienteParaChecagem = {
@@ -90,6 +96,26 @@ export function verificarProntidaoFiscal(input: {
   }
   if (!input.dadosFiscais || !enderecoCompleto(input.dadosFiscais)) {
     pendencias.push("Endereço da gráfica incompleto (Configurações → Dados fiscais).");
+  }
+  // Fora do Simples Nacional a nota usa CST-ICMS (não CSOSN) e precisa de
+  // alíquota/base/modalidade de cálculo — sem isso a Focus NFe/SEFAZ rejeita
+  // com HTTP 422. Bloqueado aqui, ANTES de bater na API, com mensagem clara
+  // do que falta configurar.
+  if (input.dadosFiscais && input.dadosFiscais.regimeTributario !== "SIMPLES_NACIONAL") {
+    const faltando: string[] = [];
+    if (!input.dadosFiscais.cstIcmsPadrao) faltando.push("CST-ICMS padrão");
+    if (input.dadosFiscais.icmsAliquotaPadrao == null) faltando.push("alíquota de ICMS padrão");
+    if (!input.dadosFiscais.icmsModalidadeBaseCalculoPadrao) {
+      faltando.push("modalidade de base de cálculo do ICMS padrão");
+    }
+    if (!input.dadosFiscais.pisCofinsSituacaoTributariaPadrao) {
+      faltando.push("situação tributária de PIS/COFINS padrão");
+    }
+    if (faltando.length > 0) {
+      pendencias.push(
+        `Regime tributário fora do Simples Nacional exige a configuração de: ${faltando.join(", ")} (Configurações → Dados fiscais).`
+      );
+    }
   }
   if (!input.cliente.documento) {
     pendencias.push("Cliente sem CPF/CNPJ cadastrado.");

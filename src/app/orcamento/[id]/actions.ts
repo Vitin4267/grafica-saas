@@ -27,13 +27,19 @@ import {
   ROTULOS_STATUS_ORCAMENTO,
   type StatusOrcamento,
 } from "@/lib/orcamento-status";
-import { verificarProntidaoFiscal, prepararNotificacaoNotaFiscal, resolverDadosFiscais } from "@/lib/nota-fiscal";
+import {
+  verificarProntidaoFiscal,
+  prepararNotificacaoNotaFiscal,
+  resolverDadosFiscais,
+  type DadosFiscaisResolvidos,
+} from "@/lib/nota-fiscal";
 import {
   emitirNfe,
   consultarNfe,
   ErroFocusNfe,
   type AmbienteFocusNfe,
   type RespostaFocusNfe,
+  type ItemNfe,
 } from "@/lib/focus-nfe";
 import { dispararEventoEmail } from "@/lib/email/webhook-email";
 import { templateResponsavelNotaFiscal } from "@/lib/email/templates";
@@ -2524,6 +2530,39 @@ function resolverUnidadeFiscal(unidade: string | null, unidadeOutro: string | nu
   return UNIDADE_FISCAL[unidade ?? "UNIDADE"] ?? "UN";
 }
 
+// Bifurca no regime tributário da gráfica/filial: Simples Nacional manda só
+// o CSOSN (comportamento de sempre, sem os campos novos); Regime Normal
+// (Lucro Presumido/Real) manda CST-ICMS + os 4 campos novos. Os `!` são
+// seguros porque verificarProntidaoFiscal já bloqueou emitirNotaFiscal antes
+// de chegar aqui se algum campo obrigatório do regime estiver faltando.
+// icms_base_calculo usa o valor bruto do próprio item — risco assumido
+// conscientemente (não modela redução de base de cálculo), documentado no
+// plano da feature.
+function construirCamposFiscaisItemNfe(
+  dadosFiscais: DadosFiscaisResolvidos,
+  valorBrutoItem: number
+): Pick<
+  ItemNfe,
+  | "icmsSituacaoTributaria"
+  | "icmsAliquota"
+  | "icmsBaseCalculo"
+  | "icmsModalidadeBaseCalculo"
+  | "pisSituacaoTributaria"
+  | "cofinsSituacaoTributaria"
+> {
+  if (dadosFiscais.regimeTributario === "SIMPLES_NACIONAL") {
+    return { icmsSituacaoTributaria: dadosFiscais.csosnPadrao };
+  }
+  return {
+    icmsSituacaoTributaria: dadosFiscais.cstIcmsPadrao!,
+    icmsAliquota: Number(dadosFiscais.icmsAliquotaPadrao!),
+    icmsBaseCalculo: valorBrutoItem,
+    icmsModalidadeBaseCalculo: dadosFiscais.icmsModalidadeBaseCalculoPadrao!,
+    pisSituacaoTributaria: dadosFiscais.pisCofinsSituacaoTributariaPadrao!,
+    cofinsSituacaoTributaria: dadosFiscais.pisCofinsSituacaoTributariaPadrao!,
+  };
+}
+
 export type EmitirNotaFiscalResult = { ok: boolean; mensagem: string };
 
 // StatusNotaFiscal (schema.prisma) não tem um valor DENEGADO separado — tanto
@@ -2628,21 +2667,24 @@ export async function emitirNotaFiscal(
           uf: orcamento.cliente.enderecoUf!,
           cep: orcamento.cliente.enderecoCep!,
         },
-        itens: orcamento.itens.map((item, indice) => ({
-          numeroItem: indice + 1,
-          codigoProduto: item.itemGraficaId,
-          descricao: item.itemGrafica.itemCatalogo.nome,
-          ncm: item.itemGrafica.itemCatalogo.ncm!,
-          cfop: dadosFiscais.cfopPadrao,
-          unidade: resolverUnidadeFiscal(
-            item.itemGrafica.itemCatalogo.unidade,
-            item.itemGrafica.itemCatalogo.unidadeOutro
-          ),
-          quantidade: item.quantidade,
-          valorUnitario: Number(item.precoUnitario),
-          valorBruto: Number(item.precoTotal),
-          icmsSituacaoTributaria: dadosFiscais.csosnPadrao,
-        })),
+        itens: orcamento.itens.map((item, indice) => {
+          const valorBruto = Number(item.precoTotal);
+          return {
+            numeroItem: indice + 1,
+            codigoProduto: item.itemGraficaId,
+            descricao: item.itemGrafica.itemCatalogo.nome,
+            ncm: item.itemGrafica.itemCatalogo.ncm!,
+            cfop: dadosFiscais.cfopPadrao,
+            unidade: resolverUnidadeFiscal(
+              item.itemGrafica.itemCatalogo.unidade,
+              item.itemGrafica.itemCatalogo.unidadeOutro
+            ),
+            quantidade: item.quantidade,
+            valorUnitario: Number(item.precoUnitario),
+            valorBruto,
+            ...construirCamposFiscaisItemNfe(dadosFiscais, valorBruto),
+          };
+        }),
         valorTotal: Number(orcamento.total),
       }
     );

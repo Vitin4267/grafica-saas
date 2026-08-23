@@ -41,7 +41,18 @@ export type ItemNfe = {
   quantidade: number;
   valorUnitario: number;
   valorBruto: number;
-  icmsSituacaoTributaria: string; // CSOSN (Simples Nacional) ou CST
+  icmsSituacaoTributaria: string; // CSOSN (Simples Nacional) ou CST-ICMS (Regime Normal)
+  // Campos abaixo só existem pra gráfica em Regime Normal (Lucro
+  // Presumido/Real) — Simples Nacional não manda nenhum deles, e o payload
+  // builder cai no comportamento de sempre (icms_origem "0" sozinho,
+  // pis/cofins fixos "07") quando estão ausentes. Ver
+  // verificarProntidaoFiscal em src/lib/nota-fiscal.ts, que garante os 4
+  // preenchidos juntos antes de chegar aqui pra Regime Normal.
+  icmsAliquota?: number; // % — ex: 18 (não 0.18)
+  icmsBaseCalculo?: number; // valor em R$ usado como base do cálculo do ICMS
+  icmsModalidadeBaseCalculo?: string; // tabela 0-3
+  pisSituacaoTributaria?: string; // default "07" quando ausente
+  cofinsSituacaoTributaria?: string; // default "07" quando ausente
 };
 
 export type EmitirNfeInput = {
@@ -132,6 +143,53 @@ function completarUrlArquivo(caminho: string | undefined, ambiente: AmbienteFocu
   return `${BASE_URL[ambiente]}${caminho}`;
 }
 
+// Mapeamento de item pra payload da Focus NFe — extraído como função pura
+// (sem fetch, sem I/O) pra ser testável direto. Nomes de campo confirmados
+// contra doc.focusnfe.com.br/reference/emitir_nfe e
+// campos.focusnfe.com.br/nfe/ItemNotaFiscalXML.html (2026-08-23): CST normal
+// usa icms_situacao_tributaria + icms_modalidade_base_calculo +
+// icms_base_calculo + icms_aliquota + icms_valor; CSOSN (Simples Nacional)
+// usa só icms_situacao_tributaria. icms_valor é derivado
+// (base_calculo × aliquota/100), nunca configurado diretamente — não existe
+// campo "padrão" pra ele nos Dados fiscais.
+export function mapearItemNfePayload(item: ItemNfe): Record<string, unknown> {
+  const temIcmsRegimeNormal =
+    item.icmsAliquota !== undefined &&
+    item.icmsBaseCalculo !== undefined &&
+    item.icmsModalidadeBaseCalculo !== undefined;
+
+  const icmsValor = temIcmsRegimeNormal
+    ? (item.icmsBaseCalculo! * item.icmsAliquota!) / 100
+    : undefined;
+
+  return {
+    numero_item: String(item.numeroItem),
+    codigo_produto: item.codigoProduto,
+    descricao: item.descricao,
+    cfop: item.cfop,
+    unidade_comercial: item.unidade,
+    quantidade_comercial: String(item.quantidade),
+    valor_unitario_comercial: item.valorUnitario.toFixed(4),
+    valor_unitario_tributavel: item.valorUnitario.toFixed(4),
+    unidade_tributavel: item.unidade,
+    codigo_ncm: item.ncm,
+    quantidade_tributavel: String(item.quantidade),
+    valor_bruto: item.valorBruto.toFixed(2),
+    icms_origem: "0",
+    icms_situacao_tributaria: item.icmsSituacaoTributaria,
+    ...(temIcmsRegimeNormal
+      ? {
+          icms_modalidade_base_calculo: item.icmsModalidadeBaseCalculo,
+          icms_base_calculo: item.icmsBaseCalculo!.toFixed(2),
+          icms_aliquota: item.icmsAliquota!.toFixed(2),
+          icms_valor: icmsValor!.toFixed(2),
+        }
+      : {}),
+    pis_situacao_tributaria: item.pisSituacaoTributaria ?? "07",
+    cofins_situacao_tributaria: item.cofinsSituacaoTributaria ?? "07",
+  };
+}
+
 // A Focus NFe espera data_emissao/data_entrada_saida em horário LOCAL do
 // emitente (confirmado no exemplo oficial da doc — doc.focusnfe.com.br/
 // reference/emitir_nfe — que mostra "2024-01-15T12:00:00-03:00", ou seja,
@@ -187,24 +245,7 @@ export async function emitirNfe(
     valor_total: input.valorTotal.toFixed(2),
     valor_produtos: input.valorTotal.toFixed(2),
 
-    items: input.itens.map((item) => ({
-      numero_item: String(item.numeroItem),
-      codigo_produto: item.codigoProduto,
-      descricao: item.descricao,
-      cfop: item.cfop,
-      unidade_comercial: item.unidade,
-      quantidade_comercial: String(item.quantidade),
-      valor_unitario_comercial: item.valorUnitario.toFixed(4),
-      valor_unitario_tributavel: item.valorUnitario.toFixed(4),
-      unidade_tributavel: item.unidade,
-      codigo_ncm: item.ncm,
-      quantidade_tributavel: String(item.quantidade),
-      valor_bruto: item.valorBruto.toFixed(2),
-      icms_origem: "0",
-      icms_situacao_tributaria: item.icmsSituacaoTributaria,
-      pis_situacao_tributaria: "07",
-      cofins_situacao_tributaria: "07",
-    })),
+    items: input.itens.map((item) => mapearItemNfePayload(item)),
   };
 
   const url = `${BASE_URL[config.ambiente]}/v2/nfe?ref=${encodeURIComponent(input.referencia)}`;

@@ -94,7 +94,7 @@ export default async function FilialDetalhePage({
               razaoSocial: dadosFiscaisFilial?.razaoSocial ?? "",
               nomeFantasia: dadosFiscaisFilial?.nomeFantasia ?? "",
               inscricaoEstadual: dadosFiscaisFilial?.inscricaoEstadual ?? "",
-              regimeTributario: dadosFiscaisFilial?.regimeTributario ?? "",
+              regimeTributario: dadosFiscaisFilial?.regimeTributario ?? "SIMPLES_NACIONAL",
               enderecoCep: dadosFiscaisFilial?.enderecoCep ?? "",
               enderecoLogradouro: dadosFiscaisFilial?.enderecoLogradouro ?? "",
               enderecoNumero: dadosFiscaisFilial?.enderecoNumero ?? "",
@@ -104,6 +104,10 @@ export default async function FilialDetalhePage({
               naturezaOperacaoPadrao: dadosFiscaisFilial?.naturezaOperacaoPadrao ?? "Venda de mercadoria",
               cfopPadrao: dadosFiscaisFilial?.cfopPadrao ?? "5102",
               csosnPadrao: dadosFiscaisFilial?.csosnPadrao ?? "102",
+              cstIcmsPadrao: dadosFiscaisFilial?.cstIcmsPadrao ?? "",
+              icmsAliquotaPadrao: dadosFiscaisFilial?.icmsAliquotaPadrao?.toString() ?? "",
+              icmsModalidadeBaseCalculoPadrao: dadosFiscaisFilial?.icmsModalidadeBaseCalculoPadrao ?? "",
+              pisCofinsSituacaoTributariaPadrao: dadosFiscaisFilial?.pisCofinsSituacaoTributariaPadrao ?? "",
             }}
             tokenMascarado={tokenMascaradoFilial}
           />

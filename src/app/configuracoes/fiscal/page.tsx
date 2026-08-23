@@ -66,7 +66,7 @@ export default async function ConfiguracoesFiscaisPage() {
             razaoSocial: dadosFiscais.razaoSocial ?? "",
             nomeFantasia: dadosFiscais.nomeFantasia ?? "",
             inscricaoEstadual: dadosFiscais.inscricaoEstadual ?? "",
-            regimeTributario: dadosFiscais.regimeTributario ?? "",
+            regimeTributario: dadosFiscais.regimeTributario,
             enderecoCep: dadosFiscais.enderecoCep ?? "",
             enderecoLogradouro: dadosFiscais.enderecoLogradouro ?? "",
             enderecoNumero: dadosFiscais.enderecoNumero ?? "",
@@ -76,6 +76,10 @@ export default async function ConfiguracoesFiscaisPage() {
             naturezaOperacaoPadrao: dadosFiscais.naturezaOperacaoPadrao,
             cfopPadrao: dadosFiscais.cfopPadrao,
             csosnPadrao: dadosFiscais.csosnPadrao,
+            cstIcmsPadrao: dadosFiscais.cstIcmsPadrao ?? "",
+            icmsAliquotaPadrao: dadosFiscais.icmsAliquotaPadrao?.toString() ?? "",
+            icmsModalidadeBaseCalculoPadrao: dadosFiscais.icmsModalidadeBaseCalculoPadrao ?? "",
+            pisCofinsSituacaoTributariaPadrao: dadosFiscais.pisCofinsSituacaoTributariaPadrao ?? "",
           }}
           tokenMascarado={tokenMascarado}
         />
