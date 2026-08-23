@@ -6,7 +6,16 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { SelectCodigoFiscal } from "@/components/ui/SelectCodigoFiscal";
+import {
+  CSOSN_OPCOES,
+  CST_ICMS_OPCOES,
+  ICMS_MODALIDADE_BASE_CALCULO_OPCOES,
+  PIS_COFINS_SITUACAO_TRIBUTARIA_OPCOES,
+} from "@/lib/nota-fiscal-tabelas";
 import { salvarDadosFiscaisFilial } from "../actions";
+
+type RegimeTributario = "SIMPLES_NACIONAL" | "LUCRO_PRESUMIDO" | "LUCRO_REAL";
 
 type ValoresFiscaisFilial = {
   ambiente: "homologacao" | "producao";
@@ -14,7 +23,7 @@ type ValoresFiscaisFilial = {
   razaoSocial: string;
   nomeFantasia: string;
   inscricaoEstadual: string;
-  regimeTributario: string;
+  regimeTributario: RegimeTributario;
   enderecoCep: string;
   enderecoLogradouro: string;
   enderecoNumero: string;
@@ -24,6 +33,10 @@ type ValoresFiscaisFilial = {
   naturezaOperacaoPadrao: string;
   cfopPadrao: string;
   csosnPadrao: string;
+  cstIcmsPadrao: string;
+  icmsAliquotaPadrao: string;
+  icmsModalidadeBaseCalculoPadrao: string;
+  pisCofinsSituacaoTributariaPadrao: string;
 };
 
 // Mantém formato 00000-000 enquanto digita — nunca converte pra number (CEP
@@ -45,6 +58,9 @@ export function DadosFiscaisFilialForm({
 }) {
   const [state, formAction, isPending] = useActionState(salvarDadosFiscaisFilial, null);
   const [cep, setCep] = useState(valoresIniciais.enderecoCep);
+  const [regimeTributario, setRegimeTributario] = useState<RegimeTributario>(
+    valoresIniciais.regimeTributario
+  );
 
   return (
     <form action={formAction} className="flex flex-col gap-6">
@@ -105,14 +121,17 @@ export function DadosFiscaisFilialForm({
             type="text"
             defaultValue={valoresIniciais.nomeFantasia}
           />
-          <Input
+          <Select
             label="Regime tributário"
             name="regimeTributario"
-            type="text"
-            defaultValue={valoresIniciais.regimeTributario}
-            placeholder="ex: Simples Nacional"
-            hint="Informativo — ajuda a orientar o CSOSN padrão abaixo."
-          />
+            value={regimeTributario}
+            onChange={(e) => setRegimeTributario(e.target.value as RegimeTributario)}
+            hint="Decide como a nota fiscal é montada: Simples Nacional usa CSOSN; Lucro Presumido/Real usam CST-ICMS + alíquota."
+          >
+            <option value="SIMPLES_NACIONAL">Simples Nacional</option>
+            <option value="LUCRO_PRESUMIDO">Lucro Presumido</option>
+            <option value="LUCRO_REAL">Lucro Real</option>
+          </Select>
         </div>
       </Card>
 
@@ -191,15 +210,65 @@ export function DadosFiscaisFilialForm({
             defaultValue={valoresIniciais.cfopPadrao}
             hint="5102 = venda dentro do estado (mais comum)."
           />
-          <Input
-            label="CSOSN/CST padrão"
-            name="csosnPadrao"
-            type="text"
-            defaultValue={valoresIniciais.csosnPadrao}
-            hint="102 = Simples Nacional, sem permissão de crédito (mais comum)."
-          />
+          {regimeTributario === "SIMPLES_NACIONAL" ? (
+            <SelectCodigoFiscal
+              label="CSOSN padrão"
+              name="csosnPadrao"
+              opcoes={CSOSN_OPCOES}
+              valorInicial={valoresIniciais.csosnPadrao}
+              hint="102 = tributada sem permissão de crédito (mais comum)."
+            />
+          ) : (
+            <input type="hidden" name="csosnPadrao" value={valoresIniciais.csosnPadrao} />
+          )}
         </div>
       </Card>
+
+      {regimeTributario !== "SIMPLES_NACIONAL" && (
+        <Card className="flex flex-col gap-4 p-6">
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Campos fiscais do Regime Normal
+          </h2>
+          <p className="-mt-2 text-sm text-slate-500">
+            Obrigatórios pra emitir nota fiscal fora do Simples Nacional —
+            sem eles a Focus NFe/SEFAZ rejeita a nota.
+          </p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <SelectCodigoFiscal
+              label="CST-ICMS padrão"
+              name="cstIcmsPadrao"
+              opcoes={CST_ICMS_OPCOES}
+              valorInicial={valoresIniciais.cstIcmsPadrao}
+              hint="00 = tributada integralmente (mais comum)."
+            />
+            <Input
+              label="Alíquota de ICMS padrão (%)"
+              name="icmsAliquotaPadrao"
+              type="number"
+              step="0.01"
+              min="0"
+              max="100"
+              defaultValue={valoresIniciais.icmsAliquotaPadrao}
+              placeholder="ex: 18"
+              hint="Percentual — digite 18 para 18%, não 0,18."
+            />
+            <SelectCodigoFiscal
+              label="Modalidade de base de cálculo do ICMS"
+              name="icmsModalidadeBaseCalculoPadrao"
+              opcoes={ICMS_MODALIDADE_BASE_CALCULO_OPCOES}
+              valorInicial={valoresIniciais.icmsModalidadeBaseCalculoPadrao}
+              hint="3 = valor da operação (mais comum)."
+            />
+            <SelectCodigoFiscal
+              label="Situação tributária de PIS/COFINS padrão"
+              name="pisCofinsSituacaoTributariaPadrao"
+              opcoes={PIS_COFINS_SITUACAO_TRIBUTARIA_OPCOES}
+              valorInicial={valoresIniciais.pisCofinsSituacaoTributariaPadrao}
+              hint="Mesmo código usado pra PIS e pra COFINS."
+            />
+          </div>
+        </Card>
+      )}
 
       {state && <Alert variant={state.ok ? "success" : "error"}>{state.mensagem}</Alert>}
 

@@ -431,7 +431,7 @@ model DadosFiscaisGrafica {
   razaoSocial       String?
   nomeFantasia      String?
   inscricaoEstadual String?
-  regimeTributario  String? // informativo (ex: "Simples Nacional") — orienta o CSOSN padrão
+  regimeTributario  RegimeTributario @default(SIMPLES_NACIONAL) // decide CSOSN (Simples) vs CST+ICMS (Normal) na emissão — ver src/lib/nota-fiscal.ts
 
   enderecoCep        String?
   enderecoLogradouro String?
@@ -442,7 +442,15 @@ model DadosFiscaisGrafica {
 
   naturezaOperacaoPadrao String @default("Venda de mercadoria")
   cfopPadrao             String @default("5102") // venda dentro do estado, mercadoria de terceiros
-  csosnPadrao            String @default("102") // Simples Nacional, tributada sem permissão de crédito
+  csosnPadrao            String @default("102") // Simples Nacional, tributada sem permissão de crédito — só lido/enviado quando regimeTributario=SIMPLES_NACIONAL
+
+  // Só relevantes/obrigatórios (validado na Server Action, não CHECK no
+  // banco — mesmo padrão do resto do arquivo) quando regimeTributario !=
+  // SIMPLES_NACIONAL. Tabelas de código: ver src/lib/nota-fiscal-tabelas.ts.
+  cstIcmsPadrao                     String? // tabela CST-ICMS (00,10,20...), diferente de CSOSN
+  icmsAliquotaPadrao                Decimal? @db.Decimal(5, 2) // % — ex: 18.00
+  icmsModalidadeBaseCalculoPadrao   String? // tabela 0-3
+  pisCofinsSituacaoTributariaPadrao String? // PIS e COFINS compartilham a mesma tabela de código
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -477,7 +485,7 @@ model DadosFiscaisFilial {
   razaoSocial       String?
   nomeFantasia      String?
   inscricaoEstadual String?
-  regimeTributario  String?
+  regimeTributario  RegimeTributario @default(SIMPLES_NACIONAL)
 
   enderecoCep        String?
   enderecoLogradouro String?
@@ -490,12 +498,25 @@ model DadosFiscaisFilial {
   cfopPadrao             String @default("5102")
   csosnPadrao            String @default("102")
 
+  // Espelha DadosFiscaisGrafica campo a campo — ver comentário lá.
+  cstIcmsPadrao                     String?
+  icmsAliquotaPadrao                Decimal? @db.Decimal(5, 2)
+  icmsModalidadeBaseCalculoPadrao   String?
+  pisCofinsSituacaoTributariaPadrao String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   filial Filial @relation(fields: [filialId], references: [id], onDelete: Cascade)
 
   @@map("dados_fiscais_filial")
+}
+
+// Fechado, sem OUTRO: não existe um 4º regime real pra CNPJ emitir NF-e.
+enum RegimeTributario {
+  SIMPLES_NACIONAL
+  LUCRO_PRESUMIDO
+  LUCRO_REAL
 }
 
 enum StatusNotaFiscal {
