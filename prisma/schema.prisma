@@ -171,6 +171,18 @@ model ParametrosGrafica {
   // "voltar pro padrão do sistema", nunca "sem cláusula nenhuma".
   termosCondicoesPdf String? @db.Text
 
+  // Liga/desliga o bloco inteiro de especificações técnicas de etiqueta
+  // (material, adesivo, verniz, laminação, hot/cold stamping, rebobinamento
+  // — ver OrcamentoItemEtiqueta) no que o CLIENTE vê (link público e as duas
+  // rotas de PDF), nunca na tela interna autenticada nem na Ordem de
+  // Produção (chão de fábrica sempre precisa da especificação completa,
+  // independente da preferência do cliente). Tudo ou nada de propósito —
+  // usuário pediu explicitamente a versão simples em vez de um toggle por
+  // campo (2026-08-23): "nem toda empresa quer que apareça". default true
+  // preserva o comportamento de sempre mostrar (que já existia antes deste
+  // campo existir) pra toda gráfica já cadastrada.
+  mostrarEspecificacoesTecnicas Boolean @default(true)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

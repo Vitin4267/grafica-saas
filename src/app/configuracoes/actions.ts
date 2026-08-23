@@ -237,6 +237,11 @@ export async function salvarParametros(
     termosCondicoesPdf = termosCondicoesPdfBruto.trim();
   }
 
+  // Tudo ou nada de propósito (ver comentário do campo no schema) — usuário
+  // pediu explicitamente a versão simples em vez de um toggle por campo de
+  // etiqueta (2026-08-23).
+  const mostrarEspecificacoesTecnicas = formData.get("mostrarEspecificacoesTecnicas") === "on";
+
   const somaEncargos =
     dados.margemPadrao +
     dados.impostoPercent +
@@ -265,6 +270,7 @@ export async function salvarParametros(
       comissaoVendedorBase,
       custoTintaPorMl,
       termosCondicoesPdf,
+      mostrarEspecificacoesTecnicas,
       diasValidadeOrcamentoPadrao,
       diasAlertaOrcamentoParado,
       alertaPrazoAtivo,
@@ -309,6 +315,12 @@ export async function salvarParametros(
   if (termosCondicoesPdfAntes !== termosCondicoesPdf) {
     antesTextos.push(`Termos e condições do PDF: ${termosCondicoesPdfAntes ? "personalizado" : "padrão do sistema"}`);
     depoisTextos.push(`Termos e condições do PDF: ${termosCondicoesPdf ? "personalizado" : "padrão do sistema"}`);
+  }
+
+  const mostrarEspecificacoesTecnicasAntes = parametrosAntes?.mostrarEspecificacoesTecnicas ?? true;
+  if (mostrarEspecificacoesTecnicasAntes !== mostrarEspecificacoesTecnicas) {
+    antesTextos.push(`Especificações técnicas no orçamento do cliente: ${mostrarEspecificacoesTecnicasAntes ? "visíveis" : "ocultas"}`);
+    depoisTextos.push(`Especificações técnicas no orçamento do cliente: ${mostrarEspecificacoesTecnicas ? "visíveis" : "ocultas"}`);
   }
 
   const diasValidadeOrcamentoPadraoAntes = parametrosAntes?.diasValidadeOrcamentoPadrao ?? 15;

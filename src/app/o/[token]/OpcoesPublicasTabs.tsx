@@ -42,6 +42,7 @@ export function OpcoesPublicasTabs({
   nomeSugerido,
   opcoes,
   mostrarResposta,
+  mostrarEspecificacoesTecnicas,
 }: {
   token: string;
   nomeSugerido: string | null;
@@ -51,6 +52,9 @@ export function OpcoesPublicasTabs({
   // status === "ENVIADO" && !expirado — mesma condição que já existia pra
   // mostrar RespostaPublica antes desta feature.
   mostrarResposta: boolean;
+  // ParametrosGrafica.mostrarEspecificacoesTecnicas, já resolvido (default
+  // true aplicado) por quem chama — ver page.tsx.
+  mostrarEspecificacoesTecnicas: boolean;
 }) {
   const [abaSelecionada, setAbaSelecionada] = useState(0);
   const opcao = opcoes[abaSelecionada] ?? opcoes[0];
@@ -100,7 +104,9 @@ export function OpcoesPublicasTabs({
               {item.acabamento && <span>Acabamento: {item.acabamento}</span>}
               <span>Unitário: {formatoMoeda.format(Number(item.precoUnitario))}</span>
             </div>
-            {item.etiqueta && <EtiquetaResumo etiqueta={item.etiqueta} />}
+            {item.etiqueta && mostrarEspecificacoesTecnicas && (
+              <EtiquetaResumo etiqueta={item.etiqueta} />
+            )}
           </div>
         ))}
       </Card>

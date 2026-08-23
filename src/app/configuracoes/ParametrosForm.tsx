@@ -29,6 +29,7 @@ export function ParametrosForm({
   alertaPrazoLimiar2Dias,
   alertaPrazoLimiar3Dias,
   termosCondicoesPdf,
+  mostrarEspecificacoesTecnicas,
 }: {
   parametros: ParametrosTenant;
   comissaoVendedorBase: BaseComissao;
@@ -41,6 +42,7 @@ export function ParametrosForm({
   alertaPrazoLimiar2Dias: number;
   alertaPrazoLimiar3Dias: number;
   termosCondicoesPdf: string | null;
+  mostrarEspecificacoesTecnicas: boolean;
 }) {
   const [state, formAction, isPending] = useActionState(salvarParametros, null);
 
@@ -272,6 +274,33 @@ export function ParametrosForm({
           defaultValue={diasAlertaOrcamentoParado}
           className="max-w-xs"
         />
+      </Card>
+
+      <Card className="flex flex-col gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Especificações técnicas no orçamento do cliente
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Quando um item tem detalhe técnico de etiqueta (material,
+            adesivo, verniz, laminação, hot/cold stamping...), esse bloco
+            aparece no link público e no PDF pro cliente confirmar
+            exatamente o que vai ser produzido. Desative se sua gráfica
+            prefere não expor essa informação — a tela interna e a ordem de
+            produção continuam mostrando tudo, sempre, independente disso.
+          </p>
+        </div>
+        <label className="flex items-center gap-2.5">
+          <input
+            type="checkbox"
+            name="mostrarEspecificacoesTecnicas"
+            defaultChecked={mostrarEspecificacoesTecnicas}
+            className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+          />
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+            Mostrar especificações técnicas pro cliente
+          </span>
+        </label>
       </Card>
 
       <Card className="flex flex-col gap-4 p-6">

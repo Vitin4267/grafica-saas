@@ -31,7 +31,7 @@ export default async function OrcamentoPublicoPage({
     where: { linkPublicoToken: token },
     include: {
       cliente: true,
-      grafica: true,
+      grafica: { include: { parametros: { select: { mostrarEspecificacoesTecnicas: true } } } },
       // opcaoId: null — só a opção-base ("Opção A"). Opções alternativas
       // (ver model OrcamentoOpcao) vêm à parte, no include `opcoes` abaixo.
       itens: {
@@ -60,6 +60,9 @@ export default async function OrcamentoPublicoPage({
   }
 
   const ehPdf = orcamento.arteUrl?.toLowerCase().endsWith(".pdf") ?? false;
+  // Default true: mesmo comportamento de sempre mostrar, que já existia
+  // antes deste toggle (ver comentário do campo no schema).
+  const mostrarEspecificacoesTecnicas = orcamento.grafica.parametros?.mostrarEspecificacoesTecnicas ?? true;
 
   // Mapeia um conjunto de OrcamentoItem (base ou de uma opção alternativa)
   // pro shape simples que OpcoesPublicasTabs consome — mesmos campos que a
@@ -208,7 +211,9 @@ export default async function OrcamentoPublicoPage({
                   {item.acabamento && <span>Acabamento: {item.acabamento}</span>}
                   <span>Unitário: {formatoMoeda.format(Number(item.precoUnitario))}</span>
                 </div>
-                {item.etiqueta && <EtiquetaResumo etiqueta={item.etiqueta} />}
+                {item.etiqueta && mostrarEspecificacoesTecnicas && (
+                  <EtiquetaResumo etiqueta={item.etiqueta} />
+                )}
               </div>
             ))}
           </Card>
@@ -224,6 +229,7 @@ export default async function OrcamentoPublicoPage({
             nomeSugerido={orcamento.contatoNome}
             opcoes={opcoesPublicas}
             mostrarResposta={orcamento.status === "ENVIADO" && !orcamentoEstaExpirado(orcamento)}
+            mostrarEspecificacoesTecnicas={mostrarEspecificacoesTecnicas}
           />
         )}
 

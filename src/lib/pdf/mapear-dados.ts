@@ -32,11 +32,12 @@ export type OrcamentoParaPdf = {
     nome: string;
     logoUrl: string | null;
     corPrimaria: string | null;
-    // Só o texto de termos e condições — nunca os demais campos de
-    // ParametrosGrafica (overhead, margem, comissão etc.), que são dado
-    // comercial interno e não podem chegar no PDF (nem no autenticado, nem
-    // no público). Ver comentário equivalente no topo de DadosPdfOrcamento.
-    parametros: { termosCondicoesPdf: string | null } | null;
+    // Só o texto de termos e o toggle de especificações técnicas — nunca os
+    // demais campos de ParametrosGrafica (overhead, margem, comissão etc.),
+    // que são dado comercial interno e não podem chegar no PDF (nem no
+    // autenticado, nem no público). Ver comentário equivalente no topo de
+    // DadosPdfOrcamento.
+    parametros: { termosCondicoesPdf: string | null; mostrarEspecificacoesTecnicas: boolean } | null;
   };
   // Bloco 1 (dados gerais) — seguros pro cliente ver, ao contrário de
   // observações (interno) e etapas de produção (interno), que nunca entram
@@ -103,6 +104,11 @@ export type OrcamentoParaPdf = {
 };
 
 export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
+  // Default true (mesmo espírito do default no schema): gráfica sem
+  // ParametrosGrafica ainda (não deveria acontecer, mas orcamento.grafica.
+  // parametros é nullable) continua mostrando tudo, o comportamento de
+  // sempre que já existia antes deste toggle.
+  const mostrarEspecificacoesTecnicas = orcamento.grafica.parametros?.mostrarEspecificacoesTecnicas ?? true;
   const dadosPedido = {
     vendedor: orcamento.vendedor,
     tipoPedido: orcamento.tipoPedido ? (ROTULO_TIPO_PEDIDO[orcamento.tipoPedido] ?? orcamento.tipoPedido) : null,
@@ -145,11 +151,14 @@ export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
         fatorConversao: item.itemGrafica.fatorConversao ? Number(item.itemGrafica.fatorConversao) : null,
         embalagemQtdPorRolo: item.etiqueta?.embalagemQtdPorRolo ?? null,
       }).map((c) => `${c.valorFormatado} / ${c.rotulo}`),
-      etiquetaLinhas: item.etiqueta ? linhasEtiqueta(item.etiqueta) : [],
-      hotStampingLinhas: (item.etiqueta?.hotStampings ?? []).map((h) => {
-        const partes = [rotuloTipoHotStamping(h), h.medida, h.cor].filter(Boolean);
-        return `Hot/cold stamping (${ROTULO_LADO[h.lado] ?? h.lado}): ${partes.join(" · ")}`;
-      }),
+      etiquetaLinhas:
+        item.etiqueta && mostrarEspecificacoesTecnicas ? linhasEtiqueta(item.etiqueta) : [],
+      hotStampingLinhas: mostrarEspecificacoesTecnicas
+        ? (item.etiqueta?.hotStampings ?? []).map((h) => {
+            const partes = [rotuloTipoHotStamping(h), h.medida, h.cor].filter(Boolean);
+            return `Hot/cold stamping (${ROTULO_LADO[h.lado] ?? h.lado}): ${partes.join(" · ")}`;
+          })
+        : [],
     })),
   };
 }
