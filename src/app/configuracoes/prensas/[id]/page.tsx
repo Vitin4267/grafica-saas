@@ -45,11 +45,11 @@ export default async function PrensaDetalhePage({
 
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-10">
         <Link
-          href="/configuracoes/prensas"
+          href="/configuracoes/maquinas"
           className="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
         >
           <ArrowLeftIcon className="h-4 w-4" />
-          Voltar às prensas
+          Voltar às máquinas
         </Link>
 
         <div className="mb-8">
