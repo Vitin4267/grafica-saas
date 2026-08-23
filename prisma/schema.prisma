@@ -275,6 +275,16 @@ enum CategoriaEquipamento {
   GRAMPEADEIRA // alceadeira/grampeadeira de miolo — ex: Müller Martini, CP Bourg
   PLOTTER_RECORTE // corte de vinil/adesivo
   IMPRESSORA_GRANDE_FORMATO // banner, lona, adesivo — ex: Roland, Mimaki, HP Latex, Epson
+  // Segunda leva de categorias (pesquisa 2026-08-23) — cobre o fluxo de
+  // pré-impressão Offset (CTP) e o que uma gráfica rápida/comunicação visual
+  // tem além de papel: impressão digital de curto tiro, personalização
+  // (serigrafia/sublimação), acabamento a quente e corte de material rígido.
+  CTP // chapeadora — grava a chapa de offset — ex: Agfa, Kodak, Fujifilm, Heidelberg Suprasetter
+  IMPRESSORA_DIGITAL // pequeno formato, tiragem curta — ex: HP Indigo, Xerox, Konica Minolta, Canon, Ricoh
+  SERIGRAFIA // mesa/carrossel serigráfico, manual ou automático
+  SUBLIMACAO // prensa térmica + impressora — ex: Metalnox, MAQmei (prensa); Epson SureColor F (impressora)
+  ESTAMPAGEM_QUENTE // hot stamping — aplica filme metalizado/pigmentado com calor e pressão
+  CORTE_LASER_ROUTER // corte/gravação de acrílico, ACM, MDF — ex: Visutec, MultiCam
   OUTRO
 }
 
