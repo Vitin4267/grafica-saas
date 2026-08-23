@@ -124,6 +124,8 @@ function itemCarrinhoJson(itemGraficaId: string, quantidade: number): string {
       corFrente: null,
       corVerso: null,
       numeroCoresFlexo: null,
+      numeroCliques: null,
+      numeroSetups: null,
       cores: null,
       acabamento: null,
       acabamentoIds: [],

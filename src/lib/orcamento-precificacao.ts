@@ -3,9 +3,35 @@ import { calcularPreco } from "@/lib/orcamento";
 import { precificar, ErroPrecificacao, type PedidoPrecificacao } from "@/lib/pricing";
 import { carregarContextoPrecificacao, resolverConfigAcabamentos } from "@/lib/pricing/carregar";
 
+type ModeloCalculoPrecificavel =
+  | "SIMPLES"
+  | "M2"
+  | "OFFSET"
+  | "FLEXOGRAFIA"
+  | "DIGITAL"
+  | "SERIGRAFIA"
+  | "SUBLIMACAO"
+  | "ESTAMPAGEM_QUENTE";
+
+// Os 3 modelos de "setup por peça" — SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE —
+// e DIGITAL não têm nesting (sem largura/altura pro CUSTO em si), diferente de
+// M2/OFFSET/FLEXOGRAFIA. Usado tanto pra pular a guarda de dimensão obrigatória
+// quanto, na montagem do PedidoPrecificacao, pra escolher o branch certo.
+const MODELOS_SEM_NESTING = new Set<ModeloCalculoPrecificavel>([
+  "DIGITAL",
+  "SERIGRAFIA",
+  "SUBLIMACAO",
+  "ESTAMPAGEM_QUENTE",
+]);
+const MODELOS_SETUP_POR_PECA = new Set<ModeloCalculoPrecificavel>([
+  "SERIGRAFIA",
+  "SUBLIMACAO",
+  "ESTAMPAGEM_QUENTE",
+]);
+
 type ItemGraficaParaPrecificacao = {
   id: string;
-  modeloCalculo: "SIMPLES" | "M2" | "OFFSET" | "FLEXOGRAFIA";
+  modeloCalculo: ModeloCalculoPrecificavel;
   precoVenda: Prisma.Decimal | null;
 };
 
@@ -29,6 +55,11 @@ export type DadosItemOrcamento = {
   // (semânticos de frente/verso de folha do Offset, lidos em ~20 lugares fora
   // deste escopo).
   numeroCoresFlexo: number | null;
+  // Só usado por DIGITAL — opcional (default 1 no motor se ausente).
+  numeroCliques: number | null;
+  // Só usado por SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE (os 3 compartilham
+  // este campo, mesma razão de compartilharem calcularSetupPorPeca).
+  numeroSetups: number | null;
 };
 
 export type AcabamentoParaGravar = {
@@ -42,10 +73,12 @@ export type ResultadoItemOrcamento =
       ok: true;
       precoUnitario: string;
       precoTotal: string;
-      modeloCalculo: "SIMPLES" | "M2" | "OFFSET" | "FLEXOGRAFIA";
+      modeloCalculo: ModeloCalculoPrecificavel;
       corFrente: number | null;
       corVerso: number | null;
       numeroCoresFlexo: number | null;
+      numeroCliques: number | null;
+      numeroSetups: number | null;
       breakdown: Prisma.InputJsonValue | null;
       acabamentos: AcabamentoParaGravar[];
       precificacaoEtiqueta: {
@@ -124,6 +157,29 @@ export async function calcularItemOrcamento(
     }
   }
 
+  // Guarda de DIGITAL — nº de cliques é opcional (default 1 no motor), mas
+  // quando informado precisa ser um inteiro válido. Mesmo cuidado das guardas
+  // acima: precisa vir antes do branch SIMPLES.
+  if (
+    itemGrafica.modeloCalculo === "DIGITAL" &&
+    dados.numeroCliques !== null &&
+    (!Number.isInteger(dados.numeroCliques) || dados.numeroCliques < 1)
+  ) {
+    return { ok: false, mensagem: "Número de cliques inválido (mínimo 1)." };
+  }
+
+  // Guarda dos 3 modelos de setup por peça — mesmo padrão do guard de
+  // numeroCoresFlexo acima, nº de setups é obrigatório (sem default).
+  if (
+    MODELOS_SETUP_POR_PECA.has(itemGrafica.modeloCalculo) &&
+    (!Number.isInteger(dados.numeroSetups) || (dados.numeroSetups ?? 0) < 1)
+  ) {
+    return {
+      ok: false,
+      mensagem: "Informe o número de setups (telas/matrizes/artes, mínimo 1) — item deste modelo de cálculo.",
+    };
+  }
+
   if (itemGrafica.modeloCalculo === "SIMPLES") {
     // Number(null) é 0, não erro — sem esta guarda, um produto que ficou sem
     // preço no catálogo (ex: campo limpo por engano numa edição em lote)
@@ -154,14 +210,19 @@ export async function calcularItemOrcamento(
       corFrente: null,
       corVerso: null,
       numeroCoresFlexo: null,
+      numeroCliques: null,
+      numeroSetups: null,
       breakdown: null,
       acabamentos: [],
       precificacaoEtiqueta: null,
     };
   }
 
-  // Motor avançado (M2/OFFSET/FLEXOGRAFIA): exige dimensões reais da peça.
-  if (!larguraCm || !alturaCm) {
+  // Motor avançado M2/OFFSET/FLEXOGRAFIA exige dimensões reais da peça (usadas
+  // pro nesting). DIGITAL e os 3 de setup-por-peça NÃO têm nesting — largura/
+  // altura são opcionais pra eles (ver PedidoDigital/PedidoSetupPorPeca em
+  // src/lib/pricing/tipos.ts), então pulam esta guarda.
+  if (!MODELOS_SEM_NESTING.has(itemGrafica.modeloCalculo) && (!larguraCm || !alturaCm)) {
     return {
       ok: false,
       mensagem: "Informe largura e altura — este item usa o cálculo avançado por área.",
@@ -196,39 +257,110 @@ export async function calcularItemOrcamento(
         ? await resolverConfigAcabamentos(dados.acabamentoIds, graficaId)
         : [];
 
-    const pedido: PedidoPrecificacao =
-      itemGrafica.modeloCalculo === "OFFSET"
-        ? {
-            tipo: "OFFSET",
-            pedido: {
-              larguraM: larguraCm / 100,
-              alturaM: alturaCm / 100,
-              quantidade,
-              corFrente: corFrente!,
-              corVerso: corVerso!,
-            },
-            acabamentos,
-          }
-        : itemGrafica.modeloCalculo === "FLEXOGRAFIA"
-          ? {
-              tipo: "FLEXOGRAFIA",
-              pedido: {
-                larguraM: larguraCm / 100,
-                alturaM: alturaCm / 100,
-                quantidade,
-                numeroCores: dados.numeroCoresFlexo!,
-              },
-              acabamentos,
-            }
-          : {
-              tipo: "M2",
-              pedido: {
-                larguraM: larguraCm / 100,
-                alturaM: alturaCm / 100,
-                quantidade,
-              },
-              acabamentos,
-            };
+    // DIGITAL e os 3 de setup-por-peça não exigem largura/altura (guarda
+    // acima pulou essa checagem pra eles) — mas se o produto tiver um
+    // acabamento anexado com baseCobranca=M2, esse acabamento precisa de
+    // largura×altura pra não custar R$0 silenciosamente (calcularQtdBase
+    // multiplicaria por 0). Bloqueia aqui, com mensagem clara, em vez de
+    // deixar passar.
+    if (
+      MODELOS_SEM_NESTING.has(itemGrafica.modeloCalculo) &&
+      (!larguraCm || !alturaCm) &&
+      acabamentos.some((a) => a.baseCobranca === "M2")
+    ) {
+      return {
+        ok: false,
+        mensagem:
+          "Este item tem um acabamento cobrado por m² — informe largura e altura pra calcular o custo desse acabamento corretamente.",
+      };
+    }
+
+    // DIGITAL e os 3 de setup-por-peça: largura/altura são opcionais (guarda
+    // acima já garantiu que, se ausentes, nenhum acabamento M2-based está
+    // anexado) — undefined quando não informadas, nunca uma divisão por um
+    // null.
+    const larguraMOpcional = larguraCm !== null ? larguraCm / 100 : undefined;
+    const alturaMOpcional = alturaCm !== null ? alturaCm / 100 : undefined;
+
+    let pedido: PedidoPrecificacao;
+    if (itemGrafica.modeloCalculo === "OFFSET") {
+      pedido = {
+        tipo: "OFFSET",
+        pedido: {
+          larguraM: larguraCm! / 100,
+          alturaM: alturaCm! / 100,
+          quantidade,
+          corFrente: corFrente!,
+          corVerso: corVerso!,
+        },
+        acabamentos,
+      };
+    } else if (itemGrafica.modeloCalculo === "FLEXOGRAFIA") {
+      pedido = {
+        tipo: "FLEXOGRAFIA",
+        pedido: {
+          larguraM: larguraCm! / 100,
+          alturaM: alturaCm! / 100,
+          quantidade,
+          numeroCores: dados.numeroCoresFlexo!,
+        },
+        acabamentos,
+      };
+    } else if (itemGrafica.modeloCalculo === "DIGITAL") {
+      pedido = {
+        tipo: "DIGITAL",
+        pedido: {
+          quantidade,
+          numeroCliques: dados.numeroCliques ?? undefined,
+          larguraM: larguraMOpcional,
+          alturaM: alturaMOpcional,
+        },
+        acabamentos,
+      };
+    } else if (itemGrafica.modeloCalculo === "SERIGRAFIA") {
+      pedido = {
+        tipo: "SERIGRAFIA",
+        pedido: {
+          quantidade,
+          numeroSetups: dados.numeroSetups!,
+          larguraM: larguraMOpcional,
+          alturaM: alturaMOpcional,
+        },
+        acabamentos,
+      };
+    } else if (itemGrafica.modeloCalculo === "SUBLIMACAO") {
+      pedido = {
+        tipo: "SUBLIMACAO",
+        pedido: {
+          quantidade,
+          numeroSetups: dados.numeroSetups!,
+          larguraM: larguraMOpcional,
+          alturaM: alturaMOpcional,
+        },
+        acabamentos,
+      };
+    } else if (itemGrafica.modeloCalculo === "ESTAMPAGEM_QUENTE") {
+      pedido = {
+        tipo: "ESTAMPAGEM_QUENTE",
+        pedido: {
+          quantidade,
+          numeroSetups: dados.numeroSetups!,
+          larguraM: larguraMOpcional,
+          alturaM: alturaMOpcional,
+        },
+        acabamentos,
+      };
+    } else {
+      pedido = {
+        tipo: "M2",
+        pedido: {
+          larguraM: larguraCm! / 100,
+          alturaM: alturaCm! / 100,
+          quantidade,
+        },
+        acabamentos,
+      };
+    }
 
     const resultado = precificar(pedido, contexto);
     // decimal.js serializa via toJSON() -> string; o round-trip garante um objeto
@@ -243,6 +375,15 @@ export async function calcularItemOrcamento(
       corFrente: itemGrafica.modeloCalculo === "OFFSET" ? corFrente! : null,
       corVerso: itemGrafica.modeloCalculo === "OFFSET" ? corVerso! : null,
       numeroCoresFlexo: itemGrafica.modeloCalculo === "FLEXOGRAFIA" ? dados.numeroCoresFlexo! : null,
+      // Lido de volta do resultado (não de dados.numeroCliques) porque o
+      // motor aplica um default (1) quando o pedido não informa — a coluna
+      // snapshot precisa refletir o valor REALMENTE usado no cálculo.
+      numeroCliques:
+        itemGrafica.modeloCalculo === "DIGITAL" &&
+        typeof resultado.metricas.numeroCliques === "number"
+          ? resultado.metricas.numeroCliques
+          : null,
+      numeroSetups: MODELOS_SETUP_POR_PECA.has(itemGrafica.modeloCalculo) ? dados.numeroSetups! : null,
       breakdown,
       acabamentos: resultado.detalhes.acabamentos.map((a) => ({
         itemGraficaId: a.itemGraficaId,

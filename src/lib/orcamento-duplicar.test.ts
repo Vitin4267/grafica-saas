@@ -11,6 +11,8 @@ describe("montarDadosItemParaRecalculo", () => {
       corFrente: 4,
       corVerso: 0,
       numeroCoresFlexo: null,
+      numeroCliques: null,
+      numeroSetups: null,
       acabamentos: [{ itemGraficaId: "acab-1" }, { itemGraficaId: "acab-2" }],
       precificacaoEtiqueta: null,
     });
@@ -22,6 +24,8 @@ describe("montarDadosItemParaRecalculo", () => {
       corFrente: 4,
       corVerso: 0,
       numeroCoresFlexo: null,
+      numeroCliques: null,
+      numeroSetups: null,
       acabamentoIds: ["acab-1", "acab-2"],
       papelId: null,
       quantidadeCores: null,
@@ -38,6 +42,8 @@ describe("montarDadosItemParaRecalculo", () => {
       corFrente: null,
       corVerso: null,
       numeroCoresFlexo: 3,
+      numeroCliques: null,
+      numeroSetups: null,
       acabamentos: [],
       precificacaoEtiqueta: {
         papelId: "papel-1",

@@ -25,7 +25,15 @@ export default async function ManutencaoMaquinasPage() {
   await exigirVerModulo(usuario, "CONFIGURACOES");
   const podeEditar = await podeEditarModulo(usuario, "CONFIGURACOES");
 
-  const [prensas, maquinasFlexografia, equipamentos, registrosAtivos, historico] = await Promise.all([
+  const [
+    prensas,
+    maquinasFlexografia,
+    equipamentos,
+    impressorasDigitais,
+    maquinasSetupPorPeca,
+    registrosAtivos,
+    historico,
+  ] = await Promise.all([
     prisma.prensa.findMany({
       where: { graficaId: usuario.graficaId },
       orderBy: { nome: "asc" },
@@ -35,6 +43,14 @@ export default async function ManutencaoMaquinasPage() {
       orderBy: { nome: "asc" },
     }),
     prisma.equipamento.findMany({
+      where: { graficaId: usuario.graficaId },
+      orderBy: { nome: "asc" },
+    }),
+    prisma.impressoraDigital.findMany({
+      where: { graficaId: usuario.graficaId },
+      orderBy: { nome: "asc" },
+    }),
+    prisma.maquinaSetupPorPeca.findMany({
       where: { graficaId: usuario.graficaId },
       orderBy: { nome: "asc" },
     }),
@@ -49,6 +65,8 @@ export default async function ManutencaoMaquinasPage() {
         prensa: { select: { nome: true } },
         maquinaFlexografia: { select: { nome: true } },
         equipamento: { select: { nome: true } },
+        impressoraDigital: { select: { nome: true } },
+        maquinaSetupPorPeca: { select: { nome: true } },
       },
     }),
   ]);
@@ -237,6 +255,90 @@ export default async function ManutencaoMaquinasPage() {
           </div>
         </div>
 
+        <div className="mb-10">
+          <h2 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">
+            Impressão Digital
+          </h2>
+          <div className="flex flex-col gap-3">
+            {impressorasDigitais.length === 0 && (
+              <Card className="p-5">
+                <p className="text-sm text-slate-500">Nenhuma impressora cadastrada ainda.</p>
+              </Card>
+            )}
+            {impressorasDigitais.map((impressora) => {
+              const registro = ativosPorMaquina.get(impressora.id);
+              return podeEditar ? (
+                <ManutencaoMaquinaCard
+                  key={impressora.id}
+                  maquinaId={impressora.id}
+                  maquinaNome={impressora.nome}
+                  campoId="impressoraDigitalId"
+                  registroAtivo={
+                    registro
+                      ? {
+                          id: registro.id,
+                          tipo: registro.tipo,
+                          motivo: registro.motivo,
+                          dataInicioFormatada: formatoInstanteRealComHora.format(registro.dataInicio),
+                          registradoPorNome: nomeRegistrador(registro.registradoPorId),
+                        }
+                      : null
+                  }
+                />
+              ) : (
+                <Card key={impressora.id} className="p-5">
+                  <p className="font-medium text-slate-900 dark:text-white">{impressora.nome}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {registro ? `Parada desde ${formatoInstanteRealComHora.format(registro.dataInicio)}` : "Disponível pra produção"}
+                  </p>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="mb-10">
+          <h2 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">
+            Serigrafia / Sublimação / Estampagem a quente
+          </h2>
+          <div className="flex flex-col gap-3">
+            {maquinasSetupPorPeca.length === 0 && (
+              <Card className="p-5">
+                <p className="text-sm text-slate-500">Nenhuma máquina cadastrada ainda.</p>
+              </Card>
+            )}
+            {maquinasSetupPorPeca.map((maquina) => {
+              const registro = ativosPorMaquina.get(maquina.id);
+              return podeEditar ? (
+                <ManutencaoMaquinaCard
+                  key={maquina.id}
+                  maquinaId={maquina.id}
+                  maquinaNome={maquina.nome}
+                  campoId="maquinaSetupPorPecaId"
+                  registroAtivo={
+                    registro
+                      ? {
+                          id: registro.id,
+                          tipo: registro.tipo,
+                          motivo: registro.motivo,
+                          dataInicioFormatada: formatoInstanteRealComHora.format(registro.dataInicio),
+                          registradoPorNome: nomeRegistrador(registro.registradoPorId),
+                        }
+                      : null
+                  }
+                />
+              ) : (
+                <Card key={maquina.id} className="p-5">
+                  <p className="font-medium text-slate-900 dark:text-white">{maquina.nome}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {registro ? `Parada desde ${formatoInstanteRealComHora.format(registro.dataInicio)}` : "Disponível pra produção"}
+                  </p>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+
         <Card className="flex flex-col gap-1 p-6">
           <h2 className="text-base font-semibold text-slate-900 dark:text-white">
             Histórico de paradas
@@ -257,6 +359,8 @@ export default async function ManutencaoMaquinasPage() {
                       {registro.prensa?.nome ??
                         registro.maquinaFlexografia?.nome ??
                         registro.equipamento?.nome ??
+                        registro.impressoraDigital?.nome ??
+                        registro.maquinaSetupPorPeca?.nome ??
                         "Máquina removida"}
                       {" · "}
                       {ROTULO_TIPO_MANUTENCAO[registro.tipo]}

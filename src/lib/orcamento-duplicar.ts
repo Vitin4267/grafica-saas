@@ -20,6 +20,8 @@ export type ItemOrigemParaRecalculo = {
   corFrente: number | null;
   corVerso: number | null;
   numeroCoresFlexo: number | null;
+  numeroCliques: number | null;
+  numeroSetups: number | null;
   acabamentos: { itemGraficaId: string }[];
   precificacaoEtiqueta: {
     papelId: string;
@@ -42,6 +44,8 @@ export function montarDadosItemParaRecalculo(item: ItemOrigemParaRecalculo): Dad
     corFrente: item.corFrente,
     corVerso: item.corVerso,
     numeroCoresFlexo: item.numeroCoresFlexo,
+    numeroCliques: item.numeroCliques,
+    numeroSetups: item.numeroSetups,
     acabamentoIds: item.acabamentos.map((a) => a.itemGraficaId),
     papelId: item.precificacaoEtiqueta?.papelId ?? null,
     quantidadeCores: item.precificacaoEtiqueta?.quantidadeCores ?? null,

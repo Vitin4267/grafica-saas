@@ -156,9 +156,19 @@ type ComponenteCusto = { chave: "material" | "chapas" | "impressao"; valor: Dec 
 // FLEXOGRAFIA: não tem conceito de "chapas" no breakdown (sem clichê pra
 // isolar), então detalhes.material já é só o custo de material — sem
 // subtração nenhuma. rodagem/setup lidos igual ao branch OFFSET.
+//
+// DIGITAL: detalhes.material é custoCliques + custoSubstrato SOMADOS (mesmo
+// motivo do M2 — comporPreco() sempre grava o custoBase inteiro em
+// `material`); detalhes.setup carrega só custoCliques (ver detalhesExtras em
+// precificar.ts), então o substrato isolado é material − setup.
+//
+// SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE: sem conceito de material/substrato
+// — MaquinaSetupPorPeca não tem custo de matéria-prima, só custo de máquina
+// (setup fixo + variável por peça, ver src/lib/pricing/setup-por-peca.ts).
+// custoBase inteiro cai em "impressao", nunca em "material".
 function componentesCustoBreakdown(
   breakdown: Prisma.JsonValue,
-  modeloCalculo: "M2" | "OFFSET" | "FLEXOGRAFIA"
+  modeloCalculo: "M2" | "OFFSET" | "FLEXOGRAFIA" | "DIGITAL" | "SERIGRAFIA" | "SUBLIMACAO" | "ESTAMPAGEM_QUENTE"
 ): ComponenteCusto[] | null {
   if (!breakdown || typeof breakdown !== "object" || Array.isArray(breakdown)) return null;
   const raiz = breakdown as Record<string, unknown>;
@@ -194,6 +204,20 @@ function componentesCustoBreakdown(
     const impressao = rodagem.plus(setup);
     if (impressao.gt(0)) componentes.push({ chave: "impressao", valor: impressao });
     return componentes;
+  }
+
+  if (modeloCalculo === "DIGITAL") {
+    const custoCliques = lerDecimalDeJson(detalhes.setup) ?? paraDecimal(0);
+    const custoSubstrato = materialTotal.minus(custoCliques);
+
+    const componentes: ComponenteCusto[] = [];
+    if (custoSubstrato.gt(0)) componentes.push({ chave: "material", valor: custoSubstrato });
+    if (custoCliques.gt(0)) componentes.push({ chave: "impressao", valor: custoCliques });
+    return componentes;
+  }
+
+  if (modeloCalculo === "SERIGRAFIA" || modeloCalculo === "SUBLIMACAO" || modeloCalculo === "ESTAMPAGEM_QUENTE") {
+    return materialTotal.gt(0) ? [{ chave: "impressao", valor: materialTotal }] : [];
   }
 
   // OFFSET
@@ -359,7 +383,8 @@ export async function calcularPrevisaoAprovacaoPedido(
       continue;
     }
 
-    // M2, OFFSET ou FLEXOGRAFIA
+    // M2, OFFSET, FLEXOGRAFIA, DIGITAL ou setup-por-peça (SERIGRAFIA/
+    // SUBLIMACAO/ESTAMPAGEM_QUENTE)
     const componentes = item.breakdown ? componentesCustoBreakdown(item.breakdown, item.modeloCalculo) : null;
     if (!componentes) {
       itensSemPrevisao.push(`${nomeItem} (breakdown do motor de precificação ausente ou inválido)`);

@@ -57,7 +57,15 @@ export function EditarOrcamentoForm({
   orcamentoId: string;
   orcamentoItemId: string;
   itemNome: string;
-  modeloCalculo: "SIMPLES" | "M2" | "OFFSET" | "FLEXOGRAFIA";
+  modeloCalculo:
+    | "SIMPLES"
+    | "M2"
+    | "OFFSET"
+    | "FLEXOGRAFIA"
+    | "DIGITAL"
+    | "SERIGRAFIA"
+    | "SUBLIMACAO"
+    | "ESTAMPAGEM_QUENTE";
   // ConfiguracaoClicheEtiqueta presente pro produto deste item — só então
   // mostra o seletor de papel/cores/faca/frete.
   usaClicheEtiqueta: boolean;
@@ -74,6 +82,8 @@ export function EditarOrcamentoForm({
     corFrente: string;
     corVerso: string;
     numeroCoresFlexo: string;
+    numeroCliques: string;
+    numeroSetups: string;
     etiqueta: CamposEtiqueta;
     papelId: string;
     quantidadeCores: string;
@@ -89,7 +99,30 @@ export function EditarOrcamentoForm({
     removerItemOrcamento,
     null
   );
-  const usaMotorAvancado = modeloCalculo === "M2" || modeloCalculo === "OFFSET";
+  // Inclui FLEXOGRAFIA aqui (gap pré-existente corrigido junto: faltava na
+  // versão anterior desta constante, mas SeletorItemOrcamento.tsx — usado no
+  // fluxo de CRIAÇÃO — já tratava Flexografia como motor avançado; a edição
+  // devia se comportar igual à criação) + os 4 modelos novos da Feature A
+  // (Digital e os 3 de setup-por-peça também usam acabamentoIds via checkbox,
+  // não o campo de texto livre).
+  const usaMotorAvancado =
+    modeloCalculo === "M2" ||
+    modeloCalculo === "OFFSET" ||
+    modeloCalculo === "FLEXOGRAFIA" ||
+    modeloCalculo === "DIGITAL" ||
+    modeloCalculo === "SERIGRAFIA" ||
+    modeloCalculo === "SUBLIMACAO" ||
+    modeloCalculo === "ESTAMPAGEM_QUENTE";
+  // Diferente de usaMotorAvancado: só M2/OFFSET/FLEXOGRAFIA EXIGEM largura/
+  // altura pro cálculo em si (nesting) — Digital e os 3 de setup-por-peça têm
+  // a dimensão opcional (ver design "dimensões opcionais" do plano).
+  const exigeDimensao = modeloCalculo === "M2" || modeloCalculo === "OFFSET" || modeloCalculo === "FLEXOGRAFIA";
+  const mostraDimensao =
+    exigeDimensao ||
+    modeloCalculo === "DIGITAL" ||
+    modeloCalculo === "SERIGRAFIA" ||
+    modeloCalculo === "SUBLIMACAO" ||
+    modeloCalculo === "ESTAMPAGEM_QUENTE";
   const [largura, setLargura] = useState(() =>
     paraExibicao(valoresIniciais.larguraCm, unidadeDimensao)
   );
@@ -154,13 +187,14 @@ export function EditarOrcamentoForm({
           defaultValue={valoresIniciais.quantidade}
         />
 
-        {usaMotorAvancado && (
+        {mostraDimensao && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Input
               label={`Largura (${ROTULO_UNIDADE_DIMENSAO[unidadeDimensao]})`}
               type="number"
               step={passoInputDimensao(unidadeDimensao)}
-              required
+              required={exigeDimensao}
+              placeholder={exigeDimensao ? undefined : "opcional"}
               value={largura}
               onChange={(e) => setLargura(e.target.value)}
             />
@@ -168,7 +202,8 @@ export function EditarOrcamentoForm({
               label={`Altura (${ROTULO_UNIDADE_DIMENSAO[unidadeDimensao]})`}
               type="number"
               step={passoInputDimensao(unidadeDimensao)}
-              required
+              required={exigeDimensao}
+              placeholder={exigeDimensao ? undefined : "opcional"}
               value={altura}
               onChange={(e) => setAltura(e.target.value)}
             />
@@ -205,6 +240,32 @@ export function EditarOrcamentoForm({
             min={1}
             required
             defaultValue={valoresIniciais.numeroCoresFlexo}
+          />
+        )}
+
+        {modeloCalculo === "DIGITAL" && (
+          <Input
+            label="Número de cliques"
+            name="numeroCliques"
+            type="number"
+            min={1}
+            defaultValue={valoresIniciais.numeroCliques}
+            placeholder="opcional — padrão 1 por peça"
+            hint="Deixe em branco pra usar 1 clique por peça (padrão)."
+          />
+        )}
+
+        {(modeloCalculo === "SERIGRAFIA" ||
+          modeloCalculo === "SUBLIMACAO" ||
+          modeloCalculo === "ESTAMPAGEM_QUENTE") && (
+          <Input
+            label="Número de setups"
+            name="numeroSetups"
+            type="number"
+            min={1}
+            required
+            defaultValue={valoresIniciais.numeroSetups}
+            hint="Quantas telas/matrizes/artes esta arte usa."
           />
         )}
 

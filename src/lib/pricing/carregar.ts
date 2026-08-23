@@ -6,7 +6,9 @@ import { resolverPrecoPapel } from "./papel";
 import type {
   ConfigAcabamento,
   ContextoPrecificacao,
+  ParametrosImpressoraDigital,
   ParametrosMaquinaFlexo,
+  ParametrosMaquinaSetupPorPeca,
   ParametrosPrensa,
   ParametrosTenant,
 } from "./index";
@@ -83,6 +85,43 @@ export async function carregarParametrosMaquinaFlexografia(
   };
 }
 
+// Diferente de carregarParametrosTenant, não é self-healing — uma impressora
+// digital só existe se o usuário criou uma em Configurações > Máquinas >
+// Impressão Digital. Chamador (carregarContextoPrecificacao) já garante que
+// só chama isso com um impressoraDigitalId real.
+export async function carregarParametrosImpressoraDigital(
+  impressoraDigitalId: string,
+  graficaId: string
+): Promise<ParametrosImpressoraDigital> {
+  const registro = await prisma.impressoraDigital.findFirstOrThrow({
+    where: { id: impressoraDigitalId, graficaId },
+  });
+
+  return {
+    custoPorClique: Number(registro.custoPorClique),
+  };
+}
+
+// Diferente de carregarParametrosTenant, não é self-healing — uma máquina de
+// setup por peça só existe se o usuário criou uma em Configurações >
+// Máquinas > Serigrafia/Sublimação/Estampagem. Chamador
+// (carregarContextoPrecificacao) já garante que só chama isso com um
+// maquinaSetupPorPecaId real.
+export async function carregarParametrosMaquinaSetupPorPeca(
+  maquinaSetupPorPecaId: string,
+  graficaId: string
+): Promise<ParametrosMaquinaSetupPorPeca> {
+  const registro = await prisma.maquinaSetupPorPeca.findFirstOrThrow({
+    where: { id: maquinaSetupPorPecaId, graficaId },
+  });
+
+  return {
+    custoPorSetup: Number(registro.custoPorSetup),
+    custoPorPeca: Number(registro.custoPorPeca),
+    custoMinimo: Number(registro.custoMinimo),
+  };
+}
+
 // Nesta fase, um PRODUTO em modo M2/OFFSET carrega suas próprias BobinaMaterial/
 // FormatoFolha e seu próprio precoCompra como custo de material — ainda não existe
 // um vínculo formal "produto usa esta outra matéria-prima do catálogo", EXCETO
@@ -106,6 +145,8 @@ export async function carregarContextoPrecificacao(
       configuracaoClicheEtiqueta: true,
       maquinaFlexografia: true,
       configuracaoClicheFlexografia: true,
+      impressoraDigital: true,
+      maquinaSetupPorPeca: true,
     },
   });
 
@@ -226,6 +267,42 @@ export async function carregarContextoPrecificacao(
     contexto.maquinaFlexoUsada = { id: item.maquinaFlexografia.id, nome: item.maquinaFlexografia.nome };
     contexto.clicheFlexo = {
       custoClichePorCm2: Number(item.configuracaoClicheFlexografia.custoClichePorCm2),
+    };
+  } else if (item.modeloCalculo === "DIGITAL") {
+    if (!item.impressoraDigital) {
+      throw new ErroPrecificacao(
+        "IMPRESSORA_DIGITAL_NAO_CONFIGURADA",
+        "Este produto usa o modelo Digital mas não tem uma impressora selecionada — configure isso na tela do produto, no catálogo."
+      );
+    }
+
+    contexto.digital = {
+      custoSubstratoPorPeca: Number(item.precoCompra ?? 0),
+    };
+    contexto.parametrosImpressoraDigital = await carregarParametrosImpressoraDigital(
+      item.impressoraDigital.id,
+      graficaId
+    );
+    contexto.impressoraDigitalUsada = { id: item.impressoraDigital.id, nome: item.impressoraDigital.nome };
+  } else if (
+    item.modeloCalculo === "SERIGRAFIA" ||
+    item.modeloCalculo === "SUBLIMACAO" ||
+    item.modeloCalculo === "ESTAMPAGEM_QUENTE"
+  ) {
+    if (!item.maquinaSetupPorPeca) {
+      throw new ErroPrecificacao(
+        "MAQUINA_SETUP_POR_PECA_NAO_CONFIGURADA",
+        "Este produto usa um modelo de setup por peça mas não tem uma máquina selecionada — configure isso na tela do produto, no catálogo."
+      );
+    }
+
+    contexto.parametrosMaquinaSetupPorPeca = await carregarParametrosMaquinaSetupPorPeca(
+      item.maquinaSetupPorPeca.id,
+      graficaId
+    );
+    contexto.maquinaSetupPorPecaUsada = {
+      id: item.maquinaSetupPorPeca.id,
+      nome: item.maquinaSetupPorPeca.nome,
     };
   }
 

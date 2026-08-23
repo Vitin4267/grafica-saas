@@ -1,18 +1,23 @@
 import { describe, expect, it } from "vitest";
 import {
+  validarPedidoDigital,
   validarPedidoFlexografia,
   validarPedidoM2,
   validarPedidoOffset,
+  validarPedidoSetupPorPeca,
   validarSomaEncargos,
 } from "./validar";
 import { ErroPrecificacao } from "./erros";
 import type {
+  ContextoDigital,
   ContextoFlexografia,
   ContextoM2,
   ContextoOffset,
+  PedidoDigital,
   PedidoFlexografia,
   PedidoM2,
   PedidoOffset,
+  PedidoSetupPorPeca,
 } from "./tipos";
 
 // Fixtures base "tudo válido" — mesma forma de montar os objetos usada em
@@ -78,6 +83,28 @@ function contextoFlexografiaValido(
   return {
     bobinas: [{ id: "bobina-0.30", larguraNominal: 0.3, refile: 0.01 }],
     custoM2Material: 5,
+    ...overrides,
+  };
+}
+
+function pedidoDigitalValido(overrides: Partial<PedidoDigital> = {}): PedidoDigital {
+  return {
+    quantidade: 100,
+    ...overrides,
+  };
+}
+
+function contextoDigitalValido(overrides: Partial<ContextoDigital> = {}): ContextoDigital {
+  return {
+    custoSubstratoPorPeca: 0.5,
+    ...overrides,
+  };
+}
+
+function pedidoSetupPorPecaValido(overrides: Partial<PedidoSetupPorPeca> = {}): PedidoSetupPorPeca {
+  return {
+    quantidade: 100,
+    numeroSetups: 1,
     ...overrides,
   };
 }
@@ -546,6 +573,118 @@ describe("validarPedidoFlexografia — CUSTO_INVALIDO (custoM2Material)", () => 
         pedidoFlexografiaValido(),
         contextoFlexografiaValido({ custoM2Material: 0.01 })
       )
+    ).not.toThrow();
+  });
+});
+
+describe("validarPedidoDigital — casos válidos (sanity check, não deve lançar)", () => {
+  it("não lança para pedido/contexto totalmente válidos, com ou sem numeroCliques", () => {
+    expect(() =>
+      validarPedidoDigital(pedidoDigitalValido(), contextoDigitalValido())
+    ).not.toThrow();
+    expect(() =>
+      validarPedidoDigital(pedidoDigitalValido({ numeroCliques: 3 }), contextoDigitalValido())
+    ).not.toThrow();
+  });
+});
+
+describe("validarPedidoDigital — QUANTIDADE_INVALIDA (herdado de validarQuantidade)", () => {
+  it("dispara com quantidade zero", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoDigital(pedidoDigitalValido({ quantidade: 0 }), contextoDigitalValido())
+    );
+    expect(erro).toBe("QUANTIDADE_INVALIDA");
+  });
+
+  it("dispara com quantidade fracionária", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoDigital(pedidoDigitalValido({ quantidade: 2.5 }), contextoDigitalValido())
+    );
+    expect(erro).toBe("QUANTIDADE_INVALIDA");
+  });
+});
+
+describe("validarPedidoDigital — NUMERO_CLIQUES_INVALIDO (só quando informado)", () => {
+  it("dispara com numeroCliques zero", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoDigital(pedidoDigitalValido({ numeroCliques: 0 }), contextoDigitalValido())
+    );
+    expect(erro).toBe("NUMERO_CLIQUES_INVALIDO");
+  });
+
+  it("dispara com numeroCliques fracionário", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoDigital(pedidoDigitalValido({ numeroCliques: 1.5 }), contextoDigitalValido())
+    );
+    expect(erro).toBe("NUMERO_CLIQUES_INVALIDO");
+  });
+
+  it("numeroCliques ausente (undefined) não lança — motor aplica default", () => {
+    expect(() =>
+      validarPedidoDigital(pedidoDigitalValido({ numeroCliques: undefined }), contextoDigitalValido())
+    ).not.toThrow();
+  });
+});
+
+describe("validarPedidoDigital — CUSTO_INVALIDO (custoSubstratoPorPeca)", () => {
+  it("dispara com custoSubstratoPorPeca zero", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoDigital(pedidoDigitalValido(), contextoDigitalValido({ custoSubstratoPorPeca: 0 }))
+    );
+    expect(erro).toBe("CUSTO_INVALIDO");
+  });
+
+  it("dispara com custoSubstratoPorPeca negativo", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoDigital(
+        pedidoDigitalValido(),
+        contextoDigitalValido({ custoSubstratoPorPeca: -1 })
+      )
+    );
+    expect(erro).toBe("CUSTO_INVALIDO");
+  });
+});
+
+describe("validarPedidoSetupPorPeca — casos válidos (sanity check, não deve lançar)", () => {
+  it("não lança para pedido totalmente válido", () => {
+    expect(() => validarPedidoSetupPorPeca(pedidoSetupPorPecaValido())).not.toThrow();
+  });
+});
+
+describe("validarPedidoSetupPorPeca — QUANTIDADE_INVALIDA (herdado de validarQuantidade)", () => {
+  it("dispara com quantidade zero", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoSetupPorPeca(pedidoSetupPorPecaValido({ quantidade: 0 }))
+    );
+    expect(erro).toBe("QUANTIDADE_INVALIDA");
+  });
+});
+
+describe("validarPedidoSetupPorPeca — NUMERO_SETUPS_INVALIDO (obrigatório, sem default)", () => {
+  it("dispara com numeroSetups zero", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoSetupPorPeca(pedidoSetupPorPecaValido({ numeroSetups: 0 }))
+    );
+    expect(erro).toBe("NUMERO_SETUPS_INVALIDO");
+  });
+
+  it("dispara com numeroSetups negativo", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoSetupPorPeca(pedidoSetupPorPecaValido({ numeroSetups: -1 }))
+    );
+    expect(erro).toBe("NUMERO_SETUPS_INVALIDO");
+  });
+
+  it("dispara com numeroSetups fracionário", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoSetupPorPeca(pedidoSetupPorPecaValido({ numeroSetups: 1.5 }))
+    );
+    expect(erro).toBe("NUMERO_SETUPS_INVALIDO");
+  });
+
+  it("fronteira válida: numeroSetups = 1 (mínimo permitido) não lança", () => {
+    expect(() =>
+      validarPedidoSetupPorPeca(pedidoSetupPorPecaValido({ numeroSetups: 1 }))
     ).not.toThrow();
   });
 });

@@ -23,7 +23,15 @@ export type ItemVenda = {
   nome: string;
   categoria: string;
   precoVenda: string;
-  modeloCalculo: "SIMPLES" | "M2" | "OFFSET" | "FLEXOGRAFIA";
+  modeloCalculo:
+    | "SIMPLES"
+    | "M2"
+    | "OFFSET"
+    | "FLEXOGRAFIA"
+    | "DIGITAL"
+    | "SERIGRAFIA"
+    | "SUBLIMACAO"
+    | "ESTAMPAGEM_QUENTE";
   // ConfiguracaoClicheEtiqueta presente pra este produto — só produtos M2
   // marcados assim mostram o seletor de papel/cores/faca/frete abaixo.
   usaClicheEtiqueta: boolean;
@@ -49,6 +57,10 @@ export type CamposItemOrcamento = {
   corFrente: string;
   corVerso: string;
   numeroCoresFlexo: string;
+  // Só DIGITAL — opcional (em branco = default 1 clique/peça no motor).
+  numeroCliques: string;
+  // Só SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE (compartilham este campo).
+  numeroSetups: string;
   cores: string;
   // Texto livre — só usado quando o item é SIMPLES (ver comentário em
   // OrcamentoItem.acabamento no schema). M2/OFFSET usam acabamentoIds abaixo.
@@ -86,6 +98,8 @@ export function camposIniciais(
     corFrente: "4",
     corVerso: "0",
     numeroCoresFlexo: "4",
+    numeroCliques: "",
+    numeroSetups: "1",
     cores: "",
     acabamento: "",
     acabamentoIds: [],
@@ -116,7 +130,16 @@ export function SeletorItemOrcamento({
   const usaModeloM2 = itemSelecionado?.modeloCalculo === "M2";
   const usaModeloOffset = itemSelecionado?.modeloCalculo === "OFFSET";
   const usaModeloFlexografia = itemSelecionado?.modeloCalculo === "FLEXOGRAFIA";
-  const usaMotorAvancado = usaModeloM2 || usaModeloOffset || usaModeloFlexografia;
+  const usaModeloDigital = itemSelecionado?.modeloCalculo === "DIGITAL";
+  const usaModeloSetupPorPeca =
+    itemSelecionado?.modeloCalculo === "SERIGRAFIA" ||
+    itemSelecionado?.modeloCalculo === "SUBLIMACAO" ||
+    itemSelecionado?.modeloCalculo === "ESTAMPAGEM_QUENTE";
+  const usaMotorAvancado =
+    usaModeloM2 || usaModeloOffset || usaModeloFlexografia || usaModeloDigital || usaModeloSetupPorPeca;
+  // DIGITAL e os 3 de setup-por-peça não precisam de largura/altura pro custo
+  // em si (sem nesting) — só M2/OFFSET/FLEXOGRAFIA exigem dimensão aqui.
+  const exigeDimensao = usaModeloM2 || usaModeloOffset || usaModeloFlexografia;
   const usaClicheEtiqueta = usaModeloM2 && itemSelecionado?.usaClicheEtiqueta === true;
 
   const set =
@@ -142,6 +165,8 @@ export function SeletorItemOrcamento({
       corFrente: "4",
       corVerso: "0",
       numeroCoresFlexo: "4",
+      numeroCliques: "",
+      numeroSetups: "1",
       cores: "",
       acabamento: "",
       acabamentoIds: [],
@@ -209,7 +234,7 @@ export function SeletorItemOrcamento({
           value={valores.largura}
           onChange={set("largura")}
           placeholder="opcional"
-          required={usaMotorAvancado}
+          required={exigeDimensao}
         />
         <Input
           label={`Altura (${rotuloUnidade})`}
@@ -218,7 +243,7 @@ export function SeletorItemOrcamento({
           value={valores.altura}
           onChange={set("altura")}
           placeholder="opcional"
-          required={usaMotorAvancado}
+          required={exigeDimensao}
         />
         <Select label="Unidade" value={valores.unidadeDimensao} onChange={trocarUnidade}>
           {UNIDADES_DIMENSAO.map((u) => (
@@ -256,6 +281,29 @@ export function SeletorItemOrcamento({
           min={1}
           value={valores.numeroCoresFlexo}
           onChange={set("numeroCoresFlexo")}
+        />
+      )}
+
+      {usaModeloDigital && (
+        <Input
+          label="Número de cliques"
+          type="number"
+          min={1}
+          value={valores.numeroCliques}
+          onChange={set("numeroCliques")}
+          placeholder="opcional — padrão 1 por peça"
+          hint="Deixe em branco pra usar 1 clique por peça (padrão)."
+        />
+      )}
+
+      {usaModeloSetupPorPeca && (
+        <Input
+          label="Número de setups"
+          type="number"
+          min={1}
+          value={valores.numeroSetups}
+          onChange={set("numeroSetups")}
+          hint="Quantas telas/matrizes/artes esta arte usa."
         />
       )}
 

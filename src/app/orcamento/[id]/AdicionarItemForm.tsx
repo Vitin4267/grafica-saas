@@ -60,6 +60,8 @@ export function AdicionarItemForm({
         <input type="hidden" name="corFrente" value={campos.corFrente} />
         <input type="hidden" name="corVerso" value={campos.corVerso} />
         <input type="hidden" name="numeroCoresFlexo" value={campos.numeroCoresFlexo} />
+        <input type="hidden" name="numeroCliques" value={campos.numeroCliques} />
+        <input type="hidden" name="numeroSetups" value={campos.numeroSetups} />
         <input type="hidden" name="cores" value={campos.cores} />
         <input type="hidden" name="acabamento" value={campos.acabamento} />
         {campos.acabamentoIds.map((id) => (

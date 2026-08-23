@@ -2,28 +2,45 @@ import { paraDecimal } from "./decimal";
 import { calcularM2 } from "./m2";
 import { calcularOffset } from "./offset";
 import { calcularFlexografia } from "./flexografia";
+import { calcularDigital } from "./digital";
+import { calcularSetupPorPeca } from "./setup-por-peca";
 import { calcularAcabamentos } from "./acabamento";
 import { comporPreco, type ResultadoComposicao } from "./compor";
 import { ErroPrecificacao } from "./erros";
 import type {
   ConfigAcabamento,
   ContextoAcabamento,
+  ContextoDigital,
   ContextoFlexografia,
   ContextoM2,
   ContextoOffset,
   ModeloCalculo,
+  ParametrosImpressoraDigital,
   ParametrosMaquinaFlexo,
+  ParametrosMaquinaSetupPorPeca,
   ParametrosPrensa,
   ParametrosTenant,
+  PedidoDigital,
   PedidoFlexografia,
   PedidoM2,
   PedidoOffset,
+  PedidoSetupPorPeca,
 } from "./tipos";
 
 export type PedidoPrecificacao =
   | { tipo: "M2"; pedido: PedidoM2; acabamentos: ConfigAcabamento[] }
   | { tipo: "OFFSET"; pedido: PedidoOffset; acabamentos: ConfigAcabamento[] }
-  | { tipo: "FLEXOGRAFIA"; pedido: PedidoFlexografia; acabamentos: ConfigAcabamento[] };
+  | { tipo: "FLEXOGRAFIA"; pedido: PedidoFlexografia; acabamentos: ConfigAcabamento[] }
+  | { tipo: "DIGITAL"; pedido: PedidoDigital; acabamentos: ConfigAcabamento[] }
+  // 3 membros distintos (não 1 com tipo de união) de propósito: um discriminante
+  // literal único por membro é o que garante narrowing correto do TypeScript —
+  // combinar os 3 num `tipo: "SERIGRAFIA" | "SUBLIMACAO" | "ESTAMPAGEM_QUENTE"`
+  // só falha em excluir o membro depois de um `if (pedido.tipo === "SERIGRAFIA" ||
+  // ...)`. Nenhuma duplicação de LÓGICA — os 3 usam o mesmo PedidoSetupPorPeca e
+  // a mesma calcularSetupPorPeca, só a declaração de tipo é repetida.
+  | { tipo: "SERIGRAFIA"; pedido: PedidoSetupPorPeca; acabamentos: ConfigAcabamento[] }
+  | { tipo: "SUBLIMACAO"; pedido: PedidoSetupPorPeca; acabamentos: ConfigAcabamento[] }
+  | { tipo: "ESTAMPAGEM_QUENTE"; pedido: PedidoSetupPorPeca; acabamentos: ConfigAcabamento[] };
 
 export type ContextoPrecificacao = {
   itemGraficaId: string;
@@ -32,11 +49,16 @@ export type ContextoPrecificacao = {
   m2?: ContextoM2;
   offset?: ContextoOffset;
   flexografia?: ContextoFlexografia;
+  digital?: ContextoDigital;
   parametros: ParametrosTenant;
   parametrosPrensa?: ParametrosPrensa;
   prensaUsada?: { id: string; nome: string };
   parametrosMaquinaFlexo?: ParametrosMaquinaFlexo;
   maquinaFlexoUsada?: { id: string; nome: string };
+  parametrosImpressoraDigital?: ParametrosImpressoraDigital;
+  impressoraDigitalUsada?: { id: string; nome: string };
+  parametrosMaquinaSetupPorPeca?: ParametrosMaquinaSetupPorPeca;
+  maquinaSetupPorPecaUsada?: { id: string; nome: string };
   margemLucroOverride?: number;
   custoEmbalagem?: number;
   custoFreteEstimado?: number;
@@ -184,6 +206,105 @@ export function precificar(
         folhaEscolhida: resultado.folhaEscolhida,
         pesoTotalPedidoKg: resultado.pesoTotalPedidoKg.toNumber(),
         prensaUsada: contexto.prensaUsada ?? null,
+      },
+    };
+  }
+
+  if (pedido.tipo === "DIGITAL") {
+    if (!contexto.digital) {
+      throw new ErroPrecificacao(
+        "IMPRESSORA_DIGITAL_NAO_CONFIGURADA",
+        "Contexto Digital não fornecido para um item com modeloCalculo=DIGITAL."
+      );
+    }
+    if (!contexto.parametrosImpressoraDigital) {
+      throw new ErroPrecificacao(
+        "IMPRESSORA_DIGITAL_NAO_CONFIGURADA",
+        "Parâmetros de impressora digital não fornecidos para um item com modeloCalculo=DIGITAL."
+      );
+    }
+
+    const resultado = calcularDigital(
+      pedido.pedido,
+      contexto.digital,
+      contexto.parametrosImpressoraDigital
+    );
+
+    // Sem nesting — largura/altura são opcionais (default 0) e só existem
+    // aqui pra alimentar um eventual acabamento M2-based (ver comentário em
+    // PedidoDigital). orcamento-precificacao.ts já bloqueou antes de chegar
+    // aqui se esse acabamento existir sem dimensões informadas.
+    const ctxAcabamento: ContextoAcabamento = {
+      quantidade: pedido.pedido.quantidade,
+      larguraEfetivaM: pedido.pedido.larguraM ?? 0,
+      alturaEfetivaM: pedido.pedido.alturaM ?? 0,
+    };
+    const acabamentos = calcularAcabamentos(pedido.acabamentos, ctxAcabamento);
+
+    const composicao = comporPreco({
+      quantidade: pedido.pedido.quantidade,
+      custoBase: resultado.custoBase,
+      custoAcabamentos: acabamentos.total,
+      acabamentosDetalhe: acabamentos.itens,
+      custoEmbalagem: contexto.custoEmbalagem !== undefined ? paraDecimal(contexto.custoEmbalagem) : undefined,
+      custoFreteEstimado:
+        contexto.custoFreteEstimado !== undefined ? paraDecimal(contexto.custoFreteEstimado) : undefined,
+      custoFaca: contexto.custoFaca !== undefined ? paraDecimal(contexto.custoFaca) : undefined,
+      parametros: contexto.parametros,
+      margemLucroOverride: contexto.margemLucroOverride,
+      detalhesExtras: { setup: resultado.custoCliques },
+    });
+
+    return {
+      ...composicao,
+      metricas: {
+        numeroCliques: resultado.numeroCliques,
+        custoCliques: resultado.custoCliques.toNumber(),
+        custoSubstrato: resultado.custoSubstrato.toNumber(),
+        impressoraDigitalUsada: contexto.impressoraDigitalUsada ?? null,
+      },
+    };
+  }
+
+  if (pedido.tipo === "SERIGRAFIA" || pedido.tipo === "SUBLIMACAO" || pedido.tipo === "ESTAMPAGEM_QUENTE") {
+    if (!contexto.parametrosMaquinaSetupPorPeca) {
+      throw new ErroPrecificacao(
+        "MAQUINA_SETUP_POR_PECA_NAO_CONFIGURADA",
+        `Parâmetros de máquina não fornecidos para um item com modeloCalculo=${pedido.tipo}.`
+      );
+    }
+
+    const resultado = calcularSetupPorPeca(pedido.pedido, contexto.parametrosMaquinaSetupPorPeca);
+
+    // Mesma lógica do Digital acima — sem nesting, dimensões opcionais só
+    // pra alimentar um eventual acabamento M2-based.
+    const ctxAcabamento: ContextoAcabamento = {
+      quantidade: pedido.pedido.quantidade,
+      larguraEfetivaM: pedido.pedido.larguraM ?? 0,
+      alturaEfetivaM: pedido.pedido.alturaM ?? 0,
+    };
+    const acabamentos = calcularAcabamentos(pedido.acabamentos, ctxAcabamento);
+
+    const composicao = comporPreco({
+      quantidade: pedido.pedido.quantidade,
+      custoBase: resultado.custoBase,
+      custoAcabamentos: acabamentos.total,
+      acabamentosDetalhe: acabamentos.itens,
+      custoEmbalagem: contexto.custoEmbalagem !== undefined ? paraDecimal(contexto.custoEmbalagem) : undefined,
+      custoFreteEstimado:
+        contexto.custoFreteEstimado !== undefined ? paraDecimal(contexto.custoFreteEstimado) : undefined,
+      custoFaca: contexto.custoFaca !== undefined ? paraDecimal(contexto.custoFaca) : undefined,
+      parametros: contexto.parametros,
+      margemLucroOverride: contexto.margemLucroOverride,
+      detalhesExtras: { setup: resultado.custoSetup },
+    });
+
+    return {
+      ...composicao,
+      metricas: {
+        custoSetup: resultado.custoSetup.toNumber(),
+        custoVariavel: resultado.custoVariavel.toNumber(),
+        maquinaSetupPorPecaUsada: contexto.maquinaSetupPorPecaUsada ?? null,
       },
     };
   }

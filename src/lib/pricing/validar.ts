@@ -1,14 +1,20 @@
 import { ErroPrecificacao } from "./erros";
 import type {
+  ContextoDigital,
   ContextoFlexografia,
   ContextoM2,
   ContextoOffset,
+  PedidoDigital,
   PedidoFlexografia,
   PedidoM2,
   PedidoOffset,
+  PedidoSetupPorPeca,
 } from "./tipos";
 
-function validarComum(quantidade: number, larguraM: number, alturaM: number) {
+// Extraído pra ser reaproveitado por todo pedido (M2/OFFSET/FLEXOGRAFIA via
+// validarComum, e DIGITAL/setup-por-peça diretamente) — evita duplicar o
+// mesmo check pela 5ª vez.
+export function validarQuantidade(quantidade: number) {
   if (!Number.isInteger(quantidade) || quantidade <= 0) {
     throw new ErroPrecificacao(
       "QUANTIDADE_INVALIDA",
@@ -16,6 +22,10 @@ function validarComum(quantidade: number, larguraM: number, alturaM: number) {
       { quantidade }
     );
   }
+}
+
+function validarComum(quantidade: number, larguraM: number, alturaM: number) {
+  validarQuantidade(quantidade);
   if (larguraM <= 0 || alturaM <= 0) {
     throw new ErroPrecificacao(
       "DIMENSAO_INVALIDA",
@@ -103,6 +113,44 @@ export function validarPedidoFlexografia(pedido: PedidoFlexografia, contexto: Co
       "CUSTO_INVALIDO",
       "O preço de compra do material precisa ser maior que zero.",
       { custoM2Material: contexto.custoM2Material }
+    );
+  }
+}
+
+// Digital não tem dimensões (sem nesting) — só quantidade + nº de cliques.
+export function validarPedidoDigital(pedido: PedidoDigital, contexto: ContextoDigital) {
+  validarQuantidade(pedido.quantidade);
+
+  if (
+    pedido.numeroCliques !== undefined &&
+    (!Number.isInteger(pedido.numeroCliques) || pedido.numeroCliques < 1)
+  ) {
+    throw new ErroPrecificacao(
+      "NUMERO_CLIQUES_INVALIDO",
+      "O número de cliques precisa ser um inteiro maior ou igual a 1.",
+      { numeroCliques: pedido.numeroCliques }
+    );
+  }
+  if (contexto.custoSubstratoPorPeca <= 0) {
+    throw new ErroPrecificacao(
+      "CUSTO_INVALIDO",
+      "O preço de compra do substrato precisa ser maior que zero.",
+      { custoSubstratoPorPeca: contexto.custoSubstratoPorPeca }
+    );
+  }
+}
+
+// Serigrafia/Sublimação/Estampagem a quente (setup por peça) — mesma
+// ausência de dimensões do Digital; validação compartilhada pelos 3
+// ModeloCalculo (ver calcularSetupPorPeca).
+export function validarPedidoSetupPorPeca(pedido: PedidoSetupPorPeca) {
+  validarQuantidade(pedido.quantidade);
+
+  if (!Number.isInteger(pedido.numeroSetups) || pedido.numeroSetups < 1) {
+    throw new ErroPrecificacao(
+      "NUMERO_SETUPS_INVALIDO",
+      "O número de setups precisa ser um inteiro maior ou igual a 1.",
+      { numeroSetups: pedido.numeroSetups }
     );
   }
 }
