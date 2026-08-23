@@ -41,7 +41,8 @@ export async function iniciarManutencao(
 
   const prensaId = String(formData.get("prensaId") ?? "").trim();
   const maquinaFlexografiaId = String(formData.get("maquinaFlexografiaId") ?? "").trim();
-  const validacao = validarSelecaoMaquina(prensaId, maquinaFlexografiaId);
+  const equipamentoId = String(formData.get("equipamentoId") ?? "").trim();
+  const validacao = validarSelecaoMaquina(prensaId, maquinaFlexografiaId, equipamentoId);
   if (!validacao.ok) {
     return { ok: false, mensagem: validacao.mensagem };
   }
@@ -63,12 +64,19 @@ export async function iniciarManutencao(
     if (!prensa) {
       return { ok: false, mensagem: "Prensa não encontrada." };
     }
-  } else {
+  } else if (maquinaFlexografiaId) {
     const maquina = await prisma.maquinaFlexografia.findFirst({
       where: { id: maquinaFlexografiaId, graficaId: usuario.graficaId },
     });
     if (!maquina) {
       return { ok: false, mensagem: "Máquina não encontrada." };
+    }
+  } else {
+    const equipamento = await prisma.equipamento.findFirst({
+      where: { id: equipamentoId, graficaId: usuario.graficaId },
+    });
+    if (!equipamento) {
+      return { ok: false, mensagem: "Equipamento não encontrado." };
     }
   }
 
@@ -76,7 +84,7 @@ export async function iniciarManutencao(
     where: {
       graficaId: usuario.graficaId,
       dataFim: null,
-      ...(prensaId ? { prensaId } : { maquinaFlexografiaId }),
+      ...(prensaId ? { prensaId } : maquinaFlexografiaId ? { maquinaFlexografiaId } : { equipamentoId }),
     },
   });
   if (jaAtiva) {
@@ -91,6 +99,7 @@ export async function iniciarManutencao(
       graficaId: usuario.graficaId,
       prensaId: prensaId || null,
       maquinaFlexografiaId: maquinaFlexografiaId || null,
+      equipamentoId: equipamentoId || null,
       tipo: tipo as TipoRegistroManutencao,
       motivo,
       registradoPorId: usuario.id,

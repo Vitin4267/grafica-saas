@@ -25,12 +25,16 @@ export default async function ManutencaoMaquinasPage() {
   await exigirVerModulo(usuario, "CONFIGURACOES");
   const podeEditar = await podeEditarModulo(usuario, "CONFIGURACOES");
 
-  const [prensas, maquinasFlexografia, registrosAtivos, historico] = await Promise.all([
+  const [prensas, maquinasFlexografia, equipamentos, registrosAtivos, historico] = await Promise.all([
     prisma.prensa.findMany({
       where: { graficaId: usuario.graficaId },
       orderBy: { nome: "asc" },
     }),
     prisma.maquinaFlexografia.findMany({
+      where: { graficaId: usuario.graficaId },
+      orderBy: { nome: "asc" },
+    }),
+    prisma.equipamento.findMany({
       where: { graficaId: usuario.graficaId },
       orderBy: { nome: "asc" },
     }),
@@ -44,6 +48,7 @@ export default async function ManutencaoMaquinasPage() {
       include: {
         prensa: { select: { nome: true } },
         maquinaFlexografia: { select: { nome: true } },
+        equipamento: { select: { nome: true } },
       },
     }),
   ]);
@@ -190,6 +195,48 @@ export default async function ManutencaoMaquinasPage() {
           </div>
         </div>
 
+        <div className="mb-10">
+          <h2 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">
+            Outros equipamentos
+          </h2>
+          <div className="flex flex-col gap-3">
+            {equipamentos.length === 0 && (
+              <Card className="p-5">
+                <p className="text-sm text-slate-500">Nenhum equipamento cadastrado ainda.</p>
+              </Card>
+            )}
+            {equipamentos.map((equipamento) => {
+              const registro = ativosPorMaquina.get(equipamento.id);
+              return podeEditar ? (
+                <ManutencaoMaquinaCard
+                  key={equipamento.id}
+                  maquinaId={equipamento.id}
+                  maquinaNome={equipamento.nome}
+                  campoId="equipamentoId"
+                  registroAtivo={
+                    registro
+                      ? {
+                          id: registro.id,
+                          tipo: registro.tipo,
+                          motivo: registro.motivo,
+                          dataInicioFormatada: formatoInstanteRealComHora.format(registro.dataInicio),
+                          registradoPorNome: nomeRegistrador(registro.registradoPorId),
+                        }
+                      : null
+                  }
+                />
+              ) : (
+                <Card key={equipamento.id} className="p-5">
+                  <p className="font-medium text-slate-900 dark:text-white">{equipamento.nome}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {registro ? `Parada desde ${formatoInstanteRealComHora.format(registro.dataInicio)}` : "Disponível pra produção"}
+                  </p>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+
         <Card className="flex flex-col gap-1 p-6">
           <h2 className="text-base font-semibold text-slate-900 dark:text-white">
             Histórico de paradas
@@ -207,7 +254,10 @@ export default async function ManutencaoMaquinasPage() {
                 <div key={registro.id} className="flex items-start justify-between gap-4 px-6 py-4">
                   <div>
                     <p className="text-sm text-slate-900 dark:text-white">
-                      {registro.prensa?.nome ?? registro.maquinaFlexografia?.nome ?? "Máquina removida"}
+                      {registro.prensa?.nome ??
+                        registro.maquinaFlexografia?.nome ??
+                        registro.equipamento?.nome ??
+                        "Máquina removida"}
                       {" · "}
                       {ROTULO_TIPO_MANUTENCAO[registro.tipo]}
                     </p>

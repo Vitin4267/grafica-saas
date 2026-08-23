@@ -114,7 +114,7 @@ export default async function ConfiguracaoItemPage({
       // ManutencaoMaquinaAlerta em ConfiguracaoProdutoForm.
       prisma.registroManutencao.findMany({
         where: { graficaId: usuario.graficaId, dataFim: null },
-        select: { prensaId: true, maquinaFlexografiaId: true },
+        select: { prensaId: true, maquinaFlexografiaId: true, equipamentoId: true },
       }),
     ]);
 

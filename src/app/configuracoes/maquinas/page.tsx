@@ -14,7 +14,9 @@ import { Card } from "@/components/ui/Card";
 import { ArrowLeftIcon } from "@/components/icons";
 import { NovaPrensaForm } from "../prensas/NovaPrensaForm";
 import { NovaMaquinaFlexografiaForm } from "./flexografia/NovaMaquinaFlexografiaForm";
+import { NovoEquipamentoForm } from "./equipamentos/NovoEquipamentoForm";
 import { indexarManutencoesAtivasPorMaquina } from "@/lib/manutencao-maquina";
+import { ROTULO_CATEGORIA_EQUIPAMENTO } from "@/lib/tipos-equipamento";
 
 export default async function MaquinasPage() {
   const usuario = await exigirUsuarioAutenticado();
@@ -23,7 +25,7 @@ export default async function MaquinasPage() {
   await exigirVerModulo(usuario, "CONFIGURACOES");
   const podeEditar = await podeEditarModulo(usuario, "CONFIGURACOES");
 
-  const [prensas, maquinasFlexografia, registrosAtivos] = await Promise.all([
+  const [prensas, maquinasFlexografia, equipamentos, registrosAtivos] = await Promise.all([
     prisma.prensa.findMany({
       where: { graficaId: usuario.graficaId },
       orderBy: { nome: "asc" },
@@ -32,9 +34,13 @@ export default async function MaquinasPage() {
       where: { graficaId: usuario.graficaId },
       orderBy: { nome: "asc" },
     }),
+    prisma.equipamento.findMany({
+      where: { graficaId: usuario.graficaId },
+      orderBy: { nome: "asc" },
+    }),
     prisma.registroManutencao.findMany({
       where: { graficaId: usuario.graficaId, dataFim: null },
-      select: { prensaId: true, maquinaFlexografiaId: true },
+      select: { prensaId: true, maquinaFlexografiaId: true, equipamentoId: true },
     }),
   ]);
   // Só pra saber QUAIS máquinas estão paradas agora (badge de aviso) — o
@@ -188,6 +194,71 @@ export default async function MaquinasPage() {
                 Nova máquina de flexografia
               </h3>
               <NovaMaquinaFlexografiaForm />
+            </Card>
+          )}
+        </div>
+
+        <div className="mb-8">
+          <h2 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">
+            Outros equipamentos
+          </h2>
+          <p className="mb-4 text-sm text-slate-500">
+            Guilhotina, laminadora, plotter e outros equipamentos que não têm
+            custo próprio na precificação — cadastro só pra rastrear parada e
+            manutenção.
+          </p>
+          <div className="mb-6 flex flex-col gap-3">
+            {equipamentos.length === 0 && (
+              <Card className="p-5">
+                <p className="text-sm text-slate-500">
+                  Nenhum equipamento cadastrado ainda — crie o primeiro abaixo.
+                </p>
+              </Card>
+            )}
+            {equipamentos.map((equipamento) => (
+              <Link
+                key={equipamento.id}
+                href={`/configuracoes/maquinas/equipamentos/${equipamento.id}`}
+              >
+                <Card className="flex items-center justify-between p-5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                  <div>
+                    <p className="font-medium text-slate-900 dark:text-white">
+                      {equipamento.nome}
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      {equipamento.categoria === "OUTRO"
+                        ? equipamento.categoriaOutro
+                        : ROTULO_CATEGORIA_EQUIPAMENTO[equipamento.categoria]}
+                      {equipamento.marca ? ` · ${equipamento.marca}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {ativasPorMaquina.has(equipamento.id) && (
+                      <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+                        Em manutenção
+                      </span>
+                    )}
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                        equipamento.ativo
+                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+                          : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                      }`}
+                    >
+                      {equipamento.ativo ? "Ativo" : "Inativo"}
+                    </span>
+                  </div>
+                </Card>
+              </Link>
+            ))}
+          </div>
+
+          {podeEditar && (
+            <Card className="p-6">
+              <h3 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">
+                Novo equipamento
+              </h3>
+              <NovoEquipamentoForm />
             </Card>
           )}
         </div>

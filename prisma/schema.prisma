@@ -66,6 +66,7 @@ model Grafica {
   parametros            ParametrosGrafica?
   prensas               Prensa[]
   maquinasFlexografia   MaquinaFlexografia[]
+  equipamentos          Equipamento[]
   registrosManutencao   RegistroManutencao[]
   dadosFiscais          DadosFiscaisGrafica?
   notasFiscais          NotaFiscal[]
@@ -261,35 +262,81 @@ model MaquinaFlexografia {
   @@map("maquinas_flexografia")
 }
 
+// Categorias reais de equipamento de gráfica levantadas por pesquisa
+// (2026-08-22) — cobre o que sobra fora de Offset/Flexografia (que já têm
+// motor de custo próprio, ver Prensa/MaquinaFlexografia). Lista fechada com
+// OUTRO de escape (mesmo padrão de UnidadeMedida/MaterialSubstrato/etc. no
+// resto do schema) — nunca trava um equipamento real fora da lista.
+enum CategoriaEquipamento {
+  GUILHOTINA // corte de papel/papelão — ex: Polar, Guarani, Wohlenberg
+  LAMINADORA // plastificação/laminação — ex: Ricall, Foliant, GMP
+  DOBRADEIRA
+  ENCADERNADORA // wire-o, espiral, capa dura — ex: Duplo, Marpax
+  GRAMPEADEIRA // alceadeira/grampeadeira de miolo — ex: Müller Martini, CP Bourg
+  PLOTTER_RECORTE // corte de vinil/adesivo
+  IMPRESSORA_GRANDE_FORMATO // banner, lona, adesivo — ex: Roland, Mimaki, HP Latex, Epson
+  OUTRO
+}
+
+// Equipamento físico da gráfica que NÃO tem motor de custo próprio na
+// precificação — diferente de Prensa/MaquinaFlexografia (usados só por
+// ItemGrafica com modeloCalculo=OFFSET/FLEXOGRAFIA), nenhum produto do
+// catálogo referencia um Equipamento. É cadastro + rastreio de manutenção
+// puramente informativo (ver RegistroManutencao.equipamentoId abaixo) —
+// nunca influencia preço de nenhum orçamento. marca/modelo são texto livre
+// opcional (não é catálogo de modelos exatos, só contexto pra quem
+// registra a parada depois).
+model Equipamento {
+  id             String               @id @default(cuid())
+  graficaId      String
+  nome           String
+  categoria      CategoriaEquipamento
+  categoriaOutro String? // só usado quando categoria = OUTRO
+  marca          String?
+  modelo         String?
+  ativo          Boolean              @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  registrosManutencao RegistroManutencao[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("equipamentos")
+}
+
 enum TipoRegistroManutencao {
   PREVENTIVA // manutenção agendada, planejada com antecedência
   QUEBRA // parada não planejada — máquina quebrou ou precisou parar de repente
 }
 
-// Um período em que uma Prensa OU MaquinaFlexografia ficou indisponível pra
-// produção — cobre tanto manutenção PREVENTIVA agendada quanto QUEBRA/parada
-// reativa (o `tipo` só existe pra segmentar isso em relatórios; o
-// comportamento de "está parada agora" é sempre baseado em dataFim, nunca em
-// tipo). dataFim null = parada ainda em andamento; é o que
-// buscarManutencoesAtivas (src/lib/manutencao-maquina.ts) usa pra decidir
-// exibir o aviso "essa máquina está parada" na tela de Máquinas e no cadastro
-// de produto Offset/Flexografia. Duas FKs opcionais, nunca as duas
-// preenchidas na mesma linha (validado na Server Action, não há CHECK no
-// banco — mesmo padrão de validação em app do resto do schema) — mesmo
-// princípio de ItemGrafica.prensaId/maquinaFlexografiaId: Prensa e
-// MaquinaFlexografia são tabelas paralelas não-unificadas de propósito (ver
-// comentário em MaquinaFlexografia), então o registro de parada segue a
-// mesma filosofia em vez de virar o ponto que força uma hierarquia comum
-// entre as duas. onDelete=Cascade (diferente do Restrict em
-// ItemGrafica.prensaId): um histórico de manutenção sem a máquina que ele
-// descreve não tem valor — não faz sentido travar a exclusão da máquina por
-// causa disso.
+// Um período em que uma Prensa, MaquinaFlexografia OU Equipamento ficou
+// indisponível pra produção — cobre tanto manutenção PREVENTIVA agendada
+// quanto QUEBRA/parada reativa (o `tipo` só existe pra segmentar isso em
+// relatórios; o comportamento de "está parada agora" é sempre baseado em
+// dataFim, nunca em tipo). dataFim null = parada ainda em andamento; é o
+// que buscarManutencoesAtivas (src/lib/manutencao-maquina.ts) usa pra
+// decidir exibir o aviso "essa máquina está parada" na tela de Máquinas e
+// no cadastro de produto Offset/Flexografia. Três FKs opcionais, nunca mais
+// de uma preenchida na mesma linha (validado na Server Action, não há
+// CHECK no banco — mesmo padrão de validação em app do resto do schema) —
+// mesmo princípio de ItemGrafica.prensaId/maquinaFlexografiaId: Prensa,
+// MaquinaFlexografia e Equipamento são tabelas paralelas não-unificadas de
+// propósito (ver comentário em MaquinaFlexografia), então o registro de
+// parada segue a mesma filosofia em vez de virar o ponto que força uma
+// hierarquia comum entre as três. onDelete=Cascade (diferente do Restrict
+// em ItemGrafica.prensaId): um histórico de manutenção sem a máquina que
+// ele descreve não tem valor — não faz sentido travar a exclusão da
+// máquina por causa disso.
 model RegistroManutencao {
   id        String @id @default(cuid())
   graficaId String
 
   prensaId             String?
   maquinaFlexografiaId String?
+  equipamentoId        String?
 
   tipo   TipoRegistroManutencao @default(QUEBRA)
   motivo String // texto livre — "trocou o rolo de tinta", "manutenção preventiva trimestral" etc.
@@ -308,10 +355,12 @@ model RegistroManutencao {
   grafica            Grafica             @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   prensa             Prensa?             @relation(fields: [prensaId], references: [id], onDelete: Cascade)
   maquinaFlexografia MaquinaFlexografia? @relation(fields: [maquinaFlexografiaId], references: [id], onDelete: Cascade)
+  equipamento        Equipamento?        @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
 
   @@index([graficaId])
   @@index([prensaId])
   @@index([maquinaFlexografiaId])
+  @@index([equipamentoId])
   @@map("registros_manutencao")
 }
 

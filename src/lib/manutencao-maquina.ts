@@ -11,12 +11,13 @@ export const ROTULO_TIPO_MANUTENCAO: Record<TipoRegistroManutencao, string> = {
 type RegistroComMaquina = {
   prensaId: string | null;
   maquinaFlexografiaId: string | null;
+  equipamentoId: string | null;
 };
 
 // Índice rápido "id da máquina -> registro ativo" a partir de uma lista de
 // RegistroManutencao com dataFim=null (ver query em quem chama). Uma
-// gráfica pode ter várias prensas/máquinas; cada uma tem no máximo 1
-// registro ativo por vez (garantido em iniciarManutencao, não por
+// gráfica pode ter várias prensas/máquinas/equipamentos; cada um tem no
+// máximo 1 registro ativo por vez (garantido em iniciarManutencao, não por
 // constraint de banco). Uma função só, reaproveitada tanto pro badge em
 // /configuracoes/maquinas quanto pro aviso no cadastro de produto.
 export function indexarManutencoesAtivasPorMaquina<T extends RegistroComMaquina>(
@@ -24,25 +25,28 @@ export function indexarManutencoesAtivasPorMaquina<T extends RegistroComMaquina>
 ): Map<string, T> {
   const porMaquina = new Map<string, T>();
   for (const registro of registrosAtivos) {
-    const maquinaId = registro.prensaId ?? registro.maquinaFlexografiaId;
+    const maquinaId = registro.prensaId ?? registro.maquinaFlexografiaId ?? registro.equipamentoId;
     if (maquinaId) porMaquina.set(maquinaId, registro);
   }
   return porMaquina;
 }
 
-// Exatamente um dos dois precisa vir preenchido — mesma regra de app-level
+// Exatamente um dos três precisa vir preenchido — mesma regra de app-level
 // (sem CHECK no banco) que ItemGrafica.prensaId/maquinaFlexografiaId já
-// segue. Extraída em função pura pra poder testar sem tocar o banco.
+// segue, agora estendida pra Equipamento. Extraída em função pura pra poder
+// testar sem tocar o banco.
 export function validarSelecaoMaquina(
   prensaId: string,
-  maquinaFlexografiaId: string
+  maquinaFlexografiaId: string,
+  equipamentoId: string
 ): { ok: true } | { ok: false; mensagem: string } {
-  const temPrensa = prensaId.trim().length > 0;
-  const temMaquina = maquinaFlexografiaId.trim().length > 0;
-  if (temPrensa === temMaquina) {
+  const preenchidos = [prensaId, maquinaFlexografiaId, equipamentoId].filter(
+    (v) => v.trim().length > 0
+  ).length;
+  if (preenchidos !== 1) {
     return {
       ok: false,
-      mensagem: "Selecione exatamente uma prensa OU uma máquina de flexografia, nunca as duas.",
+      mensagem: "Selecione exatamente uma prensa, máquina de flexografia OU equipamento, nunca mais de um.",
     };
   }
   return { ok: true };

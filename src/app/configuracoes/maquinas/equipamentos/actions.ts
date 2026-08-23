@@ -1,0 +1,167 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
+import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
+import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
+import { podeEditarModulo } from "@/lib/auth/permissoes";
+import { ORDEM_CATEGORIA_EQUIPAMENTO } from "@/lib/tipos-equipamento";
+import type { CategoriaEquipamento } from "@/generated/prisma/enums";
+
+export type SalvarEquipamentoResult = { ok: boolean; mensagem: string };
+
+// Mesmo padrão do resto do schema (UnidadeMedida, MaterialSubstrato etc.):
+// categoria vem de uma lista fechada com OUTRO de escape — categoriaOutro só
+// é obrigatório nesse caso, nunca trava um equipamento real fora da lista.
+function validarCategoria(
+  formData: FormData
+): { ok: true; categoria: CategoriaEquipamento; categoriaOutro: string | null } | { ok: false; mensagem: string } {
+  const categoria = String(formData.get("categoria") ?? "");
+  if (!ORDEM_CATEGORIA_EQUIPAMENTO.includes(categoria as CategoriaEquipamento)) {
+    return { ok: false, mensagem: "Selecione uma categoria." };
+  }
+  if (categoria === "OUTRO") {
+    const categoriaOutro = String(formData.get("categoriaOutro") ?? "").trim();
+    if (!categoriaOutro) {
+      return { ok: false, mensagem: 'Descreva a categoria quando escolher "Outro".' };
+    }
+    return { ok: true, categoria: "OUTRO", categoriaOutro };
+  }
+  return { ok: true, categoria: categoria as CategoriaEquipamento, categoriaOutro: null };
+}
+
+export async function criarEquipamento(
+  _estadoAnterior: SalvarEquipamentoResult | null,
+  formData: FormData
+): Promise<SalvarEquipamentoResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CONFIGURACOES"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar configurações." };
+  }
+
+  const nome = String(formData.get("nome") ?? "").trim();
+  if (!nome) {
+    return { ok: false, mensagem: "Informe um nome para o equipamento." };
+  }
+
+  const validacaoCategoria = validarCategoria(formData);
+  if (!validacaoCategoria.ok) {
+    return validacaoCategoria;
+  }
+
+  const marca = String(formData.get("marca") ?? "").trim() || null;
+  const modelo = String(formData.get("modelo") ?? "").trim() || null;
+
+  let novoEquipamento: { id: string };
+  try {
+    novoEquipamento = await prisma.equipamento.create({
+      data: {
+        graficaId: usuario.graficaId,
+        nome,
+        categoria: validacaoCategoria.categoria,
+        categoriaOutro: validacaoCategoria.categoriaOutro,
+        marca,
+        modelo,
+      },
+    });
+  } catch (erro) {
+    if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2002") {
+      return { ok: false, mensagem: "Já existe um equipamento com esse nome." };
+    }
+    throw erro;
+  }
+
+  revalidatePath("/configuracoes/maquinas");
+  redirect(`/configuracoes/maquinas/equipamentos/${novoEquipamento.id}`);
+}
+
+export async function salvarEquipamento(
+  _estadoAnterior: SalvarEquipamentoResult | null,
+  formData: FormData
+): Promise<SalvarEquipamentoResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CONFIGURACOES"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar configurações." };
+  }
+  const equipamentoId = String(formData.get("equipamentoId"));
+
+  const equipamento = await prisma.equipamento.findFirst({
+    where: { id: equipamentoId, graficaId: usuario.graficaId },
+  });
+  if (!equipamento) {
+    return { ok: false, mensagem: "Equipamento não encontrado." };
+  }
+
+  const nome = String(formData.get("nome") ?? "").trim();
+  if (!nome) {
+    return { ok: false, mensagem: "Informe um nome para o equipamento." };
+  }
+  const ativo = formData.get("ativo") === "on";
+
+  const validacaoCategoria = validarCategoria(formData);
+  if (!validacaoCategoria.ok) {
+    return validacaoCategoria;
+  }
+
+  const marca = String(formData.get("marca") ?? "").trim() || null;
+  const modelo = String(formData.get("modelo") ?? "").trim() || null;
+
+  try {
+    await prisma.equipamento.update({
+      where: { id: equipamentoId },
+      data: {
+        nome,
+        ativo,
+        categoria: validacaoCategoria.categoria,
+        categoriaOutro: validacaoCategoria.categoriaOutro,
+        marca,
+        modelo,
+      },
+    });
+  } catch (erro) {
+    if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2002") {
+      return { ok: false, mensagem: "Já existe um equipamento com esse nome." };
+    }
+    throw erro;
+  }
+
+  revalidatePath(`/configuracoes/maquinas/equipamentos/${equipamentoId}`);
+  revalidatePath("/configuracoes/maquinas");
+  return { ok: true, mensagem: "Equipamento salvo com sucesso!" };
+}
+
+// Sem verificação de FK em uso: diferente de Prensa/MaquinaFlexografia,
+// nenhum ItemGrafica referencia Equipamento (não tem motor de custo próprio,
+// ver comentário no schema) — só RegistroManutencao aponta pra cá, e é
+// onDelete:Cascade de propósito (mesmo princípio já aplicado às outras duas
+// máquinas: histórico de manutenção sem o equipamento que ele descreve não
+// tem valor).
+export async function excluirEquipamento(
+  _estadoAnterior: SalvarEquipamentoResult | null,
+  formData: FormData
+): Promise<SalvarEquipamentoResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CONFIGURACOES"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar configurações." };
+  }
+  const equipamentoId = String(formData.get("equipamentoId"));
+
+  const resultado = await prisma.equipamento.deleteMany({
+    where: { id: equipamentoId, graficaId: usuario.graficaId },
+  });
+  if (resultado.count === 0) {
+    return { ok: false, mensagem: "Equipamento não encontrado." };
+  }
+
+  revalidatePath("/configuracoes/maquinas");
+  redirect("/configuracoes/maquinas");
+}
