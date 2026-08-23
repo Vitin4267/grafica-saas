@@ -146,6 +146,11 @@ export const itemEntradaSchema = z.object({
   // Motor Flexografia — deliberadamente separado de corFrente/corVerso (ver
   // src/lib/orcamento-precificacao.ts).
   numeroCoresFlexo: z.number().int().nullable(),
+  // Motor Digital — opcional (default 1 se ausente).
+  numeroCliques: z.number().int().nullable(),
+  // Motores Serigrafia/Sublimação/Estampagem a quente — os 3 compartilham
+  // este campo (ver src/lib/orcamento-precificacao.ts).
+  numeroSetups: z.number().int().nullable(),
   cores: z.string().max(60).nullable(),
   acabamento: z.string().max(200).nullable(),
   acabamentoIds: z.array(z.string().min(1)).max(20).default([]),

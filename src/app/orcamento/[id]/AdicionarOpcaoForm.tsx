@@ -77,6 +77,8 @@ type ItemCarrinho = {
   corFrente: number | null;
   corVerso: number | null;
   numeroCoresFlexo: number | null;
+  numeroCliques: number | null;
+  numeroSetups: number | null;
   cores: string | null;
   acabamento: string | null;
   acabamentoIds: string[];
@@ -144,6 +146,8 @@ export function AdicionarOpcaoForm({
     const corFrente = campos.corFrente !== "" ? Number(campos.corFrente) : null;
     const corVerso = campos.corVerso !== "" ? Number(campos.corVerso) : null;
     const numeroCoresFlexo = campos.numeroCoresFlexo !== "" ? Number(campos.numeroCoresFlexo) : null;
+    const numeroCliques = campos.numeroCliques !== "" ? Number(campos.numeroCliques) : null;
+    const numeroSetups = campos.numeroSetups !== "" ? Number(campos.numeroSetups) : null;
     const papelId = campos.precificacaoEtiqueta.papelId || null;
     const quantidadeCores =
       campos.precificacaoEtiqueta.quantidadeCores !== ""
@@ -164,6 +168,8 @@ export function AdicionarOpcaoForm({
       corFrente,
       corVerso,
       numeroCoresFlexo,
+      numeroCliques,
+      numeroSetups,
       acabamentoIds: campos.acabamentoIds,
       papelId,
       quantidadeCores,
@@ -190,6 +196,8 @@ export function AdicionarOpcaoForm({
         corFrente,
         corVerso,
         numeroCoresFlexo,
+        numeroCliques,
+        numeroSetups,
         cores: campos.cores.trim() || null,
         acabamento: campos.acabamento.trim() || null,
         acabamentoIds: campos.acabamentoIds,
@@ -216,6 +224,8 @@ export function AdicionarOpcaoForm({
       corFrente: i.corFrente,
       corVerso: i.corVerso,
       numeroCoresFlexo: i.numeroCoresFlexo,
+      numeroCliques: i.numeroCliques,
+      numeroSetups: i.numeroSetups,
       cores: i.cores,
       acabamento: i.acabamento,
       acabamentoIds: i.acabamentoIds,

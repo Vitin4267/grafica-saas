@@ -26,6 +26,8 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       custoFaca: null,
       custoFrete: null,
       numeroCoresFlexo: null,
+      numeroCliques: null,
+      numeroSetups: null,
     });
     expect(resultado.ok).toBe(true);
     if (resultado.ok) {
@@ -46,6 +48,8 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       custoFaca: null,
       custoFrete: null,
       numeroCoresFlexo: null,
+      numeroCliques: null,
+      numeroSetups: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -63,6 +67,8 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       custoFaca: null,
       custoFrete: null,
       numeroCoresFlexo: null,
+      numeroCliques: null,
+      numeroSetups: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -80,6 +86,8 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       custoFaca: null,
       custoFrete: null,
       numeroCoresFlexo: null,
+      numeroCliques: null,
+      numeroSetups: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -97,6 +105,8 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       custoFaca: null,
       custoFrete: null,
       numeroCoresFlexo: null,
+      numeroCliques: null,
+      numeroSetups: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -114,6 +124,8 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       custoFaca: null,
       custoFrete: null,
       numeroCoresFlexo: null,
+      numeroCliques: null,
+      numeroSetups: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -131,6 +143,8 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       custoFaca: null,
       custoFrete: null,
       numeroCoresFlexo: null,
+      numeroCliques: null,
+      numeroSetups: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -148,6 +162,8 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       custoFaca: null,
       custoFrete: null,
       numeroCoresFlexo: null,
+      numeroCliques: null,
+      numeroSetups: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -170,6 +186,8 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       custoFaca: null,
       custoFrete: null,
       numeroCoresFlexo: null,
+      numeroCliques: null,
+      numeroSetups: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -187,6 +205,8 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       custoFaca: null,
       custoFrete: null,
       numeroCoresFlexo: null,
+      numeroCliques: null,
+      numeroSetups: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -204,6 +224,8 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       custoFaca: -1,
       custoFrete: null,
       numeroCoresFlexo: null,
+      numeroCliques: null,
+      numeroSetups: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -221,7 +243,109 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       custoFaca: null,
       custoFrete: -1,
       numeroCoresFlexo: null,
+      numeroCliques: null,
+      numeroSetups: null,
     });
+    expect(resultado.ok).toBe(false);
+  });
+});
+
+// Guardas novas de DIGITAL/setup-por-peça (Feature A) — todas rodam ANTES do
+// branch SIMPLES/carregarContextoPrecificacao, então não tocam o banco (mesma
+// razão pela qual os testes de ITEM_SIMPLES acima também não tocam), apesar
+// de referenciar itens que não existem de verdade — a guarda retorna antes de
+// qualquer query.
+const ITEM_DIGITAL = {
+  id: "item-digital-1",
+  modeloCalculo: "DIGITAL" as const,
+  precoVenda: null as unknown as Prisma.Decimal | null,
+};
+const ITEM_SERIGRAFIA = {
+  id: "item-serigrafia-1",
+  modeloCalculo: "SERIGRAFIA" as const,
+  precoVenda: null as unknown as Prisma.Decimal | null,
+};
+const ITEM_SUBLIMACAO = {
+  id: "item-sublimacao-1",
+  modeloCalculo: "SUBLIMACAO" as const,
+  precoVenda: null as unknown as Prisma.Decimal | null,
+};
+const ITEM_ESTAMPAGEM = {
+  id: "item-estampagem-1",
+  modeloCalculo: "ESTAMPAGEM_QUENTE" as const,
+  precoVenda: null as unknown as Prisma.Decimal | null,
+};
+
+function dadosBase(overrides: Partial<Parameters<typeof calcularItemOrcamento>[2]>) {
+  return {
+    quantidade: 10,
+    larguraCm: null,
+    alturaCm: null,
+    corFrente: null,
+    corVerso: null,
+    acabamentoIds: [],
+    papelId: null,
+    quantidadeCores: null,
+    custoFaca: null,
+    custoFrete: null,
+    numeroCoresFlexo: null,
+    numeroCliques: null,
+    numeroSetups: null,
+    ...overrides,
+  };
+}
+
+describe("calcularItemOrcamento — guardas novas (DIGITAL / setup-por-peça)", () => {
+  it("DIGITAL: rejeita numeroCliques fracionário", async () => {
+    const resultado = await calcularItemOrcamento(
+      ITEM_DIGITAL,
+      "grafica-1",
+      dadosBase({ numeroCliques: 1.5 })
+    );
+    expect(resultado.ok).toBe(false);
+  });
+
+  it("DIGITAL: rejeita numeroCliques menor que 1", async () => {
+    const resultado = await calcularItemOrcamento(
+      ITEM_DIGITAL,
+      "grafica-1",
+      dadosBase({ numeroCliques: 0 })
+    );
+    expect(resultado.ok).toBe(false);
+  });
+
+  it("SERIGRAFIA: rejeita numeroSetups ausente (obrigatório, sem default)", async () => {
+    const resultado = await calcularItemOrcamento(ITEM_SERIGRAFIA, "grafica-1", dadosBase({}));
+    expect(resultado.ok).toBe(false);
+  });
+
+  it("SERIGRAFIA: rejeita numeroSetups menor que 1", async () => {
+    const resultado = await calcularItemOrcamento(
+      ITEM_SERIGRAFIA,
+      "grafica-1",
+      dadosBase({ numeroSetups: 0 })
+    );
+    expect(resultado.ok).toBe(false);
+  });
+
+  it("SUBLIMACAO: rejeita numeroSetups ausente", async () => {
+    const resultado = await calcularItemOrcamento(ITEM_SUBLIMACAO, "grafica-1", dadosBase({}));
+    expect(resultado.ok).toBe(false);
+  });
+
+  it("ESTAMPAGEM_QUENTE: rejeita numeroSetups ausente", async () => {
+    const resultado = await calcularItemOrcamento(ITEM_ESTAMPAGEM, "grafica-1", dadosBase({}));
+    expect(resultado.ok).toBe(false);
+  });
+
+  it("DIGITAL/setup-por-peça: quantidade/largura/altura continuam validadas mesmo sem exigir dimensão", async () => {
+    // larguraCm negativo deve ser rejeitado mesmo pra um modelo cuja dimensão
+    // é opcional — "opcional" não é "sem validação quando presente".
+    const resultado = await calcularItemOrcamento(
+      ITEM_DIGITAL,
+      "grafica-1",
+      dadosBase({ larguraCm: -10, alturaCm: 10 })
+    );
     expect(resultado.ok).toBe(false);
   });
 });

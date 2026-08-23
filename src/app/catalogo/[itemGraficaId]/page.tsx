@@ -62,8 +62,16 @@ export default async function ConfiguracaoItemPage({
   await exigirAssinaturaAtiva(usuario);
   await exigirVerModulo(usuario, "CATALOGO");
 
-  const [itemGrafica, materiasPrimas, prensas, maquinasFlexografia, fornecedores, registrosAtivos] =
-    await Promise.all([
+  const [
+    itemGrafica,
+    materiasPrimas,
+    prensas,
+    maquinasFlexografia,
+    impressorasDigitais,
+    maquinasSetupPorPeca,
+    fornecedores,
+    registrosAtivos,
+  ] = await Promise.all([
       prisma.itemGrafica.findFirst({
         where: { id: itemGraficaId, graficaId: usuario.graficaId },
         include: {
@@ -104,6 +112,14 @@ export default async function ConfiguracaoItemPage({
         where: { graficaId: usuario.graficaId, ativa: true },
         orderBy: { nome: "asc" },
       }),
+      prisma.impressoraDigital.findMany({
+        where: { graficaId: usuario.graficaId, ativa: true },
+        orderBy: { nome: "asc" },
+      }),
+      prisma.maquinaSetupPorPeca.findMany({
+        where: { graficaId: usuario.graficaId, ativa: true },
+        orderBy: { nome: "asc" },
+      }),
       prisma.fornecedor.findMany({
         where: { graficaId: usuario.graficaId, ativo: true },
         orderBy: { nome: "asc" },
@@ -114,7 +130,13 @@ export default async function ConfiguracaoItemPage({
       // ManutencaoMaquinaAlerta em ConfiguracaoProdutoForm.
       prisma.registroManutencao.findMany({
         where: { graficaId: usuario.graficaId, dataFim: null },
-        select: { prensaId: true, maquinaFlexografiaId: true, equipamentoId: true },
+        select: {
+          prensaId: true,
+          maquinaFlexografiaId: true,
+          equipamentoId: true,
+          impressoraDigitalId: true,
+          maquinaSetupPorPecaId: true,
+        },
       }),
     ]);
 
@@ -255,6 +277,19 @@ export default async function ConfiguracaoItemPage({
               custoClichePorCm2Flexo={
                 itemGrafica.configuracaoClicheFlexografia?.custoClichePorCm2.toString() ?? ""
               }
+              impressoraDigitalId={itemGrafica.impressoraDigitalId ?? ""}
+              impressorasDigitais={impressorasDigitais.map((i) => ({
+                id: i.id,
+                nome: i.nome,
+                emManutencao: idsMaquinasEmManutencao.has(i.id),
+              }))}
+              maquinaSetupPorPecaId={itemGrafica.maquinaSetupPorPecaId ?? ""}
+              maquinasSetupPorPeca={maquinasSetupPorPeca.map((m) => ({
+                id: m.id,
+                nome: m.nome,
+                emManutencao: idsMaquinasEmManutencao.has(m.id),
+                tipoProcesso: m.tipoProcesso,
+              }))}
             />
             {itemGrafica.modeloCalculo === "M2" && (
               <ConfiguracaoClicheEtiquetaForm

@@ -11,7 +11,15 @@ import { gerarChave } from "@/lib/chave-local";
 import { ROTULO_UNIDADE } from "@/lib/unidade";
 import { salvarModeloProduto } from "./actions";
 
-type ModeloCalculo = "SIMPLES" | "M2" | "OFFSET" | "FLEXOGRAFIA";
+type ModeloCalculo =
+  | "SIMPLES"
+  | "M2"
+  | "OFFSET"
+  | "FLEXOGRAFIA"
+  | "DIGITAL"
+  | "SERIGRAFIA"
+  | "SUBLIMACAO"
+  | "ESTAMPAGEM_QUENTE";
 
 // Mesmo conjunto de unidadeContagemSchema em actions.ts — sem OUTRO (sem
 // campo de texto livre pra essa, ficaria só "outro" na exibição de preço).
@@ -208,6 +216,10 @@ export function ConfiguracaoProdutoForm({
   maquinaFlexografiaId: maquinaFlexografiaIdInicial,
   maquinasFlexografia,
   custoClichePorCm2Flexo: custoClichePorCm2FlexoInicial,
+  impressoraDigitalId: impressoraDigitalIdInicial,
+  impressorasDigitais,
+  maquinaSetupPorPecaId: maquinaSetupPorPecaIdInicial,
+  maquinasSetupPorPeca,
 }: {
   itemGraficaId: string;
   modeloCalculo: ModeloCalculo;
@@ -228,6 +240,20 @@ export function ConfiguracaoProdutoForm({
   maquinaFlexografiaId: string;
   maquinasFlexografia: { id: string; nome: string; emManutencao: boolean }[];
   custoClichePorCm2Flexo: string;
+  impressoraDigitalId: string;
+  impressorasDigitais: { id: string; nome: string; emManutencao: boolean }[];
+  maquinaSetupPorPecaId: string;
+  // Já vem filtrada por tipoProcesso relevante — a página server-side monta 3
+  // listas (uma por processo) e passa só a do modeloCalculo atual seria
+  // redundante já que o form troca de modelo no client; em vez disso recebe
+  // as 3 juntas com o próprio tipoProcesso, e o form filtra localmente pelo
+  // modeloCalculo selecionado agora.
+  maquinasSetupPorPeca: {
+    id: string;
+    nome: string;
+    emManutencao: boolean;
+    tipoProcesso: "SERIGRAFIA" | "SUBLIMACAO" | "ESTAMPAGEM_QUENTE";
+  }[];
 }) {
   const [modeloCalculo, setModeloCalculo] = useState<ModeloCalculo>(modeloCalculoInicial);
   const [bobinas, setBobinas] = useState<BobinaLinha[]>(() =>
@@ -239,6 +265,8 @@ export function ConfiguracaoProdutoForm({
   const [papelId, setPapelId] = useState(papelIdInicial);
   const [prensaId, setPrensaId] = useState(prensaIdInicial);
   const [maquinaFlexografiaId, setMaquinaFlexografiaId] = useState(maquinaFlexografiaIdInicial);
+  const [impressoraDigitalId, setImpressoraDigitalId] = useState(impressoraDigitalIdInicial);
+  const [maquinaSetupPorPecaId, setMaquinaSetupPorPecaId] = useState(maquinaSetupPorPecaIdInicial);
   const [state, formAction, isPending] = useActionState(salvarModeloProduto, null);
   const [mostrarAvancadoM2, setMostrarAvancadoM2] = useState(
     Boolean(areaMinimaFaturavelInicial)
@@ -256,6 +284,21 @@ export function ConfiguracaoProdutoForm({
   const maquinaEmManutencao = useMemo(
     () => maquinasFlexografia.find((m) => m.id === maquinaFlexografiaId)?.emManutencao ?? false,
     [maquinasFlexografia, maquinaFlexografiaId]
+  );
+  const impressoraEmManutencao = useMemo(
+    () => impressorasDigitais.find((i) => i.id === impressoraDigitalId)?.emManutencao ?? false,
+    [impressorasDigitais, impressoraDigitalId]
+  );
+  // As 3 tags de ProcessoSetupPorPeca usam o MESMO nome do ModeloCalculo
+  // correspondente (ver comentário em actions.ts) — filtra a lista completa
+  // pelo modelo selecionado agora.
+  const maquinasSetupPorPecaFiltradas = useMemo(
+    () => maquinasSetupPorPeca.filter((m) => m.tipoProcesso === modeloCalculo),
+    [maquinasSetupPorPeca, modeloCalculo]
+  );
+  const maquinaSetupPorPecaEmManutencao = useMemo(
+    () => maquinasSetupPorPeca.find((m) => m.id === maquinaSetupPorPecaId)?.emManutencao ?? false,
+    [maquinasSetupPorPeca, maquinaSetupPorPecaId]
   );
 
   const gramaturasDoPapel = papeis.find((p) => p.id === papelId)?.gramaturas ?? [];
@@ -298,6 +341,10 @@ export function ConfiguracaoProdutoForm({
           <option value="M2">M2 — grande formato em bobina</option>
           <option value="OFFSET">Offset — impressão em folha</option>
           <option value="FLEXOGRAFIA">Flexografia — impressão em bobina</option>
+          <option value="DIGITAL">Digital — impressão pequeno formato</option>
+          <option value="SERIGRAFIA">Serigrafia</option>
+          <option value="SUBLIMACAO">Sublimação</option>
+          <option value="ESTAMPAGEM_QUENTE">Estampagem a quente (hot stamping)</option>
         </Select>
 
         <div className="grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 dark:border-slate-800">
@@ -532,6 +579,101 @@ export function ConfiguracaoProdutoForm({
               </Alert>
             )}
             <BobinasEditor itens={bobinas} onChange={setBobinas} />
+          </div>
+        )}
+
+        {modeloCalculo === "DIGITAL" && (
+          <div className="flex flex-col gap-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+            {impressorasDigitais.length === 0 ? (
+              <Alert variant="error">
+                Nenhuma impressora digital cadastrada ainda. Cadastre uma em{" "}
+                <Link href="/configuracoes/maquinas" className="underline">
+                  Configurações → Máquinas
+                </Link>{" "}
+                antes de usar o modelo Digital.
+              </Alert>
+            ) : (
+              <>
+                <Select
+                  label="Impressora digital"
+                  name="impressoraDigitalId"
+                  value={impressoraDigitalId}
+                  onChange={(e) => setImpressoraDigitalId(e.target.value)}
+                  hint="Define o custo por clique usado no cálculo deste produto."
+                >
+                  <option value="">Selecione uma impressora</option>
+                  {impressorasDigitais.map((impressora) => (
+                    <option key={impressora.id} value={impressora.id}>
+                      {impressora.nome}
+                      {impressora.emManutencao ? " (em manutenção)" : ""}
+                    </option>
+                  ))}
+                </Select>
+                {impressoraEmManutencao && (
+                  <Alert variant="warning">
+                    Esta impressora está com uma parada em andamento agora. Você ainda pode
+                    salvar o produto assim configurado, mas confira em{" "}
+                    <Link href="/configuracoes/maquinas/manutencao" className="underline">
+                      Configurações → Máquinas → Manutenção
+                    </Link>{" "}
+                    antes de produzir.
+                  </Alert>
+                )}
+              </>
+            )}
+            <p className="text-xs text-slate-500">
+              Sem nesting — o custo é direto por peça (clique da impressora + custo do
+              substrato, que vem do preço de compra deste item). Largura/altura ficam
+              opcionais no orçamento.
+            </p>
+          </div>
+        )}
+
+        {(modeloCalculo === "SERIGRAFIA" ||
+          modeloCalculo === "SUBLIMACAO" ||
+          modeloCalculo === "ESTAMPAGEM_QUENTE") && (
+          <div className="flex flex-col gap-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+            {maquinasSetupPorPecaFiltradas.length === 0 ? (
+              <Alert variant="error">
+                Nenhuma máquina cadastrada ainda para este processo. Cadastre uma em{" "}
+                <Link href="/configuracoes/maquinas" className="underline">
+                  Configurações → Máquinas
+                </Link>{" "}
+                antes de usar este modelo.
+              </Alert>
+            ) : (
+              <>
+                <Select
+                  label="Máquina"
+                  name="maquinaSetupPorPecaId"
+                  value={maquinaSetupPorPecaId}
+                  onChange={(e) => setMaquinaSetupPorPecaId(e.target.value)}
+                  hint="Define o custo de setup (tela/matriz/arte) e por peça usados no cálculo deste produto."
+                >
+                  <option value="">Selecione uma máquina</option>
+                  {maquinasSetupPorPecaFiltradas.map((maquina) => (
+                    <option key={maquina.id} value={maquina.id}>
+                      {maquina.nome}
+                      {maquina.emManutencao ? " (em manutenção)" : ""}
+                    </option>
+                  ))}
+                </Select>
+                {maquinaSetupPorPecaEmManutencao && (
+                  <Alert variant="warning">
+                    Esta máquina está com uma parada em andamento agora. Você ainda pode
+                    salvar o produto assim configurado, mas confira em{" "}
+                    <Link href="/configuracoes/maquinas/manutencao" className="underline">
+                      Configurações → Máquinas → Manutenção
+                    </Link>{" "}
+                    antes de produzir.
+                  </Alert>
+                )}
+              </>
+            )}
+            <p className="text-xs text-slate-500">
+              Sem nesting — custo fixo de setup por tela/matriz/arte + custo variável por
+              peça, com um piso mínimo de job. Largura/altura ficam opcionais no orçamento.
+            </p>
           </div>
         )}
 

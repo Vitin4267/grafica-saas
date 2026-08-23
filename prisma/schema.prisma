@@ -67,6 +67,8 @@ model Grafica {
   prensas               Prensa[]
   maquinasFlexografia   MaquinaFlexografia[]
   equipamentos          Equipamento[]
+  impressorasDigitais   ImpressoraDigital[]
+  maquinasSetupPorPeca  MaquinaSetupPorPeca[]
   registrosManutencao   RegistroManutencao[]
   dadosFiscais          DadosFiscaisGrafica?
   notasFiscais          NotaFiscal[]
@@ -274,6 +276,74 @@ model MaquinaFlexografia {
   @@map("maquinas_flexografia")
 }
 
+// Uma impressora digital física do tenant (pequeno formato, tiragem curta —
+// HP Indigo, Xerox, Konica Minolta, Canon, Ricoh). Produtos com
+// modeloCalculo=DIGITAL escolhem uma impressora específica em
+// ItemGrafica.impressoraDigitalId — mesma filosofia de Prensa/
+// MaquinaFlexografia (custo por máquina, não por gráfica), mas sem nesting:
+// impressão digital não precisa de bobinas/folhas, só custo por clique +
+// custo do substrato (ver src/lib/pricing/digital.ts).
+model ImpressoraDigital {
+  id        String  @id @default(cuid())
+  graficaId String
+  nome      String
+  ativa     Boolean @default(true)
+
+  custoPorClique Decimal @default(0) @db.Decimal(12, 4)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  produtos            ItemGrafica[]
+  registrosManutencao RegistroManutencao[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("impressoras_digitais")
+}
+
+// Tag de processo pra MaquinaSetupPorPeca — separada de propósito do
+// ModeloCalculo do produto: aqui é só o filtro de qual máquina serve pra qual
+// produto no <Select> de configuração, não o modelo de cálculo em si (os 3
+// ModeloCalculo correspondentes chamam a mesma função calcularSetupPorPeca).
+enum ProcessoSetupPorPeca {
+  SERIGRAFIA
+  SUBLIMACAO
+  ESTAMPAGEM_QUENTE
+}
+
+// Máquina física pros 3 processos de "setup por peça" — serigrafia
+// (tela/matriz), sublimação (prensa térmica) e estampagem a quente (hot
+// stamping). Tabela ÚNICA pros 3 (tag tipoProcesso), não 3 tabelas quase
+// idênticas: mesmo racional de "1 função de cálculo compartilhada" decidido
+// pra src/lib/pricing (calcularSetupPorPeca), evita triplicar CRUD/schema
+// pra um custo que tem exatamente a mesma forma nos 3 processos (custo fixo
+// de setup por arte/matriz/tela + custo variável por peça + piso do job).
+model MaquinaSetupPorPeca {
+  id           String               @id @default(cuid())
+  graficaId    String
+  nome         String
+  tipoProcesso ProcessoSetupPorPeca
+  ativa        Boolean              @default(true)
+
+  custoPorSetup Decimal @default(0) @db.Decimal(12, 4) // R$ por tela/matriz/arte
+  custoPorPeca  Decimal @default(0) @db.Decimal(12, 4) // variável por peça
+  custoMinimo   Decimal @default(0) @db.Decimal(12, 4) // piso do job
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  produtos            ItemGrafica[]
+  registrosManutencao RegistroManutencao[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@index([tipoProcesso])
+  @@map("maquinas_setup_por_peca")
+}
+
 // Categorias reais de equipamento de gráfica levantadas por pesquisa
 // (2026-08-22) — cobre o que sobra fora de Offset/Flexografia (que já têm
 // motor de custo próprio, ver Prensa/MaquinaFlexografia). Lista fechada com
@@ -356,9 +426,14 @@ model RegistroManutencao {
   id        String @id @default(cuid())
   graficaId String
 
-  prensaId             String?
-  maquinaFlexografiaId String?
-  equipamentoId        String?
+  prensaId              String?
+  maquinaFlexografiaId  String?
+  equipamentoId         String?
+  // Generalização do mesmo padrão pras 2 máquinas novas de Feature A —
+  // exatamente 1 dentre as 5 FKs preenchida por registro (validado em
+  // validarSelecaoMaquina, src/lib/manutencao-maquina.ts).
+  impressoraDigitalId   String?
+  maquinaSetupPorPecaId String?
 
   tipo   TipoRegistroManutencao @default(QUEBRA)
   motivo String // texto livre — "trocou o rolo de tinta", "manutenção preventiva trimestral" etc.
@@ -374,15 +449,19 @@ model RegistroManutencao {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  grafica            Grafica             @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  prensa             Prensa?             @relation(fields: [prensaId], references: [id], onDelete: Cascade)
-  maquinaFlexografia MaquinaFlexografia? @relation(fields: [maquinaFlexografiaId], references: [id], onDelete: Cascade)
-  equipamento        Equipamento?        @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
+  grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  prensa              Prensa?              @relation(fields: [prensaId], references: [id], onDelete: Cascade)
+  maquinaFlexografia  MaquinaFlexografia?  @relation(fields: [maquinaFlexografiaId], references: [id], onDelete: Cascade)
+  equipamento         Equipamento?         @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
+  impressoraDigital   ImpressoraDigital?   @relation(fields: [impressoraDigitalId], references: [id], onDelete: Cascade)
+  maquinaSetupPorPeca MaquinaSetupPorPeca? @relation(fields: [maquinaSetupPorPecaId], references: [id], onDelete: Cascade)
 
   @@index([graficaId])
   @@index([prensaId])
   @@index([maquinaFlexografiaId])
   @@index([equipamentoId])
+  @@index([impressoraDigitalId])
+  @@index([maquinaSetupPorPecaId])
   @@map("registros_manutencao")
 }
 
@@ -965,11 +1044,21 @@ enum TipoItemCatalogo {
 // como sempre funcionou); M2, OFFSET e FLEXOGRAFIA acionam o motor avançado (src/lib/pricing)
 // e exigem configuração extra (bobinas, formatos de folha, ou máquina flexo + clichê).
 // Sempre opt-in por item, nunca default.
+// DIGITAL usa src/lib/pricing/digital.ts (custo por clique + substrato, sem
+// nesting). SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE são 3 valores distintos
+// (rótulo específico no dropdown de produto, pra não confundir o usuário) mas
+// os 3 chamam a MESMA função calcularSetupPorPeca — a tag de qual processo é
+// (pra filtrar a lista de MaquinaSetupPorPeca compatível) vive em
+// ProcessoSetupPorPeca, não aqui.
 enum ModeloCalculo {
   SIMPLES
   M2
   OFFSET
   FLEXOGRAFIA
+  DIGITAL
+  SERIGRAFIA
+  SUBLIMACAO
+  ESTAMPAGEM_QUENTE
 }
 
 // Como um acabamento (SERVICO) é cobrado — spec §3. FOLHA_IMPRESSA é o caso mais sutil:
@@ -1074,6 +1163,19 @@ model ItemGrafica {
   // quando modeloCalculo=FLEXOGRAFIA. Mesma regra de prensaId (onDelete=Restrict).
   maquinaFlexografiaId String?
 
+  // Qual impressora digital produz este item — só relevante/obrigatório (na
+  // aplicação) quando modeloCalculo=DIGITAL. Mesma regra de prensaId
+  // (onDelete=Restrict).
+  impressoraDigitalId String?
+
+  // Qual máquina de setup-por-peça produz este item — só relevante/
+  // obrigatório (na aplicação) quando modeloCalculo é SERIGRAFIA/SUBLIMACAO/
+  // ESTAMPAGEM_QUENTE. A máquina escolhida deve ter tipoProcesso compatível
+  // com o modeloCalculo do produto (validado na Server Action, sem CHECK no
+  // banco — mesmo padrão do resto do schema). Mesma regra de prensaId
+  // (onDelete=Restrict).
+  maquinaSetupPorPecaId String?
+
   // Gramatura escolhida — só relevante quando modeloCalculo=OFFSET (produto) ou
   // quando este item é usado como papel de outro produto (matéria-prima). No
   // produto, alimenta tanto o peso físico real da folha quanto a busca (com
@@ -1107,14 +1209,16 @@ model ItemGrafica {
   unidadeContagem UnidadeMedida?
   fatorConversao  Decimal?       @db.Decimal(12, 4)
 
-  grafica            Grafica             @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  itemCatalogo       ItemCatalogo        @relation(fields: [itemCatalogoId], references: [id])
-  prensa             Prensa?             @relation(fields: [prensaId], references: [id], onDelete: Restrict)
-  maquinaFlexografia MaquinaFlexografia? @relation(fields: [maquinaFlexografiaId], references: [id], onDelete: Restrict)
-  papel              ItemGrafica?        @relation("PapelDoProdutoOffset", fields: [papelId], references: [id], onDelete: Restrict)
+  grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  itemCatalogo        ItemCatalogo         @relation(fields: [itemCatalogoId], references: [id])
+  prensa              Prensa?              @relation(fields: [prensaId], references: [id], onDelete: Restrict)
+  maquinaFlexografia  MaquinaFlexografia?  @relation(fields: [maquinaFlexografiaId], references: [id], onDelete: Restrict)
+  impressoraDigital   ImpressoraDigital?   @relation(fields: [impressoraDigitalId], references: [id], onDelete: Restrict)
+  maquinaSetupPorPeca MaquinaSetupPorPeca? @relation(fields: [maquinaSetupPorPecaId], references: [id], onDelete: Restrict)
+  papel               ItemGrafica?         @relation("PapelDoProdutoOffset", fields: [papelId], references: [id], onDelete: Restrict)
   // SetNull: desativar/remover a categoria de custo não pode travar a
   // matéria-prima — ela só volta a cair na categoria padrão da gráfica.
-  categoriaCusto     CategoriaCusto?     @relation(fields: [categoriaCustoId], references: [id], onDelete: SetNull)
+  categoriaCusto      CategoriaCusto?      @relation(fields: [categoriaCustoId], references: [id], onDelete: SetNull)
 
   itensOrcamento OrcamentoItem[]
   movimentacoes  MovimentacaoEstoque[]
@@ -1149,6 +1253,8 @@ model ItemGrafica {
   @@unique([graficaId, itemCatalogoId])
   @@index([graficaId])
   @@index([categoriaCustoId])
+  @@index([impressoraDigitalId])
+  @@index([maquinaSetupPorPecaId])
   @@map("itens_grafica")
 }
 
@@ -2035,18 +2141,18 @@ enum TipoDesconto {
 // alternativas são descartadas do mesmo jeito (só a base permanece) — um
 // orçamento em status terminal (APROVADO/REJEITADO) nunca tem linha aqui.
 model OrcamentoOpcao {
-  id        String   @id @default(cuid())
+  id          String   @id @default(cuid())
   orcamentoId String
-  nome      String // "Opção B", "Pacote Premium" etc — texto livre, editável
+  nome        String // "Opção B", "Pacote Premium" etc — texto livre, editável
   // Cache = soma de itens.precoTotal, mesmo padrão de Orcamento.total —
   // mantido em sincronia pela action que cria a opção (criada de uma vez só,
   // como um carrinho — ver adicionarOpcaoOrcamento; MVP não tem edição
   // incremental de item dentro de uma opção já criada, só remover a opção
   // inteira e recriar).
-  total     Decimal  @default(0) @db.Decimal(12, 2)
-  ordem     Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  total       Decimal  @default(0) @db.Decimal(12, 2)
+  ordem       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   orcamento Orcamento       @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
   itens     OrcamentoItem[]
@@ -2108,6 +2214,12 @@ model OrcamentoItem {
   // ~20 lugares — PDF, webhook-tinta.ts, pedido-aprovacao.ts) pra não arriscar bug
   // silencioso de significado errado nesses consumidores.
   numeroCoresFlexo Int?
+  // Nº de cliques da impressora digital — modeloCalculo=DIGITAL only.
+  numeroCliques    Int?
+  // Nº de setups (telas/matrizes/artes) — modeloCalculo SERIGRAFIA/
+  // SUBLIMACAO/ESTAMPAGEM_QUENTE only, os 3 compartilham este mesmo campo
+  // (mesma razão de compartilharem calcularSetupPorPeca).
+  numeroSetups     Int?
   breakdown        Json?
 
   orcamento   Orcamento       @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)

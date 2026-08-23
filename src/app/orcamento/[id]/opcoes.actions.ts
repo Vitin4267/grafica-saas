@@ -94,10 +94,20 @@ export async function adicionarOpcaoOrcamento(
     acabamento: string | null;
     precoUnitario: string;
     precoTotal: string;
-    modeloCalculo: "SIMPLES" | "M2" | "OFFSET" | "FLEXOGRAFIA";
+    modeloCalculo:
+      | "SIMPLES"
+      | "M2"
+      | "OFFSET"
+      | "FLEXOGRAFIA"
+      | "DIGITAL"
+      | "SERIGRAFIA"
+      | "SUBLIMACAO"
+      | "ESTAMPAGEM_QUENTE";
     corFrente: number | null;
     corVerso: number | null;
     numeroCoresFlexo: number | null;
+    numeroCliques: number | null;
+    numeroSetups: number | null;
     breakdown: Prisma.InputJsonValue | null;
     etiqueta: ItemEntrada["etiqueta"];
     acabamentos: { itemGraficaId: string; qtdBase: string; custoCalculado: string }[];
@@ -137,6 +147,8 @@ export async function adicionarOpcaoOrcamento(
       corFrente: entrada.corFrente,
       corVerso: entrada.corVerso,
       numeroCoresFlexo: entrada.numeroCoresFlexo,
+      numeroCliques: entrada.numeroCliques,
+      numeroSetups: entrada.numeroSetups,
       acabamentoIds: entrada.acabamentoIds,
       papelId: entrada.papelId,
       quantidadeCores: entrada.quantidadeCores,
@@ -162,6 +174,8 @@ export async function adicionarOpcaoOrcamento(
       corFrente: resultado.corFrente,
       corVerso: resultado.corVerso,
       numeroCoresFlexo: resultado.numeroCoresFlexo,
+      numeroCliques: resultado.numeroCliques,
+      numeroSetups: resultado.numeroSetups,
       breakdown: resultado.breakdown,
       etiqueta: entrada.etiqueta,
       acabamentos: resultado.acabamentos,
@@ -199,6 +213,8 @@ export async function adicionarOpcaoOrcamento(
           corFrente: item.corFrente,
           corVerso: item.corVerso,
           numeroCoresFlexo: item.numeroCoresFlexo,
+          numeroCliques: item.numeroCliques,
+          numeroSetups: item.numeroSetups,
           breakdown: item.breakdown ?? undefined,
           etiqueta:
             item.modeloCalculo === "M2"

@@ -1,4 +1,12 @@
-export type ModeloCalculo = "SIMPLES" | "M2" | "OFFSET" | "FLEXOGRAFIA";
+export type ModeloCalculo =
+  | "SIMPLES"
+  | "M2"
+  | "OFFSET"
+  | "FLEXOGRAFIA"
+  | "DIGITAL"
+  | "SERIGRAFIA"
+  | "SUBLIMACAO"
+  | "ESTAMPAGEM_QUENTE";
 export type BaseCobranca =
   | "UNIDADE"
   | "M2"
@@ -140,4 +148,48 @@ export type ParametrosMaquinaFlexo = {
   custoMetroLinearRod: number;
   rodagemMinima: number;
   perdaPercentPadrao: number;
+};
+
+// ---------- Cenário 5 (digital, sem nesting) ----------
+
+export type PedidoDigital = {
+  quantidade: number; // Q
+  numeroCliques?: number; // default 1 (1 clique por peça) se omitido
+  // Digital não precisa de dimensões pro CUSTO em si (sem nesting) — opcionais
+  // de propósito, ao contrário de M2/OFFSET/FLEXOGRAFIA. Só existem aqui pra
+  // alimentar um eventual acabamento anexado com baseCobranca=M2 (ver
+  // ctxAcabamento em precificar.ts); ausentes = 0, e orcamento-precificacao.ts
+  // bloqueia ANTES de chegar aqui se esse acabamento existir sem elas
+  // (evita R$0 silencioso).
+  larguraM?: number;
+  alturaM?: number;
+};
+
+export type ContextoDigital = {
+  custoSubstratoPorPeca: number; // = ItemGrafica.precoCompra do material, mesma fonte que M2 já usa
+};
+
+// ---------- Parâmetros da impressora digital (custo de máquina, só DIGITAL) ----------
+
+export type ParametrosImpressoraDigital = {
+  custoPorClique: number;
+};
+
+// ---------- Cenário 6 (setup por peça — SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE, sem nesting) ----------
+
+export type PedidoSetupPorPeca = {
+  quantidade: number; // Q
+  numeroSetups: number; // nº de telas/matrizes/artes
+  // Mesma razão de PedidoDigital.larguraM/alturaM acima — opcionais, só pra
+  // alimentar um eventual acabamento M2-based.
+  larguraM?: number;
+  alturaM?: number;
+};
+
+// ---------- Parâmetros da máquina de setup por peça (custo de máquina, os 3 modelos acima) ----------
+
+export type ParametrosMaquinaSetupPorPeca = {
+  custoPorSetup: number; // R$ por tela/matriz/arte
+  custoPorPeca: number; // variável por peça
+  custoMinimo: number; // piso do job
 };

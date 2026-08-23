@@ -404,6 +404,8 @@ export default async function OrcamentoDetalhePage({
                     corFrente: item.corFrente?.toString() ?? "",
                     corVerso: item.corVerso?.toString() ?? "",
                     numeroCoresFlexo: item.numeroCoresFlexo?.toString() ?? "",
+                    numeroCliques: item.numeroCliques?.toString() ?? "",
+                    numeroSetups: item.numeroSetups?.toString() ?? "",
                     etiqueta: etiquetaParaCampos(item.etiqueta),
                     papelId: item.precificacaoEtiqueta?.papelId ?? "",
                     quantidadeCores: item.precificacaoEtiqueta?.quantidadeCores.toString() ?? "",

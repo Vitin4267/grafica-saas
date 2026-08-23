@@ -22,12 +22,50 @@ function revalidarTelas() {
   revalidatePath("/catalogo", "layout");
 }
 
-// Registra o INÍCIO de uma parada (preventiva ou quebra) numa prensa ou
-// máquina de flexografia — exatamente uma das duas, nunca as duas (ver
-// validarSelecaoMaquina). Bloqueia se a máquina já tiver uma parada ativa
-// (dataFim null): evitar duas linhas "em andamento" simultâneas pra mesma
-// máquina, o que quebraria a premissa de indexarManutencoesAtivasPorMaquina
-// (no máximo 1 registro ativo por máquina).
+// Os 5 campos possíveis (generalizado na Feature A: eram 3 — prensa, flexo,
+// equipamento — agora + impressora digital e máquina de setup-por-peça).
+// Cada entrada sabe validar que o id existe na gráfica — uma função só,
+// reaproveitada tanto pra checar existência quanto pra montar o `data` do
+// create abaixo, em vez de duplicar o if/else por campo.
+const CAMPOS_MAQUINA = [
+  {
+    campo: "prensaId",
+    rotulo: "Prensa",
+    existe: (id: string, graficaId: string) =>
+      prisma.prensa.findFirst({ where: { id, graficaId } }),
+  },
+  {
+    campo: "maquinaFlexografiaId",
+    rotulo: "Máquina de flexografia",
+    existe: (id: string, graficaId: string) =>
+      prisma.maquinaFlexografia.findFirst({ where: { id, graficaId } }),
+  },
+  {
+    campo: "equipamentoId",
+    rotulo: "Equipamento",
+    existe: (id: string, graficaId: string) =>
+      prisma.equipamento.findFirst({ where: { id, graficaId } }),
+  },
+  {
+    campo: "impressoraDigitalId",
+    rotulo: "Impressora digital",
+    existe: (id: string, graficaId: string) =>
+      prisma.impressoraDigital.findFirst({ where: { id, graficaId } }),
+  },
+  {
+    campo: "maquinaSetupPorPecaId",
+    rotulo: "Máquina",
+    existe: (id: string, graficaId: string) =>
+      prisma.maquinaSetupPorPeca.findFirst({ where: { id, graficaId } }),
+  },
+] as const;
+
+// Registra o INÍCIO de uma parada (preventiva ou quebra) numa das 5 máquinas
+// possíveis — exatamente uma, nunca mais de uma (ver validarSelecaoMaquina).
+// Bloqueia se a máquina já tiver uma parada ativa (dataFim null): evitar duas
+// linhas "em andamento" simultâneas pra mesma máquina, o que quebraria a
+// premissa de indexarManutencoesAtivasPorMaquina (no máximo 1 registro ativo
+// por máquina).
 export async function iniciarManutencao(
   _estadoAnterior: SalvarManutencaoResult | null,
   formData: FormData
@@ -39,13 +77,14 @@ export async function iniciarManutencao(
     return { ok: false, mensagem: "Você não tem permissão pra editar configurações." };
   }
 
-  const prensaId = String(formData.get("prensaId") ?? "").trim();
-  const maquinaFlexografiaId = String(formData.get("maquinaFlexografiaId") ?? "").trim();
-  const equipamentoId = String(formData.get("equipamentoId") ?? "").trim();
-  const validacao = validarSelecaoMaquina(prensaId, maquinaFlexografiaId, equipamentoId);
+  const idsPorCampo = CAMPOS_MAQUINA.map(({ campo }) => String(formData.get(campo) ?? "").trim());
+  const validacao = validarSelecaoMaquina(idsPorCampo);
   if (!validacao.ok) {
     return { ok: false, mensagem: validacao.mensagem };
   }
+  const indiceEscolhido = idsPorCampo.findIndex((v) => v.length > 0);
+  const { campo, rotulo, existe } = CAMPOS_MAQUINA[indiceEscolhido];
+  const idEscolhido = idsPorCampo[indiceEscolhido];
 
   const tipo = String(formData.get("tipo") ?? "");
   if (!TIPOS_VALIDOS.includes(tipo as TipoRegistroManutencao)) {
@@ -57,35 +96,13 @@ export async function iniciarManutencao(
     return { ok: false, mensagem: "Descreva o motivo da parada." };
   }
 
-  if (prensaId) {
-    const prensa = await prisma.prensa.findFirst({
-      where: { id: prensaId, graficaId: usuario.graficaId },
-    });
-    if (!prensa) {
-      return { ok: false, mensagem: "Prensa não encontrada." };
-    }
-  } else if (maquinaFlexografiaId) {
-    const maquina = await prisma.maquinaFlexografia.findFirst({
-      where: { id: maquinaFlexografiaId, graficaId: usuario.graficaId },
-    });
-    if (!maquina) {
-      return { ok: false, mensagem: "Máquina não encontrada." };
-    }
-  } else {
-    const equipamento = await prisma.equipamento.findFirst({
-      where: { id: equipamentoId, graficaId: usuario.graficaId },
-    });
-    if (!equipamento) {
-      return { ok: false, mensagem: "Equipamento não encontrado." };
-    }
+  const maquina = await existe(idEscolhido, usuario.graficaId);
+  if (!maquina) {
+    return { ok: false, mensagem: `${rotulo} não encontrada.` };
   }
 
   const jaAtiva = await prisma.registroManutencao.findFirst({
-    where: {
-      graficaId: usuario.graficaId,
-      dataFim: null,
-      ...(prensaId ? { prensaId } : maquinaFlexografiaId ? { maquinaFlexografiaId } : { equipamentoId }),
-    },
+    where: { graficaId: usuario.graficaId, dataFim: null, [campo]: idEscolhido },
   });
   if (jaAtiva) {
     return {
@@ -97,9 +114,7 @@ export async function iniciarManutencao(
   await prisma.registroManutencao.create({
     data: {
       graficaId: usuario.graficaId,
-      prensaId: prensaId || null,
-      maquinaFlexografiaId: maquinaFlexografiaId || null,
-      equipamentoId: equipamentoId || null,
+      [campo]: idEscolhido,
       tipo: tipo as TipoRegistroManutencao,
       motivo,
       registradoPorId: usuario.id,

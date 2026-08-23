@@ -43,7 +43,16 @@ class ErroEstoqueDivergente extends Error {}
 
 export type SalvarConfigResult = { ok: boolean; mensagem: string };
 
-const modeloCalculoSchema = z.enum(["SIMPLES", "M2", "OFFSET", "FLEXOGRAFIA"]);
+const modeloCalculoSchema = z.enum([
+  "SIMPLES",
+  "M2",
+  "OFFSET",
+  "FLEXOGRAFIA",
+  "DIGITAL",
+  "SERIGRAFIA",
+  "SUBLIMACAO",
+  "ESTAMPAGEM_QUENTE",
+]);
 // Sem OUTRO de propósito: unidadeContagem não tem campo "outro" livre (só
 // ItemCatalogo.unidade tem), então OUTRO aqui só mostraria o rótulo genérico
 // "outro" na exibição de preço — melhor nem oferecer a opção.
@@ -166,6 +175,10 @@ export async function salvarModeloProduto(
     M2: "M² (flexografia)",
     OFFSET: "Offset",
     FLEXOGRAFIA: "Flexografia",
+    DIGITAL: "Digital",
+    SERIGRAFIA: "Serigrafia",
+    SUBLIMACAO: "Sublimação",
+    ESTAMPAGEM_QUENTE: "Estampagem a quente",
   };
   const modeloAntes = ROTULO_MODELO[itemGrafica.modeloCalculo as typeof modeloCalculo] ?? itemGrafica.modeloCalculo;
 
@@ -382,6 +395,99 @@ export async function salvarModeloProduto(
         descricao: "Modelo de cálculo do item atualizado para Flexografia",
         valorAnterior: `Modelo: ${modeloAntes}`,
         valorNovo: `Modelo: ${ROTULO_MODELO.FLEXOGRAFIA}, custo clichê/cm²: ${formatarPreco(custoClichePorCm2)}, ${bobinasResult.data.length} bobina${bobinasResult.data.length > 1 ? "s" : ""}`,
+      });
+    } else if (modeloCalculo === "DIGITAL") {
+      // Sem nesting — nenhuma bobina/folha, só a impressora escolhida (ver
+      // "dimensões opcionais" no motor, src/lib/pricing/digital.ts).
+      const impressoraDigitalId = String(formData.get("impressoraDigitalId") ?? "");
+      if (!impressoraDigitalId) {
+        return {
+          ok: false,
+          mensagem: "Selecione uma impressora digital para habilitar o cálculo Digital.",
+        };
+      }
+      const impressoraValida = await prisma.impressoraDigital.findFirst({
+        where: { id: impressoraDigitalId, graficaId: usuario.graficaId, ativa: true },
+        select: { id: true },
+      });
+      if (!impressoraValida) {
+        return { ok: false, mensagem: "Impressora digital selecionada é inválida." };
+      }
+
+      await prisma.itemGrafica.update({
+        where: { id: itemGraficaId },
+        data: {
+          modeloCalculo: "DIGITAL",
+          impressoraDigitalId,
+          unidadeContagem: unidadeContagemFinal,
+          fatorConversao: fatorConversaoFinal,
+        },
+      });
+
+      await registrarAuditoria({
+        graficaId: usuario.graficaId,
+        usuarioId: usuario.id,
+        usuarioNome: usuario.nome,
+        acao: "catalogo.salvar_modelo_calculo",
+        entidade: "ItemGrafica",
+        entidadeId: itemGraficaId,
+        descricao: "Modelo de cálculo do item atualizado para Digital",
+        valorAnterior: `Modelo: ${modeloAntes}`,
+        valorNovo: `Modelo: ${ROTULO_MODELO.DIGITAL}`,
+      });
+    } else if (
+      modeloCalculo === "SERIGRAFIA" ||
+      modeloCalculo === "SUBLIMACAO" ||
+      modeloCalculo === "ESTAMPAGEM_QUENTE"
+    ) {
+      // SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE — os 3 usam a mesma tabela
+      // MaquinaSetupPorPeca, filtrada por tipoProcesso === modeloCalculo (o
+      // nome do enum ProcessoSetupPorPeca é IDÊNTICO ao do ModeloCalculo
+      // correspondente de propósito, então dá pra usar modeloCalculo direto
+      // como filtro, sem tabela de tradução). Sem nesting, igual a Digital.
+      const maquinaSetupPorPecaId = String(formData.get("maquinaSetupPorPecaId") ?? "");
+      if (!maquinaSetupPorPecaId) {
+        return {
+          ok: false,
+          mensagem: `Selecione uma máquina para habilitar o cálculo ${ROTULO_MODELO[modeloCalculo]}.`,
+        };
+      }
+      const maquinaValida = await prisma.maquinaSetupPorPeca.findFirst({
+        where: {
+          id: maquinaSetupPorPecaId,
+          graficaId: usuario.graficaId,
+          ativa: true,
+          tipoProcesso: modeloCalculo,
+        },
+        select: { id: true },
+      });
+      if (!maquinaValida) {
+        return {
+          ok: false,
+          mensagem: `Máquina selecionada é inválida para o modelo ${ROTULO_MODELO[modeloCalculo]}.`,
+        };
+      }
+
+      await prisma.itemGrafica.update({
+        where: { id: itemGraficaId },
+        data: {
+          modeloCalculo,
+          maquinaSetupPorPecaId,
+          unidadeContagem: unidadeContagemFinal,
+          fatorConversao: fatorConversaoFinal,
+        },
+      });
+
+      await registrarAuditoria({
+        graficaId: usuario.graficaId,
+        usuarioId: usuario.id,
+        usuarioNome: usuario.nome,
+        acao: "catalogo.salvar_modelo_calculo",
+        entidade: "ItemGrafica",
+        entidadeId: itemGraficaId,
+        descricao: `Modelo de cálculo do item atualizado para ${ROTULO_MODELO[modeloCalculo]}`,
+        valorAnterior: `Modelo: ${modeloAntes}`,
+        valorNovo: `Modelo: ${ROTULO_MODELO[modeloCalculo]}`,
       });
     }
   } catch {

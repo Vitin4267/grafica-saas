@@ -32,7 +32,12 @@ export function ManutencaoMaquinaCard({
 }: {
   maquinaId: string;
   maquinaNome: string;
-  campoId: "prensaId" | "maquinaFlexografiaId" | "equipamentoId";
+  campoId:
+    | "prensaId"
+    | "maquinaFlexografiaId"
+    | "equipamentoId"
+    | "impressoraDigitalId"
+    | "maquinaSetupPorPecaId";
   registroAtivo: RegistroAtivo | null;
 }) {
   const [mostrarForm, setMostrarForm] = useState(false);

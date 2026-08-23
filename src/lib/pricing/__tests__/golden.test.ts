@@ -243,3 +243,91 @@ describe("golden #5 — rótulo flexo 8×5cm 3 cores: clichê fixo por cor/área
     expect(resultado.metricas.maquinaFlexoUsada).toBeNull(); // não informado neste cenário
   });
 });
+
+describe("golden #6 — cartão digital Q=500: sem nesting, custo direto por clique + substrato", () => {
+  it("preço final bate com o cálculo manual (custoCliques + custoSubstrato -> composição padrão)", () => {
+    const contexto: ContextoPrecificacao = {
+      itemGraficaId: "cartao-digital",
+      modeloCalculo: "DIGITAL",
+      viraFolha: false,
+      parametros: PARAMS,
+      digital: { custoSubstratoPorPeca: 0.3 },
+      parametrosImpressoraDigital: { custoPorClique: 0.08 },
+      impressoraDigitalUsada: { id: "impressora-1", nome: "HP Indigo 12000" },
+    };
+
+    const pedido: PedidoPrecificacao = {
+      tipo: "DIGITAL",
+      pedido: { quantidade: 500 }, // sem numeroCliques -> default 1
+      acabamentos: [],
+    };
+
+    const resultado = precificar(pedido, contexto);
+
+    // custoCliques = 500 × 1 × 0,08 = 40; custoSubstrato = 500 × 0,30 = 150;
+    // custoBase = 190 -> custoTotal = 190 × 1,15 = 218,5 -> precoBruto =
+    // 218,5 / (1 - 0,26) = 295,270...  -> arredonda pra cima no incremento de
+    // 0,10 -> 295,30 -> precoUnitario = 295,30/500 = 0,5906 -> 0,59 (2 casas)
+    // -> precoFinal = 0,59 × 500 = 295,00.
+    expect(resultado.metricas.numeroCliques).toBe(1);
+    expect(resultado.metricas.custoCliques as number).toBeCloseTo(40, 6);
+    expect(resultado.metricas.custoSubstrato as number).toBeCloseTo(150, 6);
+    expect(resultado.metricas.impressoraDigitalUsada).toMatchObject({ id: "impressora-1" });
+    expect(resultado.precoUnitario.toNumber()).toBeCloseTo(0.59, 6);
+    expect(resultado.precoFinal.toNumber()).toBeCloseTo(295, 6);
+  });
+});
+
+describe("golden #7 — camiseta serigrafia Q=200/2 telas: setup fixo + variável, sem nesting", () => {
+  it("preço final bate com o cálculo manual (calcularSetupPorPeca -> composição padrão)", () => {
+    const contexto: ContextoPrecificacao = {
+      itemGraficaId: "camiseta-serigrafia",
+      modeloCalculo: "SERIGRAFIA",
+      viraFolha: false,
+      parametros: PARAMS,
+      parametrosMaquinaSetupPorPeca: { custoPorSetup: 80, custoPorPeca: 3.5, custoMinimo: 150 },
+      maquinaSetupPorPecaUsada: { id: "carrossel-1", nome: "Carrossel 6 cores" },
+    };
+
+    const pedido: PedidoPrecificacao = {
+      tipo: "SERIGRAFIA",
+      pedido: { quantidade: 200, numeroSetups: 2 }, // 2 telas (2 cores)
+      acabamentos: [],
+    };
+
+    const resultado = precificar(pedido, contexto);
+
+    // custoSetup = 2 × 80 = 160; custoVariavel = 200 × 3,5 = 700; soma = 860,
+    // acima do custoMinimo de 150 (não domina) -> custoBase = 860 ->
+    // custoTotal = 860 × 1,15 = 989 -> precoBruto = 989 / 0,74 = 1336,486... ->
+    // arredonda pra cima no incremento de 0,10 -> 1336,50 -> precoUnitario =
+    // 1336,50/200 = 6,6825 -> 6,68 (2 casas) -> precoFinal = 6,68 × 200 = 1336,00.
+    expect(resultado.metricas.custoSetup as number).toBeCloseTo(160, 6);
+    expect(resultado.metricas.custoVariavel as number).toBeCloseTo(700, 6);
+    expect(resultado.metricas.maquinaSetupPorPecaUsada).toMatchObject({ id: "carrossel-1" });
+    expect(resultado.precoUnitario.toNumber()).toBeCloseTo(6.68, 6);
+    expect(resultado.precoFinal.toNumber()).toBeCloseTo(1336, 6);
+  });
+
+  it("custoMinimo age como piso mesmo dentro do dispatcher completo", () => {
+    const contexto: ContextoPrecificacao = {
+      itemGraficaId: "camiseta-serigrafia-pequena",
+      modeloCalculo: "SERIGRAFIA",
+      viraFolha: false,
+      parametros: PARAMS,
+      parametrosMaquinaSetupPorPeca: { custoPorSetup: 5, custoPorPeca: 0.1, custoMinimo: 150 },
+    };
+
+    const pedido: PedidoPrecificacao = {
+      tipo: "SERIGRAFIA",
+      pedido: { quantidade: 5, numeroSetups: 1 },
+      acabamentos: [],
+    };
+
+    const resultado = precificar(pedido, contexto);
+
+    // custoSetup=5, custoVariavel=0,5, soma=5,5 — bem abaixo do piso de 150,
+    // então custoBase = 150 (o piso domina).
+    expect(resultado.detalhes.material.toNumber()).toBe(150);
+  });
+});

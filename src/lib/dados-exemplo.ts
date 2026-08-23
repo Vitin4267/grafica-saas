@@ -383,6 +383,8 @@ export async function gerarOrcamentoExemplo(
     custoFaca: null,
     custoFrete: null,
     numeroCoresFlexo: null,
+    numeroCliques: null,
+    numeroSetups: null,
   });
   if (!resultadoOffset.ok) {
     return { ok: false, mensagem: `Cartão de visita de exemplo: ${resultadoOffset.mensagem}` };
@@ -400,6 +402,8 @@ export async function gerarOrcamentoExemplo(
     custoFaca: null,
     custoFrete: null,
     numeroCoresFlexo: null,
+    numeroCliques: null,
+    numeroSetups: null,
   });
   if (!resultadoSimples.ok) {
     return { ok: false, mensagem: `Panfleto de exemplo: ${resultadoSimples.mensagem}` };

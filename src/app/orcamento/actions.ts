@@ -43,7 +43,15 @@ export type PrecificarItemResult =
       categoria: string;
       precoUnitario: string;
       precoTotal: string;
-      modeloCalculo: "SIMPLES" | "M2" | "OFFSET" | "FLEXOGRAFIA";
+      modeloCalculo:
+        | "SIMPLES"
+        | "M2"
+        | "OFFSET"
+        | "FLEXOGRAFIA"
+        | "DIGITAL"
+        | "SERIGRAFIA"
+        | "SUBLIMACAO"
+        | "ESTAMPAGEM_QUENTE";
     }
   | { ok: false; mensagem: string };
 
@@ -64,6 +72,8 @@ export async function precificarItem(input: {
   corFrente: number | null;
   corVerso: number | null;
   numeroCoresFlexo: number | null;
+  numeroCliques: number | null;
+  numeroSetups: number | null;
   acabamentoIds: string[];
   papelId: string | null;
   quantidadeCores: number | null;
@@ -121,6 +131,8 @@ export async function precificarItem(input: {
     corFrente: input.corFrente,
     corVerso: input.corVerso,
     numeroCoresFlexo: input.numeroCoresFlexo,
+    numeroCliques: input.numeroCliques,
+    numeroSetups: input.numeroSetups,
     acabamentoIds: input.acabamentoIds,
     papelId: input.papelId,
     quantidadeCores: input.quantidadeCores,
@@ -227,10 +239,20 @@ export async function criarOrcamento(
     acabamento: string | null;
     precoUnitario: string;
     precoTotal: string;
-    modeloCalculo: "SIMPLES" | "M2" | "OFFSET" | "FLEXOGRAFIA";
+    modeloCalculo:
+      | "SIMPLES"
+      | "M2"
+      | "OFFSET"
+      | "FLEXOGRAFIA"
+      | "DIGITAL"
+      | "SERIGRAFIA"
+      | "SUBLIMACAO"
+      | "ESTAMPAGEM_QUENTE";
     corFrente: number | null;
     corVerso: number | null;
     numeroCoresFlexo: number | null;
+    numeroCliques: number | null;
+    numeroSetups: number | null;
     breakdown: Prisma.InputJsonValue | null;
     etiqueta: z.infer<typeof etiquetaEntradaSchema> | null;
     acabamentos: { itemGraficaId: string; qtdBase: string; custoCalculado: string }[];
@@ -284,6 +306,8 @@ export async function criarOrcamento(
       corFrente: entrada.corFrente,
       corVerso: entrada.corVerso,
       numeroCoresFlexo: entrada.numeroCoresFlexo,
+      numeroCliques: entrada.numeroCliques,
+      numeroSetups: entrada.numeroSetups,
       acabamentoIds: entrada.acabamentoIds,
       papelId: entrada.papelId,
       quantidadeCores: entrada.quantidadeCores,
@@ -309,6 +333,8 @@ export async function criarOrcamento(
       corFrente: resultado.corFrente,
       corVerso: resultado.corVerso,
       numeroCoresFlexo: resultado.numeroCoresFlexo,
+      numeroCliques: resultado.numeroCliques,
+      numeroSetups: resultado.numeroSetups,
       breakdown: resultado.breakdown,
       etiqueta: entrada.etiqueta,
       acabamentos: resultado.acabamentos,
@@ -339,6 +365,8 @@ export async function criarOrcamento(
           corFrente: item.corFrente,
           corVerso: item.corVerso,
           numeroCoresFlexo: item.numeroCoresFlexo,
+          numeroCliques: item.numeroCliques,
+          numeroSetups: item.numeroSetups,
           breakdown: item.breakdown ?? undefined,
           // Sempre cria a linha de etiqueta pra item M2 (mesmo com tudo
           // nulo, se o usuário não preencheu nada) — evita "M2 sem

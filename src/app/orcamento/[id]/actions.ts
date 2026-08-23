@@ -424,6 +424,10 @@ export async function editarOrcamento(
   const numeroCoresFlexo = formData.get("numeroCoresFlexo")
     ? Number(formData.get("numeroCoresFlexo"))
     : null;
+  // Motor Digital — opcional (default 1 no motor se ausente).
+  const numeroCliques = formData.get("numeroCliques") ? Number(formData.get("numeroCliques")) : null;
+  // Motores Serigrafia/Sublimação/Estampagem a quente (compartilham este campo).
+  const numeroSetups = formData.get("numeroSetups") ? Number(formData.get("numeroSetups")) : null;
   // Motor de clichê de etiqueta (só M2 com ConfiguracaoClicheEtiqueta) — ver
   // src/lib/orcamento-precificacao.ts.
   const papelId = String(formData.get("papelId") || "").trim() || null;
@@ -474,6 +478,8 @@ export async function editarOrcamento(
     corFrente,
     corVerso,
     numeroCoresFlexo,
+    numeroCliques,
+    numeroSetups,
     acabamentoIds,
     papelId,
     quantidadeCores,
@@ -540,6 +546,8 @@ export async function editarOrcamento(
             corFrente: resultado.corFrente,
             corVerso: resultado.corVerso,
             numeroCoresFlexo: resultado.numeroCoresFlexo,
+            numeroCliques: resultado.numeroCliques,
+            numeroSetups: resultado.numeroSetups,
             breakdown: resultado.breakdown ?? undefined,
           },
         });
@@ -1287,6 +1295,10 @@ export async function adicionarItemOrcamento(
   const numeroCoresFlexo = formData.get("numeroCoresFlexo")
     ? Number(formData.get("numeroCoresFlexo"))
     : null;
+  // Motor Digital — opcional (default 1 no motor se ausente).
+  const numeroCliques = formData.get("numeroCliques") ? Number(formData.get("numeroCliques")) : null;
+  // Motores Serigrafia/Sublimação/Estampagem a quente (compartilham este campo).
+  const numeroSetups = formData.get("numeroSetups") ? Number(formData.get("numeroSetups")) : null;
   // Motor de clichê de etiqueta (só M2 com ConfiguracaoClicheEtiqueta) — ver
   // src/lib/orcamento-precificacao.ts.
   const papelId = String(formData.get("papelId") || "").trim() || null;
@@ -1339,6 +1351,8 @@ export async function adicionarItemOrcamento(
     corFrente,
     corVerso,
     numeroCoresFlexo,
+    numeroCliques,
+    numeroSetups,
     acabamentoIds,
     papelId,
     quantidadeCores,
@@ -1384,6 +1398,8 @@ export async function adicionarItemOrcamento(
             corFrente: resultado.corFrente,
             corVerso: resultado.corVerso,
             numeroCoresFlexo: resultado.numeroCoresFlexo,
+            numeroCliques: resultado.numeroCliques,
+            numeroSetups: resultado.numeroSetups,
             breakdown: resultado.breakdown ?? undefined,
             etiqueta:
               resultado.modeloCalculo === "M2"
@@ -1955,10 +1971,20 @@ export async function duplicarOrcamento(
     descontoValor: string | null;
     motivoDesconto: string | null;
     aprovadoPorId: string | null;
-    modeloCalculo: "SIMPLES" | "M2" | "OFFSET" | "FLEXOGRAFIA";
+    modeloCalculo:
+      | "SIMPLES"
+      | "M2"
+      | "OFFSET"
+      | "FLEXOGRAFIA"
+      | "DIGITAL"
+      | "SERIGRAFIA"
+      | "SUBLIMACAO"
+      | "ESTAMPAGEM_QUENTE";
     corFrente: number | null;
     corVerso: number | null;
     numeroCoresFlexo: number | null;
+    numeroCliques: number | null;
+    numeroSetups: number | null;
     breakdown: Prisma.InputJsonValue | null;
     etiqueta: (typeof original.itens)[number]["etiqueta"];
     acabamentosParaGravar: { itemGraficaId: string; qtdBase: string; custoCalculado: string }[];
@@ -2000,6 +2026,8 @@ export async function duplicarOrcamento(
       corFrente: itemOriginal.corFrente,
       corVerso: itemOriginal.corVerso,
       numeroCoresFlexo: itemOriginal.numeroCoresFlexo,
+      numeroCliques: itemOriginal.numeroCliques,
+      numeroSetups: itemOriginal.numeroSetups,
       acabamentos: itemOriginal.acabamentos,
       precificacaoEtiqueta: itemOriginal.precificacaoEtiqueta,
     });
@@ -2075,6 +2103,8 @@ export async function duplicarOrcamento(
       corFrente: resultado.corFrente,
       corVerso: resultado.corVerso,
       numeroCoresFlexo: resultado.numeroCoresFlexo,
+      numeroCliques: resultado.numeroCliques,
+      numeroSetups: resultado.numeroSetups,
       breakdown: resultado.breakdown ?? null,
       etiqueta: itemOriginal.etiqueta,
       acabamentosParaGravar: resultado.acabamentos,
@@ -2118,6 +2148,8 @@ export async function duplicarOrcamento(
           corFrente: item.corFrente,
           corVerso: item.corVerso,
           numeroCoresFlexo: item.numeroCoresFlexo,
+          numeroCliques: item.numeroCliques,
+          numeroSetups: item.numeroSetups,
           breakdown: item.breakdown ?? undefined,
           // Descritivo de produção (nunca entra na conta de preço, ver
           // OrcamentoItemEtiqueta no schema) — copiado literalmente do item

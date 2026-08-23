@@ -1,4 +1,4 @@
-import type { CategoriaEquipamento } from "@/generated/prisma/enums";
+import type { CategoriaEquipamento, ProcessoSetupPorPeca } from "@/generated/prisma/enums";
 
 // Categorias reais de equipamento de gráfica, levantadas por pesquisa
 // (2026-08-22, expandida em 2026-08-23) — cobre o que sobra fora de
@@ -57,4 +57,22 @@ export const EXEMPLOS_MARCA_CATEGORIA_EQUIPAMENTO: Record<CategoriaEquipamento, 
   SUBLIMACAO: "prensa térmica (ex: Metalnox, MAQmei) + impressora (ex: Epson SureColor F)",
   ESTAMPAGEM_QUENTE: "aplica filme metalizado/pigmentado com calor e pressão",
   OUTRO: "",
+};
+
+// Tag de processo pra MaquinaSetupPorPeca (Feature A) — enum separado de
+// CategoriaEquipamento de propósito (ver comentário no schema): aqui é o
+// filtro de qual máquina serve pra qual ModeloCalculo de produto, não uma
+// categoria de cadastro informativo. Mesmos 3 rótulos usados em
+// ConfiguracaoProdutoForm.tsx (dropdown de modelo de cálculo) — repetidos
+// aqui como fonte única pro CRUD de máquina em configuracoes/maquinas/.
+export const ORDEM_PROCESSO_SETUP_POR_PECA: ProcessoSetupPorPeca[] = [
+  "SERIGRAFIA",
+  "SUBLIMACAO",
+  "ESTAMPAGEM_QUENTE",
+];
+
+export const ROTULO_PROCESSO_SETUP_POR_PECA: Record<ProcessoSetupPorPeca, string> = {
+  SERIGRAFIA: "Serigrafia",
+  SUBLIMACAO: "Sublimação",
+  ESTAMPAGEM_QUENTE: "Estampagem a quente (hot stamping)",
 };
