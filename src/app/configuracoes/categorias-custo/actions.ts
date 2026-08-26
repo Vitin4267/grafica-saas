@@ -8,6 +8,7 @@ import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
+import { registrarAuditoria } from "@/lib/auditoria";
 
 export type SalvarCategoriaCustoResult = { ok: boolean; mensagem: string };
 
@@ -48,6 +49,16 @@ export async function criarCategoriaCusto(
     }
     throw erro;
   }
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "configuracoes.criar_categoria_custo",
+    entidade: "CategoriaCusto",
+    entidadeId: novaCategoria.id,
+    descricao: `Categoria de custo "${nome}" criada`,
+  });
 
   revalidatePath("/configuracoes/categorias-custo");
   redirect(`/configuracoes/categorias-custo/${novaCategoria.id}`);
@@ -91,6 +102,20 @@ export async function renomearCategoriaCusto(
     throw erro;
   }
 
+  if (categoria.nome !== nome) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "configuracoes.renomear_categoria_custo",
+      entidade: "CategoriaCusto",
+      entidadeId: categoriaId,
+      descricao: `Categoria de custo renomeada`,
+      valorAnterior: `Nome: ${categoria.nome}`,
+      valorNovo: `Nome: ${nome}`,
+    });
+  }
+
   revalidatePath(`/configuracoes/categorias-custo/${categoriaId}`);
   revalidatePath("/configuracoes/categorias-custo");
   return { ok: true, mensagem: "Categoria renomeada com sucesso!" };
@@ -123,6 +148,16 @@ export async function alternarAtivaCategoriaCusto(
   await prisma.categoriaCusto.update({
     where: { id: categoriaId },
     data: { ativa: !categoria.ativa },
+  });
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: categoria.ativa ? "configuracoes.desativar_categoria_custo" : "configuracoes.ativar_categoria_custo",
+    entidade: "CategoriaCusto",
+    entidadeId: categoriaId,
+    descricao: `Categoria de custo "${categoria.nome}" ${categoria.ativa ? "desativada" : "ativada"}`,
   });
 
   revalidatePath(`/configuracoes/categorias-custo/${categoriaId}`);

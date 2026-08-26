@@ -48,6 +48,12 @@ export function calcularQtdBase(config: ConfigAcabamento, ctx: ContextoAcabament
       }
       return paraDecimal(ctx.horasEstimadas);
     }
+
+    case "MILHEIRO":
+      return paraDecimal(ctx.quantidade).div(1000);
+
+    case "CENTO":
+      return paraDecimal(ctx.quantidade).div(100);
   }
 }
 

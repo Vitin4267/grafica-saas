@@ -14,7 +14,9 @@ type BaseCobranca =
   | "FOLHA_IMPRESSA"
   | "METRO_LINEAR"
   | "FIXO"
-  | "HORA";
+  | "HORA"
+  | "MILHEIRO"
+  | "CENTO";
 type EstagioAcabamento = "PRE_REFILE" | "POS_REFILE";
 
 const ROTULO_BASE_COBRANCA: Record<BaseCobranca, string> = {
@@ -24,6 +26,8 @@ const ROTULO_BASE_COBRANCA: Record<BaseCobranca, string> = {
   METRO_LINEAR: "Por metro linear",
   FIXO: "Valor fixo por orçamento",
   HORA: "Por hora estimada",
+  MILHEIRO: "Milheiro (a cada 1.000)",
+  CENTO: "Cento (a cada 100)",
 };
 
 export function ConfiguracaoAcabamentoForm({

@@ -52,6 +52,8 @@ const modeloCalculoSchema = z.enum([
   "SERIGRAFIA",
   "SUBLIMACAO",
   "ESTAMPAGEM_QUENTE",
+  "PERSONALIZACAO",
+  "REVENDA",
 ]);
 // Sem OUTRO de propósito: unidadeContagem não tem campo "outro" livre (só
 // ItemCatalogo.unidade tem), então OUTRO aqui só mostraria o rótulo genérico
@@ -179,6 +181,8 @@ export async function salvarModeloProduto(
     SERIGRAFIA: "Serigrafia",
     SUBLIMACAO: "Sublimação",
     ESTAMPAGEM_QUENTE: "Estampagem a quente",
+    PERSONALIZACAO: "Personalização (tampografia, laser, DTG, transfer)",
+    REVENDA: "Revenda / terceirização",
   };
   const modeloAntes = ROTULO_MODELO[itemGrafica.modeloCalculo as typeof modeloCalculo] ?? itemGrafica.modeloCalculo;
 
@@ -438,13 +442,19 @@ export async function salvarModeloProduto(
     } else if (
       modeloCalculo === "SERIGRAFIA" ||
       modeloCalculo === "SUBLIMACAO" ||
-      modeloCalculo === "ESTAMPAGEM_QUENTE"
+      modeloCalculo === "ESTAMPAGEM_QUENTE" ||
+      modeloCalculo === "PERSONALIZACAO"
     ) {
-      // SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE — os 3 usam a mesma tabela
-      // MaquinaSetupPorPeca, filtrada por tipoProcesso === modeloCalculo (o
-      // nome do enum ProcessoSetupPorPeca é IDÊNTICO ao do ModeloCalculo
-      // correspondente de propósito, então dá pra usar modeloCalculo direto
-      // como filtro, sem tabela de tradução). Sem nesting, igual a Digital.
+      // SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE/PERSONALIZACAO usam a mesma
+      // tabela MaquinaSetupPorPeca. Os 3 primeiros filtram por
+      // tipoProcesso === modeloCalculo (o nome do enum ProcessoSetupPorPeca é
+      // IDÊNTICO ao do ModeloCalculo correspondente de propósito, então dá
+      // pra usar modeloCalculo direto como filtro, sem tabela de tradução).
+      // PERSONALIZACAO (achado A3 da auditoria de abrangência) não tem
+      // processo homônimo — aceita qualquer máquina cujo tipoProcesso seja
+      // um dos processos "genéricos" (TAMPOGRAFIA/GRAVACAO_LASER/DTG/
+      // TRANSFER/OUTRO), ou seja, qualquer um que NÃO seja um dos 3 já
+      // mapeados 1:1. Sem nesting, igual a Digital.
       const maquinaSetupPorPecaId = String(formData.get("maquinaSetupPorPecaId") ?? "");
       if (!maquinaSetupPorPecaId) {
         return {
@@ -457,7 +467,10 @@ export async function salvarModeloProduto(
           id: maquinaSetupPorPecaId,
           graficaId: usuario.graficaId,
           ativa: true,
-          tipoProcesso: modeloCalculo,
+          tipoProcesso:
+            modeloCalculo === "PERSONALIZACAO"
+              ? { notIn: ["SERIGRAFIA", "SUBLIMACAO", "ESTAMPAGEM_QUENTE"] }
+              : modeloCalculo,
         },
         select: { id: true },
       });
@@ -488,6 +501,32 @@ export async function salvarModeloProduto(
         descricao: `Modelo de cálculo do item atualizado para ${ROTULO_MODELO[modeloCalculo]}`,
         valorAnterior: `Modelo: ${modeloAntes}`,
         valorNovo: `Modelo: ${ROTULO_MODELO[modeloCalculo]}`,
+      });
+    } else if (modeloCalculo === "REVENDA") {
+      // Revenda/terceirização (achado A12 da auditoria de abrangência) — sem
+      // máquina, sem bobina/papel: o custo vem de ItemGrafica.precoCompra
+      // (mesmo campo que DIGITAL/setup-por-peça já usam como custo de
+      // substrato), com override opcional POR ORÇAMENTO em
+      // OrcamentoItem.custoAquisicaoUnitario.
+      await prisma.itemGrafica.update({
+        where: { id: itemGraficaId },
+        data: {
+          modeloCalculo: "REVENDA",
+          unidadeContagem: unidadeContagemFinal,
+          fatorConversao: fatorConversaoFinal,
+        },
+      });
+
+      await registrarAuditoria({
+        graficaId: usuario.graficaId,
+        usuarioId: usuario.id,
+        usuarioNome: usuario.nome,
+        acao: "catalogo.salvar_modelo_calculo",
+        entidade: "ItemGrafica",
+        entidadeId: itemGraficaId,
+        descricao: `Modelo de cálculo do item atualizado para ${ROTULO_MODELO.REVENDA}`,
+        valorAnterior: `Modelo: ${modeloAntes}`,
+        valorNovo: `Modelo: ${ROTULO_MODELO.REVENDA}`,
       });
     }
   } catch {
@@ -1252,7 +1291,15 @@ export async function lancarEntradaCompra(
           })
         : await tx.itemGrafica.updateMany({
             where: { id: itemGrafica.id, estoqueAtual: estoqueAnterior },
-            data: { estoqueAtual: novoEstoque, precoCompra: custoUnitarioDec.toFixed(4) },
+            data: {
+              estoqueAtual: novoEstoque,
+              precoCompra: custoUnitarioDec.toFixed(4),
+              // Alimenta o aviso de "preço de insumo desatualizado" — ver
+              // achado A1-Parte6 da auditoria de abrangência (2026-08-24).
+              // Só no branch sem variante: VarianteMateriaPrima não tem esse
+              // campo (fora de escopo desta rodada).
+              precoCompraAtualizadoEm: agora,
+            },
           });
       if (cas.count === 0) {
         throw new ErroEstoqueDivergente();

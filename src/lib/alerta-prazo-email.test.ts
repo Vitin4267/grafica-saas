@@ -46,6 +46,8 @@ type Fixture = {
   pedidoId: string;
   vendedorEmail: string;
   donoEmail: string;
+  // Só preenchido quando opts.responsavelPrazo é passado (ver abaixo).
+  responsavelPrazoEmail?: string;
 };
 
 async function criarFixture(opts: {
@@ -56,6 +58,11 @@ async function criarFixture(opts: {
   // omitido = sem linha em ParametrosGrafica, cai nos defaults do schema
   // (ativo=true, limiares 5/3/0), mesmo comportamento hardcoded de antes.
   parametrosPrazo?: { ativo?: boolean; limiar1?: number; limiar2?: number; limiar3?: number };
+  // Cria um 3º funcionário (nem vendedor, nem DONO) e marca ele como
+  // ResponsavelAdministrativo da área PRAZO_PRODUCAO — achado A9 da
+  // auditoria de abrangência: com isto, o alerta deve rotear pra ele em vez
+  // de cair nos DONOs.
+  responsavelPrazo?: boolean;
 }): Promise<Fixture> {
   const s = sufixo();
   const grafica = await prisma.grafica.create({
@@ -95,6 +102,23 @@ async function criarFixture(opts: {
         },
       });
 
+  let responsavelPrazoEmail: string | undefined;
+  if (opts.responsavelPrazo) {
+    const responsavel = await prisma.usuario.create({
+      data: {
+        graficaId: grafica.id,
+        nome: `PCP ${s}`,
+        email: `pcp-${s}@example.com`,
+        senhaHash: "x",
+        papel: "OPERADOR",
+      },
+    });
+    await prisma.responsavelAdministrativo.create({
+      data: { usuarioId: responsavel.id, area: "PRAZO_PRODUCAO" },
+    });
+    responsavelPrazoEmail = responsavel.email;
+  }
+
   const cliente = await prisma.cliente.create({ data: { graficaId: grafica.id, nome: `Cliente ${s}` } });
 
   const catalogo = await prisma.itemCatalogo.create({
@@ -123,7 +147,13 @@ async function criarFixture(opts: {
 
   graficaIdsParaLimpar.push(grafica.id);
 
-  return { graficaId: grafica.id, pedidoId: pedido.id, vendedorEmail: vendedor.email, donoEmail: dono.email };
+  return {
+    graficaId: grafica.id,
+    pedidoId: pedido.id,
+    vendedorEmail: vendedor.email,
+    donoEmail: dono.email,
+    responsavelPrazoEmail,
+  };
 }
 
 const graficaIdsParaLimpar: string[] = [];
@@ -320,6 +350,39 @@ describe("enviarAlertasPrazoEmail — limiares configuráveis por gráfica (Para
       expect(dispararEventoEmailMock).not.toHaveBeenCalled();
       const pedido = await prisma.pedido.findUniqueOrThrow({ where: { id: f.pedidoId } });
       expect(pedido.alertaPrazoUltimoLimiarDias).toBe(1); // intocado
+    },
+    TIMEOUT_MS
+  );
+});
+
+describe("enviarAlertasPrazoEmail — roteamento por ResponsavelAdministrativo (área PRAZO_PRODUCAO, achado A9)", () => {
+  it(
+    "gráfica sem responsável de PRAZO_PRODUCAO configurado mantém o comportamento de hoje (vendedor + DONO)",
+    async () => {
+      const f = await criarFixture({ diasAtePrazo: 5 });
+
+      const resultado = await enviarAlertasPrazoEmail(ORIGEM);
+      expect(resultado.processados).toBe(1);
+
+      expect(dispararEventoEmailMock).toHaveBeenCalledTimes(2);
+      const destinatarios = dispararEventoEmailMock.mock.calls.map((c) => c[0].destinatario).sort();
+      expect(destinatarios).toEqual([f.donoEmail, f.vendedorEmail].sort());
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "gráfica com responsável de PRAZO_PRODUCAO configurado manda só pra ele + vendedor, sem o DONO",
+    async () => {
+      const f = await criarFixture({ diasAtePrazo: 5, responsavelPrazo: true });
+
+      const resultado = await enviarAlertasPrazoEmail(ORIGEM);
+      expect(resultado.processados).toBe(1);
+
+      expect(dispararEventoEmailMock).toHaveBeenCalledTimes(2);
+      const destinatarios = dispararEventoEmailMock.mock.calls.map((c) => c[0].destinatario).sort();
+      expect(destinatarios).toEqual([f.responsavelPrazoEmail, f.vendedorEmail].sort());
+      expect(destinatarios).not.toContain(f.donoEmail);
     },
     TIMEOUT_MS
   );

@@ -103,6 +103,7 @@ export default async function FilialDetalhePage({
               enderecoUf: dadosFiscaisFilial?.enderecoUf ?? "",
               naturezaOperacaoPadrao: dadosFiscaisFilial?.naturezaOperacaoPadrao ?? "Venda de mercadoria",
               cfopPadrao: dadosFiscaisFilial?.cfopPadrao ?? "5102",
+              cfopPadraoInterestadual: dadosFiscaisFilial?.cfopPadraoInterestadual ?? "6102",
               csosnPadrao: dadosFiscaisFilial?.csosnPadrao ?? "102",
               cstIcmsPadrao: dadosFiscaisFilial?.cstIcmsPadrao ?? "",
               icmsAliquotaPadrao: dadosFiscaisFilial?.icmsAliquotaPadrao?.toString() ?? "",

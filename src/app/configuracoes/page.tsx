@@ -35,6 +35,15 @@ export default async function ConfiguracoesPage() {
     alertaPrazoLimiar3Dias,
     termosCondicoesPdf,
     mostrarEspecificacoesTecnicas,
+    custoAutomaticoConsumo,
+    categoriaCustoConsumoPadraoId,
+    perdaEhCustoDoPedido,
+    comissaoEntraNoCustoPedido,
+    margemFaixaBaixa,
+    margemFaixaBoa,
+    descontoMaxSemAprovacao,
+    toleranciaTiragemPadraoPercent,
+    diasPrecoInsumoDesatualizado,
   } = await prisma.parametrosGrafica.findUniqueOrThrow({
     where: { graficaId: usuario.graficaId },
     select: {
@@ -48,7 +57,23 @@ export default async function ConfiguracoesPage() {
       alertaPrazoLimiar3Dias: true,
       termosCondicoesPdf: true,
       mostrarEspecificacoesTecnicas: true,
+      custoAutomaticoConsumo: true,
+      categoriaCustoConsumoPadraoId: true,
+      perdaEhCustoDoPedido: true,
+      comissaoEntraNoCustoPedido: true,
+      margemFaixaBaixa: true,
+      margemFaixaBoa: true,
+      descontoMaxSemAprovacao: true,
+      toleranciaTiragemPadraoPercent: true,
+      diasPrecoInsumoDesatualizado: true,
     },
+  });
+  // Alimenta o <select> de categoria de custo padrão — só as ativas, mesma
+  // regra que criarCustoAutomaticoConsumo já usa pra escolher o fallback.
+  const categoriasCusto = await prisma.categoriaCusto.findMany({
+    where: { graficaId: usuario.graficaId, ativa: true },
+    select: { id: true, nome: true },
+    orderBy: { ordem: "asc" },
   });
   // unidadePadraoDimensao mora em Grafica (não em ParametrosGrafica): não é
   // um parâmetro do motor de precificação, é só a unidade de entrada/exibição
@@ -124,6 +149,18 @@ export default async function ConfiguracoesPage() {
           alertaPrazoLimiar3Dias={alertaPrazoLimiar3Dias}
           termosCondicoesPdf={termosCondicoesPdf}
           mostrarEspecificacoesTecnicas={mostrarEspecificacoesTecnicas}
+          custoAutomaticoConsumo={custoAutomaticoConsumo}
+          categoriaCustoConsumoPadraoId={categoriaCustoConsumoPadraoId}
+          categoriasCusto={categoriasCusto}
+          perdaEhCustoDoPedido={perdaEhCustoDoPedido}
+          comissaoEntraNoCustoPedido={comissaoEntraNoCustoPedido}
+          margemFaixaBaixa={Number(margemFaixaBaixa)}
+          margemFaixaBoa={Number(margemFaixaBoa)}
+          descontoMaxSemAprovacao={Number(descontoMaxSemAprovacao)}
+          toleranciaTiragemPadraoPercent={
+            toleranciaTiragemPadraoPercent ? Number(toleranciaTiragemPadraoPercent) : 10
+          }
+          diasPrecoInsumoDesatualizado={diasPrecoInsumoDesatualizado}
         />
       </main>
     </div>

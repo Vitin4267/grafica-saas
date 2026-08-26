@@ -4,10 +4,12 @@ import type {
   ContextoFlexografia,
   ContextoM2,
   ContextoOffset,
+  ContextoRevenda,
   PedidoDigital,
   PedidoFlexografia,
   PedidoM2,
   PedidoOffset,
+  PedidoRevenda,
   PedidoSetupPorPeca,
 } from "./tipos";
 
@@ -131,7 +133,10 @@ export function validarPedidoDigital(pedido: PedidoDigital, contexto: ContextoDi
       { numeroCliques: pedido.numeroCliques }
     );
   }
-  if (contexto.custoSubstratoPorPeca <= 0) {
+  // materialFornecidoPeloCliente=true (achado B7) zera custoSubstratoPorPeca
+  // DE PROPÓSITO — só barra o zero quando não há essa justificativa (o caso
+  // de sempre: gráfica esqueceu de cadastrar precoCompra no catálogo).
+  if (contexto.custoSubstratoPorPeca <= 0 && !contexto.materialFornecidoPeloCliente) {
     throw new ErroPrecificacao(
       "CUSTO_INVALIDO",
       "O preço de compra do substrato precisa ser maior que zero.",
@@ -151,6 +156,23 @@ export function validarPedidoSetupPorPeca(pedido: PedidoSetupPorPeca) {
       "NUMERO_SETUPS_INVALIDO",
       "O número de setups precisa ser um inteiro maior ou igual a 1.",
       { numeroSetups: pedido.numeroSetups }
+    );
+  }
+}
+
+// Revenda/terceirização (achado A12) — sem dimensões, sem setup, mesma
+// ausência do Digital acima. custoAquisicaoUnitario <= 0 é tratado como "não
+// configurado" (mesmo código de erro do guard em precificar.ts) porque, na
+// prática, um custo de aquisição zerado é exatamente esse estado: nem o
+// orçamento nem o catálogo (ItemGrafica.precoCompra) tem um valor real.
+export function validarPedidoRevenda(pedido: PedidoRevenda, contexto: ContextoRevenda) {
+  validarQuantidade(pedido.quantidade);
+
+  if (contexto.custoAquisicaoUnitario <= 0) {
+    throw new ErroPrecificacao(
+      "CUSTO_AQUISICAO_NAO_CONFIGURADO",
+      "O custo de aquisição precisa ser maior que zero — informe o custo neste orçamento ou cadastre o preço de compra no catálogo.",
+      { custoAquisicaoUnitario: contexto.custoAquisicaoUnitario }
     );
   }
 }

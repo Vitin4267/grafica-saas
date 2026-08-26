@@ -27,11 +27,22 @@ export type OrcamentoParaPdf = {
   respostaPublicaNome: string | null;
   respostaPublicaEm: Date | null;
   validoAteEm: Date | null;
+  // Snapshot de ParametrosGrafica.toleranciaTiragemPadraoPercent no momento
+  // do ENVIO (ver Orcamento.toleranciaTiragemPercent no schema) — mesmo
+  // ciclo de vida de validoAteEm acima, null enquanto RASCUNHO.
+  toleranciaTiragemPercent: Prisma.Decimal | null;
   cliente: { nome: string };
   grafica: {
     nome: string;
     logoUrl: string | null;
     corPrimaria: string | null;
+    // Dados de contato (comerciais, não fiscais) que aparecem no rodapé do PDF
+    // de orçamento — mesmo nível de logoUrl/corPrimaria. Nunca dado sensível
+    // ou interno da gráfica (custo/margem/comissão), apenas contato pro cliente.
+    telefone: string | null;
+    emailContato: string | null;
+    site: string | null;
+    enderecoResumido: string | null;
     // Só o texto de termos e o toggle de especificações técnicas — nunca os
     // demais campos de ParametrosGrafica (overhead, margem, comissão etc.),
     // que são dado comercial interno e não podem chegar no PDF (nem no
@@ -56,6 +67,10 @@ export type OrcamentoParaPdf = {
     unidadeDimensao: UnidadeDimensao;
     cores: string | null;
     acabamento: string | null;
+    // Achado B6 — quando preenchido, sobrepõe `itemGrafica.itemCatalogo.nome`
+    // como o nome exibido do item (ver mapearDadosPdf abaixo). Puramente
+    // descritivo, nunca afeta preço.
+    descricaoLivre: string | null;
     acabamentos: { itemGrafica: { itemCatalogo: { nome: string } } }[];
     precoUnitario: Prisma.Decimal;
     precoTotal: Prisma.Decimal;
@@ -124,17 +139,26 @@ export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
     graficaNome: orcamento.grafica.nome,
     logoUrl: orcamento.grafica.logoUrl,
     corPrimaria: orcamento.grafica.corPrimaria,
+    telefone: orcamento.grafica.telefone,
+    emailContato: orcamento.grafica.emailContato,
+    site: orcamento.grafica.site,
+    enderecoResumido: orcamento.grafica.enderecoResumido,
     clienteNome: orcamento.cliente.nome,
     status: orcamento.status,
     criadoEm: orcamento.createdAt,
     respostaPublicaNome: orcamento.respostaPublicaNome,
     respostaPublicaEm: orcamento.respostaPublicaEm,
     validoAteEm: orcamento.validoAteEm,
+    toleranciaTiragemPercent:
+      orcamento.toleranciaTiragemPercent !== null ? Number(orcamento.toleranciaTiragemPercent) : null,
     total: formatoMoeda.format(Number(orcamento.total)),
     dadosPedido: temDadosPedido ? dadosPedido : null,
     termosCondicoesPdf: orcamento.grafica.parametros?.termosCondicoesPdf ?? null,
     itens: orcamento.itens.map((item) => ({
-      nome: item.itemGrafica.itemCatalogo.nome,
+      // Achado B6 — descrição específica do pedido (ex: "Banner 3×1m lona
+      // 440g com bastão e corda") sobrepõe o nome genérico do catálogo
+      // quando preenchida.
+      nome: item.descricaoLivre?.trim() || item.itemGrafica.itemCatalogo.nome,
       quantidade: item.quantidade,
       medidas:
         item.larguraCm && item.alturaCm

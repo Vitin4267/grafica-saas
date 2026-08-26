@@ -79,8 +79,12 @@ type ItemCarrinho = {
   numeroCoresFlexo: number | null;
   numeroCliques: number | null;
   numeroSetups: number | null;
+  horasEstimadas: number | null;
+  custoAquisicaoUnitario: number | null;
+  materialFornecidoPeloCliente: boolean;
   cores: string | null;
   acabamento: string | null;
+  descricaoLivre: string | null;
   acabamentoIds: string[];
   precoUnitario: string;
   precoTotal: string;
@@ -148,6 +152,10 @@ export function AdicionarOpcaoForm({
     const numeroCoresFlexo = campos.numeroCoresFlexo !== "" ? Number(campos.numeroCoresFlexo) : null;
     const numeroCliques = campos.numeroCliques !== "" ? Number(campos.numeroCliques) : null;
     const numeroSetups = campos.numeroSetups !== "" ? Number(campos.numeroSetups) : null;
+    const horasEstimadas = campos.horasEstimadas !== "" ? Number(campos.horasEstimadas) : null;
+    const custoAquisicaoUnitario =
+      campos.custoAquisicaoUnitario !== "" ? Number(campos.custoAquisicaoUnitario) : null;
+    const materialFornecidoPeloCliente = campos.materialFornecidoPeloCliente;
     const papelId = campos.precificacaoEtiqueta.papelId || null;
     const quantidadeCores =
       campos.precificacaoEtiqueta.quantidadeCores !== ""
@@ -170,11 +178,14 @@ export function AdicionarOpcaoForm({
       numeroCoresFlexo,
       numeroCliques,
       numeroSetups,
+      horasEstimadas,
       acabamentoIds: campos.acabamentoIds,
       papelId,
       quantidadeCores,
       custoFaca,
       custoFrete,
+      custoAquisicaoUnitario,
+      materialFornecidoPeloCliente,
     });
     setAdicionando(false);
 
@@ -198,8 +209,12 @@ export function AdicionarOpcaoForm({
         numeroCoresFlexo,
         numeroCliques,
         numeroSetups,
+        horasEstimadas,
+        custoAquisicaoUnitario,
+        materialFornecidoPeloCliente,
         cores: campos.cores.trim() || null,
         acabamento: campos.acabamento.trim() || null,
+        descricaoLivre: campos.descricaoLivre.trim() || null,
         acabamentoIds: campos.acabamentoIds,
         precoUnitario: resultado.precoUnitario,
         precoTotal: resultado.precoTotal,
@@ -226,8 +241,12 @@ export function AdicionarOpcaoForm({
       numeroCoresFlexo: i.numeroCoresFlexo,
       numeroCliques: i.numeroCliques,
       numeroSetups: i.numeroSetups,
+      horasEstimadas: i.horasEstimadas,
+      custoAquisicaoUnitario: i.custoAquisicaoUnitario,
+      materialFornecidoPeloCliente: i.materialFornecidoPeloCliente,
       cores: i.cores,
       acabamento: i.acabamento,
+      descricaoLivre: i.descricaoLivre,
       acabamentoIds: i.acabamentoIds,
       etiqueta: etiquetaParaEntrada(i.etiqueta),
       papelId: i.precificacaoEtiqueta.papelId || null,

@@ -48,6 +48,15 @@ model Grafica {
   // plataforma (comportamento de hoje, sem mudança pra quem nunca configurar).
   corPrimaria String?
 
+  // Dados de contato (comerciais, não fiscais) que aparecem no PDF de orçamento
+  // — mesmo nível de logoUrl/corPrimaria: identidade visual do documento
+  // enviado pro cliente (ver src/lib/pdf/OrcamentoDocumento.tsx rodapé).
+  // Aditivos, nunca vazam de nenhuma gráfica existente.
+  telefone         String?
+  emailContato     String?
+  site             String?
+  enderecoResumido String? // texto livre, uma linha — mesmo espírito de Filial.endereco
+
   // Unidade padrão pra ENTRADA e EXIBIÇÃO de medidas de item de orçamento
   // (largura/altura) — não afeta como o dado é gravado: OrcamentoItem.
   // larguraCm/alturaCm continuam SEMPRE em centímetros, a unidade canônica
@@ -143,6 +152,16 @@ model ParametrosGrafica {
   // form sempre manda um inteiro, mas o nullable deixa espaço pra uma
   // futura opção de "sem expiração" sem precisar de sentinela mágico.
   diasValidadeOrcamentoPadrao   Int?    @default(15)
+
+  // Variação admissível entre a quantidade CONTRATADA e a quantidade
+  // efetivamente ENTREGUE, em %, sem que isso seja motivo de disputa —
+  // padrão do mercado offset (quebra de máquina, acerto de cor). Snapshot
+  // em Orcamento.toleranciaTiragemPercent no momento do ENVIO, mesmo
+  // mecanismo de diasValidadeOrcamentoPadrao → validoAteEm acima. Nullable
+  // + default(10) pelo mesmo motivo: form sempre manda um número, mas o
+  // nullable deixa espaço pra uma futura opção de "tolerância zero" sem
+  // sentinela mágico.
+  toleranciaTiragemPadraoPercent Decimal? @default(10) @db.Decimal(5, 2)
 
   // Limiares do alerta de prazo por e-mail (ver src/lib/alerta-prazo-email.ts)
   // — antes fixos em 5/3/0 dias no código. Uma gráfica com ciclo de produção
@@ -305,27 +324,41 @@ model ImpressoraDigital {
 
 // Tag de processo pra MaquinaSetupPorPeca — separada de propósito do
 // ModeloCalculo do produto: aqui é só o filtro de qual máquina serve pra qual
-// produto no <Select> de configuração, não o modelo de cálculo em si (os 3
+// produto no <Select> de configuração, não o modelo de cálculo em si (os 4
 // ModeloCalculo correspondentes chamam a mesma função calcularSetupPorPeca).
+// TAMPOGRAFIA/GRAVACAO_LASER/DTG/TRANSFER/OUTRO (achado A3 da auditoria de
+// abrangência) mapeiam pra ModeloCalculo.PERSONALIZACAO — diferente de
+// SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE, que continuam 1:1 com seu próprio
+// ModeloCalculo homônimo. OUTRO segue o mesmo padrão enum-fechado + escape
+// do resto do schema (ver CategoriaEquipamento/MaterialSubstrato/etc.) —
+// pareado com MaquinaSetupPorPeca.tipoProcessoOutro.
 enum ProcessoSetupPorPeca {
   SERIGRAFIA
   SUBLIMACAO
   ESTAMPAGEM_QUENTE
+  TAMPOGRAFIA
+  GRAVACAO_LASER
+  DTG
+  TRANSFER
+  OUTRO
 }
 
-// Máquina física pros 3 processos de "setup por peça" — serigrafia
-// (tela/matriz), sublimação (prensa térmica) e estampagem a quente (hot
-// stamping). Tabela ÚNICA pros 3 (tag tipoProcesso), não 3 tabelas quase
-// idênticas: mesmo racional de "1 função de cálculo compartilhada" decidido
-// pra src/lib/pricing (calcularSetupPorPeca), evita triplicar CRUD/schema
-// pra um custo que tem exatamente a mesma forma nos 3 processos (custo fixo
+// Máquina física pros processos de "setup por peça" — serigrafia
+// (tela/matriz), sublimação (prensa térmica), estampagem a quente (hot
+// stamping) e a família PERSONALIZACAO (tampografia, gravação a laser, DTG,
+// transfer e o que mais a gráfica cadastrar via OUTRO). Tabela ÚNICA pros
+// vários processos (tag tipoProcesso), não uma tabela por processo: mesmo
+// racional de "1 função de cálculo compartilhada" decidido pra
+// src/lib/pricing (calcularSetupPorPeca), evita duplicar CRUD/schema pra um
+// custo que tem exatamente a mesma forma em todos os processos (custo fixo
 // de setup por arte/matriz/tela + custo variável por peça + piso do job).
 model MaquinaSetupPorPeca {
-  id           String               @id @default(cuid())
-  graficaId    String
-  nome         String
-  tipoProcesso ProcessoSetupPorPeca
-  ativa        Boolean              @default(true)
+  id                String               @id @default(cuid())
+  graficaId         String
+  nome              String
+  tipoProcesso      ProcessoSetupPorPeca
+  tipoProcessoOutro String? // só usado quando tipoProcesso = OUTRO
+  ativa             Boolean              @default(true)
 
   custoPorSetup Decimal @default(0) @db.Decimal(12, 4) // R$ por tela/matriz/arte
   custoPorPeca  Decimal @default(0) @db.Decimal(12, 4) // variável por peça
@@ -521,6 +554,7 @@ model DadosFiscaisGrafica {
 
   naturezaOperacaoPadrao String @default("Venda de mercadoria")
   cfopPadrao             String @default("5102") // venda dentro do estado, mercadoria de terceiros
+  cfopPadraoInterestadual String @default("6102") // venda interestadual (UF do cliente != UF da gráfica), mercadoria de terceiros — ver resolverCfop em src/lib/nota-fiscal.ts. Não distingue contribuinte/não-contribuinte de ICMS (6102 vs 6108) — gap remanescente, ver achado A1/A3 em pesquisa-abrangencia-modulos.md
   csosnPadrao            String @default("102") // Simples Nacional, tributada sem permissão de crédito — só lido/enviado quando regimeTributario=SIMPLES_NACIONAL
 
   // Só relevantes/obrigatórios (validado na Server Action, não CHECK no
@@ -575,6 +609,7 @@ model DadosFiscaisFilial {
 
   naturezaOperacaoPadrao String @default("Venda de mercadoria")
   cfopPadrao             String @default("5102")
+  cfopPadraoInterestadual String @default("6102") // ver comentário do campo espelho em DadosFiscaisGrafica
   csosnPadrao            String @default("102")
 
   // Espelha DadosFiscaisGrafica campo a campo — ver comentário lá.
@@ -1010,6 +1045,31 @@ model Cliente {
   telefone  String?
   documento String? // CPF ou CNPJ
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // null = ativo. Preenchido = cliente desativado: some das listas e dos
+  // dropdowns de seleção (orçamento, produção, relatórios), mas o histórico
+  // (Orcamento, NotaFiscal) continua intacto — não é hard delete.
+  //
+  // Mesmo precedente de Usuario.desativadoEm: é data (não boolean) porque
+  // "quando saiu" é a pergunta que aparece junto com "quem fez isso" numa
+  // investigação. Reversível: voltar pra null reativa.
+  //
+  // Para o pedido de exclusão de dado pessoal (LGPD), ver anonimizarCliente
+  // em src/app/clientes/actions.ts — que também preenche este campo, mas
+  // além disso sobrescreve nome/documento/contatos, porque desativar sozinho
+  // não atende ao direito de eliminação do titular.
+  desativadoEm DateTime?
+
+  // Conceito distinto de desativado: o cliente existe e continua sendo
+  // atendido, só que só à vista (ou outra restrição comercial) — normalmente
+  // por inadimplência. Não confundir com AssinaturaGrafica.inadimplenteDesde,
+  // que é sobre a GRÁFICA dever ao GrafPro, não sobre o cliente dela.
+  //
+  // Hoje é só um aviso não-bloqueante na aprovação do orçamento
+  // (atualizarStatusOrcamento) — não impede a venda, só avisa quem aprova.
+  bloqueadoParaVenda Boolean @default(false)
+  motivoBloqueio     String?
 
   // Endereço — opcional pra cadastro comum, mas exigido pra emitir nota fiscal
   // (ver DadosFiscaisGrafica / NotaFiscal). enderecoCodigoIbge é nullable e não
@@ -1023,6 +1083,49 @@ model Cliente {
   enderecoCodigoIbge  String?
   enderecoUf          String?
 
+  // Achado A11 da auditoria de abrangência (pesquisa-abrangencia-modulos.md)
+  // — até aqui Cliente era o único model do domínio comercial sem nenhum
+  // campo de texto livre (Orcamento/Pedido/Entrega/Despesa já têm). Nota
+  // interna — nunca exposta em PDF nem no link público de orçamento (mesma
+  // regra já documentada em Orcamento.observacoes acima), só na tela
+  // autenticada da gráfica.
+  observacoes String? @db.Text
+
+  // Deliberadamente separado de `observacoes`: isto é o que precisa chegar
+  // até o chão de fábrica junto da Ordem de Produção (ver
+  // src/app/producao/[pedidoId]/ordem-producao/route.tsx) — ex: "sempre
+  // mandar arte em RGB", "não aceita variação de tom entre lotes", "só
+  // recebe às terças". `observacoes` é nota comercial interna e nunca sai
+  // da tela da gráfica; este campo é operacional e aparece no documento
+  // impresso que o produtor lê.
+  preferenciasProducao String? @db.Text
+
+  // De onde o cliente veio — mede qual canal traz cliente que fecha (achado
+  // A11). Lista fechada com OUTRO de escape (mesmo padrão de
+  // UnidadeMedida/CategoriaEquipamento/etc. no resto do schema).
+  // origemOutro só é preenchido quando origem=OUTRO.
+  origem      OrigemCliente?
+  origemOutro String?
+
+  // Achado A7 da auditoria de abrangência (pesquisa-abrangencia-modulos.md)
+  // — "Nível 1": não existe segmento de cliente nem forma de dar margem
+  // diferenciada pra revenda/agência. O motor de precificação já tinha o
+  // gancho pronto e dormente (ContextoPrecificacao.margemLucroOverride, ver
+  // src/lib/pricing/precificar.ts) — estes 2 campos são só o cadastro que
+  // alimenta esse gancho via src/lib/orcamento-precificacao.ts. Mesmo padrão
+  // enum-fechado+OUTRO de origem/origemOutro acima. segmentoOutro só é
+  // preenchido quando segmento=OUTRO.
+  segmento      SegmentoCliente?
+  segmentoOutro String?
+
+  // Sobrescreve ParametrosGrafica.margemPadrao só pra ESTE cliente — mesma
+  // representação (fração 0-1, ex: 0.15 = 15%, nunca 0-100) e mesma precisão
+  // de ParametrosGrafica.margemPadrao (schema ~L115). null = motor usa o
+  // padrão da gráfica (comportamento de hoje, sem regressão). Independente
+  // de `segmento`: dá pra ter margem diferenciada sem categorizar o cliente,
+  // e vice-versa.
+  margemPadraoOverride Decimal? @db.Decimal(5, 4)
+
   grafica    Grafica     @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   orcamentos Orcamento[]
 
@@ -1033,6 +1136,37 @@ model Cliente {
   @@unique([graficaId, documento])
   @@index([graficaId])
   @@map("clientes")
+}
+
+// Canal de aquisição do cliente (achado A11 da auditoria de abrangência) —
+// mesmo padrão enum-fechado+OUTRO do resto do schema. CLIENTE_ANTIGO é
+// distinto de INDICACAO: cliente que já comprou antes e voltou por conta
+// própria, sem ninguém ter indicado.
+enum OrigemCliente {
+  INDICACAO
+  REDES_SOCIAIS
+  BUSCA_GOOGLE
+  ANUNCIO
+  FEIRA_EVENTO
+  PROSPECCAO_ATIVA
+  CLIENTE_ANTIGO
+  OUTRO
+}
+
+// Segmento comercial do cliente (achado A7 da auditoria de abrangência,
+// "Nível 1") — mesmo padrão enum-fechado+OUTRO do resto do schema.
+// REVENDA_AGENCIA é o caso que motivou o achado: existem gráficas que só
+// atendem revenda/agência, com margem bem menor que venda direta ao
+// consumidor final (VAREJO). INDUSTRIA e ORGAO_PUBLICO são segmentos com
+// dinâmica de compra própria (grandes volumes recorrentes / licitação),
+// distintos de EMPRESA genérica.
+enum SegmentoCliente {
+  VAREJO
+  EMPRESA
+  REVENDA_AGENCIA
+  INDUSTRIA
+  ORGAO_PUBLICO
+  OUTRO
 }
 
 enum UnidadeMedida {
@@ -1066,11 +1200,15 @@ enum TipoItemCatalogo {
 // e exigem configuração extra (bobinas, formatos de folha, ou máquina flexo + clichê).
 // Sempre opt-in por item, nunca default.
 // DIGITAL usa src/lib/pricing/digital.ts (custo por clique + substrato, sem
-// nesting). SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE são 3 valores distintos
-// (rótulo específico no dropdown de produto, pra não confundir o usuário) mas
-// os 3 chamam a MESMA função calcularSetupPorPeca — a tag de qual processo é
-// (pra filtrar a lista de MaquinaSetupPorPeca compatível) vive em
-// ProcessoSetupPorPeca, não aqui.
+// nesting). SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE/PERSONALIZACAO são 4
+// valores distintos (rótulo específico no dropdown de produto, pra não
+// confundir o usuário) mas os 4 chamam a MESMA função calcularSetupPorPeca —
+// a tag de qual processo é (pra filtrar a lista de MaquinaSetupPorPeca
+// compatível) vive em ProcessoSetupPorPeca, não aqui. PERSONALIZACAO é o
+// rótulo genérico (achado A3 da auditoria de abrangência,
+// pesquisa-abrangencia-modulos.md) pra processos que têm a mesma forma de
+// custo (setup fixo por matriz/clichê/arte + variável por peça) mas não são
+// nenhum dos 3 nomeados: tampografia, gravação a laser, DTG, transfer etc.
 enum ModeloCalculo {
   SIMPLES
   M2
@@ -1080,6 +1218,14 @@ enum ModeloCalculo {
   SERIGRAFIA
   SUBLIMACAO
   ESTAMPAGEM_QUENTE
+  PERSONALIZACAO
+  // Revenda/terceirização (achado A12 da auditoria de abrangência,
+  // 2026-08-24): produto comprado pronto de um fornecedor (brinde) ou
+  // terceirizado — sem máquina, sem setup. custoBase = Q × custoAquisicaoUnitario
+  // (ver OrcamentoItem.custoAquisicaoUnitario abaixo), mas passa pelo MESMO
+  // comporPreco de todo mundo — ganha overhead/imposto/margem/piso e
+  // breakdown auditável, ao contrário de SIMPLES (preço digitado, custo zero).
+  REVENDA
 }
 
 // Como um acabamento (SERVICO) é cobrado — spec §3. FOLHA_IMPRESSA é o caso mais sutil:
@@ -1091,6 +1237,8 @@ enum BaseCobranca {
   METRO_LINEAR
   FIXO
   HORA
+  MILHEIRO
+  CENTO
 }
 
 enum EstagioAcabamento {
@@ -1141,6 +1289,13 @@ model ItemGrafica {
   itemCatalogoId         String
   ativo                  Boolean   @default(true)
   precoCompra            Decimal?  @db.Decimal(12, 4)
+  // Quando precoCompra mudou pela última vez — carimbado só quando o VALOR
+  // muda de verdade (não em toda edição da linha, ao contrário de
+  // updatedAt). null = nunca rastreado (todo item já existente antes deste
+  // campo) — não entra no aviso de "preço desatualizado"
+  // (ParametrosGrafica.diasPrecoInsumoDesatualizado): sem dado é "não sei",
+  // nunca "está velho".
+  precoCompraAtualizadoEm DateTime?
   precoVenda             Decimal?  @db.Decimal(12, 2)
   estoqueAtual           Decimal?  @db.Decimal(12, 4)
   estoqueMinimo          Decimal?  @db.Decimal(12, 4)
@@ -1677,9 +1832,19 @@ enum TipoPedidoOrcamento {
   REPETICAO_COM_ALTERACAO
 }
 
+// Os 6 valores oficiais de modFrete do layout NF-e 4.0 — achado B1 da
+// auditoria de abrangência (2026-08-24): o enum só cobria CIF/FOB (modFrete
+// 0/1), faltando os outros 4, o mais importante sendo SEM_FRETE (modFrete 9
+// = "Sem Ocorrência de Transporte"), que é o caso mais comum de gráfica
+// rápida (retirada no balcão). Ver resolverModalidadeFrete em
+// src/lib/nota-fiscal.ts pro mapeamento pro código que a Focus NFe espera.
 enum TipoFrete {
-  EMITENTE
-  DESTINATARIO
+  CIF_REMETENTE // modFrete 0 — por conta do emitente
+  FOB_DESTINATARIO // modFrete 1 — por conta do destinatário
+  TERCEIROS // modFrete 2
+  PROPRIO_REMETENTE // modFrete 3 — transporte próprio, por conta do remetente
+  PROPRIO_DESTINATARIO // modFrete 4 — transporte próprio, por conta do destinatário
+  SEM_FRETE // modFrete 9 — sem ocorrência de transporte (ex: retirada no balcão)
 }
 
 model Orcamento {
@@ -1753,6 +1918,14 @@ model Orcamento {
   // pede ajuste (volta pra RASCUNHO) e recalculado do zero ao reenviar.
   // null = nunca expira (todo orçamento criado antes desta feature).
   validoAteEm              DateTime?
+  // Variação admissível entre a quantidade contratada e a entregue, em %,
+  // snapshotada de ParametrosGrafica.toleranciaTiragemPadraoPercent no
+  // momento do ENVIO — mesmo ciclo de vida de validoAteEm acima: zerada
+  // quando o cliente pede ajuste (volta pra RASCUNHO) e recalculada do
+  // zero ao reenviar. Aparece no PDF (src/lib/pdf/OrcamentoDocumento.tsx)
+  // como respaldo contratual pra faturar a quantidade real. null = ainda
+  // em RASCUNHO/nunca enviado, ou orçamento criado antes desta feature.
+  toleranciaTiragemPercent Decimal? @db.Decimal(5, 2)
   // Nota interna — nunca aparece no PDF nem no link público (ver
   // src/lib/pdf/mapear-dados.ts), só na tela autenticada da gráfica.
   observacoes              String?
@@ -2241,6 +2414,39 @@ model OrcamentoItem {
   // SUBLIMACAO/ESTAMPAGEM_QUENTE only, os 3 compartilham este mesmo campo
   // (mesma razão de compartilharem calcularSetupPorPeca).
   numeroSetups     Int?
+  // Estimativa de horas — só usada quando o item tem um acabamento anexado
+  // com ConfiguracaoAcabamento.baseCobranca=HORA (ex: instalação, criação de
+  // arte). Independente de modeloCalculo, ao contrário de numeroSetups
+  // acima: acabamento por hora pode ser anexado a qualquer motor.
+  horasEstimadas   Decimal?      @db.Decimal(8, 2)
+  // Override opcional, POR ORÇAMENTO, do custo de aquisição do fornecedor —
+  // modeloCalculo=REVENDA only (achado A12). O preço de um brinde muda por
+  // cotação/faixa de quantidade a cada orçamento; quando null, o motor cai no
+  // ItemGrafica.precoCompra do catálogo (mesmo fallback que
+  // ContextoDigital/ContextoSetupPorPeca já usam a partir de precoCompra —
+  // ver src/lib/pricing/carregar.ts).
+  custoAquisicaoUnitario Decimal? @db.Decimal(12, 4)
+  // Achado B7 (correção de regressão introduzida pelo A2, 2026-08-24): quando
+  // true, a gráfica só aplica a estampa/gravação — o cliente já trouxe a
+  // peça em branco (camiseta/caneca/boné) — então o motor zera
+  // ContextoDigital/ContextoSetupPorPeca.custoSubstratoPorPeca pra este item
+  // (ver src/lib/orcamento-precificacao.ts). Só faz sentido pra
+  // modeloCalculo=DIGITAL ou um dos 4 de setup-por-peça (SERIGRAFIA/
+  // SUBLIMACAO/ESTAMPAGEM_QUENTE/PERSONALIZACAO) — nunca REVENDA, onde o
+  // "custo de aquisição" É o produto inteiro, não um substrato aplicado.
+  // @default(false) preserva 100% o comportamento de todo item já existente
+  // (continua cobrando o substrato normalmente).
+  materialFornecidoPeloCliente Boolean @default(false)
+  // Achado B6 — sobrepõe o nome do catálogo (ItemGrafica.itemCatalogo.nome)
+  // no PDF e no link público quando preenchido (ver src/lib/pdf/mapear-dados.ts
+  // e src/app/o/[token]/page.tsx). Puramente descritivo: nunca entra no motor
+  // de preço (DadosItemOrcamento/calcularItemOrcamento em
+  // orcamento-precificacao.ts), mesmo caráter de `acabamento` acima. Nullable
+  // = todo item já existente continua mostrando o nome genérico do catálogo,
+  // comportamento de sempre. Não remove a exigência de itemGraficaId — só
+  // resolve a falta de descrição específica, não a falta de item de catálogo
+  // (parte maior do achado B6, deixada de fora de propósito).
+  descricaoLivre String? @db.Text
   breakdown        Json?
 
   orcamento   Orcamento       @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
@@ -2920,13 +3126,18 @@ model ResponsavelEstagio {
 
 // Área ADMINISTRATIVA (não é etapa de produção — por isso não reaproveita
 // ResponsavelEstagio/StatusPedido, que é o motor de estado do Pedido) que
-// pode ter um ou mais responsáveis atribuídos. Hoje só NOTA_FISCAL existe
-// (pedido do usuário em 2026-08-15/16: notificar quem emite a NF-e quando um
-// orçamento é aprovado e já está pronto pra emitir) — enum deixado aberto
-// pra outras áreas administrativas futuras (cobrança, etc.) sem precisar de
-// migration nova, só adicionar valor ao enum + linha na UI.
+// pode ter um ou mais responsáveis atribuídos. NOTA_FISCAL (pedido do usuário
+// em 2026-08-15/16: notificar quem emite a NF-e quando um orçamento é
+// aprovado e já está pronto pra emitir) e PRAZO_PRODUCAO (achado A9 da
+// auditoria de abrangência em 2026-08-24: sem isto, o alerta de
+// prazo/atraso de pedido em src/lib/alerta-prazo-email.ts só sabia mandar
+// pro vendedor + todo DONO da gráfica, sem jeito de rotear pra um PCP
+// dedicado sem promovê-lo a DONO) — enum deixado aberto pra outras áreas
+// administrativas futuras (cobrança, etc.) sem precisar de migration nova,
+// só adicionar valor ao enum + linha na UI.
 enum AreaAdministrativa {
   NOTA_FISCAL
+  PRAZO_PRODUCAO
 }
 
 model ResponsavelAdministrativo {

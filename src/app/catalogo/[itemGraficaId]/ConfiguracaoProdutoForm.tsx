@@ -19,7 +19,9 @@ type ModeloCalculo =
   | "DIGITAL"
   | "SERIGRAFIA"
   | "SUBLIMACAO"
-  | "ESTAMPAGEM_QUENTE";
+  | "ESTAMPAGEM_QUENTE"
+  | "PERSONALIZACAO"
+  | "REVENDA";
 
 // Mesmo conjunto de unidadeContagemSchema em actions.ts — sem OUTRO (sem
 // campo de texto livre pra essa, ficaria só "outro" na exibição de preço).
@@ -243,16 +245,24 @@ export function ConfiguracaoProdutoForm({
   impressoraDigitalId: string;
   impressorasDigitais: { id: string; nome: string; emManutencao: boolean }[];
   maquinaSetupPorPecaId: string;
-  // Já vem filtrada por tipoProcesso relevante — a página server-side monta 3
+  // Já vem filtrada por tipoProcesso relevante — a página server-side monta
   // listas (uma por processo) e passa só a do modeloCalculo atual seria
   // redundante já que o form troca de modelo no client; em vez disso recebe
-  // as 3 juntas com o próprio tipoProcesso, e o form filtra localmente pelo
+  // todas juntas com o próprio tipoProcesso, e o form filtra localmente pelo
   // modeloCalculo selecionado agora.
   maquinasSetupPorPeca: {
     id: string;
     nome: string;
     emManutencao: boolean;
-    tipoProcesso: "SERIGRAFIA" | "SUBLIMACAO" | "ESTAMPAGEM_QUENTE";
+    tipoProcesso:
+      | "SERIGRAFIA"
+      | "SUBLIMACAO"
+      | "ESTAMPAGEM_QUENTE"
+      | "TAMPOGRAFIA"
+      | "GRAVACAO_LASER"
+      | "DTG"
+      | "TRANSFER"
+      | "OUTRO";
   }[];
 }) {
   const [modeloCalculo, setModeloCalculo] = useState<ModeloCalculo>(modeloCalculoInicial);
@@ -289,11 +299,21 @@ export function ConfiguracaoProdutoForm({
     () => impressorasDigitais.find((i) => i.id === impressoraDigitalId)?.emManutencao ?? false,
     [impressorasDigitais, impressoraDigitalId]
   );
-  // As 3 tags de ProcessoSetupPorPeca usam o MESMO nome do ModeloCalculo
+  // SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE usam o MESMO nome do ModeloCalculo
   // correspondente (ver comentário em actions.ts) — filtra a lista completa
-  // pelo modelo selecionado agora.
+  // pelo modelo selecionado agora. PERSONALIZACAO (achado A3 da auditoria de
+  // abrangência) não tem processo homônimo: aceita qualquer máquina cujo
+  // tipoProcesso NÃO seja um dos 3 já mapeados 1:1 (ou seja, TAMPOGRAFIA/
+  // GRAVACAO_LASER/DTG/TRANSFER/OUTRO).
   const maquinasSetupPorPecaFiltradas = useMemo(
-    () => maquinasSetupPorPeca.filter((m) => m.tipoProcesso === modeloCalculo),
+    () =>
+      maquinasSetupPorPeca.filter((m) =>
+        modeloCalculo === "PERSONALIZACAO"
+          ? m.tipoProcesso !== "SERIGRAFIA" &&
+            m.tipoProcesso !== "SUBLIMACAO" &&
+            m.tipoProcesso !== "ESTAMPAGEM_QUENTE"
+          : m.tipoProcesso === modeloCalculo
+      ),
     [maquinasSetupPorPeca, modeloCalculo]
   );
   const maquinaSetupPorPecaEmManutencao = useMemo(
@@ -345,6 +365,8 @@ export function ConfiguracaoProdutoForm({
           <option value="SERIGRAFIA">Serigrafia</option>
           <option value="SUBLIMACAO">Sublimação</option>
           <option value="ESTAMPAGEM_QUENTE">Estampagem a quente (hot stamping)</option>
+          <option value="PERSONALIZACAO">Personalização (tampografia, laser, DTG, transfer)</option>
+          <option value="REVENDA">Revenda / terceirização</option>
         </Select>
 
         <div className="grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 dark:border-slate-800">
@@ -631,7 +653,8 @@ export function ConfiguracaoProdutoForm({
 
         {(modeloCalculo === "SERIGRAFIA" ||
           modeloCalculo === "SUBLIMACAO" ||
-          modeloCalculo === "ESTAMPAGEM_QUENTE") && (
+          modeloCalculo === "ESTAMPAGEM_QUENTE" ||
+          modeloCalculo === "PERSONALIZACAO") && (
           <div className="flex flex-col gap-4 border-t border-slate-100 pt-4 dark:border-slate-800">
             {maquinasSetupPorPecaFiltradas.length === 0 ? (
               <Alert variant="error">

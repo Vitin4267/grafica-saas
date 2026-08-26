@@ -16,6 +16,7 @@ type ValoresMaquinaSetupPorPeca = {
   nome: string;
   ativa: boolean;
   tipoProcesso: ProcessoSetupPorPeca;
+  tipoProcessoOutro: string | null;
   custoPorSetup: string;
   custoPorPeca: string;
   custoMinimo: string;
@@ -75,6 +76,16 @@ export function MaquinaSetupPorPecaForm({
               </option>
             ))}
           </Select>
+          {tipoProcesso === "OUTRO" && (
+            <Input
+              label="Descreva o processo"
+              name="tipoProcessoOutro"
+              type="text"
+              defaultValue={valoresIniciais.tipoProcessoOutro ?? ""}
+              placeholder="ex: chapeamento, corte e vinco..."
+              required
+            />
+          )}
         </Card>
 
         <Card className="flex flex-col gap-4 p-6">

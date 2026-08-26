@@ -31,6 +31,7 @@ import {
   verificarProntidaoFiscal,
   prepararNotificacaoNotaFiscal,
   resolverDadosFiscais,
+  resolverCfop,
   type DadosFiscaisResolvidos,
 } from "@/lib/nota-fiscal";
 import {
@@ -69,6 +70,7 @@ import {
   cancelarReserva,
 } from "@/lib/billing/armazenamento";
 import { calcularPrevisaoAprovacaoPedido, gravarPrevisaoAprovacaoPedido } from "@/lib/pedido-aprovacao";
+import { criarCustoAutomaticoComissao } from "@/lib/custo-pedido";
 import { registrarCandidatosGangRun } from "@/lib/gang-run-servico";
 import { resolverOpcoesNaAprovacao, descartarOpcoesAlternativas } from "@/lib/orcamento-opcoes";
 import { UNIDADES_DIMENSAO, converterParaCm } from "@/lib/unidade-dimensao";
@@ -96,6 +98,12 @@ export type AtualizarStatusResult = {
   ok: boolean;
   mensagem: string;
   novoStatus?: StatusOrcamento;
+  // Não bloqueia a aprovação (achado A9 da auditoria de abrangência,
+  // 2026-08-24) — só avisa quem aprovou que o cliente está marcado como
+  // bloqueado pra venda (inadimplência), pra decisão consciente em vez de
+  // aprovação automática silenciosa. OrcamentoAcoes.tsx mostra isso mesmo no
+  // caminho de sucesso do APROVADO, que normalmente esconde `mensagem`.
+  aviso?: string;
 };
 
 export async function atualizarStatusOrcamento(
@@ -113,6 +121,7 @@ export async function atualizarStatusOrcamento(
 
   const orcamento = await prisma.orcamento.findFirst({
     where: { id: orcamentoId, graficaId: usuario.graficaId },
+    include: { cliente: { select: { bloqueadoParaVenda: true, motivoBloqueio: true } } },
   });
   if (!orcamento) {
     return { ok: false, mensagem: "Orçamento não encontrado." };
@@ -172,7 +181,7 @@ export async function atualizarStatusOrcamento(
       }),
       prisma.parametrosGrafica.findUnique({
         where: { graficaId: usuario.graficaId },
-        select: { comissaoVendedorBase: true },
+        select: { comissaoVendedorBase: true, comissaoEntraNoCustoPedido: true },
       }),
       calcularPrevisaoAprovacaoPedido(orcamentoId, usuario.graficaId, undefined, opcaoEscolhidaId),
     ]);
@@ -292,6 +301,17 @@ export async function atualizarStatusOrcamento(
             valorComissao: dadosComissao.valorComissao,
           },
         });
+        // Espelha a comissão em CustoPedido quando a gráfica optou por isso
+        // (achado A1-Parte6 da auditoria de abrangência, 2026-08-24) — sem
+        // preocupação extra de idempotência: o CAS acima já garante que este
+        // bloco roda no máximo uma vez por orçamento.
+        if (parametros?.comissaoEntraNoCustoPedido) {
+          await criarCustoAutomaticoComissao(tx, {
+            graficaId: usuario.graficaId,
+            pedidoId: pedido.id,
+            valorComissao: dadosComissao.valorComissao,
+          });
+        }
       }
       return true;
     });
@@ -362,15 +382,17 @@ export async function atualizarStatusOrcamento(
     if (novoStatus === "ENVIADO") {
       const parametros = await prisma.parametrosGrafica.findUnique({
         where: { graficaId: usuario.graficaId },
-        select: { diasValidadeOrcamentoPadrao: true },
+        select: { diasValidadeOrcamentoPadrao: true, toleranciaTiragemPadraoPercent: true },
       });
       data.validoAteEm = new Date(
         Date.now() + (parametros?.diasValidadeOrcamentoPadrao ?? 15) * 86_400_000
       );
       data.enviadoEm = new Date();
+      data.toleranciaTiragemPercent = parametros?.toleranciaTiragemPadraoPercent ?? 10;
     } else if (novoStatus === "RASCUNHO") {
       data.validoAteEm = null;
       data.enviadoEm = null;
+      data.toleranciaTiragemPercent = null;
     }
 
     const cas = await prisma.orcamento.updateMany({
@@ -393,6 +415,12 @@ export async function atualizarStatusOrcamento(
     ok: true,
     mensagem: `Orçamento atualizado para ${ROTULOS_STATUS_ORCAMENTO[novoStatus]}.`,
     novoStatus,
+    aviso:
+      novoStatus === "APROVADO" && orcamento.cliente.bloqueadoParaVenda
+        ? `Atenção: este cliente está bloqueado para venda${
+            orcamento.cliente.motivoBloqueio ? ` (${orcamento.cliente.motivoBloqueio})` : ""
+          }. O orçamento foi aprovado mesmo assim — confira antes de seguir com a produção.`
+        : undefined,
   };
 }
 
@@ -423,6 +451,11 @@ export async function editarOrcamento(
   // permitia gravar dezenas de MB de texto numa única linha de orçamento.
   const cores = String(formData.get("cores") || "").slice(0, 60);
   const acabamento = String(formData.get("acabamento") || "").slice(0, 200);
+  // Achado B6 — texto livre que sobrepõe o nome do catálogo no PDF/link
+  // público quando preenchido (ver src/lib/pdf/mapear-dados.ts). Puramente
+  // descritivo, nunca passa por calcularItemOrcamento — só lido do FormData e
+  // gravado direto, mesmo caminho de `acabamento` acima.
+  const descricaoLivre = String(formData.get("descricaoLivre") || "").trim().slice(0, 500);
   const corFrente = formData.get("corFrente") ? Number(formData.get("corFrente")) : null;
   const corVerso = formData.get("corVerso") ? Number(formData.get("corVerso")) : null;
   // Motor Flexografia — deliberadamente separado de corFrente/corVerso (ver
@@ -434,6 +467,9 @@ export async function editarOrcamento(
   const numeroCliques = formData.get("numeroCliques") ? Number(formData.get("numeroCliques")) : null;
   // Motores Serigrafia/Sublimação/Estampagem a quente (compartilham este campo).
   const numeroSetups = formData.get("numeroSetups") ? Number(formData.get("numeroSetups")) : null;
+  // Acabamento cobrado por hora (ex: instalação, criação de arte) — não é
+  // model-gated, independente do modeloCalculo do item.
+  const horasEstimadas = formData.get("horasEstimadas") ? Number(formData.get("horasEstimadas")) : null;
   // Motor de clichê de etiqueta (só M2 com ConfiguracaoClicheEtiqueta) — ver
   // src/lib/orcamento-precificacao.ts.
   const papelId = String(formData.get("papelId") || "").trim() || null;
@@ -442,6 +478,15 @@ export async function editarOrcamento(
     : null;
   const custoFaca = formData.get("custoFaca") ? Number(formData.get("custoFaca")) : null;
   const custoFrete = formData.get("custoFrete") ? Number(formData.get("custoFrete")) : null;
+  // Motor Revenda/terceirização (achado A12) — override opcional, POR
+  // ORÇAMENTO, do custo de aquisição; ausente = motor cai no precoCompra do
+  // catálogo (ver src/lib/pricing/carregar.ts).
+  const custoAquisicaoUnitario = formData.get("custoAquisicaoUnitario")
+    ? Number(formData.get("custoAquisicaoUnitario"))
+    : null;
+  // "Material fornecido pelo cliente" (achado B7) — checkbox, não número:
+  // sem exigir presença no FormData, ausente = desmarcado = false.
+  const materialFornecidoPeloCliente = formData.get("materialFornecidoPeloCliente") === "on";
 
   if (!quantidade || quantidade <= 0 || quantidade > 1_000_000) {
     return { ok: false, mensagem: "Informe uma quantidade válida (até 1.000.000 unidades)." };
@@ -453,7 +498,12 @@ export async function editarOrcamento(
     // de opção alternativa (ver model OrcamentoOpcao no schema.prisma) não é
     // editável incrementalmente; a alternativa inteira é removida e recriada
     // (ver src/app/orcamento/[id]/opcoes.actions.ts).
-    include: { itens: { where: { opcaoId: null }, include: { itemGrafica: true } } },
+    include: {
+      itens: { where: { opcaoId: null }, include: { itemGrafica: true } },
+      // Achado A7 — margemPadraoOverride é propriedade do CLIENTE, constante
+      // em todo item deste orçamento (ver DadosItemOrcamento.margemLucroOverride).
+      cliente: { select: { margemPadraoOverride: true } },
+    },
   });
   if (!orcamento) {
     return { ok: false, mensagem: "Orçamento não encontrado." };
@@ -463,6 +513,8 @@ export async function editarOrcamento(
   if (orcamento.status !== "RASCUNHO") {
     return { ok: false, mensagem: "Só é possível editar um orçamento em rascunho." };
   }
+  const margemLucroOverride =
+    orcamento.cliente.margemPadraoOverride !== null ? Number(orcamento.cliente.margemPadraoOverride) : null;
 
   const item = orcamento.itens.find((i) => i.id === orcamentoItemId);
   if (!item) {
@@ -486,11 +538,15 @@ export async function editarOrcamento(
     numeroCoresFlexo,
     numeroCliques,
     numeroSetups,
+    horasEstimadas,
     acabamentoIds,
     papelId,
     quantidadeCores,
     custoFaca,
     custoFrete,
+    custoAquisicaoUnitario,
+    materialFornecidoPeloCliente,
+    margemLucroOverride,
   });
   if (!resultado.ok) {
     return { ok: false, mensagem: resultado.mensagem };
@@ -538,6 +594,7 @@ export async function editarOrcamento(
             alturaCm,
             cores: cores || null,
             acabamento: acabamento || null,
+            descricaoLivre: descricaoLivre || null,
             precoUnitario: resultado.precoUnitario,
             precoTotal: resultado.precoTotal,
             // Baseline sempre fresca — precoSugeridoUnitario nunca fica presa
@@ -554,6 +611,9 @@ export async function editarOrcamento(
             numeroCoresFlexo: resultado.numeroCoresFlexo,
             numeroCliques: resultado.numeroCliques,
             numeroSetups: resultado.numeroSetups,
+            horasEstimadas: resultado.horasEstimadas,
+            custoAquisicaoUnitario: resultado.custoAquisicaoUnitario,
+            materialFornecidoPeloCliente: resultado.materialFornecidoPeloCliente,
             breakdown: resultado.breakdown ?? undefined,
           },
         });
@@ -739,7 +799,14 @@ const tipoPedidoSchema = z.enum([
   "REPETICAO_SEM_ALTERACAO",
   "REPETICAO_COM_ALTERACAO",
 ]);
-const freteSchema = z.enum(["EMITENTE", "DESTINATARIO"]);
+const freteSchema = z.enum([
+  "CIF_REMETENTE",
+  "FOB_DESTINATARIO",
+  "TERCEIROS",
+  "PROPRIO_REMETENTE",
+  "PROPRIO_DESTINATARIO",
+  "SEM_FRETE",
+]);
 
 export type EditarDadosGeraisResult = { ok: boolean; mensagem: string };
 
@@ -1293,6 +1360,11 @@ export async function adicionarItemOrcamento(
   // permitia gravar dezenas de MB de texto numa única linha de orçamento.
   const cores = String(formData.get("cores") || "").slice(0, 60);
   const acabamento = String(formData.get("acabamento") || "").slice(0, 200);
+  // Achado B6 — texto livre que sobrepõe o nome do catálogo no PDF/link
+  // público quando preenchido (ver src/lib/pdf/mapear-dados.ts). Puramente
+  // descritivo, nunca passa por calcularItemOrcamento — só lido do FormData e
+  // gravado direto, mesmo caminho de `acabamento` acima.
+  const descricaoLivre = String(formData.get("descricaoLivre") || "").trim().slice(0, 500);
   const acabamentoIds = formData.getAll("acabamentoIds").map(String).filter(Boolean).slice(0, 20);
   const corFrente = formData.get("corFrente") ? Number(formData.get("corFrente")) : null;
   const corVerso = formData.get("corVerso") ? Number(formData.get("corVerso")) : null;
@@ -1305,6 +1377,9 @@ export async function adicionarItemOrcamento(
   const numeroCliques = formData.get("numeroCliques") ? Number(formData.get("numeroCliques")) : null;
   // Motores Serigrafia/Sublimação/Estampagem a quente (compartilham este campo).
   const numeroSetups = formData.get("numeroSetups") ? Number(formData.get("numeroSetups")) : null;
+  // Acabamento cobrado por hora (ex: instalação, criação de arte) — não é
+  // model-gated, independente do modeloCalculo do item.
+  const horasEstimadas = formData.get("horasEstimadas") ? Number(formData.get("horasEstimadas")) : null;
   // Motor de clichê de etiqueta (só M2 com ConfiguracaoClicheEtiqueta) — ver
   // src/lib/orcamento-precificacao.ts.
   const papelId = String(formData.get("papelId") || "").trim() || null;
@@ -1313,6 +1388,15 @@ export async function adicionarItemOrcamento(
     : null;
   const custoFaca = formData.get("custoFaca") ? Number(formData.get("custoFaca")) : null;
   const custoFrete = formData.get("custoFrete") ? Number(formData.get("custoFrete")) : null;
+  // Motor Revenda/terceirização (achado A12) — override opcional, POR
+  // ORÇAMENTO, do custo de aquisição; ausente = motor cai no precoCompra do
+  // catálogo (ver src/lib/pricing/carregar.ts).
+  const custoAquisicaoUnitario = formData.get("custoAquisicaoUnitario")
+    ? Number(formData.get("custoAquisicaoUnitario"))
+    : null;
+  // "Material fornecido pelo cliente" (achado B7) — checkbox, não número:
+  // sem exigir presença no FormData, ausente = desmarcado = false.
+  const materialFornecidoPeloCliente = formData.get("materialFornecidoPeloCliente") === "on";
 
   if (!itemGraficaId || !quantidade || quantidade <= 0 || quantidade > 1_000_000) {
     return { ok: false, mensagem: "Escolha um produto e uma quantidade válida (até 1.000.000 unidades)." };
@@ -1330,6 +1414,9 @@ export async function adicionarItemOrcamento(
 
   const orcamento = await prisma.orcamento.findFirst({
     where: { id: orcamentoId, graficaId: usuario.graficaId },
+    // Achado A7 — margemPadraoOverride é propriedade do CLIENTE, constante
+    // em todo item deste orçamento (ver DadosItemOrcamento.margemLucroOverride).
+    include: { cliente: { select: { margemPadraoOverride: true } } },
   });
   if (!orcamento) {
     return { ok: false, mensagem: "Orçamento não encontrado." };
@@ -1337,6 +1424,8 @@ export async function adicionarItemOrcamento(
   if (orcamento.status !== "RASCUNHO") {
     return { ok: false, mensagem: "Só é possível adicionar itens a um orçamento em rascunho." };
   }
+  const margemLucroOverride =
+    orcamento.cliente.margemPadraoOverride !== null ? Number(orcamento.cliente.margemPadraoOverride) : null;
 
   const itemGrafica = await prisma.itemGrafica.findFirst({
     where: {
@@ -1359,11 +1448,15 @@ export async function adicionarItemOrcamento(
     numeroCoresFlexo,
     numeroCliques,
     numeroSetups,
+    horasEstimadas,
     acabamentoIds,
     papelId,
     quantidadeCores,
     custoFaca,
     custoFrete,
+    custoAquisicaoUnitario,
+    materialFornecidoPeloCliente,
+    margemLucroOverride,
   });
   if (!resultado.ok) {
     return { ok: false, mensagem: resultado.mensagem };
@@ -1393,6 +1486,7 @@ export async function adicionarItemOrcamento(
             unidadeDimensao,
             cores: cores || null,
             acabamento: acabamento || null,
+            descricaoLivre: descricaoLivre || null,
             precoUnitario: resultado.precoUnitario,
             precoTotal: resultado.precoTotal,
             // Preço sugerido pelo motor no momento da criação — nunca editado
@@ -1406,6 +1500,9 @@ export async function adicionarItemOrcamento(
             numeroCoresFlexo: resultado.numeroCoresFlexo,
             numeroCliques: resultado.numeroCliques,
             numeroSetups: resultado.numeroSetups,
+            horasEstimadas: resultado.horasEstimadas,
+            custoAquisicaoUnitario: resultado.custoAquisicaoUnitario,
+            materialFornecidoPeloCliente: resultado.materialFornecidoPeloCliente,
             breakdown: resultado.breakdown ?? undefined,
             etiqueta:
               resultado.modeloCalculo === "M2"
@@ -1937,6 +2034,10 @@ export async function duplicarOrcamento(
           precificacaoEtiqueta: true,
         },
       },
+      // Achado A7 — margemPadraoOverride é propriedade do CLIENTE, constante
+      // em todo item do orçamento duplicado (mesmo cliente do original, ver
+      // DadosItemOrcamento.margemLucroOverride).
+      cliente: { select: { margemPadraoOverride: true } },
     },
   });
   if (!original) {
@@ -1951,6 +2052,8 @@ export async function duplicarOrcamento(
   if (original.itens.length === 0) {
     return { ok: false, mensagem: "Este orçamento não tem itens pra duplicar." };
   }
+  const margemLucroOverride =
+    original.cliente.margemPadraoOverride !== null ? Number(original.cliente.margemPadraoOverride) : null;
 
   const parametros = await prisma.parametrosGrafica.findUnique({
     where: { graficaId: usuario.graficaId },
@@ -1970,6 +2073,7 @@ export async function duplicarOrcamento(
     unidadeDimensao: (typeof UNIDADES_DIMENSAO)[number];
     cores: string | null;
     acabamento: string | null;
+    descricaoLivre: string | null;
     precoUnitario: string;
     precoTotal: string;
     precoSugeridoUnitario: string;
@@ -1985,12 +2089,17 @@ export async function duplicarOrcamento(
       | "DIGITAL"
       | "SERIGRAFIA"
       | "SUBLIMACAO"
-      | "ESTAMPAGEM_QUENTE";
+      | "ESTAMPAGEM_QUENTE"
+      | "PERSONALIZACAO"
+      | "REVENDA";
     corFrente: number | null;
     corVerso: number | null;
     numeroCoresFlexo: number | null;
     numeroCliques: number | null;
     numeroSetups: number | null;
+    horasEstimadas: number | null;
+    custoAquisicaoUnitario: number | null;
+    materialFornecidoPeloCliente: boolean;
     breakdown: Prisma.InputJsonValue | null;
     etiqueta: (typeof original.itens)[number]["etiqueta"];
     acabamentosParaGravar: { itemGraficaId: string; qtdBase: string; custoCalculado: string }[];
@@ -2034,9 +2143,12 @@ export async function duplicarOrcamento(
       numeroCoresFlexo: itemOriginal.numeroCoresFlexo,
       numeroCliques: itemOriginal.numeroCliques,
       numeroSetups: itemOriginal.numeroSetups,
+      horasEstimadas: itemOriginal.horasEstimadas,
+      custoAquisicaoUnitario: itemOriginal.custoAquisicaoUnitario,
+      materialFornecidoPeloCliente: itemOriginal.materialFornecidoPeloCliente,
       acabamentos: itemOriginal.acabamentos,
       precificacaoEtiqueta: itemOriginal.precificacaoEtiqueta,
-    });
+    }, margemLucroOverride);
 
     const resultado = await calcularItemOrcamento(itemGraficaFresh, usuario.graficaId, dados);
     if (!resultado.ok) {
@@ -2098,6 +2210,7 @@ export async function duplicarOrcamento(
       unidadeDimensao: itemOriginal.unidadeDimensao,
       cores: itemOriginal.cores,
       acabamento: itemOriginal.acabamento,
+      descricaoLivre: itemOriginal.descricaoLivre,
       precoUnitario: precoUnitario.toFixed(2),
       precoTotal: precoTotal.toFixed(2),
       precoSugeridoUnitario: resultado.precoUnitario,
@@ -2111,6 +2224,9 @@ export async function duplicarOrcamento(
       numeroCoresFlexo: resultado.numeroCoresFlexo,
       numeroCliques: resultado.numeroCliques,
       numeroSetups: resultado.numeroSetups,
+      horasEstimadas: resultado.horasEstimadas,
+      custoAquisicaoUnitario: resultado.custoAquisicaoUnitario,
+      materialFornecidoPeloCliente: resultado.materialFornecidoPeloCliente,
       breakdown: resultado.breakdown ?? null,
       etiqueta: itemOriginal.etiqueta,
       acabamentosParaGravar: resultado.acabamentos,
@@ -2143,6 +2259,7 @@ export async function duplicarOrcamento(
           unidadeDimensao: item.unidadeDimensao,
           cores: item.cores,
           acabamento: item.acabamento,
+          descricaoLivre: item.descricaoLivre,
           precoUnitario: item.precoUnitario,
           precoTotal: item.precoTotal,
           precoSugeridoUnitario: item.precoSugeridoUnitario,
@@ -2156,6 +2273,9 @@ export async function duplicarOrcamento(
           numeroCoresFlexo: item.numeroCoresFlexo,
           numeroCliques: item.numeroCliques,
           numeroSetups: item.numeroSetups,
+          horasEstimadas: item.horasEstimadas,
+          custoAquisicaoUnitario: item.custoAquisicaoUnitario,
+          materialFornecidoPeloCliente: item.materialFornecidoPeloCliente,
           breakdown: item.breakdown ?? undefined,
           // Descritivo de produção (nunca entra na conta de preço, ver
           // OrcamentoItemEtiqueta no schema) — copiado literalmente do item
@@ -2291,7 +2411,7 @@ export async function gerarLinkPublico(
   if (TRANSICOES_VALIDAS[orcamento.status as StatusOrcamento]?.includes("ENVIADO")) {
     const parametros = await prisma.parametrosGrafica.findUnique({
       where: { graficaId: usuario.graficaId },
-      select: { diasValidadeOrcamentoPadrao: true },
+      select: { diasValidadeOrcamentoPadrao: true, toleranciaTiragemPadraoPercent: true },
     });
     await prisma.orcamento.updateMany({
       where: { id: orcamentoId, status: orcamento.status },
@@ -2305,6 +2425,9 @@ export async function gerarLinkPublico(
         // atualizarStatusOrcamento acima, só um dos dois caminhos roda por
         // transição.
         enviadoEm: new Date(),
+        // Mesmo snapshot de tolerância de tiragem que atualizarStatusOrcamento
+        // faz acima — só um dos dois caminhos roda por transição.
+        toleranciaTiragemPercent: parametros?.toleranciaTiragemPadraoPercent ?? 10,
       },
     });
     revalidatePath("/orcamento");
@@ -2699,6 +2822,7 @@ export async function emitirNotaFiscal(
           uf: orcamento.cliente.enderecoUf!,
           cep: orcamento.cliente.enderecoCep!,
         },
+        frete: orcamento.frete,
         itens: orcamento.itens.map((item, indice) => {
           const valorBruto = Number(item.precoTotal);
           return {
@@ -2706,7 +2830,12 @@ export async function emitirNotaFiscal(
             codigoProduto: item.itemGraficaId,
             descricao: item.itemGrafica.itemCatalogo.nome,
             ncm: item.itemGrafica.itemCatalogo.ncm!,
-            cfop: dadosFiscais.cfopPadrao,
+            cfop: resolverCfop({
+              ufEmitente: dadosFiscais.enderecoUf,
+              ufDestinatario: orcamento.cliente.enderecoUf,
+              cfopPadrao: dadosFiscais.cfopPadrao,
+              cfopPadraoInterestadual: dadosFiscais.cfopPadraoInterestadual,
+            }),
             unidade: resolverUnidadeFiscal(
               item.itemGrafica.itemCatalogo.unidade,
               item.itemGrafica.itemCatalogo.unidadeOutro

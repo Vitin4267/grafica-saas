@@ -398,13 +398,18 @@ export async function salvarResponsaveisEstagio(
 export type SalvarResponsaveisAdministrativoResult = { ok: boolean; mensagem: string };
 
 // As áreas administrativas que podem ter responsável atribuído em /usuarios
-// — hoje só NOTA_FISCAL existe (ver enum AreaAdministrativa no schema), mas
-// fica numa lista (não um valor solto) pra esta action já servir a uma
-// segunda área no futuro sem precisar mudar a lógica, só adicionar o valor
-// aqui e o rótulo abaixo.
-const AREAS_ADMINISTRATIVAS: AreaAdministrativa[] = ["NOTA_FISCAL"];
-const ROTULO_AREA_ADMINISTRATIVA: Record<AreaAdministrativa, string> = {
+// (ver enum AreaAdministrativa no schema) — numa lista (não um valor solto)
+// pra esta action, e a UI (ResponsaveisAdministrativoForm, que importa os
+// dois exports abaixo pra desenhar a tabela funcionário × área), servirem
+// qualquer área nova sem precisar mudar a lógica, só adicionar o valor aqui
+// e o rótulo abaixo. PRAZO_PRODUCAO adicionado 2026-08-24 (achado A9 da
+// auditoria de abrangência) pra rotear o alerta de prazo/atraso de pedido
+// (src/lib/alerta-prazo-email.ts) pra um responsável dedicado em vez de
+// sempre cair em todos os DONOs.
+export const AREAS_ADMINISTRATIVAS: AreaAdministrativa[] = ["NOTA_FISCAL", "PRAZO_PRODUCAO"];
+export const ROTULO_AREA_ADMINISTRATIVA: Record<AreaAdministrativa, string> = {
   NOTA_FISCAL: "Emissão de Nota Fiscal",
+  PRAZO_PRODUCAO: "Alerta de prazo/atraso de pedido",
 };
 
 // Mesmo padrão de salvarResponsaveisEstagio logo acima: ResponsavelAdministrativo

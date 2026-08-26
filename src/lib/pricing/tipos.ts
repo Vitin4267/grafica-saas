@@ -6,14 +6,18 @@ export type ModeloCalculo =
   | "DIGITAL"
   | "SERIGRAFIA"
   | "SUBLIMACAO"
-  | "ESTAMPAGEM_QUENTE";
+  | "ESTAMPAGEM_QUENTE"
+  | "PERSONALIZACAO"
+  | "REVENDA";
 export type BaseCobranca =
   | "UNIDADE"
   | "M2"
   | "FOLHA_IMPRESSA"
   | "METRO_LINEAR"
   | "FIXO"
-  | "HORA";
+  | "HORA"
+  | "MILHEIRO"
+  | "CENTO";
 export type EstagioAcabamento = "PRE_REFILE" | "POS_REFILE";
 
 // ---------- Cenário 1 (m² / bobina) ----------
@@ -167,6 +171,13 @@ export type PedidoDigital = {
 
 export type ContextoDigital = {
   custoSubstratoPorPeca: number; // = ItemGrafica.precoCompra do material, mesma fonte que M2 já usa
+  // Achado B7 (correção de regressão do A2/2026-08-24): quando true, o
+  // custoSubstratoPorPeca=0 acima é INTENCIONAL (o cliente trouxe a peça em
+  // branco) — distingue de "gráfica esqueceu de cadastrar precoCompra", que
+  // continua barrado por validarPedidoDigital. Sem essa distinção, o guard
+  // de silêncio (calcularQtdBase/validarPedidoDigital) rejeitava o zero
+  // legítimo do B7 com o mesmo erro genérico de configuração ausente.
+  materialFornecidoPeloCliente?: boolean;
 };
 
 // ---------- Parâmetros da impressora digital (custo de máquina, só DIGITAL) ----------
@@ -175,7 +186,7 @@ export type ParametrosImpressoraDigital = {
   custoPorClique: number;
 };
 
-// ---------- Cenário 6 (setup por peça — SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE, sem nesting) ----------
+// ---------- Cenário 6 (setup por peça — SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE/PERSONALIZACAO, sem nesting) ----------
 
 export type PedidoSetupPorPeca = {
   quantidade: number; // Q
@@ -186,10 +197,39 @@ export type PedidoSetupPorPeca = {
   alturaM?: number;
 };
 
+// Achado A2 da auditoria de abrangência (2026-08-24): custoPorPeca em
+// ParametrosMaquinaSetupPorPeca é custo de MÁQUINA (estampar/aplicar), não
+// da peça física em branco (camiseta/caneca/boné/squeeze) — mesma separação
+// que ContextoDigital.custoSubstratoPorPeca já faz pro Digital. Sem isso o
+// motor precificava a peça em branco a R$0.
+export type ContextoSetupPorPeca = {
+  custoSubstratoPorPeca: number; // = ItemGrafica.precoCompra do produto, mesma fonte que Digital já usa
+};
+
 // ---------- Parâmetros da máquina de setup por peça (custo de máquina, os 3 modelos acima) ----------
 
 export type ParametrosMaquinaSetupPorPeca = {
   custoPorSetup: number; // R$ por tela/matriz/arte
   custoPorPeca: number; // variável por peça
   custoMinimo: number; // piso do job
+};
+
+// ---------- Cenário 7 (revenda/terceirização — achado A12, sem nesting, sem máquina) ----------
+
+export type PedidoRevenda = {
+  quantidade: number; // Q
+  // Revenda não precisa de dimensões pro CUSTO em si (sem nesting, sem
+  // máquina) — mesmo motivo de PedidoDigital/PedidoSetupPorPeca acima:
+  // opcionais, só pra alimentar um eventual acabamento M2-based.
+  larguraM?: number;
+  alturaM?: number;
+};
+
+// custoAquisicaoUnitario vem de OrcamentoItem.custoAquisicaoUnitario (override
+// por orçamento) quando preenchido, ou de ItemGrafica.precoCompra do catálogo
+// como default — mesmo padrão de fallback que ContextoDigital/
+// ContextoSetupPorPeca já usam a partir de precoCompra (ver
+// src/lib/pricing/carregar.ts).
+export type ContextoRevenda = {
+  custoAquisicaoUnitario: number;
 };

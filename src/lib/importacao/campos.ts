@@ -21,6 +21,9 @@ export const CAMPOS_CLIENTES: CampoImportacao[] = [
   { valor: "enderecoBairro", rotulo: "Bairro", obrigatorio: false },
   { valor: "enderecoMunicipio", rotulo: "Cidade", obrigatorio: false },
   { valor: "enderecoUf", rotulo: "UF", obrigatorio: false },
+  { valor: "observacoes", rotulo: "Observações internas", obrigatorio: false },
+  { valor: "preferenciasProducao", rotulo: "Preferências de produção", obrigatorio: false },
+  { valor: "origem", rotulo: "Origem do cliente", obrigatorio: false },
   IGNORAR,
 ];
 

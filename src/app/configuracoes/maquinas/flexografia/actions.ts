@@ -9,6 +9,7 @@ import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { ehViolacaoDeChaveEstrangeira } from "@/lib/prisma-conflito";
+import { registrarAuditoria, criarDiffCampos } from "@/lib/auditoria";
 
 export type SalvarMaquinaFlexografiaResult = { ok: boolean; mensagem: string };
 
@@ -24,6 +25,20 @@ const CAMPOS_DECIMAL = [
 ] as const;
 
 const CAMPOS_INTEIRO = ["numeroEstacoesCores"] as const;
+
+// Rótulo legível pro log de auditoria (ver achado A3 da auditoria de
+// abrangência, 2026-08-24) — chaves cobrem CAMPOS_DECIMAL + CAMPOS_INTEIRO.
+const ROTULO_CAMPO_FLEXO: Record<(typeof CAMPOS_DECIMAL)[number] | (typeof CAMPOS_INTEIRO)[number], string> = {
+  larguraMaquinaM: "Largura da máquina (m)",
+  passoCilindroM: "Passo do cilindro (m)",
+  custoHoraMaq: "Custo hora-máquina",
+  tempoAcertoH: "Tempo de acerto (h)",
+  metrosAcerto: "Metros de acerto",
+  custoMetroLinearRod: "Custo do metro linear de rodagem",
+  rodagemMinima: "Rodagem mínima",
+  perdaPercentPadrao: "Perda padrão (%)",
+  numeroEstacoesCores: "Número de estações de cores",
+};
 
 export async function criarMaquinaFlexografia(
   _estadoAnterior: SalvarMaquinaFlexografiaResult | null,
@@ -52,6 +67,16 @@ export async function criarMaquinaFlexografia(
     }
     throw erro;
   }
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "configuracoes.criar_maquina_flexografia",
+    entidade: "MaquinaFlexografia",
+    entidadeId: novaMaquina.id,
+    descricao: `Máquina de flexografia "${nome}" criada`,
+  });
 
   revalidatePath("/configuracoes/maquinas");
   redirect(`/configuracoes/maquinas/flexografia/${novaMaquina.id}`);
@@ -110,6 +135,26 @@ export async function salvarMaquinaFlexografia(
     throw erro;
   }
 
+  const diff = criarDiffCampos();
+  diff.campo("Nome", maquina.nome, nome);
+  diff.campo("Ativa", maquina.ativa, ativa);
+  for (const campo of [...CAMPOS_DECIMAL, ...CAMPOS_INTEIRO] as const) {
+    diff.campo(ROTULO_CAMPO_FLEXO[campo], Number(maquina[campo]), dados[campo]);
+  }
+  if (diff.temMudanca) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "configuracoes.salvar_maquina_flexografia",
+      entidade: "MaquinaFlexografia",
+      entidadeId: maquinaId,
+      descricao: `Máquina de flexografia "${maquina.nome}" atualizada`,
+      valorAnterior: diff.antesTextos.join("; "),
+      valorNovo: diff.depoisTextos.join("; "),
+    });
+  }
+
   revalidatePath(`/configuracoes/maquinas/flexografia/${maquinaId}`);
   revalidatePath("/configuracoes/maquinas");
   return { ok: true, mensagem: "Máquina salva com sucesso!" };
@@ -146,6 +191,16 @@ export async function excluirMaquinaFlexografia(
     }
     throw erro;
   }
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "configuracoes.excluir_maquina_flexografia",
+    entidade: "MaquinaFlexografia",
+    entidadeId: maquinaId,
+    descricao: `Máquina de flexografia "${maquina.nome}" excluída`,
+  });
 
   revalidatePath("/configuracoes/maquinas");
   redirect("/configuracoes/maquinas");

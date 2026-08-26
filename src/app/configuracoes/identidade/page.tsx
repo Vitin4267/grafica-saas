@@ -50,6 +50,10 @@ export default async function ConfiguracoesIdentidadePage() {
         <IdentidadeForm
           logoUrlAtual={usuario.grafica.logoUrl}
           corPrimariaAtual={usuario.grafica.corPrimaria}
+          telefoneAtual={usuario.grafica.telefone}
+          emailContatoAtual={usuario.grafica.emailContato}
+          siteAtual={usuario.grafica.site}
+          enderecoResumidoAtual={usuario.grafica.enderecoResumido}
         />
       </main>
     </div>

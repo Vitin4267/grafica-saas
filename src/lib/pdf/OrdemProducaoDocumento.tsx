@@ -37,6 +37,10 @@ export type DadosPdfOrdemProducao = {
   criadoEm: Date;
   prazoEntrega: Date | null;
   observacoes: string | null;
+  // Achado A11 da auditoria de abrangência: preferência do CLIENTE (ex:
+  // "sempre mandar arte em RGB", "não aceita variação de tom entre
+  // lotes") — diferente de `observacoes` acima, que é nota do PEDIDO.
+  preferenciasProducaoCliente: string | null;
   itens: ItemPdfOrdemProducao[];
 };
 
@@ -103,6 +107,20 @@ const estilos = StyleSheet.create({
   },
   observacoesTitulo: { fontSize: 8, fontWeight: "bold", color: "#854d0e", marginBottom: 4 },
   observacoesTexto: { fontSize: 9, color: "#713f12" },
+  // Cor deliberadamente diferente da observacoesBox (amarelo, nota do
+  // PEDIDO) — azul aqui, pra quem manuseia o documento no chão de fábrica
+  // distinguir de longe "nota deste pedido" de "preferência permanente
+  // deste cliente".
+  preferenciasBox: {
+    marginBottom: 16,
+    padding: 10,
+    borderRadius: 4,
+    backgroundColor: "#eff6ff",
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+  },
+  preferenciasTitulo: { fontSize: 8, fontWeight: "bold", color: "#1e40af", marginBottom: 4 },
+  preferenciasTexto: { fontSize: 9, color: "#1e3a8a" },
   itemBox: {
     marginBottom: 12,
     borderWidth: 1,
@@ -186,6 +204,13 @@ export function OrdemProducaoDocumento({ dados }: { dados: DadosPdfOrdemProducao
             <Text style={estilos.dadosValor}>{formatoInstanteReal.format(dados.criadoEm)}</Text>
           </View>
         </View>
+
+        {dados.preferenciasProducaoCliente && (
+          <View style={estilos.preferenciasBox}>
+            <Text style={estilos.preferenciasTitulo}>PREFERÊNCIAS DE PRODUÇÃO DO CLIENTE</Text>
+            <Text style={estilos.preferenciasTexto}>{dados.preferenciasProducaoCliente}</Text>
+          </View>
+        )}
 
         {dados.observacoes && (
           <View style={estilos.observacoesBox}>

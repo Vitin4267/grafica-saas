@@ -9,6 +9,7 @@ import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
+import { registrarAuditoria, criarDiffCampos } from "@/lib/auditoria";
 
 export type SalvarFilialResult = { ok: boolean; mensagem: string };
 
@@ -39,6 +40,16 @@ export async function criarFilial(
     }
     throw erro;
   }
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "configuracoes.criar_filial",
+    entidade: "Filial",
+    entidadeId: novaFilial.id,
+    descricao: `Filial "${nome}" criada`,
+  });
 
   revalidatePath("/configuracoes/filiais");
   redirect(`/configuracoes/filiais/${novaFilial.id}`);
@@ -83,6 +94,24 @@ export async function salvarFilial(
     throw erro;
   }
 
+  const diff = criarDiffCampos();
+  diff.campo("Nome", filial.nome, nome);
+  diff.campo("Endereço", filial.endereco, endereco);
+  diff.campo("Ativa", filial.ativa, ativa);
+  if (diff.temMudanca) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "configuracoes.salvar_filial",
+      entidade: "Filial",
+      entidadeId: filialId,
+      descricao: `Filial "${filial.nome}" atualizada`,
+      valorAnterior: diff.antesTextos.join("; "),
+      valorNovo: diff.depoisTextos.join("; "),
+    });
+  }
+
   revalidatePath(`/configuracoes/filiais/${filialId}`);
   revalidatePath("/configuracoes/filiais");
   return { ok: true, mensagem: "Filial salva com sucesso!" };
@@ -105,6 +134,7 @@ const CAMPOS_TEXTO_FISCAL = [
   "enderecoUf",
   "naturezaOperacaoPadrao",
   "cfopPadrao",
+  "cfopPadraoInterestadual",
   "csosnPadrao",
   "cstIcmsPadrao",
   "icmsModalidadeBaseCalculoPadrao",
@@ -112,6 +142,47 @@ const CAMPOS_TEXTO_FISCAL = [
 ] as const;
 
 const REGIMES_TRIBUTARIOS_FILIAL: RegimeTributario[] = ["SIMPLES_NACIONAL", "LUCRO_PRESUMIDO", "LUCRO_REAL"];
+
+// Mesmos rótulos de src/app/configuracoes/fiscal/actions.ts — duplicado de
+// propósito, no mesmo espírito de CAMPOS_TEXTO_FISCAL acima (espelha
+// DadosFiscaisGrafica campo a campo, mas é uma tela própria).
+const ROTULO_CAMPO_FISCAL_FILIAL: Record<(typeof CAMPOS_TEXTO_FISCAL)[number], string> = {
+  cnpj: "CNPJ",
+  razaoSocial: "Razão social",
+  nomeFantasia: "Nome fantasia",
+  inscricaoEstadual: "Inscrição estadual",
+  enderecoCep: "CEP",
+  enderecoLogradouro: "Logradouro",
+  enderecoNumero: "Número",
+  enderecoBairro: "Bairro",
+  enderecoMunicipio: "Município",
+  enderecoUf: "UF",
+  naturezaOperacaoPadrao: "Natureza da operação padrão",
+  cfopPadrao: "CFOP padrão",
+  cfopPadraoInterestadual: "CFOP padrão interestadual",
+  csosnPadrao: "CSOSN padrão",
+  cstIcmsPadrao: "CST-ICMS padrão",
+  icmsModalidadeBaseCalculoPadrao: "Modalidade de base de cálculo do ICMS padrão",
+  pisCofinsSituacaoTributariaPadrao: "Situação tributária de PIS/COFINS padrão",
+};
+const ROTULO_AMBIENTE_FILIAL: Record<string, string> = {
+  homologacao: "Homologação (testes)",
+  producao: "Produção",
+};
+const ROTULO_REGIME_TRIBUTARIO_FILIAL: Record<RegimeTributario, string> = {
+  SIMPLES_NACIONAL: "Simples Nacional",
+  LUCRO_PRESUMIDO: "Lucro Presumido",
+  LUCRO_REAL: "Lucro Real",
+};
+// Mesmo cuidado de fiscal/actions.ts: 3 dos CAMPOS_TEXTO_FISCAL têm @default
+// no schema (DadosFiscaisFilial espelha DadosFiscaisGrafica) — fallback só
+// usado quando a filial nunca teve dados fiscais próprios configurados.
+const DEFAULT_CAMPO_TEXTO_FISCAL_FILIAL: Partial<Record<(typeof CAMPOS_TEXTO_FISCAL)[number], string>> = {
+  naturezaOperacaoPadrao: "Venda de mercadoria",
+  cfopPadrao: "5102",
+  cfopPadraoInterestadual: "6102",
+  csosnPadrao: "102",
+};
 
 // Opcional por natureza: só existe linha em DadosFiscaisFilial quando a
 // filial de fato tem CNPJ próprio configurado (ver resolverDadosFiscais em
@@ -197,15 +268,56 @@ export async function salvarDadosFiscaisFilial(
   // Campo de token é write-only: em branco = "manter o valor salvo" (nunca
   // reexibimos o token de verdade no formulário, só os últimos 4 caracteres).
   const novoToken = formData.get("focusNfeToken");
-  if (typeof novoToken === "string" && novoToken.trim()) {
+  const tokenAlterado = typeof novoToken === "string" && novoToken.trim().length > 0;
+  if (tokenAlterado) {
     dados.focusNfeToken = novoToken.trim();
   }
+
+  const dadosAntes = await prisma.dadosFiscaisFilial.findUnique({ where: { filialId } });
 
   await prisma.dadosFiscaisFilial.upsert({
     where: { filialId },
     update: { ...dados, regimeTributario, icmsAliquotaPadrao },
     create: { filialId, ...dados, regimeTributario, icmsAliquotaPadrao },
   });
+
+  // Mesmo cuidado de src/app/configuracoes/fiscal/actions.ts: dados fiscais
+  // alimentam a emissão de NF-e de verdade, e o token NUNCA entra no diff
+  // pelo valor — só "alterado".
+  const diff = criarDiffCampos();
+  diff.campo(
+    "Ambiente",
+    ROTULO_AMBIENTE_FILIAL[dadosAntes?.ambiente ?? "homologacao"],
+    ROTULO_AMBIENTE_FILIAL[ambiente]
+  );
+  diff.campo(
+    "Regime tributário",
+    ROTULO_REGIME_TRIBUTARIO_FILIAL[dadosAntes?.regimeTributario ?? "SIMPLES_NACIONAL"],
+    ROTULO_REGIME_TRIBUTARIO_FILIAL[regimeTributario]
+  );
+  const icmsAliquotaAntes = dadosAntes?.icmsAliquotaPadrao != null ? Number(dadosAntes.icmsAliquotaPadrao) : null;
+  diff.campo("Alíquota de ICMS padrão (%)", icmsAliquotaAntes, icmsAliquotaPadrao);
+  for (const campo of CAMPOS_TEXTO_FISCAL) {
+    const antesCampo = dadosAntes?.[campo] ?? DEFAULT_CAMPO_TEXTO_FISCAL_FILIAL[campo] ?? null;
+    diff.campo(ROTULO_CAMPO_FISCAL_FILIAL[campo], antesCampo, dados[campo]);
+  }
+  if (tokenAlterado) {
+    diff.antesTextos.push("Token Focus NFe: (existente)");
+    diff.depoisTextos.push("Token Focus NFe: alterado");
+  }
+  if (diff.temMudanca) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "configuracoes.salvar_dados_fiscais_filial",
+      entidade: "DadosFiscaisFilial",
+      entidadeId: filialId,
+      descricao: `Dados fiscais da filial "${filial.nome}" atualizados`,
+      valorAnterior: diff.antesTextos.join("; "),
+      valorNovo: diff.depoisTextos.join("; "),
+    });
+  }
 
   revalidatePath(`/configuracoes/filiais/${filialId}`);
   return { ok: true, mensagem: "Dados fiscais da filial salvos com sucesso!" };
@@ -235,6 +347,16 @@ export async function excluirFilial(
   }
 
   await prisma.filial.delete({ where: { id: filialId } });
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "configuracoes.excluir_filial",
+    entidade: "Filial",
+    entidadeId: filialId,
+    descricao: `Filial "${filial.nome}" excluída`,
+  });
 
   revalidatePath("/configuracoes/filiais");
   redirect("/configuracoes/filiais");

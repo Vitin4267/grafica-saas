@@ -28,7 +28,14 @@ const tipoPedidoSchema = z.enum([
   "REPETICAO_SEM_ALTERACAO",
   "REPETICAO_COM_ALTERACAO",
 ]);
-const freteSchema = z.enum(["EMITENTE", "DESTINATARIO"]);
+const freteSchema = z.enum([
+  "CIF_REMETENTE",
+  "FOB_DESTINATARIO",
+  "TERCEIROS",
+  "PROPRIO_REMETENTE",
+  "PROPRIO_DESTINATARIO",
+  "SEM_FRETE",
+]);
 
 // itemEntradaSchema/etiquetaEntradaSchema (carrinho de itens) vivem em
 // src/lib/orcamento-item-entrada.ts — reaproveitado por
@@ -51,7 +58,9 @@ export type PrecificarItemResult =
         | "DIGITAL"
         | "SERIGRAFIA"
         | "SUBLIMACAO"
-        | "ESTAMPAGEM_QUENTE";
+        | "ESTAMPAGEM_QUENTE"
+        | "PERSONALIZACAO"
+        | "REVENDA";
     }
   | { ok: false; mensagem: string };
 
@@ -74,11 +83,14 @@ export async function precificarItem(input: {
   numeroCoresFlexo: number | null;
   numeroCliques: number | null;
   numeroSetups: number | null;
+  horasEstimadas: number | null;
   acabamentoIds: string[];
   papelId: string | null;
   quantidadeCores: number | null;
   custoFaca: number | null;
   custoFrete: number | null;
+  custoAquisicaoUnitario: number | null;
+  materialFornecidoPeloCliente: boolean;
 }): Promise<PrecificarItemResult> {
   const usuario = await exigirUsuarioAutenticado();
   await exigirEmailVerificado(usuario);
@@ -133,11 +145,22 @@ export async function precificarItem(input: {
     numeroCoresFlexo: input.numeroCoresFlexo,
     numeroCliques: input.numeroCliques,
     numeroSetups: input.numeroSetups,
+    horasEstimadas: input.horasEstimadas,
     acabamentoIds: input.acabamentoIds,
     papelId: input.papelId,
     quantidadeCores: input.quantidadeCores,
     custoFaca: input.custoFaca,
     custoFrete: input.custoFrete,
+    custoAquisicaoUnitario: input.custoAquisicaoUnitario,
+    materialFornecidoPeloCliente: input.materialFornecidoPeloCliente,
+    // Achado A7 — esta é uma PRÉVIA sem cliente definido (carrinho da
+    // Calculadora, antes do orçamento existir) ou sem acesso barato ao
+    // cliente já escolhido — sempre usa a margem padrão da gráfica. O
+    // cálculo final e persistido (criarOrcamento/adicionarItemOrcamento)
+    // aplica o override do cliente corretamente; só a prévia pode
+    // subestimar/superestimar o preço em poucos% pra cliente com margem
+    // diferenciada, corrigido assim que o item entra de fato no orçamento.
+    margemLucroOverride: null,
   });
   if (!resultado.ok) {
     return { ok: false, mensagem: resultado.mensagem };
@@ -209,6 +232,10 @@ export async function criarOrcamento(
   if (!cliente) {
     return { ok: false, mensagem: "Cliente não encontrado." };
   }
+  // Achado A7 — margemPadraoOverride é propriedade do CLIENTE, constante em
+  // todo item deste orçamento (ver DadosItemOrcamento.margemLucroOverride).
+  const margemLucroOverride =
+    cliente.margemPadraoOverride !== null ? Number(cliente.margemPadraoOverride) : null;
 
   // Opcional — string vazia (gráfica sem filial cadastrada, campo nem
   // aparece no form) vira undefined. Sempre revalidado contra graficaId,
@@ -237,6 +264,7 @@ export async function criarOrcamento(
     unidadeDimensao: (typeof UNIDADES_DIMENSAO)[number];
     cores: string | null;
     acabamento: string | null;
+    descricaoLivre: string | null;
     precoUnitario: string;
     precoTotal: string;
     modeloCalculo:
@@ -247,12 +275,17 @@ export async function criarOrcamento(
       | "DIGITAL"
       | "SERIGRAFIA"
       | "SUBLIMACAO"
-      | "ESTAMPAGEM_QUENTE";
+      | "ESTAMPAGEM_QUENTE"
+      | "PERSONALIZACAO"
+      | "REVENDA";
     corFrente: number | null;
     corVerso: number | null;
     numeroCoresFlexo: number | null;
     numeroCliques: number | null;
     numeroSetups: number | null;
+    horasEstimadas: number | null;
+    custoAquisicaoUnitario: number | null;
+    materialFornecidoPeloCliente: boolean;
     breakdown: Prisma.InputJsonValue | null;
     etiqueta: z.infer<typeof etiquetaEntradaSchema> | null;
     acabamentos: { itemGraficaId: string; qtdBase: string; custoCalculado: string }[];
@@ -308,11 +341,15 @@ export async function criarOrcamento(
       numeroCoresFlexo: entrada.numeroCoresFlexo,
       numeroCliques: entrada.numeroCliques,
       numeroSetups: entrada.numeroSetups,
+      horasEstimadas: entrada.horasEstimadas,
       acabamentoIds: entrada.acabamentoIds,
       papelId: entrada.papelId,
       quantidadeCores: entrada.quantidadeCores,
       custoFaca: entrada.custoFaca,
       custoFrete: entrada.custoFrete,
+      custoAquisicaoUnitario: entrada.custoAquisicaoUnitario,
+      materialFornecidoPeloCliente: entrada.materialFornecidoPeloCliente,
+      margemLucroOverride,
     });
     if (!resultado.ok) {
       return { ok: false, mensagem: `Item ${indice + 1}: ${resultado.mensagem}` };
@@ -327,6 +364,7 @@ export async function criarOrcamento(
       unidadeDimensao: entrada.unidadeDimensao,
       cores: entrada.cores,
       acabamento: entrada.acabamento,
+      descricaoLivre: entrada.descricaoLivre,
       precoUnitario: resultado.precoUnitario,
       precoTotal: resultado.precoTotal,
       modeloCalculo: resultado.modeloCalculo,
@@ -335,6 +373,9 @@ export async function criarOrcamento(
       numeroCoresFlexo: resultado.numeroCoresFlexo,
       numeroCliques: resultado.numeroCliques,
       numeroSetups: resultado.numeroSetups,
+      horasEstimadas: resultado.horasEstimadas,
+      custoAquisicaoUnitario: resultado.custoAquisicaoUnitario,
+      materialFornecidoPeloCliente: resultado.materialFornecidoPeloCliente,
       breakdown: resultado.breakdown,
       etiqueta: entrada.etiqueta,
       acabamentos: resultado.acabamentos,
@@ -359,6 +400,7 @@ export async function criarOrcamento(
           unidadeDimensao: item.unidadeDimensao,
           cores: item.cores,
           acabamento: item.acabamento,
+          descricaoLivre: item.descricaoLivre,
           precoUnitario: item.precoUnitario,
           precoTotal: item.precoTotal,
           modeloCalculo: item.modeloCalculo,
@@ -367,6 +409,9 @@ export async function criarOrcamento(
           numeroCoresFlexo: item.numeroCoresFlexo,
           numeroCliques: item.numeroCliques,
           numeroSetups: item.numeroSetups,
+          horasEstimadas: item.horasEstimadas,
+          custoAquisicaoUnitario: item.custoAquisicaoUnitario,
+          materialFornecidoPeloCliente: item.materialFornecidoPeloCliente,
           breakdown: item.breakdown ?? undefined,
           // Sempre cria a linha de etiqueta pra item M2 (mesmo com tudo
           // nulo, se o usuário não preencheu nada) — evita "M2 sem

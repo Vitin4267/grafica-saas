@@ -21,7 +21,9 @@ export type JobParaAnaliseTinta = {
     | "DIGITAL"
     | "SERIGRAFIA"
     | "SUBLIMACAO"
-    | "ESTAMPAGEM_QUENTE";
+    | "ESTAMPAGEM_QUENTE"
+    | "PERSONALIZACAO"
+    | "REVENDA";
   quantidade: number;
   larguraCm: number | null;
   alturaCm: number | null;

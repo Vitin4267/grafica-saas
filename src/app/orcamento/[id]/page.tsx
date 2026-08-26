@@ -114,7 +114,12 @@ export default async function OrcamentoDetalhePage({
       },
     }),
     prisma.cliente.findMany({
-      where: { graficaId: usuario.graficaId },
+      // desativadoEm: null — mesmo filtro do dropdown de novo orçamento (ver
+      // achado A9/A13). Edge case aceito: se o cliente já vinculado a este
+      // orçamento for desativado depois, ele deixa de aparecer nesta lista
+      // de troca — mas orcamento.cliente (include acima) continua mostrando
+      // o cliente certo, e trocarClienteOrcamento só é permitido em RASCUNHO.
+      where: { graficaId: usuario.graficaId, desativadoEm: null },
       orderBy: { nome: "asc" },
     }),
     prisma.itemGrafica.findMany({
@@ -133,7 +138,7 @@ export default async function OrcamentoDetalhePage({
         itemCatalogo: { tipo: "SERVICO" },
         configuracaoAcabamento: { isNot: null },
       },
-      include: { itemCatalogo: true },
+      include: { itemCatalogo: true, configuracaoAcabamento: { select: { baseCobranca: true } } },
       orderBy: { itemCatalogo: { nome: "asc" } },
     }),
     // Matéria-prima candidata a "papel" no motor de clichê de etiqueta —
@@ -152,6 +157,7 @@ export default async function OrcamentoDetalhePage({
   const acabamentosDisponiveis = acabamentosDisponiveisRaw.map((ig) => ({
     id: ig.id,
     nome: ig.itemCatalogo.nome,
+    baseCobranca: ig.configuracaoAcabamento!.baseCobranca,
   }));
   const papeisDisponiveis = papeisDisponiveisRaw.map((ig) => ({
     id: ig.id,
@@ -400,12 +406,16 @@ export default async function OrcamentoDetalhePage({
                     alturaCm: item.alturaCm?.toString() ?? "",
                     cores: item.cores ?? "",
                     acabamento: item.acabamento ?? "",
+                    descricaoLivre: item.descricaoLivre ?? "",
                     acabamentoIds: item.acabamentos.map((a) => a.itemGraficaId),
                     corFrente: item.corFrente?.toString() ?? "",
                     corVerso: item.corVerso?.toString() ?? "",
                     numeroCoresFlexo: item.numeroCoresFlexo?.toString() ?? "",
                     numeroCliques: item.numeroCliques?.toString() ?? "",
                     numeroSetups: item.numeroSetups?.toString() ?? "",
+                    horasEstimadas: item.horasEstimadas?.toString() ?? "",
+                    custoAquisicaoUnitario: item.custoAquisicaoUnitario?.toString() ?? "",
+                    materialFornecidoPeloCliente: item.materialFornecidoPeloCliente,
                     etiqueta: etiquetaParaCampos(item.etiqueta),
                     papelId: item.precificacaoEtiqueta?.papelId ?? "",
                     quantidadeCores: item.precificacaoEtiqueta?.quantidadeCores.toString() ?? "",
@@ -469,7 +479,7 @@ export default async function OrcamentoDetalhePage({
               <div key={item.id} className="flex flex-col gap-2 p-5">
                 <div className="flex items-center justify-between gap-4">
                   <p className="font-medium text-slate-900 dark:text-white">
-                    {item.itemGrafica.itemCatalogo.nome}
+                    {item.descricaoLivre?.trim() || item.itemGrafica.itemCatalogo.nome}
                   </p>
                   <p className="font-semibold text-slate-900 dark:text-white">
                     {formatoMoeda.format(Number(item.precoTotal))}

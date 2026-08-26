@@ -2,7 +2,7 @@ import "server-only";
 
 import { prisma } from "@/lib/prisma";
 import type { DadosFiscaisGrafica, Prisma } from "@/generated/prisma/client";
-import type { RegimeTributario } from "@/generated/prisma/enums";
+import type { RegimeTributario, TipoFrete } from "@/generated/prisma/enums";
 
 // Dados fiscais "resolvidos" pra um orçamento/filial — DadosFiscaisFilial
 // espelha DadosFiscaisGrafica campo a campo (só troca graficaId por
@@ -129,6 +129,44 @@ export function verificarProntidaoFiscal(input: {
   }
 
   return { pronto: pendencias.length === 0, pendencias };
+}
+
+// Decide entre o CFOP interno (mesma UF) e o interestadual (UF diferente)
+// pra um item de NF-e — achado A3 da auditoria de abrangência: antes disso
+// TODA emissão usava cfopPadrao (5xxx) mesmo pra clientes de outro estado,
+// silenciosamente. Escopo deliberadamente contido: não distingue cliente
+// contribuinte vs não-contribuinte de ICMS (6102 vs 6108, com implicação de
+// DIFAL) — isso depende do indicador de contribuinte do cliente, campo que
+// ainda não existe no schema (achado A1, não construído). UF ausente de
+// qualquer lado cai no cfopPadrao — mesmo comportamento de sempre, sem
+// regressão pra dado incompleto.
+export function resolverCfop(input: {
+  ufEmitente: string | null;
+  ufDestinatario: string | null;
+  cfopPadrao: string;
+  cfopPadraoInterestadual: string;
+}): string {
+  if (!input.ufEmitente || !input.ufDestinatario) return input.cfopPadrao;
+  return input.ufEmitente === input.ufDestinatario ? input.cfopPadrao : input.cfopPadraoInterestadual;
+}
+
+// Mapeia TipoFrete (enum interno, ver schema.prisma) pro código modFrete
+// que a Focus NFe/SEFAZ espera no campo modalidade_frete — achado B1 da
+// auditoria de abrangência: o payload builder em focus-nfe.ts mandava "9"
+// fixo, ignorando completamente Orcamento.frete. null (frete não informado
+// no orçamento) cai em "9" (sem ocorrência de transporte) — mesmo
+// comportamento de sempre pra orçamento sem esse campo preenchido, ex.:
+// retirada no balcão, o caso mais comum de gráfica rápida.
+export function resolverModalidadeFrete(frete: TipoFrete | null): string {
+  const mapa: Record<TipoFrete, string> = {
+    CIF_REMETENTE: "0",
+    FOB_DESTINATARIO: "1",
+    TERCEIROS: "2",
+    PROPRIO_REMETENTE: "3",
+    PROPRIO_DESTINATARIO: "4",
+    SEM_FRETE: "9",
+  };
+  return frete ? mapa[frete] : "9";
 }
 
 export type DestinatarioNotaFiscal = { email: string; nome: string };

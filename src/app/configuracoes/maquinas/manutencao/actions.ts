@@ -8,10 +8,15 @@ import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { validarSelecaoMaquina } from "@/lib/manutencao-maquina";
 import type { TipoRegistroManutencao } from "@/generated/prisma/enums";
+import { registrarAuditoria } from "@/lib/auditoria";
 
 export type SalvarManutencaoResult = { ok: boolean; mensagem: string };
 
 const TIPOS_VALIDOS: TipoRegistroManutencao[] = ["PREVENTIVA", "QUEBRA"];
+const ROTULO_TIPO_MANUTENCAO: Record<TipoRegistroManutencao, string> = {
+  PREVENTIVA: "Preventiva",
+  QUEBRA: "Quebra",
+};
 
 function revalidarTelas() {
   revalidatePath("/configuracoes/maquinas");
@@ -111,7 +116,7 @@ export async function iniciarManutencao(
     };
   }
 
-  await prisma.registroManutencao.create({
+  const registro = await prisma.registroManutencao.create({
     data: {
       graficaId: usuario.graficaId,
       [campo]: idEscolhido,
@@ -119,6 +124,18 @@ export async function iniciarManutencao(
       motivo,
       registradoPorId: usuario.id,
     },
+  });
+
+  // Parada de máquina afeta disponibilidade pro motor de precificação (ver
+  // aviso "máquina parada" no catálogo) — vale rastro de quem registrou.
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "configuracoes.iniciar_manutencao",
+    entidade: "RegistroManutencao",
+    entidadeId: registro.id,
+    descricao: `Parada (${ROTULO_TIPO_MANUTENCAO[tipo as TipoRegistroManutencao]}) iniciada em "${maquina.nome}" — ${rotulo}: ${motivo}`,
   });
 
   revalidarTelas();
@@ -146,6 +163,14 @@ export async function encerrarManutencao(
     return { ok: false, mensagem: "Registro não encontrado." };
   }
 
+  // Busca ANTES do updateMany só pra saber qual máquina/motivo citar no log
+  // — a mutação em si continua sendo o updateMany filtrado abaixo
+  // (TOCTOU-safe: se a parada já tiver sido encerrada por outra requisição
+  // entre as duas chamadas, count fica 0 e nenhum log é gravado).
+  const registroParaLog = await prisma.registroManutencao.findFirst({
+    where: { id: registroId, graficaId: usuario.graficaId, dataFim: null },
+  });
+
   const resultado = await prisma.registroManutencao.updateMany({
     where: { id: registroId, graficaId: usuario.graficaId, dataFim: null },
     data: { dataFim: new Date() },
@@ -153,6 +178,19 @@ export async function encerrarManutencao(
 
   if (resultado.count === 0) {
     return { ok: false, mensagem: "Essa parada já foi encerrada ou não existe mais." };
+  }
+
+  if (registroParaLog) {
+    const campoMaquina = CAMPOS_MAQUINA.find(({ campo }) => registroParaLog[campo] != null);
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "configuracoes.encerrar_manutencao",
+      entidade: "RegistroManutencao",
+      entidadeId: registroId,
+      descricao: `Parada (${ROTULO_TIPO_MANUTENCAO[registroParaLog.tipo]}) encerrada${campoMaquina ? ` — ${campoMaquina.rotulo}` : ""}`,
+    });
   }
 
   revalidarTelas();
@@ -174,11 +212,28 @@ export async function excluirRegistroManutencao(
   }
 
   const registroId = String(formData.get("registroId") ?? "");
+
+  const registroParaLog = await prisma.registroManutencao.findFirst({
+    where: { id: registroId, graficaId: usuario.graficaId },
+  });
+
   const resultado = await prisma.registroManutencao.deleteMany({
     where: { id: registroId, graficaId: usuario.graficaId },
   });
   if (resultado.count === 0) {
     return { ok: false, mensagem: "Registro não encontrado." };
+  }
+
+  if (registroParaLog) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "configuracoes.excluir_registro_manutencao",
+      entidade: "RegistroManutencao",
+      entidadeId: registroId,
+      descricao: `Registro de manutenção (${ROTULO_TIPO_MANUTENCAO[registroParaLog.tipo]}, motivo: ${registroParaLog.motivo}) excluído`,
+    });
   }
 
   revalidarTelas();

@@ -78,7 +78,11 @@ export default async function RelatoriosNegocioPage({
     buscarReceitaCustoLucroMensal(usuario.graficaId),
     buscarReceitaPorClienteEMes(usuario.graficaId),
     prisma.cliente.findMany({
-      where: { graficaId: usuario.graficaId },
+      // desativadoEm: null — mesmo filtro dos outros dropdowns de cliente
+      // (ver achado A9/A13). Relatório histórico (receita por cliente/mês)
+      // continua enxergando clientes desativados via clienteId gravado no
+      // Orcamento — só o filtro deste <select> muda.
+      where: { graficaId: usuario.graficaId, desativadoEm: null },
       select: { id: true, nome: true },
       orderBy: { nome: "asc" },
     }),

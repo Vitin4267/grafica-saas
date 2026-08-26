@@ -42,9 +42,21 @@ export function calcularLimiarAplicavel(diasParaPrazo: number, limiares: number[
 // dispara UMA vez, depois do prazo já vencido). Este aqui é o cron diário
 // (src/app/api/cron/lifecycle/route.ts) e manda E-MAIL de sistema (via
 // EMAIL_WEBHOOK_URL, mesmo padrão de enviarAvisosTrialExpirando em
-// src/lib/lifecycle-cron.ts) pro vendedor do orçamento + DONO(s) da gráfica,
-// em 3 momentos: 5 dias antes do prazo, 3 dias antes, e no dia em que o
-// prazo vence/já venceu.
+// src/lib/lifecycle-cron.ts) pro vendedor do orçamento + os destinatários
+// administrativos, em 3 momentos: 5 dias antes do prazo, 3 dias antes, e no
+// dia em que o prazo vence/já venceu.
+//
+// DESTINATÁRIOS (achado A9 da auditoria de abrangência, 2026-08-24): antes
+// disto, o alerta ia sempre pro vendedor + TODOS os DONOs da gráfica,
+// hardcoded — sem jeito de rotear pra um PCP dedicado sem promovê-lo a DONO.
+// Agora usa o mesmo mecanismo de ResponsavelAdministrativo já usado por
+// prepararNotificacaoNotaFiscal (src/lib/nota-fiscal.ts), com a área
+// PRAZO_PRODUCAO: se a gráfica tem pelo menos 1 responsável configurado em
+// /usuarios pra essa área, os destinatários são vendedor + esses
+// responsáveis (SEM os DONOs, a menos que um DONO também esteja marcado como
+// responsável). Se a gráfica nunca configurou nenhum responsável de
+// PRAZO_PRODUCAO, cai no fallback de sempre (vendedor + todos os DONOs) —
+// zero regressão pra quem nunca mexeu em /usuarios.
 //
 // A CASCATA (Pedido.alertaPrazoUltimoLimiarDias, ver comentário no schema):
 // cada pedido guarda só o limiar MAIS URGENTE já avisado (5, 3 ou 0 — null
@@ -130,6 +142,13 @@ export async function enviarAlertasPrazoEmail(
   // Cache por gráfica dentro desta run — evita repetir a mesma query de
   // DONOs pra cada pedido atrasado da mesma gráfica.
   const donosPorGrafica = new Map<string, { email: string }[]>();
+  // Cache irmão de donosPorGrafica — responsáveis administrativos pela área
+  // PRAZO_PRODUCAO (ver comentário grande acima). Lista vazia (não ausência
+  // de entrada no Map) é o sinal de "gráfica sem responsável configurado,
+  // usa o fallback de DONOs" — igual a donosPorGrafica não precisar de
+  // distinção "ausente vs vazio" porque toda gráfica sempre tem ao menos 1
+  // DONO, mas aqui a lista pode legitimamente vir vazia.
+  const responsaveisPrazoPorGrafica = new Map<string, { email: string }[]>();
   // Cache dos parâmetros de alerta (ativo + os 3 limiares) por gráfica dentro
   // desta run — mesmo raciocínio de donosPorGrafica. Ausência de linha em
   // ParametrosGrafica (gráfica que nunca configurou nada em /configuracoes)
@@ -187,7 +206,23 @@ export async function enviarAlertasPrazoEmail(
     });
     processados += 1;
 
-    if (!donosPorGrafica.has(pedido.graficaId)) {
+    if (!responsaveisPrazoPorGrafica.has(pedido.graficaId)) {
+      const responsaveis = await prisma.responsavelAdministrativo.findMany({
+        where: { area: "PRAZO_PRODUCAO", usuario: { graficaId: pedido.graficaId, desativadoEm: null } },
+        select: { usuario: { select: { email: true } } },
+      });
+      responsaveisPrazoPorGrafica.set(
+        pedido.graficaId,
+        responsaveis.map((r) => ({ email: r.usuario.email }))
+      );
+    }
+    const responsaveisPrazo = responsaveisPrazoPorGrafica.get(pedido.graficaId)!;
+
+    // Fallback de zero regressão: só busca (e usa) os DONOs quando a gráfica
+    // não configurou nenhum responsável de PRAZO_PRODUCAO em /usuarios — pra
+    // não gastar a query de DONOs à toa numa gráfica que já migrou pro
+    // roteamento novo.
+    if (responsaveisPrazo.length === 0 && !donosPorGrafica.has(pedido.graficaId)) {
       const donos = await prisma.usuario.findMany({
         where: { graficaId: pedido.graficaId, papel: "DONO" },
         select: { email: true },
@@ -195,12 +230,18 @@ export async function enviarAlertasPrazoEmail(
       donosPorGrafica.set(pedido.graficaId, donos);
     }
 
-    // Vendedor (Orcamento.usuarioId → Usuario.email) + todo DONO da gráfica,
-    // deduplicados por e-mail — o vendedor pode ele mesmo ser o DONO. Mesmo
-    // padrão de notificarRespostaOrcamento (src/app/o/[token]/actions.ts).
+    // Vendedor (Orcamento.usuarioId → Usuario.email) + responsáveis de
+    // PRAZO_PRODUCAO (ou, na ausência deles, todo DONO da gráfica — ver
+    // comentário grande no topo do arquivo), deduplicados por e-mail — o
+    // vendedor pode ele mesmo ser um dos dois. Mesmo padrão de
+    // notificarRespostaOrcamento (src/app/o/[token]/actions.ts).
     const destinatarios = new Set<string>();
     if (pedido.orcamento.usuario?.email) destinatarios.add(pedido.orcamento.usuario.email);
-    for (const dono of donosPorGrafica.get(pedido.graficaId)!) destinatarios.add(dono.email);
+    if (responsaveisPrazo.length > 0) {
+      for (const responsavel of responsaveisPrazo) destinatarios.add(responsavel.email);
+    } else {
+      for (const dono of donosPorGrafica.get(pedido.graficaId)!) destinatarios.add(dono.email);
+    }
     if (destinatarios.size === 0) continue; // defensivo — não deveria acontecer (toda gráfica tem ao menos 1 DONO)
 
     const clienteNome = pedido.orcamento.cliente.nome;

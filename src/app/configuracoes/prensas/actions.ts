@@ -9,6 +9,7 @@ import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { ehViolacaoDeChaveEstrangeira } from "@/lib/prisma-conflito";
+import { registrarAuditoria, criarDiffCampos } from "@/lib/auditoria";
 
 export type SalvarPrensaResult = { ok: boolean; mensagem: string };
 
@@ -22,6 +23,19 @@ const CAMPOS_DECIMAL = [
 ] as const;
 
 const CAMPOS_INTEIRO = ["torres", "folhasAcerto"] as const;
+
+// Rótulo legível pro log de auditoria — chaves batem com CAMPOS_DECIMAL/
+// CAMPOS_INTEIRO acima, então um único loop cobre os dois grupos.
+const ROTULO_CAMPO_PRENSA: Record<(typeof CAMPOS_DECIMAL)[number] | (typeof CAMPOS_INTEIRO)[number], string> = {
+  custoHoraMaq: "Custo hora-máquina",
+  custoChapa: "Custo da chapa",
+  tempoAcertoH: "Tempo de acerto (h)",
+  custoMilheiroRod: "Custo do milheiro de rodagem",
+  rodagemMinima: "Rodagem mínima",
+  perdaPercentPadrao: "Perda padrão (%)",
+  torres: "Torres",
+  folhasAcerto: "Folhas de acerto",
+};
 
 export async function criarPrensa(
   _estadoAnterior: SalvarPrensaResult | null,
@@ -50,6 +64,16 @@ export async function criarPrensa(
     }
     throw erro;
   }
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "configuracoes.criar_prensa",
+    entidade: "Prensa",
+    entidadeId: novaPrensa.id,
+    descricao: `Prensa "${nome}" criada`,
+  });
 
   revalidatePath("/configuracoes/prensas");
   redirect(`/configuracoes/prensas/${novaPrensa.id}`);
@@ -108,6 +132,29 @@ export async function salvarPrensa(
     throw erro;
   }
 
+  // Diff campo-a-campo: custoHoraMaq/custoChapa/etc são entrada direta do
+  // motor de preço OFFSET — mudar um deles muda todo orçamento futuro (ver
+  // achado A3 da auditoria de abrangência, 2026-08-24).
+  const diff = criarDiffCampos();
+  diff.campo("Nome", prensa.nome, nome);
+  diff.campo("Ativa", prensa.ativa, ativa);
+  for (const campo of [...CAMPOS_DECIMAL, ...CAMPOS_INTEIRO] as const) {
+    diff.campo(ROTULO_CAMPO_PRENSA[campo], Number(prensa[campo]), dados[campo]);
+  }
+  if (diff.temMudanca) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "configuracoes.salvar_prensa",
+      entidade: "Prensa",
+      entidadeId: prensaId,
+      descricao: `Prensa "${prensa.nome}" atualizada`,
+      valorAnterior: diff.antesTextos.join("; "),
+      valorNovo: diff.depoisTextos.join("; "),
+    });
+  }
+
   revalidatePath(`/configuracoes/prensas/${prensaId}`);
   revalidatePath("/configuracoes/prensas");
   return { ok: true, mensagem: "Prensa salva com sucesso!" };
@@ -144,6 +191,16 @@ export async function excluirPrensa(
     }
     throw erro;
   }
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "configuracoes.excluir_prensa",
+    entidade: "Prensa",
+    entidadeId: prensaId,
+    descricao: `Prensa "${prensa.nome}" excluída`,
+  });
 
   revalidatePath("/configuracoes/prensas");
   redirect("/configuracoes/prensas");

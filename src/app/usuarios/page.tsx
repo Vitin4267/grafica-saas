@@ -149,7 +149,8 @@ export default async function UsuariosPage() {
           </h2>
           <p className="mb-4 text-sm text-slate-500">
             Marque quem recebe e-mail quando um orçamento aprovado está pronto
-            pra emitir Nota Fiscal.
+            pra emitir Nota Fiscal, ou quando um pedido se aproxima ou passa
+            do prazo de entrega.
           </p>
           <ResponsaveisAdministrativoForm
             funcionarios={usuarios.map((u) => ({

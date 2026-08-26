@@ -25,6 +25,7 @@ const CORES_ENTIDADE: Record<string, string> = {
   VarianteMateriaPrima: "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",
   ParametrosGrafica: "bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300",
   Orcamento: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  CustoPedido: "bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300",
 };
 
 function chipEntidade(entidade: string) {

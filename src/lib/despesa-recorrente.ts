@@ -56,6 +56,7 @@ export async function gerarDespesasRecorrentesPendentes(graficaId: string): Prom
             graficaId,
             descricao: ultima.descricao,
             categoria: ultima.categoria,
+            categoriaCustoId: ultima.categoriaCustoId,
             valor: ultima.valor,
             vencimento: proximoMes(ultima.vencimento),
             recorrente: true,

@@ -20,7 +20,8 @@ export type CodigoErroPrecificacao =
   | "IMPRESSORA_DIGITAL_NAO_CONFIGURADA"
   | "MAQUINA_SETUP_POR_PECA_NAO_CONFIGURADA"
   | "NUMERO_CLIQUES_INVALIDO"
-  | "NUMERO_SETUPS_INVALIDO";
+  | "NUMERO_SETUPS_INVALIDO"
+  | "CUSTO_AQUISICAO_NAO_CONFIGURADO";
 
 // Erro estruturado: o motor nunca retorna NaN ou um preço silenciosamente errado —
 // sempre um código + mensagem + detalhes que a UI pode mostrar de forma útil.

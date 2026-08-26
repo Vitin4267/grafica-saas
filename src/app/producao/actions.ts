@@ -13,7 +13,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { buscarAutomacaoGrafica, dispararEventoAutomacao } from "@/lib/webhook-automacao";
 import { normalizarTelefone } from "@/lib/telefone";
 import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
-import { registrarAuditoria } from "@/lib/auditoria";
+import { registrarAuditoria, criarDiffCampos } from "@/lib/auditoria";
 import { formatoMoeda } from "@/lib/moeda";
 import { D } from "@/lib/pricing/decimal";
 import { montarChavePerda } from "@/lib/perda-fixa-producao";
@@ -237,6 +237,11 @@ export async function cancelarPedido(
   const statusAnterior = pedido.status;
   const automacao = await buscarAutomacaoGrafica(usuario.graficaId);
   let itensEstornados = 0;
+  // Preenchido dentro da transação com os CustoPedido automáticos que
+  // acabaram de ser marcados estornadoEm — logado DEPOIS que a transação
+  // commitar (mesmo motivo do comentário em registrarAuditoria: nunca
+  // auditoria dentro da própria transação de negócio).
+  let custosEstornados: { id: string; valor: Prisma.Decimal; categoriaNome: string }[] = [];
 
   try {
     await prisma.$transaction(
@@ -309,10 +314,21 @@ export async function cancelarPedido(
         // estornadoEm: null). Custos MANUAIS não são tocados aqui de
         // propósito — frete pago é frete pago, ver comentário no schema.
         if (saidas.length > 0) {
-          await tx.custoPedido.updateMany({
+          const custosParaEstornar = await tx.custoPedido.findMany({
             where: { movimentacaoEstoqueId: { in: saidas.map((s) => s.id) }, estornadoEm: null },
-            data: { estornadoEm: new Date() },
+            include: { categoriaCusto: true },
           });
+          if (custosParaEstornar.length > 0) {
+            await tx.custoPedido.updateMany({
+              where: { id: { in: custosParaEstornar.map((c) => c.id) } },
+              data: { estornadoEm: new Date() },
+            });
+            custosEstornados = custosParaEstornar.map((c) => ({
+              id: c.id,
+              valor: c.valor,
+              categoriaNome: c.categoriaCusto.nome,
+            }));
+          }
         }
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
@@ -325,6 +341,26 @@ export async function cancelarPedido(
       return { ok: false, mensagem: MENSAGEM_CONFLITO_CANCELAMENTO };
     }
     throw erro;
+  }
+
+  // Um log por CustoPedido estornado (mesma granularidade de
+  // lancarCustoPedido/excluirCustoPedido acima). O cancelamento do pedido em
+  // si não tem log de auditoria próprio hoje — isto aqui cobre especificamente
+  // o custo saindo do cálculo de lucro, que é o que o achado A17 pede.
+  for (const custo of custosEstornados) {
+    const diff = criarDiffCampos();
+    diff.campo("Conta no lucro do pedido", "sim", "não (estornado)");
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "custo_pedido.estornar",
+      entidade: "CustoPedido",
+      entidadeId: custo.id,
+      descricao: `Estornou custo de ${formatoMoeda.format(Number(custo.valor))} em ${custo.categoriaNome} do pedido ${pedidoId} (cancelamento do pedido)`,
+      valorAnterior: diff.antesTextos.join(", "),
+      valorNovo: diff.depoisTextos.join(", "),
+    });
   }
 
   if (automacao.webhookUrl && automacao.notificarStatusMudou) {

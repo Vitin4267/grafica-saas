@@ -5,6 +5,7 @@ import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
@@ -65,7 +66,9 @@ export function EditarOrcamentoForm({
     | "DIGITAL"
     | "SERIGRAFIA"
     | "SUBLIMACAO"
-    | "ESTAMPAGEM_QUENTE";
+    | "ESTAMPAGEM_QUENTE"
+    | "PERSONALIZACAO"
+    | "REVENDA";
   // ConfiguracaoClicheEtiqueta presente pro produto deste item — só então
   // mostra o seletor de papel/cores/faca/frete.
   usaClicheEtiqueta: boolean;
@@ -78,12 +81,19 @@ export function EditarOrcamentoForm({
     alturaCm: string;
     cores: string;
     acabamento: string;
+    // Achado B6 — sobrepõe o nome do catálogo no PDF/link público quando
+    // preenchido (ver src/lib/pdf/mapear-dados.ts). Disponível pra QUALQUER
+    // modeloCalculo, ao contrário de `acabamento` acima.
+    descricaoLivre: string;
     acabamentoIds: string[];
     corFrente: string;
     corVerso: string;
     numeroCoresFlexo: string;
     numeroCliques: string;
     numeroSetups: string;
+    horasEstimadas: string;
+    custoAquisicaoUnitario: string;
+    materialFornecidoPeloCliente: boolean;
     etiqueta: CamposEtiqueta;
     papelId: string;
     quantidadeCores: string;
@@ -105,6 +115,9 @@ export function EditarOrcamentoForm({
   // devia se comportar igual à criação) + os 4 modelos novos da Feature A
   // (Digital e os 3 de setup-por-peça também usam acabamentoIds via checkbox,
   // não o campo de texto livre).
+  // Revenda/terceirização (achado A12) — sem nesting como Digital/setup-por-
+  // peça, mas SEMPRE motor avançado: custoBase precisa passar por
+  // comporPreco (overhead/margem/piso), nunca o campo de texto livre.
   const usaMotorAvancado =
     modeloCalculo === "M2" ||
     modeloCalculo === "OFFSET" ||
@@ -112,17 +125,30 @@ export function EditarOrcamentoForm({
     modeloCalculo === "DIGITAL" ||
     modeloCalculo === "SERIGRAFIA" ||
     modeloCalculo === "SUBLIMACAO" ||
-    modeloCalculo === "ESTAMPAGEM_QUENTE";
+    modeloCalculo === "ESTAMPAGEM_QUENTE" ||
+    modeloCalculo === "PERSONALIZACAO" ||
+    modeloCalculo === "REVENDA";
   // Diferente de usaMotorAvancado: só M2/OFFSET/FLEXOGRAFIA EXIGEM largura/
-  // altura pro cálculo em si (nesting) — Digital e os 3 de setup-por-peça têm
-  // a dimensão opcional (ver design "dimensões opcionais" do plano).
+  // altura pro cálculo em si (nesting) — Digital, os 3 de setup-por-peça e
+  // Revenda têm a dimensão opcional (ver design "dimensões opcionais" do
+  // plano).
   const exigeDimensao = modeloCalculo === "M2" || modeloCalculo === "OFFSET" || modeloCalculo === "FLEXOGRAFIA";
+  const usaModeloDigital = modeloCalculo === "DIGITAL";
+  // Achado B7 — mesmo agrupamento de SeletorItemOrcamento.tsx (os 4
+  // compartilham a mesma checkbox "material fornecido pelo cliente").
+  const usaModeloSetupPorPeca =
+    modeloCalculo === "SERIGRAFIA" ||
+    modeloCalculo === "SUBLIMACAO" ||
+    modeloCalculo === "ESTAMPAGEM_QUENTE" ||
+    modeloCalculo === "PERSONALIZACAO";
   const mostraDimensao =
     exigeDimensao ||
     modeloCalculo === "DIGITAL" ||
     modeloCalculo === "SERIGRAFIA" ||
     modeloCalculo === "SUBLIMACAO" ||
-    modeloCalculo === "ESTAMPAGEM_QUENTE";
+    modeloCalculo === "ESTAMPAGEM_QUENTE" ||
+    modeloCalculo === "PERSONALIZACAO" ||
+    modeloCalculo === "REVENDA";
   const [largura, setLargura] = useState(() =>
     paraExibicao(valoresIniciais.larguraCm, unidadeDimensao)
   );
@@ -257,7 +283,8 @@ export function EditarOrcamentoForm({
 
         {(modeloCalculo === "SERIGRAFIA" ||
           modeloCalculo === "SUBLIMACAO" ||
-          modeloCalculo === "ESTAMPAGEM_QUENTE") && (
+          modeloCalculo === "ESTAMPAGEM_QUENTE" ||
+          modeloCalculo === "PERSONALIZACAO") && (
           <Input
             label="Número de setups"
             name="numeroSetups"
@@ -269,12 +296,53 @@ export function EditarOrcamentoForm({
           />
         )}
 
+        {(usaModeloDigital || usaModeloSetupPorPeca) && (
+          <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
+            <input
+              type="checkbox"
+              name="materialFornecidoPeloCliente"
+              defaultChecked={valoresIniciais.materialFornecidoPeloCliente}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span>
+              Material fornecido pelo cliente
+              <span className="block text-xs font-normal text-slate-500">
+                A gráfica não cobra o custo da peça em branco — só a aplicação.
+              </span>
+            </span>
+          </label>
+        )}
+
+        {modeloCalculo === "REVENDA" && (
+          <Input
+            label="Custo de aquisição (R$)"
+            name="custoAquisicaoUnitario"
+            type="number"
+            min={0}
+            step="0.01"
+            defaultValue={valoresIniciais.custoAquisicaoUnitario}
+            placeholder="opcional"
+            hint="Deixe em branco pra usar o custo de compra cadastrado no catálogo."
+          />
+        )}
+
         <Input
           label="Cores"
           name="cores"
           defaultValue={valoresIniciais.cores}
           placeholder="ex: 4x0, 4x4"
         />
+
+        <Textarea
+          label="Descrição específica (opcional)"
+          name="descricaoLivre"
+          defaultValue={valoresIniciais.descricaoLivre}
+          maxLength={500}
+          rows={2}
+          placeholder='ex: "Banner 3×1m lona 440g com bastão e corda"'
+          hint="Sobrepõe o nome do catálogo no PDF e no link público — deixe em branco pra mostrar o nome padrão."
+        />
+
         {usaMotorAvancado ? (
           <div className="flex flex-col gap-1.5">
             <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Acabamentos</span>
@@ -313,6 +381,19 @@ export function EditarOrcamentoForm({
             name="acabamento"
             defaultValue={valoresIniciais.acabamento}
             placeholder="ex: laminação fosca, corte reto"
+          />
+        )}
+
+        {usaMotorAvancado && (
+          <Input
+            label="Horas estimadas"
+            name="horasEstimadas"
+            type="number"
+            min={0.01}
+            step="0.25"
+            defaultValue={valoresIniciais.horasEstimadas}
+            placeholder="opcional"
+            hint="Só necessário se um dos acabamentos acima cobra por hora (ex: instalação, criação de arte)."
           />
         )}
 

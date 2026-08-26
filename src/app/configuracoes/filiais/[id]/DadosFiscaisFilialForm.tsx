@@ -32,6 +32,7 @@ type ValoresFiscaisFilial = {
   enderecoUf: string;
   naturezaOperacaoPadrao: string;
   cfopPadrao: string;
+  cfopPadraoInterestadual: string;
   csosnPadrao: string;
   cstIcmsPadrao: string;
   icmsAliquotaPadrao: string;
@@ -209,6 +210,13 @@ export function DadosFiscaisFilialForm({
             type="text"
             defaultValue={valoresIniciais.cfopPadrao}
             hint="5102 = venda dentro do estado (mais comum)."
+          />
+          <Input
+            label="CFOP padrão interestadual"
+            name="cfopPadraoInterestadual"
+            type="text"
+            defaultValue={valoresIniciais.cfopPadraoInterestadual}
+            hint="6102 = venda pra outro estado (usado automaticamente quando a UF do cliente é diferente da UF da filial)."
           />
           {regimeTributario === "SIMPLES_NACIONAL" ? (
             <SelectCodigoFiscal

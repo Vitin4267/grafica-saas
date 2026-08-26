@@ -285,6 +285,12 @@ export async function avancarStatusPedido(
       // "desligado por omissão".
       const custoAutomaticoConsumo = parametrosGrafica?.custoAutomaticoConsumo ?? true;
       const categoriaCustoConsumoPadraoId = parametrosGrafica?.categoriaCustoConsumoPadraoId ?? null;
+      // Independente de custoAutomaticoConsumo acima — esse decide se HÁ
+      // lançamento automático de custo; este decide se a PERDA especificamente
+      // entra nesse lançamento (a baixa de estoque da perda acontece sempre,
+      // de qualquer forma — ver os 2 usos abaixo, achado A1-Parte6 da
+      // auditoria de abrangência, 2026-08-24).
+      const perdaEhCustoDoPedido = parametrosGrafica?.perdaEhCustoDoPedido ?? true;
       // Cache do fallback "primeira categoria ativa da gráfica" — compartilhado
       // entre todas as chamadas de criarCustoAutomaticoConsumo desta transição,
       // pra não repetir a mesma query por material quando nem o material nem a
@@ -490,7 +496,7 @@ export async function avancarStatusPedido(
                     ...snapshotCustoFicha(ficha, perdaAplicada),
                   },
                 });
-                if (custoAutomaticoConsumo) {
+                if (custoAutomaticoConsumo && perdaEhCustoDoPedido) {
                   await criarCustoAutomaticoConsumo(tx, {
                     graficaId: pedido.graficaId,
                     pedidoId: pedido.id,
@@ -601,7 +607,7 @@ export async function avancarStatusPedido(
                       ...snapshotCustoFicha(ficha, perdaAplicada),
                     },
                   });
-                  if (custoAutomaticoConsumo) {
+                  if (custoAutomaticoConsumo && perdaEhCustoDoPedido) {
                     await criarCustoAutomaticoConsumo(tx, {
                       graficaId: pedido.graficaId,
                       pedidoId: pedido.id,

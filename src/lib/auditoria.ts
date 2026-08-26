@@ -20,6 +20,41 @@ type RegistrarAuditoriaInput = {
   valorNovo?: string;
 };
 
+// Helper genérico de diff campo-a-campo — extraído do padrão que
+// salvarParametros (src/app/configuracoes/actions.ts) já usava manualmente
+// (monta antesTextos/depoisTextos, só loga o que realmente mudou), pra não
+// reescrever o mesmo bloco em cada actions.ts novo de Configurações (achado
+// A3 da auditoria de abrangência, 2026-08-24: 12 das 14 telas do módulo não
+// deixavam rastro nenhum). Deliberadamente NÃO usado dentro de
+// salvarParametros em si — aquela action já está em produção e testada, e o
+// risco de um refactor ali não compensa o ganho de não duplicar ~15 linhas.
+// Comparação é sempre `!==` estrito: "" e null contam como valores
+// diferentes de propósito, então normalize antes de chamar `campo()` se o
+// seu campo deve tratar os dois como iguais.
+export function criarDiffCampos() {
+  const antesTextos: string[] = [];
+  const depoisTextos: string[] = [];
+  return {
+    campo(
+      rotulo: string,
+      antes: string | number | boolean | null,
+      depois: string | number | boolean | null,
+      formatar?: (valor: string | number | boolean) => string
+    ) {
+      if (antes === depois) return;
+      const exibir = (valor: string | number | boolean | null) =>
+        valor === null ? "—" : formatar ? formatar(valor) : String(valor);
+      antesTextos.push(`${rotulo}: ${exibir(antes)}`);
+      depoisTextos.push(`${rotulo}: ${exibir(depois)}`);
+    },
+    get temMudanca(): boolean {
+      return antesTextos.length > 0;
+    },
+    antesTextos,
+    depoisTextos,
+  };
+}
+
 // Log de auditoria é melhor-esforço, nunca crítico: sempre chamado DEPOIS que
 // a escrita principal da action já commitou (ver chamadores). Se o insert
 // falhar (cold start do Neon, pool cheio) e essa exceção subisse, ela

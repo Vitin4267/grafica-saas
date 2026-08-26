@@ -20,6 +20,7 @@ import {
   cancelarReserva,
   removerArquivo,
 } from "@/lib/billing/armazenamento";
+import { registrarAuditoria } from "@/lib/auditoria";
 
 export type SalvarLogoResult = { ok: boolean; mensagem: string };
 
@@ -101,6 +102,16 @@ export async function salvarLogo(
     await del(logoAnterior).catch(() => {});
   }
 
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "configuracoes.salvar_logo",
+    entidade: "Grafica",
+    entidadeId: usuario.graficaId,
+    descricao: logoAnterior ? "Logo da gráfica substituída" : "Logo da gráfica enviada",
+  });
+
   revalidatePath("/configuracoes/identidade");
   return { ok: true, mensagem: "Logo salva com sucesso!" };
 }
@@ -139,6 +150,18 @@ export async function removerLogo(
     await del(logoAnterior).catch(() => {});
   }
 
+  if (logoAnterior) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "configuracoes.remover_logo",
+      entidade: "Grafica",
+      entidadeId: usuario.graficaId,
+      descricao: "Logo da gráfica removida",
+    });
+  }
+
   revalidatePath("/configuracoes/identidade");
   return { ok: true, mensagem: "Logo removida." };
 }
@@ -171,10 +194,29 @@ export async function salvarCorPrimaria(
     };
   }
 
+  const { corPrimaria: corAnterior } = await prisma.grafica.findUniqueOrThrow({
+    where: { id: usuario.graficaId },
+    select: { corPrimaria: true },
+  });
+
   await prisma.grafica.update({
     where: { id: usuario.graficaId },
     data: { corPrimaria: cor },
   });
+
+  if (corAnterior !== cor) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "configuracoes.salvar_cor_primaria",
+      entidade: "Grafica",
+      entidadeId: usuario.graficaId,
+      descricao: "Cor primária da gráfica atualizada",
+      valorAnterior: `Cor primária: ${corAnterior ?? "padrão"}`,
+      valorNovo: `Cor primária: ${cor}`,
+    });
+  }
 
   revalidatePath("/configuracoes/identidade");
   return { ok: true, mensagem: "Cor salva com sucesso!" };
@@ -191,11 +233,89 @@ export async function restaurarCorPadrao(
     return { ok: false, mensagem: "Você não tem permissão pra editar configurações." };
   }
 
+  const { corPrimaria: corAnterior } = await prisma.grafica.findUniqueOrThrow({
+    where: { id: usuario.graficaId },
+    select: { corPrimaria: true },
+  });
+
   await prisma.grafica.update({
     where: { id: usuario.graficaId },
     data: { corPrimaria: null },
   });
 
+  if (corAnterior !== null) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "configuracoes.restaurar_cor_padrao",
+      entidade: "Grafica",
+      entidadeId: usuario.graficaId,
+      descricao: "Cor primária da gráfica restaurada pro padrão",
+      valorAnterior: `Cor primária: ${corAnterior}`,
+      valorNovo: "Cor primária: padrão",
+    });
+  }
+
   revalidatePath("/configuracoes/identidade");
   return { ok: true, mensagem: "Cor padrão restaurada." };
+}
+
+export type SalvarContatoResult = { ok: boolean; mensagem: string };
+
+export async function salvarContato(
+  _estadoAnterior: SalvarContatoResult | null,
+  formData: FormData
+): Promise<SalvarContatoResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CONFIGURACOES"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar configurações." };
+  }
+
+  const telefone = String(formData.get("telefone") ?? "").trim() || null;
+  const emailContato = String(formData.get("emailContato") ?? "").trim() || null;
+  const site = String(formData.get("site") ?? "").trim() || null;
+  const enderecoResumido = String(formData.get("enderecoResumido") ?? "").trim() || null;
+
+  // Validação leve de e-mail se fornecido
+  if (emailContato && !emailContato.includes("@")) {
+    return {
+      ok: false,
+      mensagem: "E-mail inválido.",
+    };
+  }
+
+  const contatoAnterior = await prisma.grafica.findUniqueOrThrow({
+    where: { id: usuario.graficaId },
+    select: { telefone: true, emailContato: true, site: true, enderecoResumido: true },
+  });
+
+  await prisma.grafica.update({
+    where: { id: usuario.graficaId },
+    data: { telefone, emailContato, site, enderecoResumido },
+  });
+
+  // Registra auditoria apenas se algo realmente mudou
+  const mudou =
+    contatoAnterior.telefone !== telefone ||
+    contatoAnterior.emailContato !== emailContato ||
+    contatoAnterior.site !== site ||
+    contatoAnterior.enderecoResumido !== enderecoResumido;
+
+  if (mudou) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "configuracoes.salvar_dados_contato",
+      entidade: "Grafica",
+      entidadeId: usuario.graficaId,
+      descricao: "Dados de contato da gráfica atualizados",
+    });
+  }
+
+  revalidatePath("/configuracoes/identidade");
+  return { ok: true, mensagem: "Dados de contato salvos com sucesso!" };
 }

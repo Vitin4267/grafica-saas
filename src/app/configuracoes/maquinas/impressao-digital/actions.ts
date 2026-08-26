@@ -9,6 +9,7 @@ import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { ehViolacaoDeChaveEstrangeira } from "@/lib/prisma-conflito";
+import { registrarAuditoria, criarDiffCampos } from "@/lib/auditoria";
 
 export type SalvarImpressoraDigitalResult = { ok: boolean; mensagem: string };
 
@@ -39,6 +40,16 @@ export async function criarImpressoraDigital(
     }
     throw erro;
   }
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "configuracoes.criar_impressora_digital",
+    entidade: "ImpressoraDigital",
+    entidadeId: novaImpressora.id,
+    descricao: `Impressora digital "${nome}" criada`,
+  });
 
   revalidatePath("/configuracoes/maquinas");
   redirect(`/configuracoes/maquinas/impressao-digital/${novaImpressora.id}`);
@@ -86,6 +97,24 @@ export async function salvarImpressoraDigital(
     throw erro;
   }
 
+  const diff = criarDiffCampos();
+  diff.campo("Nome", impressora.nome, nome);
+  diff.campo("Ativa", impressora.ativa, ativa);
+  diff.campo("Custo por clique", Number(impressora.custoPorClique), custoPorClique);
+  if (diff.temMudanca) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "configuracoes.salvar_impressora_digital",
+      entidade: "ImpressoraDigital",
+      entidadeId: impressoraId,
+      descricao: `Impressora digital "${impressora.nome}" atualizada`,
+      valorAnterior: diff.antesTextos.join("; "),
+      valorNovo: diff.depoisTextos.join("; "),
+    });
+  }
+
   revalidatePath(`/configuracoes/maquinas/impressao-digital/${impressoraId}`);
   revalidatePath("/configuracoes/maquinas");
   return { ok: true, mensagem: "Impressora salva com sucesso!" };
@@ -122,6 +151,16 @@ export async function excluirImpressoraDigital(
     }
     throw erro;
   }
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "configuracoes.excluir_impressora_digital",
+    entidade: "ImpressoraDigital",
+    entidadeId: impressoraId,
+    descricao: `Impressora digital "${impressora.nome}" excluída`,
+  });
 
   revalidatePath("/configuracoes/maquinas");
   redirect("/configuracoes/maquinas");

@@ -1,5 +1,8 @@
 import "server-only";
 
+import type { TipoFrete } from "@/generated/prisma/enums";
+import { resolverModalidadeFrete } from "@/lib/nota-fiscal";
+
 // Cliente fino da API da Focus NFe (https://doc.focusnfe.com.br) — sem SDK
 // externo. Payload confirmado contra o exemplo oficial da própria Focus NFe
 // (github.com/FocusNFe/javascript, NFe/v2/autorizar.js e consultar.js): os
@@ -65,11 +68,17 @@ export type EmitirNfeInput = {
     inscricaoEstadual: string;
   } & EnderecoFocusNfe;
   destinatario: {
-    documento: string; // CPF (11 dígitos) ou CNPJ (14 dígitos) — decidido pelo tamanho
+    documento: string; // CPF (11 dígitos) ou CNPJ (14 chars, alfanumérico desde 31/07/2026) — decidido pelo tamanho, ver normalizarDocumentoDestinatario
     nome: string;
   } & EnderecoFocusNfe;
   itens: ItemNfe[];
   valorTotal: number;
+  // Modalidade de frete do orçamento (Orcamento.frete) — achado B1 da
+  // auditoria de abrangência: até aqui o payload builder mandava "9" fixo
+  // pra TODO orçamento, ignorando esse campo. null (frete não preenchido no
+  // orçamento) cai em "9" via resolverModalidadeFrete, o mesmo
+  // comportamento de sempre.
+  frete?: TipoFrete | null;
 };
 
 export type RespostaFocusNfe = {
@@ -95,6 +104,35 @@ class ErroFocusNfe extends Error {
 
 function autorizacaoBasica(token: string): string {
   return "Basic " + Buffer.from(`${token}:`).toString("base64");
+}
+
+// Remove pontuação de um documento (CNPJ ou CPF) e normaliza pra maiúsculo.
+// Mantém letras de CNPJ alfanumérico (vigente desde 31/07/2026).
+function limparDocumento(documento: string): string {
+  return documento.replace(/[^0-9A-Za-z]/g, "").toUpperCase();
+}
+
+// Normaliza o documento do destinatário e decide CNPJ×CPF pelo COMPRIMENTO do
+// resultado, nunca por regex de dígito puro — achado A2 da auditoria de
+// abrangência (2026-08-24): `documento.replace(/\D/g, "")` apagava as letras
+// do CNPJ alfanumérico (12 posições alfanuméricas + 2 dígitos verificadores
+// numéricos, obrigatório desde 31/07/2026 — Serpro), e o número mutilado
+// (ex: "12ABC34501DE35" → "120134501035", 9 dígitos) caia no branch de CPF,
+// truncado, sem erro nenhum. CNPJ é sempre 14 caracteres (numérico ou
+// alfanumérico); CPF é sempre 11 dígitos — não há ambiguidade nenhuma
+// decidindo pelo comprimento depois de só remover pontuação (mantendo letras).
+export function normalizarDocumentoDestinatario(
+  documento: string
+): { cnpj_destinatario: string } | { cpf_destinatario: string } {
+  const limpo = limparDocumento(documento);
+  return limpo.length === 14 ? { cnpj_destinatario: limpo } : { cpf_destinatario: limpo };
+}
+
+// Normaliza o CNPJ do emitente (gráfica). CNPJ é sempre 14 caracteres
+// (numérico ou alfanumérico desde 31/07/2026). Remove pontuação e mantém
+// letras, normalizando pra maiúsculo.
+export function normalizarCnpjEmitente(cnpj: string): string {
+  return limparDocumento(cnpj);
 }
 
 function montarEnderecoPayload(prefixo: string, endereco: EnderecoFocusNfe) {
@@ -216,7 +254,7 @@ export async function emitirNfe(
   input: EmitirNfeInput
 ): Promise<RespostaFocusNfe> {
   const agora = agoraBrasilIso();
-  const documentoDestinatarioLimpo = input.destinatario.documento.replace(/\D/g, "");
+  const documentoDestinatario = normalizarDocumentoDestinatario(input.destinatario.documento);
   const ehHomologacao = config.ambiente === "homologacao";
 
   const payload = {
@@ -225,18 +263,16 @@ export async function emitirNfe(
     data_entrada_saida: agora,
     tipo_documento: "1", // saída
     finalidade_emissao: "1", // normal
-    modalidade_frete: "9", // sem frete destacado
+    modalidade_frete: resolverModalidadeFrete(input.frete ?? null),
 
-    cnpj_emitente: input.emitente.cnpj.replace(/\D/g, ""),
+    cnpj_emitente: normalizarCnpjEmitente(input.emitente.cnpj),
     nome_emitente: input.emitente.nome,
     nome_fantasia_emitente: input.emitente.nomeFantasia,
     inscricao_estadual_emitente: input.emitente.inscricaoEstadual,
     ...montarEnderecoPayload("emitente", input.emitente),
 
     nome_destinatario: ehHomologacao ? NOME_DESTINATARIO_HOMOLOGACAO : input.destinatario.nome,
-    ...(documentoDestinatarioLimpo.length === 14
-      ? { cnpj_destinatario: documentoDestinatarioLimpo }
-      : { cpf_destinatario: documentoDestinatarioLimpo }),
+    ...documentoDestinatario,
     ...montarEnderecoPayload("destinatario", input.destinatario),
     pais_destinatario: "Brasil",
 

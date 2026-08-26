@@ -2,6 +2,7 @@
 
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
 import { CamposEtiquetaOrcamento, etiquetaInicial, type CamposEtiqueta } from "./CamposEtiquetaOrcamento";
 import {
   CamposPrecificacaoEtiquetaOrcamento,
@@ -31,7 +32,9 @@ export type ItemVenda = {
     | "DIGITAL"
     | "SERIGRAFIA"
     | "SUBLIMACAO"
-    | "ESTAMPAGEM_QUENTE";
+    | "ESTAMPAGEM_QUENTE"
+    | "PERSONALIZACAO"
+    | "REVENDA";
   // ConfiguracaoClicheEtiqueta presente pra este produto — só produtos M2
   // marcados assim mostram o seletor de papel/cores/faca/frete abaixo.
   usaClicheEtiqueta: boolean;
@@ -43,6 +46,11 @@ export type ItemVenda = {
 export type ItemAcabamentoDisponivel = {
   id: string;
   nome: string;
+  // Decide se o acabamento cobra por hora (ver ConfiguracaoAcabamento.baseCobranca
+  // no schema) — só esse valor liga o campo "Horas estimadas" abaixo. Os
+  // outros valores possíveis não mudam nada nesta tela (o custo deles é
+  // derivado da geometria do item, sem input extra do vendedor).
+  baseCobranca: "UNIDADE" | "M2" | "FOLHA_IMPRESSA" | "METRO_LINEAR" | "FIXO" | "HORA" | "MILHEIRO" | "CENTO";
 };
 
 export type CamposItemOrcamento = {
@@ -61,10 +69,26 @@ export type CamposItemOrcamento = {
   numeroCliques: string;
   // Só SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE (compartilham este campo).
   numeroSetups: string;
+  // Só relevante quando algum dos acabamentoIds abaixo tem baseCobranca=HORA
+  // — independente do modeloCalculo do item, ao contrário de numeroSetups.
+  horasEstimadas: string;
+  // Só REVENDA (achado A12) — override opcional, POR ORÇAMENTO, do custo de
+  // aquisição; em branco = motor cai no preço de compra cadastrado no
+  // catálogo.
+  custoAquisicaoUnitario: string;
+  // Só DIGITAL/SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE/PERSONALIZACAO (achado
+  // B7) — quando true, o cliente já trouxe a peça em branco e a gráfica só
+  // aplica a estampa/gravação; zera o custo do substrato pra este item.
+  materialFornecidoPeloCliente: boolean;
   cores: string;
   // Texto livre — só usado quando o item é SIMPLES (ver comentário em
   // OrcamentoItem.acabamento no schema). M2/OFFSET usam acabamentoIds abaixo.
   acabamento: string;
+  // Achado B6 — sobrepõe o nome do catálogo no PDF/link público quando
+  // preenchido (ver src/lib/pdf/mapear-dados.ts). Disponível pra QUALQUER
+  // modeloCalculo, ao contrário de `acabamento` acima — nunca entra no
+  // motor de preço.
+  descricaoLivre: string;
   acabamentoIds: string[];
   etiqueta: CamposEtiqueta;
   precificacaoEtiqueta: CamposPrecificacaoEtiqueta;
@@ -100,8 +124,12 @@ export function camposIniciais(
     numeroCoresFlexo: "4",
     numeroCliques: "",
     numeroSetups: "1",
+    horasEstimadas: "",
+    custoAquisicaoUnitario: "",
+    materialFornecidoPeloCliente: false,
     cores: "",
     acabamento: "",
+    descricaoLivre: "",
     acabamentoIds: [],
     etiqueta: etiquetaInicial(),
     precificacaoEtiqueta: precificacaoEtiquetaInicial(),
@@ -134,17 +162,33 @@ export function SeletorItemOrcamento({
   const usaModeloSetupPorPeca =
     itemSelecionado?.modeloCalculo === "SERIGRAFIA" ||
     itemSelecionado?.modeloCalculo === "SUBLIMACAO" ||
-    itemSelecionado?.modeloCalculo === "ESTAMPAGEM_QUENTE";
+    itemSelecionado?.modeloCalculo === "ESTAMPAGEM_QUENTE" ||
+    itemSelecionado?.modeloCalculo === "PERSONALIZACAO";
+  // Revenda/terceirização (achado A12) — sem nesting, sem máquina, mesma
+  // ausência de dimensões do Digital acima, mas SEMPRE motor avançado (nunca
+  // o preview client-side simples): custoBase precisa passar por
+  // comporPreco pra ganhar overhead/margem/piso.
+  const usaModeloRevenda = itemSelecionado?.modeloCalculo === "REVENDA";
   const usaMotorAvancado =
-    usaModeloM2 || usaModeloOffset || usaModeloFlexografia || usaModeloDigital || usaModeloSetupPorPeca;
+    usaModeloM2 ||
+    usaModeloOffset ||
+    usaModeloFlexografia ||
+    usaModeloDigital ||
+    usaModeloSetupPorPeca ||
+    usaModeloRevenda;
   // DIGITAL e os 3 de setup-por-peça não precisam de largura/altura pro custo
   // em si (sem nesting) — só M2/OFFSET/FLEXOGRAFIA exigem dimensão aqui.
   const exigeDimensao = usaModeloM2 || usaModeloOffset || usaModeloFlexografia;
   const usaClicheEtiqueta = usaModeloM2 && itemSelecionado?.usaClicheEtiqueta === true;
+  // Só aparece quando um acabamento selecionado cobra por hora — o motor
+  // rejeita silenciosamente sem isso (ver guard em orcamento-precificacao.ts).
+  const temAcabamentoHora = valores.acabamentoIds.some(
+    (id) => acabamentosDisponiveis.find((a) => a.id === id)?.baseCobranca === "HORA"
+  );
 
   const set =
     (campo: keyof CamposItemOrcamento) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
       onChange({ ...valores, [campo]: e.target.value });
 
   // Trocar de produto reseta os campos que dependem do modeloCalculo dele
@@ -167,8 +211,12 @@ export function SeletorItemOrcamento({
       numeroCoresFlexo: "4",
       numeroCliques: "",
       numeroSetups: "1",
+      horasEstimadas: "",
+      custoAquisicaoUnitario: "",
+      materialFornecidoPeloCliente: false,
       cores: "",
       acabamento: "",
+      descricaoLivre: "",
       acabamentoIds: [],
       etiqueta: etiquetaInicial(),
       precificacaoEtiqueta: precificacaoEtiquetaInicial(),
@@ -307,12 +355,54 @@ export function SeletorItemOrcamento({
         />
       )}
 
+      {(usaModeloDigital || usaModeloSetupPorPeca) && (
+        <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
+          <input
+            type="checkbox"
+            checked={valores.materialFornecidoPeloCliente}
+            onChange={(e) =>
+              onChange({ ...valores, materialFornecidoPeloCliente: e.target.checked })
+            }
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+          />
+          <span>
+            Material fornecido pelo cliente
+            <span className="block text-xs font-normal text-slate-500">
+              A gráfica não cobra o custo da peça em branco — só a aplicação.
+            </span>
+          </span>
+        </label>
+      )}
+
+      {usaModeloRevenda && (
+        <Input
+          label="Custo de aquisição (R$)"
+          type="number"
+          min={0}
+          step="0.01"
+          value={valores.custoAquisicaoUnitario}
+          onChange={set("custoAquisicaoUnitario")}
+          placeholder="opcional"
+          hint="Deixe em branco pra usar o custo de compra cadastrado no catálogo."
+        />
+      )}
+
       <Input
         label="Cores"
         value={valores.cores}
         onChange={set("cores")}
         placeholder="ex: 4x0, 4x4"
         hint="Deixe em branco se não se aplica."
+      />
+
+      <Textarea
+        label="Descrição específica (opcional)"
+        value={valores.descricaoLivre}
+        onChange={set("descricaoLivre")}
+        maxLength={500}
+        rows={2}
+        placeholder='ex: "Banner 3×1m lona 440g com bastão e corda"'
+        hint="Sobrepõe o nome do catálogo no PDF e no link público — deixe em branco pra mostrar o nome padrão."
       />
 
       {usaMotorAvancado ? (
@@ -327,6 +417,19 @@ export function SeletorItemOrcamento({
           value={valores.acabamento}
           onChange={set("acabamento")}
           placeholder="ex: laminação fosca, corte reto"
+        />
+      )}
+
+      {temAcabamentoHora && (
+        <Input
+          label="Horas estimadas"
+          type="number"
+          min={0.01}
+          step="0.25"
+          value={valores.horasEstimadas}
+          onChange={set("horasEstimadas")}
+          hint="Um dos acabamentos selecionados cobra por hora (ex: instalação, criação de arte) — informe quantas horas este item vai levar."
+          required
         />
       )}
 

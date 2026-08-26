@@ -126,14 +126,18 @@ function itemCarrinhoJson(itemGraficaId: string, quantidade: number): string {
       numeroCoresFlexo: null,
       numeroCliques: null,
       numeroSetups: null,
+      horasEstimadas: null,
       cores: null,
       acabamento: null,
+      descricaoLivre: null,
       acabamentoIds: [],
       etiqueta: null,
       papelId: null,
       quantidadeCores: null,
       custoFaca: null,
       custoFrete: null,
+      custoAquisicaoUnitario: null,
+      materialFornecidoPeloCliente: false,
     },
   ]);
 }

@@ -22,6 +22,9 @@ export type ItemOrigemParaRecalculo = {
   numeroCoresFlexo: number | null;
   numeroCliques: number | null;
   numeroSetups: number | null;
+  horasEstimadas: Decimalish | null;
+  custoAquisicaoUnitario: Decimalish | null;
+  materialFornecidoPeloCliente: boolean;
   acabamentos: { itemGraficaId: string }[];
   precificacaoEtiqueta: {
     papelId: string;
@@ -36,7 +39,18 @@ export type ItemOrigemParaRecalculo = {
 // duplicado — espelha a mesma composição de objeto que
 // adicionarItemOrcamento/criarOrcamento montam a partir do formulário; aqui a
 // "entrada do formulário" é o próprio item já salvo no orçamento antigo.
-export function montarDadosItemParaRecalculo(item: ItemOrigemParaRecalculo): DadosItemOrcamento {
+// margemLucroOverride é passado à parte (não faz parte de
+// ItemOrigemParaRecalculo) porque é uma propriedade do CLIENTE do
+// orçamento, não do item — constante pra todos os itens sendo duplicados,
+// resolvida UMA VEZ por quem chama (duplicarOrcamento) a partir do cliente
+// do orçamento NOVO (nunca do original: se o cliente ganhou/perdeu a
+// margem diferenciada entre a compra original e o "pedir de novo", o
+// recálculo reflete o cadastro atual, mesmo princípio de nunca copiar o
+// preço do item antigo).
+export function montarDadosItemParaRecalculo(
+  item: ItemOrigemParaRecalculo,
+  margemLucroOverride: number | null
+): DadosItemOrcamento {
   return {
     quantidade: item.quantidade,
     larguraCm: item.larguraCm !== null ? Number(item.larguraCm) : null,
@@ -46,6 +60,10 @@ export function montarDadosItemParaRecalculo(item: ItemOrigemParaRecalculo): Dad
     numeroCoresFlexo: item.numeroCoresFlexo,
     numeroCliques: item.numeroCliques,
     numeroSetups: item.numeroSetups,
+    horasEstimadas: item.horasEstimadas !== null ? Number(item.horasEstimadas) : null,
+    custoAquisicaoUnitario:
+      item.custoAquisicaoUnitario !== null ? Number(item.custoAquisicaoUnitario) : null,
+    materialFornecidoPeloCliente: item.materialFornecidoPeloCliente,
     acabamentoIds: item.acabamentos.map((a) => a.itemGraficaId),
     papelId: item.precificacaoEtiqueta?.papelId ?? null,
     quantidadeCores: item.precificacaoEtiqueta?.quantidadeCores ?? null,
@@ -53,6 +71,7 @@ export function montarDadosItemParaRecalculo(item: ItemOrigemParaRecalculo): Dad
       item.precificacaoEtiqueta?.custoFaca != null ? Number(item.precificacaoEtiqueta.custoFaca) : null,
     custoFrete:
       item.precificacaoEtiqueta?.custoFrete != null ? Number(item.precificacaoEtiqueta.custoFrete) : null,
+    margemLucroOverride,
   };
 }
 

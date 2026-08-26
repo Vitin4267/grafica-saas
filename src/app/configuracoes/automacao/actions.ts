@@ -7,6 +7,7 @@ import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { validarWebhookUrl } from "@/lib/webhook-assistente";
+import { registrarAuditoria, criarDiffCampos } from "@/lib/auditoria";
 
 export type SalvarAutomacaoResult = { ok: boolean; mensagem: string };
 
@@ -38,6 +39,10 @@ export async function salvarAutomacao(
   const notificarEstoqueCritico = formData.get("notificarEstoqueCritico") === "on";
   const notificarPedidoAtrasado = formData.get("notificarPedidoAtrasado") === "on";
 
+  const antes = await prisma.automacaoGrafica.findUnique({
+    where: { graficaId: usuario.graficaId },
+  });
+
   await prisma.automacaoGrafica.upsert({
     where: { graficaId: usuario.graficaId },
     update: {
@@ -54,6 +59,48 @@ export async function salvarAutomacao(
       notificarPedidoAtrasado,
     },
   });
+
+  // webhookUrl é tratada como segredo (mesmo cuidado do schema.prisma:646-649
+  // e do form, que nunca reexibe a URL completa) — o log NUNCA grava o valor,
+  // só que ela foi alterada. Os 3 booleans de notificação não são segredo e
+  // entram no diff normalmente (achado A3 da auditoria de abrangência,
+  // 2026-08-24).
+  // Defaults do schema (AutomacaoGrafica) são todos `true`, não `false` —
+  // usados aqui só pro fallback de "linha ainda não existia" (create), pra
+  // não logar um falso "estava desligado" na primeira vez que a gráfica salva.
+  const diff = criarDiffCampos();
+  diff.campo(
+    "Notificar mudança de status",
+    antes?.notificarStatusMudou ?? true,
+    notificarStatusMudou
+  );
+  diff.campo(
+    "Notificar estoque crítico",
+    antes?.notificarEstoqueCritico ?? true,
+    notificarEstoqueCritico
+  );
+  diff.campo(
+    "Notificar pedido atrasado",
+    antes?.notificarPedidoAtrasado ?? true,
+    notificarPedidoAtrasado
+  );
+  if (webhookUrlParaSalvar !== undefined) {
+    diff.antesTextos.push(`Webhook: ${antes?.webhookUrl ? "configurado" : "—"}`);
+    diff.depoisTextos.push("Webhook: alterado");
+  }
+  if (diff.temMudanca) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "configuracoes.salvar_automacao",
+      entidade: "AutomacaoGrafica",
+      entidadeId: usuario.graficaId,
+      descricao: "Configuração de automação atualizada",
+      valorAnterior: diff.antesTextos.join("; "),
+      valorNovo: diff.depoisTextos.join("; "),
+    });
+  }
 
   revalidatePath("/configuracoes/automacao");
   return { ok: true, mensagem: "Automação salva com sucesso!" };

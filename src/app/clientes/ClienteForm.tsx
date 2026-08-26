@@ -2,23 +2,38 @@
 
 import { useActionState, useState } from "react";
 import { Input } from "@/components/ui/Input";
+import { Textarea } from "@/components/ui/Textarea";
+import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { UserIcon, MailIcon } from "@/components/icons";
 import { criarCliente } from "./actions";
 import { EnderecoFields, ENDERECO_VAZIO } from "./EnderecoFields";
+import {
+  ORDEM_ORIGEM_CLIENTE,
+  ROTULO_ORIGEM_CLIENTE,
+  ORDEM_SEGMENTO_CLIENTE,
+  ROTULO_SEGMENTO_CLIENTE,
+} from "@/lib/tipos-cliente";
+import type { OrigemCliente, SegmentoCliente } from "@/generated/prisma/enums";
 
 export function ClienteForm() {
   const [state, formAction, isPending] = useActionState(criarCliente, null);
   const [resetKey, setResetKey] = useState(0);
   const [estadoAnterior, setEstadoAnterior] = useState(state);
+  const [origem, setOrigem] = useState<OrigemCliente | "">("");
+  const [segmento, setSegmento] = useState<SegmentoCliente | "">("");
 
   // Reseta o form (campos não-controlados) após um cadastro bem-sucedido,
   // seguindo o padrão de "ajustar estado durante a renderização" do React
   // (evita useEffect só para reagir a uma mudança de prop/state).
   if (state !== estadoAnterior) {
     setEstadoAnterior(state);
-    if (state?.ok) setResetKey((k) => k + 1);
+    if (state?.ok) {
+      setResetKey((k) => k + 1);
+      setOrigem("");
+      setSegmento("");
+    }
   }
 
   return (
@@ -36,6 +51,72 @@ export function ClienteForm() {
         </p>
         <EnderecoFields valoresIniciais={ENDERECO_VAZIO} />
       </div>
+
+      <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Select
+            label="Origem do cliente"
+            name="origem"
+            value={origem}
+            onChange={(e) => setOrigem(e.target.value as OrigemCliente | "")}
+          >
+            <option value="">Não informado</option>
+            {ORDEM_ORIGEM_CLIENTE.map((valor) => (
+              <option key={valor} value={valor}>
+                {ROTULO_ORIGEM_CLIENTE[valor]}
+              </option>
+            ))}
+          </Select>
+          {origem === "OUTRO" && (
+            <Input label="Descreva a origem" name="origemOutro" placeholder="ex: parceria com..." required />
+          )}
+        </div>
+      </div>
+
+      <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Select
+            label="Segmento"
+            name="segmento"
+            value={segmento}
+            onChange={(e) => setSegmento(e.target.value as SegmentoCliente | "")}
+          >
+            <option value="">Não informado</option>
+            {ORDEM_SEGMENTO_CLIENTE.map((valor) => (
+              <option key={valor} value={valor}>
+                {ROTULO_SEGMENTO_CLIENTE[valor]}
+              </option>
+            ))}
+          </Select>
+          {segmento === "OUTRO" && (
+            <Input label="Descreva o segmento" name="segmentoOutro" placeholder="ex: cooperativa..." required />
+          )}
+          <Input
+            label="Margem diferenciada (%)"
+            name="margemPadraoOverride"
+            type="number"
+            step="0.0001"
+            min="0"
+            placeholder="ex: 0.15"
+            hint="Sobrescreve a margem padrão da gráfica só pra este cliente — em branco usa o padrão de Configurações"
+          />
+        </div>
+      </div>
+
+      <Textarea
+        label="Observações internas"
+        name="observacoes"
+        placeholder="Nota comercial visível só pra sua equipe"
+        hint="Nunca aparece no PDF nem no link público do orçamento"
+        maxLength={2000}
+      />
+      <Textarea
+        label="Preferências de produção"
+        name="preferenciasProducao"
+        placeholder='Ex: "sempre mandar arte em RGB", "só recebe às terças"'
+        hint="Aparece na Ordem de Produção"
+        maxLength={2000}
+      />
 
       {state && <Alert variant={state.ok ? "success" : "error"}>{state.mensagem}</Alert>}
 

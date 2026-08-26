@@ -13,9 +13,12 @@ describe("montarDadosItemParaRecalculo", () => {
       numeroCoresFlexo: null,
       numeroCliques: null,
       numeroSetups: null,
+      horasEstimadas: null,
+      custoAquisicaoUnitario: null,
+      materialFornecidoPeloCliente: false,
       acabamentos: [{ itemGraficaId: "acab-1" }, { itemGraficaId: "acab-2" }],
       precificacaoEtiqueta: null,
-    });
+    }, null);
 
     expect(dados).toEqual({
       quantidade: 100,
@@ -26,12 +29,36 @@ describe("montarDadosItemParaRecalculo", () => {
       numeroCoresFlexo: null,
       numeroCliques: null,
       numeroSetups: null,
+      horasEstimadas: null,
+      custoAquisicaoUnitario: null,
+      materialFornecidoPeloCliente: false,
       acabamentoIds: ["acab-1", "acab-2"],
       papelId: null,
       quantidadeCores: null,
       custoFaca: null,
       custoFrete: null,
+      margemLucroOverride: null,
     });
+  });
+
+  it("repassa margemLucroOverride recebido (propriedade do cliente do orçamento NOVO, não do item)", () => {
+    const dados = montarDadosItemParaRecalculo({
+      quantidade: 100,
+      larguraCm: null,
+      alturaCm: null,
+      corFrente: null,
+      corVerso: null,
+      numeroCoresFlexo: null,
+      numeroCliques: null,
+      numeroSetups: null,
+      horasEstimadas: null,
+      custoAquisicaoUnitario: null,
+      materialFornecidoPeloCliente: false,
+      acabamentos: [],
+      precificacaoEtiqueta: null,
+    }, 0.15);
+
+    expect(dados.margemLucroOverride).toBe(0.15);
   });
 
   it("extrai papelId/quantidadeCores/custoFaca/custoFrete de precificacaoEtiqueta", () => {
@@ -44,6 +71,9 @@ describe("montarDadosItemParaRecalculo", () => {
       numeroCoresFlexo: 3,
       numeroCliques: null,
       numeroSetups: null,
+      horasEstimadas: null,
+      custoAquisicaoUnitario: null,
+      materialFornecidoPeloCliente: false,
       acabamentos: [],
       precificacaoEtiqueta: {
         papelId: "papel-1",
@@ -51,7 +81,7 @@ describe("montarDadosItemParaRecalculo", () => {
         custoFaca: "12.50",
         custoFrete: null,
       },
-    });
+    }, null);
 
     expect(dados.papelId).toBe("papel-1");
     expect(dados.quantidadeCores).toBe(3);

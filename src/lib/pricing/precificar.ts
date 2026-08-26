@@ -4,6 +4,7 @@ import { calcularOffset } from "./offset";
 import { calcularFlexografia } from "./flexografia";
 import { calcularDigital } from "./digital";
 import { calcularSetupPorPeca } from "./setup-por-peca";
+import { calcularRevenda } from "./revenda";
 import { calcularAcabamentos } from "./acabamento";
 import { comporPreco, type ResultadoComposicao } from "./compor";
 import { ErroPrecificacao } from "./erros";
@@ -14,6 +15,8 @@ import type {
   ContextoFlexografia,
   ContextoM2,
   ContextoOffset,
+  ContextoRevenda,
+  ContextoSetupPorPeca,
   ModeloCalculo,
   ParametrosImpressoraDigital,
   ParametrosMaquinaFlexo,
@@ -24,6 +27,7 @@ import type {
   PedidoFlexografia,
   PedidoM2,
   PedidoOffset,
+  PedidoRevenda,
   PedidoSetupPorPeca,
 } from "./tipos";
 
@@ -32,15 +36,23 @@ export type PedidoPrecificacao =
   | { tipo: "OFFSET"; pedido: PedidoOffset; acabamentos: ConfigAcabamento[] }
   | { tipo: "FLEXOGRAFIA"; pedido: PedidoFlexografia; acabamentos: ConfigAcabamento[] }
   | { tipo: "DIGITAL"; pedido: PedidoDigital; acabamentos: ConfigAcabamento[] }
-  // 3 membros distintos (não 1 com tipo de união) de propósito: um discriminante
+  // 4 membros distintos (não 1 com tipo de união) de propósito: um discriminante
   // literal único por membro é o que garante narrowing correto do TypeScript —
-  // combinar os 3 num `tipo: "SERIGRAFIA" | "SUBLIMACAO" | "ESTAMPAGEM_QUENTE"`
-  // só falha em excluir o membro depois de um `if (pedido.tipo === "SERIGRAFIA" ||
-  // ...)`. Nenhuma duplicação de LÓGICA — os 3 usam o mesmo PedidoSetupPorPeca e
-  // a mesma calcularSetupPorPeca, só a declaração de tipo é repetida.
+  // combinar os 4 num `tipo: "SERIGRAFIA" | "SUBLIMACAO" | "ESTAMPAGEM_QUENTE" |
+  // "PERSONALIZACAO"` só falha em excluir o membro depois de um
+  // `if (pedido.tipo === "SERIGRAFIA" || ...)`. Nenhuma duplicação de LÓGICA —
+  // os 4 usam o mesmo PedidoSetupPorPeca e a mesma calcularSetupPorPeca, só a
+  // declaração de tipo é repetida. PERSONALIZACAO é o rótulo genérico (achado
+  // A3 da auditoria de abrangência) pra tampografia/gravação a laser/DTG/
+  // transfer/OUTRO — mesma forma de custo, sem processo nomeado próprio.
   | { tipo: "SERIGRAFIA"; pedido: PedidoSetupPorPeca; acabamentos: ConfigAcabamento[] }
   | { tipo: "SUBLIMACAO"; pedido: PedidoSetupPorPeca; acabamentos: ConfigAcabamento[] }
-  | { tipo: "ESTAMPAGEM_QUENTE"; pedido: PedidoSetupPorPeca; acabamentos: ConfigAcabamento[] };
+  | { tipo: "ESTAMPAGEM_QUENTE"; pedido: PedidoSetupPorPeca; acabamentos: ConfigAcabamento[] }
+  | { tipo: "PERSONALIZACAO"; pedido: PedidoSetupPorPeca; acabamentos: ConfigAcabamento[] }
+  // Revenda/terceirização (achado A12) — produto comprado pronto de um
+  // fornecedor ou terceirizado, sem máquina e sem nesting, mesma ausência de
+  // dimensões do DIGITAL acima.
+  | { tipo: "REVENDA"; pedido: PedidoRevenda; acabamentos: ConfigAcabamento[] };
 
 export type ContextoPrecificacao = {
   itemGraficaId: string;
@@ -50,6 +62,8 @@ export type ContextoPrecificacao = {
   offset?: ContextoOffset;
   flexografia?: ContextoFlexografia;
   digital?: ContextoDigital;
+  setupPorPeca?: ContextoSetupPorPeca;
+  revenda?: ContextoRevenda;
   parametros: ParametrosTenant;
   parametrosPrensa?: ParametrosPrensa;
   prensaUsada?: { id: string; nome: string };
@@ -62,6 +76,13 @@ export type ContextoPrecificacao = {
   margemLucroOverride?: number;
   custoEmbalagem?: number;
   custoFreteEstimado?: number;
+  // Estimativa de horas do item de orçamento (OrcamentoItem.horasEstimadas)
+  // — só consumida por acabamento com baseCobranca=HORA (ver
+  // ContextoAcabamento.horasEstimadas em acabamento.ts). Nível topo (não por
+  // cenário) porque é um dado do ITEM de orçamento, não do motor de cálculo
+  // em si — os 6 branches abaixo só repassam pro ctxAcabamento que já
+  // montam.
+  horasEstimadas?: number;
   // Motor de clichê de etiqueta (só M2) — presente só quando o produto tem
   // ConfiguracaoClicheEtiqueta E o orçamento informou papel+cores. Custo por
   // clichê = área da etiqueta × custoClichePorCm2; total = isso × nº de
@@ -79,6 +100,27 @@ export type ContextoPrecificacao = {
 export type ResultadoPrecificacao = ResultadoComposicao & {
   metricas: Record<string, unknown>;
 };
+
+// Campos de ContextoAcabamento que não vêm do cenário de cálculo em si, e sim
+// da geometria do item + de um dado avulso do orçamento — os mesmos em todos
+// os 6 branches abaixo, centralizados aqui pra não repetir a fórmula 6x.
+// perimetroOuEmenda = 2×(largura + altura efetiva), a mesma peça retangular
+// que o resto do motor já usa — cobre BaseCobranca.METRO_LINEAR (ilhós,
+// bainha, instalação por metro). Nos modelos sem nesting (DIGITAL e os 3 de
+// setup-por-peça), largura/altura efetiva já caem em 0 quando não
+// informadas — o perímetro também cai em 0, e é papel do chamador (guard em
+// orcamento-precificacao.ts) impedir que um acabamento METRO_LINEAR/HORA
+// chegue aqui sem os dados que precisa, em vez de custar R$0 em silêncio.
+function ctxAcabamentoExtra(
+  contexto: ContextoPrecificacao,
+  larguraEfetivaM: number,
+  alturaEfetivaM: number
+): Pick<ContextoAcabamento, "perimetroOuEmenda" | "horasEstimadas"> {
+  return {
+    perimetroOuEmenda: 2 * (larguraEfetivaM + alturaEfetivaM),
+    horasEstimadas: contexto.horasEstimadas,
+  };
+}
 
 // Orquestrador puro (spec §4.2): roteia por modeloCalculo, calcula o custo-base do
 // cenário, soma os acabamentos e delega a composição final (overhead/margem/piso).
@@ -103,6 +145,7 @@ export function precificar(
       quantidade: pedido.pedido.quantidade,
       larguraEfetivaM: resultado.larguraEfetivaM.toNumber(),
       alturaEfetivaM: resultado.alturaEfetivaM.toNumber(),
+      ...ctxAcabamentoExtra(contexto, resultado.larguraEfetivaM.toNumber(), resultado.alturaEfetivaM.toNumber()),
     };
     const acabamentos = calcularAcabamentos(pedido.acabamentos, ctxAcabamento);
 
@@ -175,6 +218,7 @@ export function precificar(
       alturaEfetivaM: resultado.alturaEfetivaM.toNumber(),
       folhasBoas: resultado.folhasBoas,
       folhasPerda: resultado.folhasPerda,
+      ...ctxAcabamentoExtra(contexto, resultado.larguraEfetivaM.toNumber(), resultado.alturaEfetivaM.toNumber()),
     };
     const acabamentos = calcularAcabamentos(pedido.acabamentos, ctxAcabamento);
 
@@ -238,6 +282,7 @@ export function precificar(
       quantidade: pedido.pedido.quantidade,
       larguraEfetivaM: pedido.pedido.larguraM ?? 0,
       alturaEfetivaM: pedido.pedido.alturaM ?? 0,
+      ...ctxAcabamentoExtra(contexto, pedido.pedido.larguraM ?? 0, pedido.pedido.alturaM ?? 0),
     };
     const acabamentos = calcularAcabamentos(pedido.acabamentos, ctxAcabamento);
 
@@ -266,7 +311,61 @@ export function precificar(
     };
   }
 
-  if (pedido.tipo === "SERIGRAFIA" || pedido.tipo === "SUBLIMACAO" || pedido.tipo === "ESTAMPAGEM_QUENTE") {
+  if (pedido.tipo === "REVENDA") {
+    if (!contexto.revenda) {
+      throw new ErroPrecificacao(
+        "CUSTO_AQUISICAO_NAO_CONFIGURADO",
+        "Contexto de custo de aquisição não fornecido para um item com modeloCalculo=REVENDA."
+      );
+    }
+
+    const resultado = calcularRevenda(pedido.pedido, contexto.revenda);
+
+    // Sem nesting — mesma razão do Digital acima: dimensões opcionais só pra
+    // alimentar um eventual acabamento M2-based. orcamento-precificacao.ts já
+    // bloqueou antes de chegar aqui se esse acabamento existir sem elas.
+    const ctxAcabamento: ContextoAcabamento = {
+      quantidade: pedido.pedido.quantidade,
+      larguraEfetivaM: pedido.pedido.larguraM ?? 0,
+      alturaEfetivaM: pedido.pedido.alturaM ?? 0,
+      ...ctxAcabamentoExtra(contexto, pedido.pedido.larguraM ?? 0, pedido.pedido.alturaM ?? 0),
+    };
+    const acabamentos = calcularAcabamentos(pedido.acabamentos, ctxAcabamento);
+
+    const composicao = comporPreco({
+      quantidade: pedido.pedido.quantidade,
+      custoBase: resultado.custoBase,
+      custoAcabamentos: acabamentos.total,
+      acabamentosDetalhe: acabamentos.itens,
+      custoEmbalagem: contexto.custoEmbalagem !== undefined ? paraDecimal(contexto.custoEmbalagem) : undefined,
+      custoFreteEstimado:
+        contexto.custoFreteEstimado !== undefined ? paraDecimal(contexto.custoFreteEstimado) : undefined,
+      custoFaca: contexto.custoFaca !== undefined ? paraDecimal(contexto.custoFaca) : undefined,
+      parametros: contexto.parametros,
+      margemLucroOverride: contexto.margemLucroOverride,
+    });
+
+    return {
+      ...composicao,
+      metricas: {
+        custoAquisicaoUnitario: contexto.revenda.custoAquisicaoUnitario,
+        custoAquisicaoTotal: resultado.custoBase.toNumber(),
+      },
+    };
+  }
+
+  if (
+    pedido.tipo === "SERIGRAFIA" ||
+    pedido.tipo === "SUBLIMACAO" ||
+    pedido.tipo === "ESTAMPAGEM_QUENTE" ||
+    pedido.tipo === "PERSONALIZACAO"
+  ) {
+    if (!contexto.setupPorPeca) {
+      throw new ErroPrecificacao(
+        "MAQUINA_SETUP_POR_PECA_NAO_CONFIGURADA",
+        `Contexto de substrato não fornecido para um item com modeloCalculo=${pedido.tipo}.`
+      );
+    }
     if (!contexto.parametrosMaquinaSetupPorPeca) {
       throw new ErroPrecificacao(
         "MAQUINA_SETUP_POR_PECA_NAO_CONFIGURADA",
@@ -274,7 +373,11 @@ export function precificar(
       );
     }
 
-    const resultado = calcularSetupPorPeca(pedido.pedido, contexto.parametrosMaquinaSetupPorPeca);
+    const resultado = calcularSetupPorPeca(
+      pedido.pedido,
+      contexto.setupPorPeca,
+      contexto.parametrosMaquinaSetupPorPeca
+    );
 
     // Mesma lógica do Digital acima — sem nesting, dimensões opcionais só
     // pra alimentar um eventual acabamento M2-based.
@@ -282,6 +385,7 @@ export function precificar(
       quantidade: pedido.pedido.quantidade,
       larguraEfetivaM: pedido.pedido.larguraM ?? 0,
       alturaEfetivaM: pedido.pedido.alturaM ?? 0,
+      ...ctxAcabamentoExtra(contexto, pedido.pedido.larguraM ?? 0, pedido.pedido.alturaM ?? 0),
     };
     const acabamentos = calcularAcabamentos(pedido.acabamentos, ctxAcabamento);
 
@@ -304,6 +408,7 @@ export function precificar(
       metricas: {
         custoSetup: resultado.custoSetup.toNumber(),
         custoVariavel: resultado.custoVariavel.toNumber(),
+        custoSubstrato: resultado.custoSubstrato.toNumber(),
         maquinaSetupPorPecaUsada: contexto.maquinaSetupPorPecaUsada ?? null,
       },
     };
@@ -337,6 +442,7 @@ export function precificar(
     quantidade: pedido.pedido.quantidade,
     larguraEfetivaM: resultado.larguraEfetivaM.toNumber(),
     alturaEfetivaM: resultado.alturaEfetivaM.toNumber(),
+    ...ctxAcabamentoExtra(contexto, resultado.larguraEfetivaM.toNumber(), resultado.alturaEfetivaM.toNumber()),
   };
   const acabamentos = calcularAcabamentos(pedido.acabamentos, ctxAcabamento);
 

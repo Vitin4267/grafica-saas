@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import type { Prisma } from "@/generated/prisma/client";
+import { prisma } from "@/lib/prisma";
 import { calcularItemOrcamento } from "./orcamento-precificacao";
 
 // Só cobre o modelo SIMPLES: é o único caminho que não toca o banco
@@ -28,6 +29,10 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       numeroCoresFlexo: null,
       numeroCliques: null,
       numeroSetups: null,
+      horasEstimadas: null,
+      custoAquisicaoUnitario: null,
+      materialFornecidoPeloCliente: false,
+      margemLucroOverride: null,
     });
     expect(resultado.ok).toBe(true);
     if (resultado.ok) {
@@ -50,6 +55,10 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       numeroCoresFlexo: null,
       numeroCliques: null,
       numeroSetups: null,
+      horasEstimadas: null,
+      custoAquisicaoUnitario: null,
+      materialFornecidoPeloCliente: false,
+      margemLucroOverride: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -69,6 +78,10 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       numeroCoresFlexo: null,
       numeroCliques: null,
       numeroSetups: null,
+      horasEstimadas: null,
+      custoAquisicaoUnitario: null,
+      materialFornecidoPeloCliente: false,
+      margemLucroOverride: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -88,6 +101,10 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       numeroCoresFlexo: null,
       numeroCliques: null,
       numeroSetups: null,
+      horasEstimadas: null,
+      custoAquisicaoUnitario: null,
+      materialFornecidoPeloCliente: false,
+      margemLucroOverride: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -107,6 +124,10 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       numeroCoresFlexo: null,
       numeroCliques: null,
       numeroSetups: null,
+      horasEstimadas: null,
+      custoAquisicaoUnitario: null,
+      materialFornecidoPeloCliente: false,
+      margemLucroOverride: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -126,6 +147,10 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       numeroCoresFlexo: null,
       numeroCliques: null,
       numeroSetups: null,
+      horasEstimadas: null,
+      custoAquisicaoUnitario: null,
+      materialFornecidoPeloCliente: false,
+      margemLucroOverride: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -145,6 +170,10 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       numeroCoresFlexo: null,
       numeroCliques: null,
       numeroSetups: null,
+      horasEstimadas: null,
+      custoAquisicaoUnitario: null,
+      materialFornecidoPeloCliente: false,
+      margemLucroOverride: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -164,6 +193,10 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       numeroCoresFlexo: null,
       numeroCliques: null,
       numeroSetups: null,
+      horasEstimadas: null,
+      custoAquisicaoUnitario: null,
+      materialFornecidoPeloCliente: false,
+      margemLucroOverride: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -188,6 +221,10 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       numeroCoresFlexo: null,
       numeroCliques: null,
       numeroSetups: null,
+      horasEstimadas: null,
+      custoAquisicaoUnitario: null,
+      materialFornecidoPeloCliente: false,
+      margemLucroOverride: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -207,6 +244,10 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       numeroCoresFlexo: null,
       numeroCliques: null,
       numeroSetups: null,
+      horasEstimadas: null,
+      custoAquisicaoUnitario: null,
+      materialFornecidoPeloCliente: false,
+      margemLucroOverride: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -226,6 +267,10 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       numeroCoresFlexo: null,
       numeroCliques: null,
       numeroSetups: null,
+      horasEstimadas: null,
+      custoAquisicaoUnitario: null,
+      materialFornecidoPeloCliente: false,
+      margemLucroOverride: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -245,6 +290,10 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       numeroCoresFlexo: null,
       numeroCliques: null,
       numeroSetups: null,
+      horasEstimadas: null,
+      custoAquisicaoUnitario: null,
+      materialFornecidoPeloCliente: false,
+      margemLucroOverride: null,
     });
     expect(resultado.ok).toBe(false);
   });
@@ -291,6 +340,10 @@ function dadosBase(overrides: Partial<Parameters<typeof calcularItemOrcamento>[2
     numeroCoresFlexo: null,
     numeroCliques: null,
     numeroSetups: null,
+    horasEstimadas: null,
+    custoAquisicaoUnitario: null,
+    materialFornecidoPeloCliente: false,
+    margemLucroOverride: null,
     ...overrides,
   };
 }
@@ -348,4 +401,213 @@ describe("calcularItemOrcamento — guardas novas (DIGITAL / setup-por-peça)", 
     );
     expect(resultado.ok).toBe(false);
   });
+});
+
+// Achado B7 (correção de regressão do A2, 2026-08-24) — "material fornecido
+// pelo cliente": DIGITAL e os 4 modelos de setup-por-peça cobram
+// ContextoDigital/ContextoSetupPorPeca.custoSubstratoPorPeca a partir de
+// ItemGrafica.precoCompra (ver carregar.ts) — quando o item do orçamento
+// marca materialFornecidoPeloCliente=true, o motor precisa zerar esse
+// substrato (o cliente já trouxe a peça, a gráfica só aplica a estampa).
+// Teste de INTEGRAÇÃO de verdade (toca o Postgres de dev via DATABASE_URL,
+// mesmo padrão de src/lib/pricing/carregar.test.ts) — precisa passar por
+// carregarContextoPrecificacao de verdade pra cobrir a mutação de
+// contexto.digital/contexto.setupPorPeca em orcamento-precificacao.ts, não só
+// a função pura precificar().
+describe("calcularItemOrcamento — materialFornecidoPeloCliente (achado B7)", () => {
+  const TIMEOUT_MS = 30_000;
+  const sufixo = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const graficaIdsParaLimpar: string[] = [];
+
+  afterEach(async () => {
+    for (const graficaId of graficaIdsParaLimpar) {
+      await prisma.itemGrafica.deleteMany({ where: { graficaId } });
+      await prisma.itemCatalogo.deleteMany({ where: { graficaId } });
+      await prisma.impressoraDigital.deleteMany({ where: { graficaId } });
+      await prisma.maquinaSetupPorPeca.deleteMany({ where: { graficaId } });
+      await prisma.parametrosGrafica.deleteMany({ where: { graficaId } });
+      await prisma.grafica.delete({ where: { id: graficaId } }).catch(() => {});
+    }
+    graficaIdsParaLimpar.length = 0;
+  }, TIMEOUT_MS);
+
+  async function criarGrafica() {
+    const s = sufixo();
+    const grafica = await prisma.grafica.create({
+      data: { nome: `Teste Material Fornecido ${s}`, slug: `teste-material-fornecido-${s}` },
+    });
+    graficaIdsParaLimpar.push(grafica.id);
+    return { grafica, s };
+  }
+
+  it(
+    "DIGITAL: materialFornecidoPeloCliente=true zera custoSubstrato no breakdown",
+    async () => {
+      const { grafica, s } = await criarGrafica();
+      const impressora = await prisma.impressoraDigital.create({
+        data: { graficaId: grafica.id, nome: `HP Indigo ${s}`, custoPorClique: 0.08 },
+      });
+      const catalogo = await prisma.itemCatalogo.create({
+        data: { graficaId: grafica.id, tipo: "PRODUTO", categoria: "Camiseta", nome: `Camiseta Digital ${s}` },
+      });
+      const produto = await prisma.itemGrafica.create({
+        data: {
+          graficaId: grafica.id,
+          itemCatalogoId: catalogo.id,
+          modeloCalculo: "DIGITAL",
+          precoCompra: 12, // substrato caro de propósito, pra diferença ficar óbvia
+          impressoraDigitalId: impressora.id,
+        },
+      });
+
+      const dadosSemFlag = dadosBase({ materialFornecidoPeloCliente: false });
+      const dadosComFlag = dadosBase({ materialFornecidoPeloCliente: true });
+
+      const resultadoSemFlag = await calcularItemOrcamento(produto, grafica.id, dadosSemFlag);
+      const resultadoComFlag = await calcularItemOrcamento(produto, grafica.id, dadosComFlag);
+
+      expect(resultadoSemFlag.ok).toBe(true);
+      expect(resultadoComFlag.ok).toBe(true);
+      if (resultadoSemFlag.ok && resultadoComFlag.ok) {
+        // false (default) — comportamento de hoje, sem regressão: substrato
+        // cobrado normalmente (custoPorPeca > 0 pro precoCompra=12 acima).
+        const metricasSemFlag = (resultadoSemFlag.breakdown as { metricas: { custoSubstrato: number } })
+          .metricas;
+        expect(metricasSemFlag.custoSubstrato).toBeGreaterThan(0);
+        expect(resultadoSemFlag.materialFornecidoPeloCliente).toBe(false);
+
+        // true — cliente já trouxe a peça: substrato efetivo é 0.
+        const metricasComFlag = (resultadoComFlag.breakdown as { metricas: { custoSubstrato: number } })
+          .metricas;
+        expect(metricasComFlag.custoSubstrato).toBe(0);
+        expect(resultadoComFlag.materialFornecidoPeloCliente).toBe(true);
+
+        // Preço final reflete a diferença — nunca cobra a peça que a gráfica
+        // não comprou.
+        expect(Number(resultadoComFlag.precoTotal)).toBeLessThan(Number(resultadoSemFlag.precoTotal));
+      }
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "SERIGRAFIA (setup-por-peça): materialFornecidoPeloCliente=true zera custoSubstrato no breakdown",
+    async () => {
+      const { grafica, s } = await criarGrafica();
+      const maquina = await prisma.maquinaSetupPorPeca.create({
+        data: {
+          graficaId: grafica.id,
+          nome: `Carrossel 6 cores ${s}`,
+          tipoProcesso: "SERIGRAFIA",
+          custoPorSetup: 80,
+          custoPorPeca: 3.5,
+          custoMinimo: 150,
+        },
+      });
+      const catalogo = await prisma.itemCatalogo.create({
+        data: { graficaId: grafica.id, tipo: "PRODUTO", categoria: "Camiseta", nome: `Camiseta Serigrafia ${s}` },
+      });
+      const produto = await prisma.itemGrafica.create({
+        data: {
+          graficaId: grafica.id,
+          itemCatalogoId: catalogo.id,
+          modeloCalculo: "SERIGRAFIA",
+          precoCompra: 15,
+          maquinaSetupPorPecaId: maquina.id,
+        },
+      });
+
+      const dadosSemFlag = dadosBase({ numeroSetups: 1, materialFornecidoPeloCliente: false });
+      const dadosComFlag = dadosBase({ numeroSetups: 1, materialFornecidoPeloCliente: true });
+
+      const resultadoSemFlag = await calcularItemOrcamento(produto, grafica.id, dadosSemFlag);
+      const resultadoComFlag = await calcularItemOrcamento(produto, grafica.id, dadosComFlag);
+
+      expect(resultadoSemFlag.ok).toBe(true);
+      expect(resultadoComFlag.ok).toBe(true);
+      if (resultadoSemFlag.ok && resultadoComFlag.ok) {
+        const metricasSemFlag = (resultadoSemFlag.breakdown as { metricas: { custoSubstrato: number } })
+          .metricas;
+        expect(metricasSemFlag.custoSubstrato).toBeGreaterThan(0);
+
+        const metricasComFlag = (resultadoComFlag.breakdown as { metricas: { custoSubstrato: number } })
+          .metricas;
+        expect(metricasComFlag.custoSubstrato).toBe(0);
+
+        expect(Number(resultadoComFlag.precoTotal)).toBeLessThan(Number(resultadoSemFlag.precoTotal));
+      }
+    },
+    TIMEOUT_MS
+  );
+});
+
+// Teste de INTEGRAÇÃO de verdade (toca o Postgres de dev via DATABASE_URL,
+// mesmo padrão do describe acima) — cobre a implementação do achado A7 da
+// auditoria de abrangência (2026-08-24): Cliente.margemPadraoOverride
+// precisa chegar até ContextoPrecificacao.margemLucroOverride (gancho que já
+// existia dormente em comporPreco/precificar.ts) e mudar o preço final de
+// verdade, não só compilar.
+describe("calcularItemOrcamento — margemLucroOverride (achado A7)", () => {
+  const TIMEOUT_MS = 30_000;
+  const sufixo = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const graficaIdsParaLimpar: string[] = [];
+
+  afterEach(async () => {
+    for (const graficaId of graficaIdsParaLimpar) {
+      await prisma.itemGrafica.deleteMany({ where: { graficaId } });
+      await prisma.itemCatalogo.deleteMany({ where: { graficaId } });
+      await prisma.impressoraDigital.deleteMany({ where: { graficaId } });
+      await prisma.parametrosGrafica.deleteMany({ where: { graficaId } });
+      await prisma.grafica.delete({ where: { id: graficaId } }).catch(() => {});
+    }
+    graficaIdsParaLimpar.length = 0;
+  }, TIMEOUT_MS);
+
+  it(
+    "DIGITAL: margemLucroOverride do cliente substitui a margemPadrao da gráfica no preço final",
+    async () => {
+      const s = sufixo();
+      const grafica = await prisma.grafica.create({
+        data: { nome: `Teste Margem Cliente ${s}`, slug: `teste-margem-cliente-${s}` },
+      });
+      graficaIdsParaLimpar.push(grafica.id);
+      // margemPadrao alta de propósito (40%) pra sobrar espaço claro abaixo
+      // dela — o override do cliente (5%) precisa gerar um preço MENOR.
+      await prisma.parametrosGrafica.create({
+        data: { graficaId: grafica.id, margemPadrao: 0.4 },
+      });
+      const impressora = await prisma.impressoraDigital.create({
+        data: { graficaId: grafica.id, nome: `HP Indigo ${s}`, custoPorClique: 0.08 },
+      });
+      const catalogo = await prisma.itemCatalogo.create({
+        data: { graficaId: grafica.id, tipo: "PRODUTO", categoria: "Cartão", nome: `Cartão Digital ${s}` },
+      });
+      const produto = await prisma.itemGrafica.create({
+        data: {
+          graficaId: grafica.id,
+          itemCatalogoId: catalogo.id,
+          modeloCalculo: "DIGITAL",
+          precoCompra: 1,
+          impressoraDigitalId: impressora.id,
+        },
+      });
+
+      const dadosSemOverride = dadosBase({ margemLucroOverride: null });
+      const dadosComOverride = dadosBase({ margemLucroOverride: 0.05 });
+
+      const resultadoSemOverride = await calcularItemOrcamento(produto, grafica.id, dadosSemOverride);
+      const resultadoComOverride = await calcularItemOrcamento(produto, grafica.id, dadosComOverride);
+
+      expect(resultadoSemOverride.ok).toBe(true);
+      expect(resultadoComOverride.ok).toBe(true);
+      if (resultadoSemOverride.ok && resultadoComOverride.ok) {
+        // null (default) — comportamento de hoje: usa margemPadrao (40%) da
+        // gráfica, sem regressão pra cliente sem override cadastrado.
+        // Com override (5%): preço final bem mais baixo — a margem do
+        // cliente venceu a da gráfica.
+        expect(Number(resultadoComOverride.precoTotal)).toBeLessThan(Number(resultadoSemOverride.precoTotal));
+      }
+    },
+    TIMEOUT_MS
+  );
 });

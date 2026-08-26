@@ -57,6 +57,9 @@ export async function adicionarOpcaoOrcamento(
 
   const orcamento = await prisma.orcamento.findFirst({
     where: { id: orcamentoId, graficaId: usuario.graficaId },
+    // Achado A7 — margemPadraoOverride é propriedade do CLIENTE, constante
+    // em todo item desta opção (ver DadosItemOrcamento.margemLucroOverride).
+    include: { cliente: { select: { margemPadraoOverride: true } } },
   });
   if (!orcamento) {
     return { ok: false, mensagem: "Orçamento não encontrado." };
@@ -67,6 +70,8 @@ export async function adicionarOpcaoOrcamento(
   if (orcamento.status !== "RASCUNHO") {
     return { ok: false, mensagem: "Só é possível adicionar opções a um orçamento em rascunho." };
   }
+  const margemLucroOverride =
+    orcamento.cliente.margemPadraoOverride !== null ? Number(orcamento.cliente.margemPadraoOverride) : null;
 
   const quantidadeAtual = await prisma.orcamentoOpcao.count({ where: { orcamentoId } });
   if (quantidadeAtual >= MAX_OPCOES_ALTERNATIVAS) {
@@ -92,6 +97,7 @@ export async function adicionarOpcaoOrcamento(
     unidadeDimensao: (typeof itensResult.data)[number]["unidadeDimensao"];
     cores: string | null;
     acabamento: string | null;
+    descricaoLivre: string | null;
     precoUnitario: string;
     precoTotal: string;
     modeloCalculo:
@@ -102,12 +108,17 @@ export async function adicionarOpcaoOrcamento(
       | "DIGITAL"
       | "SERIGRAFIA"
       | "SUBLIMACAO"
-      | "ESTAMPAGEM_QUENTE";
+      | "ESTAMPAGEM_QUENTE"
+      | "PERSONALIZACAO"
+      | "REVENDA";
     corFrente: number | null;
     corVerso: number | null;
     numeroCoresFlexo: number | null;
     numeroCliques: number | null;
     numeroSetups: number | null;
+    horasEstimadas: number | null;
+    custoAquisicaoUnitario: number | null;
+    materialFornecidoPeloCliente: boolean;
     breakdown: Prisma.InputJsonValue | null;
     etiqueta: ItemEntrada["etiqueta"];
     acabamentos: { itemGraficaId: string; qtdBase: string; custoCalculado: string }[];
@@ -149,11 +160,15 @@ export async function adicionarOpcaoOrcamento(
       numeroCoresFlexo: entrada.numeroCoresFlexo,
       numeroCliques: entrada.numeroCliques,
       numeroSetups: entrada.numeroSetups,
+      horasEstimadas: entrada.horasEstimadas,
       acabamentoIds: entrada.acabamentoIds,
       papelId: entrada.papelId,
       quantidadeCores: entrada.quantidadeCores,
       custoFaca: entrada.custoFaca,
       custoFrete: entrada.custoFrete,
+      custoAquisicaoUnitario: entrada.custoAquisicaoUnitario,
+      materialFornecidoPeloCliente: entrada.materialFornecidoPeloCliente,
+      margemLucroOverride,
     });
     if (!resultado.ok) {
       return { ok: false, mensagem: `Item ${indice + 1}: ${resultado.mensagem}` };
@@ -168,6 +183,7 @@ export async function adicionarOpcaoOrcamento(
       unidadeDimensao: entrada.unidadeDimensao,
       cores: entrada.cores,
       acabamento: entrada.acabamento,
+      descricaoLivre: entrada.descricaoLivre,
       precoUnitario: resultado.precoUnitario,
       precoTotal: resultado.precoTotal,
       modeloCalculo: resultado.modeloCalculo,
@@ -176,6 +192,9 @@ export async function adicionarOpcaoOrcamento(
       numeroCoresFlexo: resultado.numeroCoresFlexo,
       numeroCliques: resultado.numeroCliques,
       numeroSetups: resultado.numeroSetups,
+      horasEstimadas: resultado.horasEstimadas,
+      custoAquisicaoUnitario: resultado.custoAquisicaoUnitario,
+      materialFornecidoPeloCliente: resultado.materialFornecidoPeloCliente,
       breakdown: resultado.breakdown,
       etiqueta: entrada.etiqueta,
       acabamentos: resultado.acabamentos,
@@ -202,6 +221,7 @@ export async function adicionarOpcaoOrcamento(
           unidadeDimensao: item.unidadeDimensao,
           cores: item.cores,
           acabamento: item.acabamento,
+          descricaoLivre: item.descricaoLivre,
           precoUnitario: item.precoUnitario,
           precoTotal: item.precoTotal,
           // Preço sugerido nasce igual ao vendido — mesmo padrão de
@@ -215,6 +235,9 @@ export async function adicionarOpcaoOrcamento(
           numeroCoresFlexo: item.numeroCoresFlexo,
           numeroCliques: item.numeroCliques,
           numeroSetups: item.numeroSetups,
+          horasEstimadas: item.horasEstimadas,
+          custoAquisicaoUnitario: item.custoAquisicaoUnitario,
+          materialFornecidoPeloCliente: item.materialFornecidoPeloCliente,
           breakdown: item.breakdown ?? undefined,
           etiqueta:
             item.modeloCalculo === "M2"

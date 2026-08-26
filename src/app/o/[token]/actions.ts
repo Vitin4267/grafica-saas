@@ -20,6 +20,7 @@ import {
 } from "@/lib/email/templates";
 import { assinaturaEstaLiberada } from "@/lib/billing/status";
 import { calcularPrevisaoAprovacaoPedido, gravarPrevisaoAprovacaoPedido } from "@/lib/pedido-aprovacao";
+import { criarCustoAutomaticoComissao } from "@/lib/custo-pedido";
 import { registrarCandidatosGangRun } from "@/lib/gang-run-servico";
 import { resolverOpcoesNaAprovacao, descartarOpcoesAlternativas } from "@/lib/orcamento-opcoes";
 import { prepararNotificacaoNotaFiscal } from "@/lib/nota-fiscal";
@@ -217,7 +218,7 @@ export async function responderOrcamentoPublico(
       }),
       prisma.parametrosGrafica.findUnique({
         where: { graficaId: orcamento.graficaId },
-        select: { comissaoVendedorBase: true },
+        select: { comissaoVendedorBase: true, comissaoEntraNoCustoPedido: true },
       }),
       // Mesmo cuidado do bloco de comissão acima: leitura de breakdown/ficha
       // técnica fica FORA da transação (ver fase-custo-real.md §3.1 e
@@ -337,6 +338,15 @@ export async function responderOrcamentoPublico(
             valorComissao: dadosComissao.valorComissao,
           },
         });
+        // Mesmo comportamento do caminho autenticado
+        // (src/app/orcamento/[id]/actions.ts) — ver criarCustoAutomaticoComissao.
+        if (parametros?.comissaoEntraNoCustoPedido) {
+          await criarCustoAutomaticoComissao(tx, {
+            graficaId: orcamento.graficaId,
+            pedidoId: pedido.id,
+            valorComissao: dadosComissao.valorComissao,
+          });
+        }
       }
       return true;
     });

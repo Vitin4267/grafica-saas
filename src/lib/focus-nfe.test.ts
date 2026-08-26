@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mapearItemNfePayload, type ItemNfe } from "./focus-nfe";
+import { mapearItemNfePayload, normalizarDocumentoDestinatario, normalizarCnpjEmitente, type ItemNfe } from "./focus-nfe";
 
 const itemBase: ItemNfe = {
   numeroItem: 1,
@@ -81,5 +81,57 @@ describe("mapearItemNfePayload", () => {
     expect(payload.valor_unitario_comercial).toBe("1.5000");
     expect(payload.codigo_ncm).toBe("49111090");
     expect(payload.valor_bruto).toBe("150.00");
+  });
+});
+
+// Achado A2 da auditoria de abrangência (2026-08-24): a normalização antiga
+// (`documento.replace(/\D/g, "")`) apagava as LETRAS do CNPJ alfanumérico
+// (vigente desde 31/07/2026) e o número mutilado caía no branch de CPF, sem
+// erro nenhum — dado fiscal errado enviado em silêncio.
+describe("normalizarDocumentoDestinatario", () => {
+  it("CNPJ numérico puro (14 dígitos) vira cnpj_destinatario", () => {
+    expect(normalizarDocumentoDestinatario("12.345.678/0001-99")).toEqual({
+      cnpj_destinatario: "12345678000199",
+    });
+  });
+
+  it("CPF (11 dígitos) vira cpf_destinatario", () => {
+    expect(normalizarDocumentoDestinatario("123.456.789-01")).toEqual({
+      cpf_destinatario: "12345678901",
+    });
+  });
+
+  it("CNPJ alfanumérico (12 posições alfanuméricas + 2 dígitos verificadores) mantém as letras — não trunca pra CPF", () => {
+    expect(normalizarDocumentoDestinatario("12.ABC.345/01DE-35")).toEqual({
+      cnpj_destinatario: "12ABC34501DE35",
+    });
+  });
+
+  it("normaliza minúsculas pra maiúsculas (o CNPJ alfanumérico é sempre maiúsculo)", () => {
+    expect(normalizarDocumentoDestinatario("12abc34501de35")).toEqual({
+      cnpj_destinatario: "12ABC34501DE35",
+    });
+  });
+});
+
+describe("normalizarCnpjEmitente", () => {
+  it("CNPJ numérico puro (14 dígitos) é mantido", () => {
+    expect(normalizarCnpjEmitente("12345678000199")).toBe("12345678000199");
+  });
+
+  it("CNPJ numérico com pontuação é limpo", () => {
+    expect(normalizarCnpjEmitente("12.345.678/0001-99")).toBe("12345678000199");
+  });
+
+  it("CNPJ alfanumérico (12 posições alfanuméricas + 2 dígitos verificadores) mantém as letras", () => {
+    expect(normalizarCnpjEmitente("12ABC34501DE35")).toBe("12ABC34501DE35");
+  });
+
+  it("CNPJ alfanumérico com pontuação é limpo mantendo as letras", () => {
+    expect(normalizarCnpjEmitente("12.ABC.345/01DE-35")).toBe("12ABC34501DE35");
+  });
+
+  it("normaliza minúsculas pra maiúsculas", () => {
+    expect(normalizarCnpjEmitente("12abc34501de35")).toBe("12ABC34501DE35");
   });
 });

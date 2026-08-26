@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { Prisma } from "@/generated/prisma/client";
-import { verificarProntidaoFiscal, type DadosFiscaisParaChecagem, type ClienteParaChecagem } from "./nota-fiscal";
+import type { TipoFrete } from "@/generated/prisma/enums";
+import {
+  verificarProntidaoFiscal,
+  resolverCfop,
+  resolverModalidadeFrete,
+  type DadosFiscaisParaChecagem,
+  type ClienteParaChecagem,
+} from "./nota-fiscal";
 
 const dadosFiscaisCompletos: DadosFiscaisParaChecagem = {
   focusNfeToken: "token-123",
@@ -138,5 +145,63 @@ describe("verificarProntidaoFiscal", () => {
       itens: [{ nome: "Cartão de Visita", ncm: "49111090" }],
     });
     expect(resultado).toEqual({ pronto: true, pendencias: [] });
+  });
+});
+
+describe("resolverCfop", () => {
+  const base = { cfopPadrao: "5102", cfopPadraoInterestadual: "6102" };
+
+  it("mesma UF (emitente e destinatário): usa cfopPadrao (venda interna)", () => {
+    const resultado = resolverCfop({ ufEmitente: "PR", ufDestinatario: "PR", ...base });
+    expect(resultado).toBe("5102");
+  });
+
+  it("UF diferente entre emitente e destinatário: usa cfopPadraoInterestadual", () => {
+    const resultado = resolverCfop({ ufEmitente: "PR", ufDestinatario: "SP", ...base });
+    expect(resultado).toBe("6102");
+  });
+
+  it("UF do emitente ausente (null): cai no cfopPadrao, sem regressão pra dado incompleto", () => {
+    const resultado = resolverCfop({ ufEmitente: null, ufDestinatario: "SP", ...base });
+    expect(resultado).toBe("5102");
+  });
+
+  it("UF do destinatário ausente (null): cai no cfopPadrao, sem regressão pra dado incompleto", () => {
+    const resultado = resolverCfop({ ufEmitente: "PR", ufDestinatario: null, ...base });
+    expect(resultado).toBe("5102");
+  });
+
+  it("as duas UFs ausentes: cai no cfopPadrao", () => {
+    const resultado = resolverCfop({ ufEmitente: null, ufDestinatario: null, ...base });
+    expect(resultado).toBe("5102");
+  });
+
+  it("respeita CFOPs padrão customizados pela gráfica, não hardcoded", () => {
+    const resultado = resolverCfop({
+      ufEmitente: "PR",
+      ufDestinatario: "SP",
+      cfopPadrao: "5405",
+      cfopPadraoInterestadual: "6404",
+    });
+    expect(resultado).toBe("6404");
+  });
+});
+
+describe("resolverModalidadeFrete", () => {
+  const casos: [TipoFrete, string][] = [
+    ["CIF_REMETENTE", "0"],
+    ["FOB_DESTINATARIO", "1"],
+    ["TERCEIROS", "2"],
+    ["PROPRIO_REMETENTE", "3"],
+    ["PROPRIO_DESTINATARIO", "4"],
+    ["SEM_FRETE", "9"],
+  ];
+
+  it.each(casos)("%s mapeia pro modFrete %s", (frete, modFrete) => {
+    expect(resolverModalidadeFrete(frete)).toBe(modFrete);
+  });
+
+  it("null (frete não informado no orçamento) cai em 9 — sem ocorrência de transporte", () => {
+    expect(resolverModalidadeFrete(null)).toBe("9");
   });
 });

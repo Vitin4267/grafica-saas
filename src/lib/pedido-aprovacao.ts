@@ -166,9 +166,24 @@ type ComponenteCusto = { chave: "material" | "chapas" | "impressao"; valor: Dec 
 // — MaquinaSetupPorPeca não tem custo de matéria-prima, só custo de máquina
 // (setup fixo + variável por peça, ver src/lib/pricing/setup-por-peca.ts).
 // custoBase inteiro cai em "impressao", nunca em "material".
+//
+// REVENDA (achado A12): custoBase inteiro é o custo de aquisição (Q ×
+// custoAquisicaoUnitario, ver src/lib/pricing/revenda.ts) — sem máquina, sem
+// setup — então cai inteiro em "material" (mesmo raciocínio de M2/OFFSET: é
+// literalmente o custo do produto/insumo, roteado pela categoriaCustoId do
+// ItemGrafica do produto em si, como o resto dos modelos não-OFFSET fazem).
 function componentesCustoBreakdown(
   breakdown: Prisma.JsonValue,
-  modeloCalculo: "M2" | "OFFSET" | "FLEXOGRAFIA" | "DIGITAL" | "SERIGRAFIA" | "SUBLIMACAO" | "ESTAMPAGEM_QUENTE"
+  modeloCalculo:
+    | "M2"
+    | "OFFSET"
+    | "FLEXOGRAFIA"
+    | "DIGITAL"
+    | "SERIGRAFIA"
+    | "SUBLIMACAO"
+    | "ESTAMPAGEM_QUENTE"
+    | "PERSONALIZACAO"
+    | "REVENDA"
 ): ComponenteCusto[] | null {
   if (!breakdown || typeof breakdown !== "object" || Array.isArray(breakdown)) return null;
   const raiz = breakdown as Record<string, unknown>;
@@ -216,8 +231,17 @@ function componentesCustoBreakdown(
     return componentes;
   }
 
-  if (modeloCalculo === "SERIGRAFIA" || modeloCalculo === "SUBLIMACAO" || modeloCalculo === "ESTAMPAGEM_QUENTE") {
+  if (
+    modeloCalculo === "SERIGRAFIA" ||
+    modeloCalculo === "SUBLIMACAO" ||
+    modeloCalculo === "ESTAMPAGEM_QUENTE" ||
+    modeloCalculo === "PERSONALIZACAO"
+  ) {
     return materialTotal.gt(0) ? [{ chave: "impressao", valor: materialTotal }] : [];
+  }
+
+  if (modeloCalculo === "REVENDA") {
+    return materialTotal.gt(0) ? [{ chave: "material", valor: materialTotal }] : [];
   }
 
   // OFFSET

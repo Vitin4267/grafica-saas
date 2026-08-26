@@ -323,6 +323,7 @@ const ItemLinha = memo(function ItemLinha({
   valorPreco,
   onMudarPreco,
   temPendencia,
+  temPrecoDesatualizado,
 }: {
   item: ItemCatalogo;
   selecionado: boolean;
@@ -331,6 +332,7 @@ const ItemLinha = memo(function ItemLinha({
   valorPreco: string;
   onMudarPreco: (id: string, valor: string) => void;
   temPendencia: boolean;
+  temPrecoDesatualizado: boolean;
 }) {
   // Matéria-prima com variantes (ex: espessura de chapa) não usa mais preço/
   // estoque no nível do item — isso mora nas variantes, geridas numa tela
@@ -394,6 +396,15 @@ const ItemLinha = memo(function ItemLinha({
           >
             <AlertTriangleIcon className="h-3 w-3" />
             Pendência
+          </span>
+        )}
+        {temPrecoDesatualizado && (
+          <span
+            title="O preço de compra desta matéria-prima não muda há um bom tempo — vale conferir se ainda reflete o mercado (ajuste o limiar em Configurações)"
+            className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+          >
+            <AlertTriangleIcon className="h-3 w-3" />
+            Preço desatualizado
           </span>
         )}
       </label>
@@ -648,14 +659,23 @@ export function CatalogoForm({
   itensCatalogo,
   selecoes,
   itemGraficaIdsComPendencia,
+  itemGraficaIdsComPrecoDesatualizado,
 }: {
   itensCatalogo: ItemCatalogo[];
   selecoes: Record<string, Selecao>;
   itemGraficaIdsComPendencia: string[];
+  // Ids de ItemGrafica (Selecao.id, não ItemCatalogo.id — ver
+  // listarInsumosComPrecoDesatualizado) — achado A1-Parte6 da auditoria de
+  // abrangência (2026-08-24).
+  itemGraficaIdsComPrecoDesatualizado: string[];
 }) {
   const idsComPendencia = useMemo(
     () => new Set(itemGraficaIdsComPendencia),
     [itemGraficaIdsComPendencia]
+  );
+  const idsComPrecoDesatualizado = useMemo(
+    () => new Set(itemGraficaIdsComPrecoDesatualizado),
+    [itemGraficaIdsComPrecoDesatualizado]
   );
   const [abaAtiva, setAbaAtiva] = useState<Tipo>("PRODUTO");
   const [busca, setBusca] = useState("");
@@ -935,6 +955,9 @@ export function CatalogoForm({
                           onMudarPreco={definirPreco}
                           temPendencia={Boolean(
                             selecoes[item.id]?.id && idsComPendencia.has(selecoes[item.id].id)
+                          )}
+                          temPrecoDesatualizado={Boolean(
+                            selecoes[item.id]?.id && idsComPrecoDesatualizado.has(selecoes[item.id].id)
                           )}
                         />
                       </div>

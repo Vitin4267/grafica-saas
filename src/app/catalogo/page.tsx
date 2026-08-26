@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/Button";
 import { AlertTriangleIcon } from "@/components/icons";
 import { verificarEDispararAlertaEstoque } from "@/lib/alerta-estoque";
 import { listarPendenciasConfiguracao } from "@/lib/pendencias-configuracao";
+import { listarInsumosComPrecoDesatualizado } from "@/lib/custo-pedido";
 import { obterStatusOnboarding } from "@/lib/onboarding";
 import { CatalogoForm } from "./CatalogoForm";
 
@@ -48,6 +49,12 @@ export default async function CatalogoPage() {
     ? await listarPendenciasConfiguracao(usuario.graficaId)
     : [];
   const itemGraficaIdsComPendencia = pendenciasConfiguracao.map((p) => p.itemGraficaId);
+  // Mesmo gate acima — aviso de preço parado não faz sentido no meio do
+  // cadastro inicial (achado A1-Parte6 da auditoria de abrangência,
+  // 2026-08-24).
+  const itemGraficaIdsComPrecoDesatualizado = statusOnboarding.completo
+    ? await listarInsumosComPrecoDesatualizado(usuario.graficaId)
+    : [];
 
   const selecoesPorItem = Object.fromEntries(
     itensGrafica.map((ig) => [
@@ -151,6 +158,7 @@ export default async function CatalogoPage() {
           }))}
           selecoes={selecoesPorItem}
           itemGraficaIdsComPendencia={itemGraficaIdsComPendencia}
+          itemGraficaIdsComPrecoDesatualizado={itemGraficaIdsComPrecoDesatualizado}
         />
       </main>
     </div>

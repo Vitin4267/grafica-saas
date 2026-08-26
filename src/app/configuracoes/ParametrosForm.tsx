@@ -30,6 +30,16 @@ export function ParametrosForm({
   alertaPrazoLimiar3Dias,
   termosCondicoesPdf,
   mostrarEspecificacoesTecnicas,
+  custoAutomaticoConsumo,
+  categoriaCustoConsumoPadraoId,
+  categoriasCusto,
+  perdaEhCustoDoPedido,
+  comissaoEntraNoCustoPedido,
+  margemFaixaBaixa,
+  margemFaixaBoa,
+  descontoMaxSemAprovacao,
+  toleranciaTiragemPadraoPercent,
+  diasPrecoInsumoDesatualizado,
 }: {
   parametros: ParametrosTenant;
   comissaoVendedorBase: BaseComissao;
@@ -43,6 +53,16 @@ export function ParametrosForm({
   alertaPrazoLimiar3Dias: number;
   termosCondicoesPdf: string | null;
   mostrarEspecificacoesTecnicas: boolean;
+  custoAutomaticoConsumo: boolean;
+  categoriaCustoConsumoPadraoId: string | null;
+  categoriasCusto: { id: string; nome: string }[];
+  perdaEhCustoDoPedido: boolean;
+  comissaoEntraNoCustoPedido: boolean;
+  margemFaixaBaixa: number;
+  margemFaixaBoa: number;
+  descontoMaxSemAprovacao: number;
+  toleranciaTiragemPadraoPercent: number;
+  diasPrecoInsumoDesatualizado: number;
 }) {
   const [state, formAction, isPending] = useActionState(salvarParametros, null);
 
@@ -112,6 +132,175 @@ export function ParametrosForm({
             hint="Preço final sempre arredonda para cima nesse múltiplo"
           />
         </div>
+      </Card>
+
+      <Card className="flex flex-col gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Custo automático e lucro por pedido
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Como o custo real de cada pedido (Produção {"›"} Fechamento) é
+            calculado a partir do consumo de estoque.
+          </p>
+        </div>
+
+        <label className="flex items-center gap-2.5">
+          <input
+            type="checkbox"
+            name="custoAutomaticoConsumo"
+            defaultChecked={custoAutomaticoConsumo}
+            className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+          />
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+            Lançar custo automaticamente ao baixar estoque na produção
+          </span>
+        </label>
+        <p className="text-xs text-slate-500">
+          Desligue se sua gráfica compra material específico por pedido (ex:
+          comunicação visual ou corte a laser comprando a chapa pro job) — o
+          custo real entra manualmente, via nota do fornecedor, em vez de
+          duplicar com a baixa automática.
+        </p>
+
+        <label className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+            Categoria de custo padrão
+          </span>
+          <select
+            name="categoriaCustoConsumoPadraoId"
+            defaultValue={categoriaCustoConsumoPadraoId ?? ""}
+            className="w-full max-w-xs rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-slate-900 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/15 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          >
+            <option value="">Nenhuma (usa a primeira categoria ativa por ordem)</option>
+            {categoriasCusto.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nome}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-slate-500">
+            Usada quando a matéria-prima consumida não tem categoria de custo
+            própria configurada no Catálogo.
+          </span>
+        </label>
+
+        <label className="flex items-center gap-2.5">
+          <input
+            type="checkbox"
+            name="perdaEhCustoDoPedido"
+            defaultChecked={perdaEhCustoDoPedido}
+            className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+          />
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+            Perda de calibragem conta como custo do pedido
+          </span>
+        </label>
+        <p className="text-xs text-slate-500">
+          Desligue pra tratar a perda de calibragem (folhas de acerto de
+          máquina) como despesa geral da operação, não deste pedido
+          específico — a baixa de estoque continua acontecendo do mesmo
+          jeito, só o lançamento de custo no pedido fica de fora.
+        </p>
+
+        <label className="flex items-center gap-2.5">
+          <input
+            type="checkbox"
+            name="comissaoEntraNoCustoPedido"
+            defaultChecked={comissaoEntraNoCustoPedido}
+            className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+          />
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+            Comissão do vendedor entra no custo do pedido
+          </span>
+        </label>
+        <p className="text-xs text-slate-500">
+          Afeta o lucro calculado em Produção {"›"} Fechamento e nos
+          relatórios de Meu Negócio — a comissão continua sendo paga ao
+          vendedor do mesmo jeito, independente desta opção.
+        </p>
+      </Card>
+
+      <Card className="flex flex-col gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Medidor de margem
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Faixas usadas pelo medidor de margem (Meu Negócio e Produção ›
+            Fechamento) pra colorir de vermelho, amarelo ou verde. Ajuste pro
+            patamar de margem real do seu processo — comunicação visual
+            trabalha com margens bem mais altas que offset comercial de
+            tiragem longa, por exemplo.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Input
+            label="Margem faixa baixa (%)"
+            name="margemFaixaBaixa"
+            type="number"
+            step="0.1"
+            min="0"
+            max="100"
+            defaultValue={margemFaixaBaixa}
+            hint="Abaixo disso o medidor mostra vermelho"
+          />
+          <Input
+            label="Margem faixa boa (%)"
+            name="margemFaixaBoa"
+            type="number"
+            step="0.1"
+            min="0"
+            max="100"
+            defaultValue={margemFaixaBoa}
+            hint="Acima disso o medidor mostra verde"
+          />
+        </div>
+      </Card>
+
+      <Card className="flex flex-col gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Alçada de desconto
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Teto de desconto que um vendedor comum pode dar num orçamento sem
+            precisar de aprovação de um DONO/ADMIN.
+          </p>
+        </div>
+        <Input
+          label="Desconto máximo sem aprovação (%)"
+          name="descontoMaxSemAprovacao"
+          type="number"
+          step="0.1"
+          min="0"
+          max="100"
+          defaultValue={descontoMaxSemAprovacao}
+          hint="100 = sem trava (qualquer desconto passa sem aprovação)"
+          className="max-w-xs"
+        />
+      </Card>
+
+      <Card className="flex flex-col gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Preço de insumo desatualizado
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Avisa no Catálogo quando o preço de compra de uma matéria-prima
+            não muda há muito tempo — sinal de que pode estar defasado em
+            relação ao mercado.
+          </p>
+        </div>
+        <Input
+          label="Avisar depois de quantos dias sem mudar"
+          name="diasPrecoInsumoDesatualizado"
+          type="number"
+          step="1"
+          min="1"
+          defaultValue={diasPrecoInsumoDesatualizado}
+          className="max-w-xs"
+        />
       </Card>
 
       <Card className="flex flex-col gap-4 p-6">
@@ -247,6 +436,32 @@ export function ParametrosForm({
           step="1"
           min="1"
           defaultValue={diasValidadeOrcamentoPadrao}
+          className="max-w-xs"
+        />
+      </Card>
+
+      <Card className="flex flex-col gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Tolerância de tiragem
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Variação de quantidade entregue tolerada sem reclamação — ex: 10%
+            significa que entregar 1.080 numa tiragem de 1.000 não é motivo de
+            disputa. Padrão do mercado offset (quebra de máquina, acerto de
+            cor). Entra no PDF do orçamento como cláusula de respaldo
+            contratual.
+          </p>
+        </div>
+        <Input
+          label="Tolerância de tiragem (%)"
+          name="toleranciaTiragemPadraoPercent"
+          type="number"
+          step="0.1"
+          min="0"
+          max="100"
+          defaultValue={toleranciaTiragemPadraoPercent}
+          hint="±% sobre a quantidade contratada"
           className="max-w-xs"
         />
       </Card>

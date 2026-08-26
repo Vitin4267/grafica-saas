@@ -287,7 +287,8 @@ export async function carregarContextoPrecificacao(
   } else if (
     item.modeloCalculo === "SERIGRAFIA" ||
     item.modeloCalculo === "SUBLIMACAO" ||
-    item.modeloCalculo === "ESTAMPAGEM_QUENTE"
+    item.modeloCalculo === "ESTAMPAGEM_QUENTE" ||
+    item.modeloCalculo === "PERSONALIZACAO"
   ) {
     if (!item.maquinaSetupPorPeca) {
       throw new ErroPrecificacao(
@@ -296,6 +297,9 @@ export async function carregarContextoPrecificacao(
       );
     }
 
+    contexto.setupPorPeca = {
+      custoSubstratoPorPeca: Number(item.precoCompra ?? 0),
+    };
     contexto.parametrosMaquinaSetupPorPeca = await carregarParametrosMaquinaSetupPorPeca(
       item.maquinaSetupPorPeca.id,
       graficaId
@@ -303,6 +307,15 @@ export async function carregarContextoPrecificacao(
     contexto.maquinaSetupPorPecaUsada = {
       id: item.maquinaSetupPorPeca.id,
       nome: item.maquinaSetupPorPeca.nome,
+    };
+  } else if (item.modeloCalculo === "REVENDA") {
+    // Default do catálogo — OrcamentoItem.custoAquisicaoUnitario (override
+    // POR ORÇAMENTO) não é campo de ItemGrafica, então não existe aqui; quem
+    // chama (calcularItemOrcamento) sobrescreve contexto.revenda depois desta
+    // função quando o orçamento informou um valor (mesmo padrão de
+    // contexto.horasEstimadas, ver src/lib/orcamento-precificacao.ts).
+    contexto.revenda = {
+      custoAquisicaoUnitario: Number(item.precoCompra ?? 0),
     };
   }
 

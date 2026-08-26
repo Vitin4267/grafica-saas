@@ -75,6 +75,7 @@ export default async function ConfiguracoesFiscaisPage() {
             enderecoUf: dadosFiscais.enderecoUf ?? "",
             naturezaOperacaoPadrao: dadosFiscais.naturezaOperacaoPadrao,
             cfopPadrao: dadosFiscais.cfopPadrao,
+            cfopPadraoInterestadual: dadosFiscais.cfopPadraoInterestadual,
             csosnPadrao: dadosFiscais.csosnPadrao,
             cstIcmsPadrao: dadosFiscais.cstIcmsPadrao ?? "",
             icmsAliquotaPadrao: dadosFiscais.icmsAliquotaPadrao?.toString() ?? "",

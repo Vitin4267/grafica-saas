@@ -58,7 +58,7 @@ export default async function MaquinaSetupPorPecaDetalhePage({
           </h1>
           <p className="mt-1 text-slate-500">
             Esses valores afetam todos os produtos de Serigrafia/Sublimação/
-            Estampagem a quente que usam esta máquina.
+            Estampagem a quente/Personalização que usam esta máquina.
           </p>
         </div>
 
@@ -68,6 +68,7 @@ export default async function MaquinaSetupPorPecaDetalhePage({
             nome: maquina.nome,
             ativa: maquina.ativa,
             tipoProcesso: maquina.tipoProcesso,
+            tipoProcessoOutro: maquina.tipoProcessoOutro,
             custoPorSetup: maquina.custoPorSetup.toString(),
             custoPorPeca: maquina.custoPorPeca.toString(),
             custoMinimo: maquina.custoMinimo.toString(),

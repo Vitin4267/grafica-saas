@@ -1,13 +1,14 @@
 import "server-only";
+import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 
 // Conjunto sugerido de categorias — inspirado na planilha real de controle de
 // custo de uma gráfica cliente (papel, ferramental, laminação, clichê,
-// impressão, frete, mão de obra, retrabalho). Só usado como PONTO DE PARTIDA
-// na primeira vez que a gráfica abre a tela de configuração de custo — depois
-// disso a gráfica é livre pra renomear/desativar/criar as suas próprias,
-// nunca fixo em código daqui pra frente (mesmo princípio já aplicado a
-// UnidadeDimensao: cada gráfica trabalha de um jeito).
+// impressão, frete, mão de obra, retrabalho, comissão). Só usado como PONTO
+// DE PARTIDA na primeira vez que a gráfica abre a tela de configuração de
+// custo — depois disso a gráfica é livre pra renomear/desativar/criar as
+// suas próprias, nunca fixo em código daqui pra frente (mesmo princípio já
+// aplicado a UnidadeDimensao: cada gráfica trabalha de um jeito).
 export const CATEGORIAS_CUSTO_SUGERIDAS = [
   "Papel",
   "Ferramental (faca)",
@@ -17,7 +18,66 @@ export const CATEGORIAS_CUSTO_SUGERIDAS = [
   "Frete",
   "Mão de obra",
   "Retrabalho",
+  "Comissão",
 ];
+
+// Espelha a comissão do vendedor (model Comissao) como um CustoPedido, só
+// quando ParametrosGrafica.comissaoEntraNoCustoPedido está ligado (achado
+// A1-Parte6 da auditoria de abrangência, 2026-08-24 — campo existia no
+// schema sem nenhum consumidor). Sem isso, Comissao e CustoPedido nunca se
+// tocam e lucroDoPedido nunca desconta a comissão paga ao vendedor.
+// OrigemCusto.COMISSAO já existe no enum, sem nenhum código usando antes
+// desta função. Mesmo estilo defensivo de criarCustoAutomaticoConsumo (ver
+// src/app/producao/status-transicao.ts): nunca lança — a aprovação do
+// orçamento não pode falhar por causa disto.
+export async function criarCustoAutomaticoComissao(
+  tx: Prisma.TransactionClient,
+  params: { graficaId: string; pedidoId: string; valorComissao: number }
+): Promise<void> {
+  if (params.valorComissao <= 0) return;
+
+  // Prefere uma categoria chamada "Comissão" (a sugerida em
+  // CATEGORIAS_CUSTO_SUGERIDAS acima) — tenant que já tinha categorias antes
+  // desta feature não ganha "Comissão" retroativamente (garantirCategoriasCustoPadrao
+  // só roda com zero categorias), então cai no fallback abaixo.
+  const categoria =
+    (await tx.categoriaCusto.findFirst({
+      where: { graficaId: params.graficaId, ativa: true, nome: { equals: "Comissão", mode: "insensitive" } },
+      select: { id: true },
+    })) ??
+    (await tx.categoriaCusto.findFirst({
+      where: { graficaId: params.graficaId, ativa: true },
+      orderBy: { ordem: "asc" },
+      select: { id: true },
+    }));
+
+  if (!categoria) {
+    console.error(
+      `[custo-automatico] Gráfica ${params.graficaId} sem nenhuma CategoriaCusto ativa — CustoPedido de comissão do pedido ${params.pedidoId} não foi criado.`
+    );
+    return;
+  }
+
+  // Mesmo cuidado de criarCustoAutomaticoConsumo: nunca soma calado em cima
+  // de um custo MANUAL já lançado na mesma categoria — só marca
+  // possivelDuplicidade pra UI resolver.
+  const existeManualMesmaCategoria = await tx.custoPedido.findFirst({
+    where: { pedidoId: params.pedidoId, categoriaCustoId: categoria.id, origem: "MANUAL" },
+    select: { id: true },
+  });
+
+  await tx.custoPedido.create({
+    data: {
+      graficaId: params.graficaId,
+      pedidoId: params.pedidoId,
+      categoriaCustoId: categoria.id,
+      origem: "COMISSAO",
+      valor: params.valorComissao,
+      valorCalculado: params.valorComissao,
+      possivelDuplicidade: existeManualMesmaCategoria !== null,
+    },
+  });
+}
 
 // Idempotente: só cria as categorias sugeridas se a gráfica ainda não tem
 // NENHUMA linha cadastrada. Se a gráfica já tinha categorias e apagou todas
@@ -145,4 +205,33 @@ export async function custosPorCategoriaNoPeriodo(
       total: Number(l._sum.valor ?? 0),
     }))
     .sort((a, b) => b.total - a.total);
+}
+
+// Ids de ItemGrafica (matéria-prima) cujo preço de compra não é atualizado
+// há mais dias que ParametrosGrafica.diasPrecoInsumoDesatualizado (default
+// 90) — achado A1-Parte6 da auditoria de abrangência (2026-08-24): o campo
+// existia no schema sem nenhum código lendo. `precoCompraAtualizadoEm` só é
+// carimbado a partir desta feature (ver catalogo/actions.ts e
+// catalogo/[itemGraficaId]/actions.ts) — item com o campo `null` (todo
+// cadastro anterior a ela, ou item cujo preço nunca foi tocado desde então)
+// NUNCA entra no aviso: sem dado é "não sei", nunca "está velho" (mesmo
+// princípio de todo campo novo nullable deste projeto).
+export async function listarInsumosComPrecoDesatualizado(graficaId: string): Promise<string[]> {
+  const parametros = await prisma.parametrosGrafica.findUnique({
+    where: { graficaId },
+    select: { diasPrecoInsumoDesatualizado: true },
+  });
+  const dias = parametros?.diasPrecoInsumoDesatualizado ?? 90;
+  const limiar = new Date(Date.now() - dias * 86_400_000);
+
+  const itens = await prisma.itemGrafica.findMany({
+    where: {
+      graficaId,
+      ativo: true,
+      itemCatalogo: { tipo: "MATERIA_PRIMA" },
+      precoCompraAtualizadoEm: { lt: limiar },
+    },
+    select: { id: true },
+  });
+  return itens.map((i) => i.id);
 }

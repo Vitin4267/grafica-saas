@@ -35,7 +35,7 @@ export type PedidoParaOrdemProducao = {
   prazoEntrega: Date | null;
   orcamento: {
     observacoes: string | null;
-    cliente: { nome: string };
+    cliente: { nome: string; preferenciasProducao: string | null };
     grafica: { nome: string };
     itens: {
       quantidade: number;
@@ -121,6 +121,11 @@ export function mapearDadosOrdemProducao(pedido: PedidoParaOrdemProducao): Dados
     criadoEm: pedido.createdAt,
     prazoEntrega: pedido.prazoEntrega,
     observacoes: pedido.orcamento.observacoes,
+    // Achado A11 da auditoria de abrangência: preferência do CLIENTE (ex:
+    // "sempre mandar arte em RGB"), diferente de `observacoes` acima (nota
+    // do PEDIDO). Snapshot em Cliente, não em Orcamento — vale pra todo
+    // pedido futuro desse cliente, não só este.
+    preferenciasProducaoCliente: pedido.orcamento.cliente.preferenciasProducao,
     itens: pedido.orcamento.itens.map((item) => ({
       nome: item.itemGrafica.itemCatalogo.nome,
       quantidade: item.quantidade,

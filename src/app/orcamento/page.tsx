@@ -42,7 +42,7 @@ export default async function OrcamentoPage() {
         itemCatalogo: { tipo: "SERVICO" },
         configuracaoAcabamento: { isNot: null },
       },
-      include: { itemCatalogo: true },
+      include: { itemCatalogo: true, configuracaoAcabamento: { select: { baseCobranca: true } } },
       orderBy: { itemCatalogo: { nome: "asc" } },
     }),
     // Matéria-prima candidata a "papel" no motor de clichê de etiqueta —
@@ -58,7 +58,9 @@ export default async function OrcamentoPage() {
       orderBy: { itemCatalogo: { nome: "asc" } },
     }),
     prisma.cliente.findMany({
-      where: { graficaId: usuario.graficaId },
+      // desativadoEm: null — cliente desativado some do dropdown de novo
+      // orçamento (ver achado A9/A13: desativação reversível em Cliente).
+      where: { graficaId: usuario.graficaId, desativadoEm: null },
       orderBy: { nome: "asc" },
     }),
     // Só usado pra decidir se o campo "Filial" aparece no formulário — sem
@@ -180,6 +182,7 @@ export default async function OrcamentoPage() {
             acabamentosDisponiveis={acabamentosDisponiveis.map((ig) => ({
               id: ig.id,
               nome: ig.itemCatalogo.nome,
+              baseCobranca: ig.configuracaoAcabamento!.baseCobranca,
             }))}
             papeisDisponiveis={papeisDisponiveis.map((ig) => ({
               id: ig.id,

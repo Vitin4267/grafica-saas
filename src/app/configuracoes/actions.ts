@@ -82,6 +82,24 @@ const ROTULO_LIMIAR_PRAZO: Record<(typeof CAMPOS_LIMIAR_PRAZO)[number], string> 
   alertaPrazoLimiar3Dias: "3º aviso (dias antes do prazo)",
 };
 
+// 8 campos da fase "custo real" (schema.prisma, ParametrosGrafica ~L130-139)
+// — existiam no schema sem nenhum caminho de escrita no form (achado A1 da
+// auditoria de abrangência, 2026-08-24). Os 3 abaixo são percentuais
+// "inteiros" (10 = 10%), diferente de CAMPOS_DECIMAL acima (0.15 = 15%) —
+// por isso ficam de fora daquele array, com validação/formatação própria.
+const CAMPOS_PERCENTUAL_INTEIRO = [
+  "margemFaixaBaixa",
+  "margemFaixaBoa",
+  "descontoMaxSemAprovacao",
+  "toleranciaTiragemPadraoPercent",
+] as const;
+const ROTULO_PERCENTUAL_INTEIRO: Record<(typeof CAMPOS_PERCENTUAL_INTEIRO)[number], string> = {
+  margemFaixaBaixa: "Margem faixa baixa",
+  margemFaixaBoa: "Margem faixa boa",
+  descontoMaxSemAprovacao: "Desconto máximo sem aprovação",
+  toleranciaTiragemPadraoPercent: "Tolerância de tiragem",
+};
+
 export async function salvarParametros(
   _estadoAnterior: SalvarParametrosResult | null,
   formData: FormData
@@ -242,6 +260,77 @@ export async function salvarParametros(
   // etiqueta (2026-08-23).
   const mostrarEspecificacoesTecnicas = formData.get("mostrarEspecificacoesTecnicas") === "on";
 
+  // Fase "custo real" (ver comentário de CAMPOS_PERCENTUAL_INTEIRO acima) —
+  // 3 booleans simples, seguindo o mesmo padrão de alertaPrazoAtivo/
+  // mostrarEspecificacoesTecnicas.
+  const custoAutomaticoConsumo = formData.get("custoAutomaticoConsumo") === "on";
+  const perdaEhCustoDoPedido = formData.get("perdaEhCustoDoPedido") === "on";
+  const comissaoEntraNoCustoPedido = formData.get("comissaoEntraNoCustoPedido") === "on";
+
+  // categoriaCustoConsumoPadraoId — FK opcional pra CategoriaCusto ("nenhuma"
+  // = cai no fallback "primeira categoria ativa por ordem", ver
+  // criarCustoAutomaticoConsumo em src/app/producao/status-transicao.ts).
+  // Validado contra o tenant antes de gravar — nunca aceita um id de
+  // categoria de outra gráfica (POST forjado).
+  const categoriaCustoConsumoPadraoIdBruto = formData.get("categoriaCustoConsumoPadraoId");
+  const categoriaCustoConsumoPadraoId: string | null =
+    typeof categoriaCustoConsumoPadraoIdBruto === "string" &&
+    categoriaCustoConsumoPadraoIdBruto.trim() !== ""
+      ? categoriaCustoConsumoPadraoIdBruto.trim()
+      : null;
+  if (categoriaCustoConsumoPadraoId) {
+    const categoriaValida = await prisma.categoriaCusto.findFirst({
+      where: { id: categoriaCustoConsumoPadraoId, graficaId: usuario.graficaId },
+      select: { id: true },
+    });
+    if (!categoriaValida) {
+      return { ok: false, mensagem: "Categoria de custo padrão selecionada é inválida." };
+    }
+  }
+
+  // Mesmo cuidado de presença dos blocos acima (campo ausente/"" não pode
+  // virar 0 silenciosamente).
+  const percentuaisInteiros: Record<string, number> = {};
+  for (const campo of CAMPOS_PERCENTUAL_INTEIRO) {
+    const bruto = formData.get(campo);
+    if (typeof bruto !== "string" || bruto.trim() === "") {
+      return { ok: false, mensagem: `Preencha o campo "${ROTULO_PERCENTUAL_INTEIRO[campo]}".` };
+    }
+    const valor = Number(bruto);
+    if (!Number.isFinite(valor) || valor < 0 || valor > 100) {
+      return {
+        ok: false,
+        mensagem: `Valor inválido em "${ROTULO_PERCENTUAL_INTEIRO[campo]}" — deve ser entre 0 e 100.`,
+      };
+    }
+    percentuaisInteiros[campo] = valor;
+  }
+  if (percentuaisInteiros.margemFaixaBaixa >= percentuaisInteiros.margemFaixaBoa) {
+    return {
+      ok: false,
+      mensagem: 'A "Margem faixa baixa" precisa ser menor que a "Margem faixa boa".',
+    };
+  }
+
+  const diasPrecoInsumoDesatualizadoBruto = formData.get("diasPrecoInsumoDesatualizado");
+  if (
+    typeof diasPrecoInsumoDesatualizadoBruto !== "string" ||
+    diasPrecoInsumoDesatualizadoBruto.trim() === ""
+  ) {
+    return {
+      ok: false,
+      mensagem: 'Preencha o campo "Dias para avisar preço de insumo desatualizado".',
+    };
+  }
+  const diasPrecoInsumoDesatualizado = Number(diasPrecoInsumoDesatualizadoBruto);
+  if (!Number.isInteger(diasPrecoInsumoDesatualizado) || diasPrecoInsumoDesatualizado <= 0) {
+    return {
+      ok: false,
+      mensagem:
+        'Dias para avisar preço de insumo desatualizado precisa ser um número inteiro maior que zero.',
+    };
+  }
+
   const somaEncargos =
     dados.margemPadrao +
     dados.impostoPercent +
@@ -277,6 +366,15 @@ export async function salvarParametros(
       alertaPrazoLimiar1Dias: limiaresPrazo.alertaPrazoLimiar1Dias,
       alertaPrazoLimiar2Dias: limiaresPrazo.alertaPrazoLimiar2Dias,
       alertaPrazoLimiar3Dias: limiaresPrazo.alertaPrazoLimiar3Dias,
+      custoAutomaticoConsumo,
+      categoriaCustoConsumoPadraoId,
+      perdaEhCustoDoPedido,
+      comissaoEntraNoCustoPedido,
+      margemFaixaBaixa: percentuaisInteiros.margemFaixaBaixa,
+      margemFaixaBoa: percentuaisInteiros.margemFaixaBoa,
+      descontoMaxSemAprovacao: percentuaisInteiros.descontoMaxSemAprovacao,
+      toleranciaTiragemPadraoPercent: percentuaisInteiros.toleranciaTiragemPadraoPercent,
+      diasPrecoInsumoDesatualizado,
     },
   });
 
@@ -351,6 +449,65 @@ export async function salvarParametros(
       antesTextos.push(`${ROTULO_LIMIAR_PRAZO[campo]}: ${antes}`);
       depoisTextos.push(`${ROTULO_LIMIAR_PRAZO[campo]}: ${depois}`);
     }
+  }
+
+  if ((parametrosAntes?.custoAutomaticoConsumo ?? true) !== custoAutomaticoConsumo) {
+    antesTextos.push(
+      `Custo automático de consumo: ${(parametrosAntes?.custoAutomaticoConsumo ?? true) ? "ligado" : "desligado"}`
+    );
+    depoisTextos.push(`Custo automático de consumo: ${custoAutomaticoConsumo ? "ligado" : "desligado"}`);
+  }
+  if ((parametrosAntes?.perdaEhCustoDoPedido ?? true) !== perdaEhCustoDoPedido) {
+    antesTextos.push(
+      `Perda de calibragem conta como custo do pedido: ${(parametrosAntes?.perdaEhCustoDoPedido ?? true) ? "sim" : "não"}`
+    );
+    depoisTextos.push(`Perda de calibragem conta como custo do pedido: ${perdaEhCustoDoPedido ? "sim" : "não"}`);
+  }
+  if ((parametrosAntes?.comissaoEntraNoCustoPedido ?? false) !== comissaoEntraNoCustoPedido) {
+    antesTextos.push(
+      `Comissão do vendedor entra no custo do pedido: ${(parametrosAntes?.comissaoEntraNoCustoPedido ?? false) ? "sim" : "não"}`
+    );
+    depoisTextos.push(
+      `Comissão do vendedor entra no custo do pedido: ${comissaoEntraNoCustoPedido ? "sim" : "não"}`
+    );
+  }
+
+  const categoriaCustoConsumoPadraoIdAntes = parametrosAntes?.categoriaCustoConsumoPadraoId ?? null;
+  if (categoriaCustoConsumoPadraoIdAntes !== categoriaCustoConsumoPadraoId) {
+    // Resolve nome legível pro log em vez do id cru — só busca os 2 ids
+    // realmente envolvidos (nenhuma query se os dois forem null).
+    const idsParaResolver = [categoriaCustoConsumoPadraoIdAntes, categoriaCustoConsumoPadraoId].filter(
+      (id): id is string => id !== null
+    );
+    const categoriasResolvidas =
+      idsParaResolver.length > 0
+        ? await prisma.categoriaCusto.findMany({
+            where: { id: { in: idsParaResolver } },
+            select: { id: true, nome: true },
+          })
+        : [];
+    const nomePorId = new Map(categoriasResolvidas.map((c) => [c.id, c.nome]));
+    antesTextos.push(
+      `Categoria de custo padrão: ${categoriaCustoConsumoPadraoIdAntes ? (nomePorId.get(categoriaCustoConsumoPadraoIdAntes) ?? "categoria removida") : "— (primeira ativa por ordem)"}`
+    );
+    depoisTextos.push(
+      `Categoria de custo padrão: ${categoriaCustoConsumoPadraoId ? (nomePorId.get(categoriaCustoConsumoPadraoId) ?? "categoria removida") : "— (primeira ativa por ordem)"}`
+    );
+  }
+
+  for (const campo of CAMPOS_PERCENTUAL_INTEIRO) {
+    const antes = parametrosAntes ? Number(parametrosAntes[campo]) : null;
+    const depois = percentuaisInteiros[campo];
+    if (antes === null || antes !== depois) {
+      antesTextos.push(`${ROTULO_PERCENTUAL_INTEIRO[campo]}: ${antes === null ? "—" : `${antes}%`}`);
+      depoisTextos.push(`${ROTULO_PERCENTUAL_INTEIRO[campo]}: ${depois}%`);
+    }
+  }
+
+  const diasPrecoInsumoDesatualizadoAntes = parametrosAntes?.diasPrecoInsumoDesatualizado ?? 90;
+  if (diasPrecoInsumoDesatualizadoAntes !== diasPrecoInsumoDesatualizado) {
+    antesTextos.push(`Dias para avisar preço de insumo desatualizado: ${diasPrecoInsumoDesatualizadoAntes}`);
+    depoisTextos.push(`Dias para avisar preço de insumo desatualizado: ${diasPrecoInsumoDesatualizado}`);
   }
 
   if (antesTextos.length > 0) {

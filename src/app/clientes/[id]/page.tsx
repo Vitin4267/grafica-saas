@@ -78,6 +78,17 @@ export default async function ClienteDetalhePage({
             enderecoMunicipio: cliente.enderecoMunicipio ?? "",
             enderecoCodigoIbge: cliente.enderecoCodigoIbge ?? "",
             enderecoUf: cliente.enderecoUf ?? "",
+            bloqueadoParaVenda: cliente.bloqueadoParaVenda,
+            motivoBloqueio: cliente.motivoBloqueio ?? "",
+            observacoes: cliente.observacoes ?? "",
+            preferenciasProducao: cliente.preferenciasProducao ?? "",
+            origem: cliente.origem ?? "",
+            origemOutro: cliente.origemOutro ?? "",
+            segmento: cliente.segmento ?? "",
+            segmentoOutro: cliente.segmentoOutro ?? "",
+            margemPadraoOverride:
+              cliente.margemPadraoOverride !== null ? cliente.margemPadraoOverride.toString() : "",
+            desativadoEm: cliente.desativadoEm ? cliente.desativadoEm.toISOString() : null,
           }}
         />
       </main>

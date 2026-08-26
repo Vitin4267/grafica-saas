@@ -72,7 +72,9 @@ export default async function OrcamentoPublicoPage({
   ): OpcaoPublica["itens"] {
     return itens.map((item) => ({
       id: item.id,
-      nome: item.itemGrafica.itemCatalogo.nome,
+      // Achado B6 — descrição específica do pedido sobrepõe o nome genérico
+      // do catálogo quando preenchida (mesmo fallback de mapear-dados.ts).
+      nome: item.descricaoLivre?.trim() || item.itemGrafica.itemCatalogo.nome,
       quantidade: item.quantidade,
       precoUnitario: item.precoUnitario.toString(),
       precoTotal: item.precoTotal.toString(),
@@ -192,7 +194,7 @@ export default async function OrcamentoPublicoPage({
               <div key={item.id} className="flex flex-col gap-2 p-5">
                 <div className="flex items-center justify-between gap-4">
                   <p className="font-medium text-slate-900 dark:text-white">
-                    {item.itemGrafica.itemCatalogo.nome}
+                    {item.descricaoLivre?.trim() || item.itemGrafica.itemCatalogo.nome}
                   </p>
                   <p className="font-semibold text-slate-900 dark:text-white">
                     {formatoMoeda.format(Number(item.precoTotal))}

@@ -151,8 +151,16 @@ export const itemEntradaSchema = z.object({
   // Motores Serigrafia/Sublimação/Estampagem a quente — os 3 compartilham
   // este campo (ver src/lib/orcamento-precificacao.ts).
   numeroSetups: z.number().int().nullable(),
+  // Acabamento cobrado por hora (ex: instalação, criação de arte) — não é
+  // model-gated, independente do modeloCalculo do item.
+  horasEstimadas: z.number().positive().nullable(),
   cores: z.string().max(60).nullable(),
   acabamento: z.string().max(200).nullable(),
+  // Achado B6 — texto livre que sobrepõe o nome do catálogo no PDF/link
+  // público quando preenchido (ver src/lib/pdf/mapear-dados.ts). Disponível
+  // pra QUALQUER modeloCalculo, ao contrário de acabamento acima (que só se
+  // aplica ao modo SIMPLES) — nunca entra no motor de preço.
+  descricaoLivre: z.string().max(500).nullable(),
   acabamentoIds: z.array(z.string().min(1)).max(20).default([]),
   etiqueta: etiquetaEntradaSchema.nullable(),
   // Motor de clichê de etiqueta (só M2 com ConfiguracaoClicheEtiqueta) — ver
@@ -161,6 +169,14 @@ export const itemEntradaSchema = z.object({
   quantidadeCores: z.number().int().positive().nullable(),
   custoFaca: z.number().min(0).nullable(),
   custoFrete: z.number().min(0).nullable(),
+  // Motor Revenda/terceirização (achado A12) — override opcional, POR
+  // ORÇAMENTO, do custo de aquisição do fornecedor; quando ausente, o motor
+  // cai no ItemGrafica.precoCompra do catálogo (ver src/lib/pricing/carregar.ts).
+  custoAquisicaoUnitario: z.number().nonnegative().nullable(),
+  // "Material fornecido pelo cliente" (achado B7) — DIGITAL/SERIGRAFIA/
+  // SUBLIMACAO/ESTAMPAGEM_QUENTE/PERSONALIZACAO only; zera o custo do
+  // substrato pra este item (ver src/lib/orcamento-precificacao.ts).
+  materialFornecidoPeloCliente: z.boolean(),
 });
 
 export type ItemEntrada = z.infer<typeof itemEntradaSchema>;

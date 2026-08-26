@@ -8,10 +8,17 @@ import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
-import { ORDEM_CATEGORIA_EQUIPAMENTO } from "@/lib/tipos-equipamento";
+import { ORDEM_CATEGORIA_EQUIPAMENTO, ROTULO_CATEGORIA_EQUIPAMENTO } from "@/lib/tipos-equipamento";
 import type { CategoriaEquipamento } from "@/generated/prisma/enums";
+import { registrarAuditoria, criarDiffCampos } from "@/lib/auditoria";
 
 export type SalvarEquipamentoResult = { ok: boolean; mensagem: string };
+
+// Rótulo legível pra auditoria — cai pra "categoriaOutro" quando a categoria
+// é o escape hatch OUTRO (mesmo padrão de exibição da tela).
+function rotuloCategoria(categoria: CategoriaEquipamento, categoriaOutro: string | null): string {
+  return categoria === "OUTRO" ? categoriaOutro ?? "Outro" : ROTULO_CATEGORIA_EQUIPAMENTO[categoria];
+}
 
 // Mesmo padrão do resto do schema (UnidadeMedida, MaterialSubstrato etc.):
 // categoria vem de uma lista fechada com OUTRO de escape — categoriaOutro só
@@ -76,6 +83,16 @@ export async function criarEquipamento(
     throw erro;
   }
 
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "configuracoes.criar_equipamento",
+    entidade: "Equipamento",
+    entidadeId: novoEquipamento.id,
+    descricao: `Equipamento "${nome}" (${rotuloCategoria(validacaoCategoria.categoria, validacaoCategoria.categoriaOutro)}) criado`,
+  });
+
   revalidatePath("/configuracoes/maquinas");
   redirect(`/configuracoes/maquinas/equipamentos/${novoEquipamento.id}`);
 }
@@ -132,6 +149,30 @@ export async function salvarEquipamento(
     throw erro;
   }
 
+  const diff = criarDiffCampos();
+  diff.campo("Nome", equipamento.nome, nome);
+  diff.campo("Ativo", equipamento.ativo, ativo);
+  diff.campo(
+    "Categoria",
+    rotuloCategoria(equipamento.categoria, equipamento.categoriaOutro),
+    rotuloCategoria(validacaoCategoria.categoria, validacaoCategoria.categoriaOutro)
+  );
+  diff.campo("Marca", equipamento.marca, marca);
+  diff.campo("Modelo", equipamento.modelo, modelo);
+  if (diff.temMudanca) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "configuracoes.salvar_equipamento",
+      entidade: "Equipamento",
+      entidadeId: equipamentoId,
+      descricao: `Equipamento "${equipamento.nome}" atualizado`,
+      valorAnterior: diff.antesTextos.join("; "),
+      valorNovo: diff.depoisTextos.join("; "),
+    });
+  }
+
   revalidatePath(`/configuracoes/maquinas/equipamentos/${equipamentoId}`);
   revalidatePath("/configuracoes/maquinas");
   return { ok: true, mensagem: "Equipamento salvo com sucesso!" };
@@ -155,12 +196,30 @@ export async function excluirEquipamento(
   }
   const equipamentoId = String(formData.get("equipamentoId"));
 
+  // Busca o nome ANTES de apagar só pra deixar a descrição do log legível —
+  // a exclusão em si continua sendo o deleteMany filtrado por graficaId
+  // (TOCTOU-safe), não um findFirst + delete.
+  const equipamentoParaLog = await prisma.equipamento.findFirst({
+    where: { id: equipamentoId, graficaId: usuario.graficaId },
+    select: { nome: true },
+  });
+
   const resultado = await prisma.equipamento.deleteMany({
     where: { id: equipamentoId, graficaId: usuario.graficaId },
   });
   if (resultado.count === 0) {
     return { ok: false, mensagem: "Equipamento não encontrado." };
   }
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "configuracoes.excluir_equipamento",
+    entidade: "Equipamento",
+    entidadeId: equipamentoId,
+    descricao: `Equipamento "${equipamentoParaLog?.nome ?? equipamentoId}" excluído`,
+  });
 
   revalidatePath("/configuracoes/maquinas");
   redirect("/configuracoes/maquinas");

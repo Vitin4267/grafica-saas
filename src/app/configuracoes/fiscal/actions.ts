@@ -7,6 +7,7 @@ import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
+import { registrarAuditoria, criarDiffCampos } from "@/lib/auditoria";
 
 export type SalvarDadosFiscaisResult = { ok: boolean; mensagem: string };
 
@@ -23,11 +24,53 @@ const CAMPOS_TEXTO = [
   "enderecoUf",
   "naturezaOperacaoPadrao",
   "cfopPadrao",
+  "cfopPadraoInterestadual",
   "csosnPadrao",
   "cstIcmsPadrao",
   "icmsModalidadeBaseCalculoPadrao",
   "pisCofinsSituacaoTributariaPadrao",
 ] as const;
+
+// Rótulos legíveis pro log de auditoria (ver achado A3 da auditoria de
+// abrangência, 2026-08-24) — nenhum destes é segredo (diferente do token
+// Focus NFe, tratado à parte), então o valor de verdade entra no log.
+const ROTULO_CAMPO_FISCAL: Record<(typeof CAMPOS_TEXTO)[number], string> = {
+  cnpj: "CNPJ",
+  razaoSocial: "Razão social",
+  nomeFantasia: "Nome fantasia",
+  inscricaoEstadual: "Inscrição estadual",
+  enderecoCep: "CEP",
+  enderecoLogradouro: "Logradouro",
+  enderecoNumero: "Número",
+  enderecoBairro: "Bairro",
+  enderecoMunicipio: "Município",
+  enderecoUf: "UF",
+  naturezaOperacaoPadrao: "Natureza da operação padrão",
+  cfopPadrao: "CFOP padrão",
+  cfopPadraoInterestadual: "CFOP padrão interestadual",
+  csosnPadrao: "CSOSN padrão",
+  cstIcmsPadrao: "CST-ICMS padrão",
+  icmsModalidadeBaseCalculoPadrao: "Modalidade de base de cálculo do ICMS padrão",
+  pisCofinsSituacaoTributariaPadrao: "Situação tributária de PIS/COFINS padrão",
+};
+const ROTULO_AMBIENTE: Record<string, string> = {
+  homologacao: "Homologação (testes)",
+  producao: "Produção",
+};
+const ROTULO_REGIME_TRIBUTARIO: Record<RegimeTributario, string> = {
+  SIMPLES_NACIONAL: "Simples Nacional",
+  LUCRO_PRESUMIDO: "Lucro Presumido",
+  LUCRO_REAL: "Lucro Real",
+};
+// 3 dos CAMPOS_TEXTO têm @default no schema (os outros são nullable sem
+// default) — usados só no fallback de "nunca configurado" (create) pro diff
+// não acusar "— → 5102" quando na prática o valor efetivo já era 5102.
+const DEFAULT_CAMPO_TEXTO_FISCAL: Partial<Record<(typeof CAMPOS_TEXTO)[number], string>> = {
+  naturezaOperacaoPadrao: "Venda de mercadoria",
+  cfopPadrao: "5102",
+  cfopPadraoInterestadual: "6102",
+  csosnPadrao: "102",
+};
 
 const REGIMES_TRIBUTARIOS: RegimeTributario[] = ["SIMPLES_NACIONAL", "LUCRO_PRESUMIDO", "LUCRO_REAL"];
 
@@ -101,15 +144,60 @@ export async function salvarDadosFiscais(
   // Campo de token é write-only: em branco = "manter o valor salvo" (nunca
   // reexibimos o token de verdade no formulário, só os últimos 4 caracteres).
   const novoToken = formData.get("focusNfeToken");
-  if (typeof novoToken === "string" && novoToken.trim()) {
+  const tokenAlterado = typeof novoToken === "string" && novoToken.trim().length > 0;
+  if (tokenAlterado) {
     dados.focusNfeToken = novoToken.trim();
   }
+
+  const dadosAntes = await prisma.dadosFiscaisGrafica.findUnique({
+    where: { graficaId: usuario.graficaId },
+  });
 
   await prisma.dadosFiscaisGrafica.upsert({
     where: { graficaId: usuario.graficaId },
     update: { ...dados, regimeTributario, icmsAliquotaPadrao },
     create: { graficaId: usuario.graficaId, ...dados, regimeTributario, icmsAliquotaPadrao },
   });
+
+  // Diff campo-a-campo — dados fiscais alimentam a emissão de NF-e de verdade
+  // (Focus NFe/SEFAZ), então "quem trocou o CFOP" ou "quem mudou de
+  // homologação pra produção" precisa ficar rastreável (achado A3 da
+  // auditoria de abrangência, 2026-08-24). O TOKEN NUNCA entra no diff pelo
+  // valor — só "alterado", nunca o valor em si, nem mascarado.
+  const diff = criarDiffCampos();
+  diff.campo(
+    "Ambiente",
+    ROTULO_AMBIENTE[dadosAntes?.ambiente ?? "homologacao"],
+    ROTULO_AMBIENTE[ambiente]
+  );
+  diff.campo(
+    "Regime tributário",
+    ROTULO_REGIME_TRIBUTARIO[dadosAntes?.regimeTributario ?? "SIMPLES_NACIONAL"],
+    ROTULO_REGIME_TRIBUTARIO[regimeTributario]
+  );
+  const icmsAliquotaAntes = dadosAntes?.icmsAliquotaPadrao != null ? Number(dadosAntes.icmsAliquotaPadrao) : null;
+  diff.campo("Alíquota de ICMS padrão (%)", icmsAliquotaAntes, icmsAliquotaPadrao);
+  for (const campo of CAMPOS_TEXTO) {
+    const antesCampo = dadosAntes?.[campo] ?? DEFAULT_CAMPO_TEXTO_FISCAL[campo] ?? null;
+    diff.campo(ROTULO_CAMPO_FISCAL[campo], antesCampo, dados[campo]);
+  }
+  if (tokenAlterado) {
+    diff.antesTextos.push("Token Focus NFe: (existente)");
+    diff.depoisTextos.push("Token Focus NFe: alterado");
+  }
+  if (diff.temMudanca) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "configuracoes.salvar_dados_fiscais",
+      entidade: "DadosFiscaisGrafica",
+      entidadeId: usuario.graficaId,
+      descricao: "Dados fiscais da gráfica atualizados",
+      valorAnterior: diff.antesTextos.join("; "),
+      valorNovo: diff.depoisTextos.join("; "),
+    });
+  }
 
   revalidatePath("/configuracoes/fiscal");
   return { ok: true, mensagem: "Dados fiscais salvos com sucesso!" };

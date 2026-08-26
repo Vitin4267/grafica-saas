@@ -62,17 +62,31 @@ export const EXEMPLOS_MARCA_CATEGORIA_EQUIPAMENTO: Record<CategoriaEquipamento, 
 // Tag de processo pra MaquinaSetupPorPeca (Feature A) — enum separado de
 // CategoriaEquipamento de propósito (ver comentário no schema): aqui é o
 // filtro de qual máquina serve pra qual ModeloCalculo de produto, não uma
-// categoria de cadastro informativo. Mesmos 3 rótulos usados em
-// ConfiguracaoProdutoForm.tsx (dropdown de modelo de cálculo) — repetidos
-// aqui como fonte única pro CRUD de máquina em configuracoes/maquinas/.
+// categoria de cadastro informativo. SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE
+// usam os mesmos rótulos de ConfiguracaoProdutoForm.tsx (dropdown de modelo
+// de cálculo) — repetidos aqui como fonte única pro CRUD de máquina em
+// configuracoes/maquinas/. TAMPOGRAFIA/GRAVACAO_LASER/DTG/TRANSFER/OUTRO
+// (achado A3 da auditoria de abrangência) mapeiam pra
+// ModeloCalculo.PERSONALIZACAO — não têm produto homônimo, então não
+// aparecem em ConfiguracaoProdutoForm.tsx.
 export const ORDEM_PROCESSO_SETUP_POR_PECA: ProcessoSetupPorPeca[] = [
   "SERIGRAFIA",
   "SUBLIMACAO",
   "ESTAMPAGEM_QUENTE",
+  "TAMPOGRAFIA",
+  "GRAVACAO_LASER",
+  "DTG",
+  "TRANSFER",
+  "OUTRO",
 ];
 
 export const ROTULO_PROCESSO_SETUP_POR_PECA: Record<ProcessoSetupPorPeca, string> = {
   SERIGRAFIA: "Serigrafia",
   SUBLIMACAO: "Sublimação",
   ESTAMPAGEM_QUENTE: "Estampagem a quente (hot stamping)",
+  TAMPOGRAFIA: "Tampografia",
+  GRAVACAO_LASER: "Gravação a laser",
+  DTG: "DTG (impressão direta no tecido)",
+  TRANSFER: "Transfer",
+  OUTRO: "Outro",
 };

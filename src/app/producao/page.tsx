@@ -125,7 +125,9 @@ export default async function ProducaoPage({
       orderBy: { createdAt: "asc" },
     }),
     prisma.cliente.findMany({
-      where: { graficaId: usuario.graficaId },
+      // desativadoEm: null — mesmo filtro dos outros dropdowns de cliente
+      // (ver achado A9/A13).
+      where: { graficaId: usuario.graficaId, desativadoEm: null },
       select: { id: true, nome: true },
       orderBy: { nome: "asc" },
     }),

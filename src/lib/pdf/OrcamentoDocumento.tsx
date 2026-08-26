@@ -37,12 +37,22 @@ export type DadosPdfOrcamento = {
   graficaNome: string;
   logoUrl: string | null;
   corPrimaria: string | null;
+  // Dados de contato (comerciais, não fiscais) — mesmo nível de logoUrl/corPrimaria.
+  // Aparecem no rodapé do PDF. Nunca dado sensível ou interno.
+  telefone: string | null;
+  emailContato: string | null;
+  site: string | null;
+  enderecoResumido: string | null;
   clienteNome: string;
   status: "RASCUNHO" | "ENVIADO" | "APROVADO" | "REJEITADO";
   criadoEm: Date;
   respostaPublicaNome: string | null;
   respostaPublicaEm: Date | null;
   validoAteEm: Date | null;
+  // Snapshot em % de ParametrosGrafica.toleranciaTiragemPadraoPercent no
+  // momento do ENVIO (ver Orcamento.toleranciaTiragemPercent) — mesmo ciclo
+  // de vida de validoAteEm acima, null enquanto RASCUNHO.
+  toleranciaTiragemPercent: number | null;
   itens: ItemPdfOrcamento[];
   total: string;
   dadosPedido: DadosPdfPedido | null;
@@ -206,6 +216,13 @@ const estilos = StyleSheet.create({
     borderTopColor: "#e2e8f0",
   },
   termosTexto: { fontSize: 7, color: "#94a3b8", lineHeight: 1.4 },
+  contatoRodapeBox: {
+    marginTop: 16,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#e2e8f0",
+  },
+  contatoRodapeLinha: { fontSize: 8, color: "#475569", marginBottom: 2 },
   rodape: {
     position: "absolute",
     bottom: 30,
@@ -261,6 +278,12 @@ export function OrcamentoDocumento({ dados }: { dados: DadosPdfOrcamento }) {
           {dados.validoAteEm !== null && (
             <Text style={estilos.validoAte}>
               Válido até {formatoInstanteRealComHora.format(dados.validoAteEm)}
+            </Text>
+          )}
+          {dados.toleranciaTiragemPercent !== null && (
+            <Text style={estilos.validoAte}>
+              Tolerância de tiragem: ±{dados.toleranciaTiragemPercent}% sobre a quantidade
+              contratada
             </Text>
           )}
         </View>
@@ -359,6 +382,19 @@ export function OrcamentoDocumento({ dados }: { dados: DadosPdfOrcamento }) {
             {dados.termosCondicoesPdf || TERMOS_CONDICOES_PDF_PADRAO}
           </Text>
         </View>
+
+        {(dados.telefone || dados.emailContato || dados.site || dados.enderecoResumido) && (
+          <View style={estilos.contatoRodapeBox}>
+            {dados.telefone && <Text style={estilos.contatoRodapeLinha}>Tel: {dados.telefone}</Text>}
+            {dados.emailContato && (
+              <Text style={estilos.contatoRodapeLinha}>E-mail: {dados.emailContato}</Text>
+            )}
+            {dados.site && <Text style={estilos.contatoRodapeLinha}>Site: {dados.site}</Text>}
+            {dados.enderecoResumido && (
+              <Text style={estilos.contatoRodapeLinha}>Endereço: {dados.enderecoResumido}</Text>
+            )}
+          </View>
+        )}
 
         <Text style={estilos.rodape} fixed>
           Gerado em {formatoInstanteReal.format(agora)} às {formatoInstanteRealHora.format(agora)}

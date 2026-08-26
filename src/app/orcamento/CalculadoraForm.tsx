@@ -33,8 +33,12 @@ const OPCOES_TIPO_PEDIDO: [string, string][] = [
   ["REPETICAO_COM_ALTERACAO", "Repetição com alteração"],
 ];
 const OPCOES_FRETE: [string, string][] = [
-  ["EMITENTE", "Emitente"],
-  ["DESTINATARIO", "Destinatário"],
+  ["SEM_FRETE", "Retirada no balcão / sem frete"],
+  ["CIF_REMETENTE", "Por conta do emitente (CIF)"],
+  ["FOB_DESTINATARIO", "Por conta do destinatário (FOB)"],
+  ["TERCEIROS", "Por conta de terceiros"],
+  ["PROPRIO_REMETENTE", "Transporte próprio do remetente"],
+  ["PROPRIO_DESTINATARIO", "Transporte próprio do destinatário"],
 ];
 
 type DadosGerais = {
@@ -138,8 +142,12 @@ type ItemCarrinho = {
   numeroCoresFlexo: number | null;
   numeroCliques: number | null;
   numeroSetups: number | null;
+  horasEstimadas: number | null;
+  custoAquisicaoUnitario: number | null;
+  materialFornecidoPeloCliente: boolean;
   cores: string | null;
   acabamento: string | null;
+  descricaoLivre: string | null;
   acabamentoIds: string[];
   precoUnitario: string;
   precoTotal: string;
@@ -151,7 +159,9 @@ type ItemCarrinho = {
     | "DIGITAL"
     | "SERIGRAFIA"
     | "SUBLIMACAO"
-    | "ESTAMPAGEM_QUENTE";
+    | "ESTAMPAGEM_QUENTE"
+    | "PERSONALIZACAO"
+    | "REVENDA";
   etiqueta: CamposEtiqueta;
   precificacaoEtiqueta: CamposPrecificacaoEtiqueta;
 };
@@ -198,7 +208,12 @@ export function CalculadoraForm({
     itemSelecionado?.modeloCalculo === "DIGITAL" ||
     itemSelecionado?.modeloCalculo === "SERIGRAFIA" ||
     itemSelecionado?.modeloCalculo === "SUBLIMACAO" ||
-    itemSelecionado?.modeloCalculo === "ESTAMPAGEM_QUENTE";
+    itemSelecionado?.modeloCalculo === "ESTAMPAGEM_QUENTE" ||
+    itemSelecionado?.modeloCalculo === "PERSONALIZACAO" ||
+    // Revenda/terceirização (achado A12) — sem nesting, mas SEMPRE motor
+    // avançado: custoBase precisa passar por comporPreco (overhead/margem/
+    // piso), nunca o preview client-side de SIMPLES abaixo.
+    itemSelecionado?.modeloCalculo === "REVENDA";
 
   // Prévia instantânea, sem round-trip, só pra itens SIMPLES (matemática pura,
   // igual a src/lib/orcamento.ts). M2/Offset só têm preço real depois de
@@ -247,6 +262,10 @@ export function CalculadoraForm({
       campos.numeroCoresFlexo !== "" ? Number(campos.numeroCoresFlexo) : null;
     const numeroCliques = campos.numeroCliques !== "" ? Number(campos.numeroCliques) : null;
     const numeroSetups = campos.numeroSetups !== "" ? Number(campos.numeroSetups) : null;
+    const horasEstimadas = campos.horasEstimadas !== "" ? Number(campos.horasEstimadas) : null;
+    const custoAquisicaoUnitario =
+      campos.custoAquisicaoUnitario !== "" ? Number(campos.custoAquisicaoUnitario) : null;
+    const materialFornecidoPeloCliente = campos.materialFornecidoPeloCliente;
     const papelId = campos.precificacaoEtiqueta.papelId || null;
     const quantidadeCores =
       campos.precificacaoEtiqueta.quantidadeCores !== ""
@@ -273,11 +292,14 @@ export function CalculadoraForm({
       numeroCoresFlexo,
       numeroCliques,
       numeroSetups,
+      horasEstimadas,
       acabamentoIds: campos.acabamentoIds,
       papelId,
       quantidadeCores,
       custoFaca,
       custoFrete,
+      custoAquisicaoUnitario,
+      materialFornecidoPeloCliente,
     });
     setAdicionando(false);
 
@@ -302,8 +324,12 @@ export function CalculadoraForm({
         numeroCoresFlexo,
         numeroCliques,
         numeroSetups,
+        horasEstimadas,
+        custoAquisicaoUnitario,
+        materialFornecidoPeloCliente,
         cores: campos.cores.trim() || null,
         acabamento: campos.acabamento.trim() || null,
+        descricaoLivre: campos.descricaoLivre.trim() || null,
         acabamentoIds: campos.acabamentoIds,
         precoUnitario: resultado.precoUnitario,
         precoTotal: resultado.precoTotal,
@@ -331,8 +357,12 @@ export function CalculadoraForm({
       numeroCoresFlexo: i.numeroCoresFlexo,
       numeroCliques: i.numeroCliques,
       numeroSetups: i.numeroSetups,
+      horasEstimadas: i.horasEstimadas,
+      custoAquisicaoUnitario: i.custoAquisicaoUnitario,
+      materialFornecidoPeloCliente: i.materialFornecidoPeloCliente,
       cores: i.cores,
       acabamento: i.acabamento,
+      descricaoLivre: i.descricaoLivre,
       acabamentoIds: i.acabamentoIds,
       etiqueta: etiquetaParaEntrada(i.etiqueta),
       papelId: i.precificacaoEtiqueta.papelId || null,

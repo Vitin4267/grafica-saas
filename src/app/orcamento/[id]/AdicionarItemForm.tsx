@@ -62,8 +62,16 @@ export function AdicionarItemForm({
         <input type="hidden" name="numeroCoresFlexo" value={campos.numeroCoresFlexo} />
         <input type="hidden" name="numeroCliques" value={campos.numeroCliques} />
         <input type="hidden" name="numeroSetups" value={campos.numeroSetups} />
+        <input type="hidden" name="horasEstimadas" value={campos.horasEstimadas} />
+        <input type="hidden" name="custoAquisicaoUnitario" value={campos.custoAquisicaoUnitario} />
+        <input
+          type="hidden"
+          name="materialFornecidoPeloCliente"
+          value={campos.materialFornecidoPeloCliente ? "on" : ""}
+        />
         <input type="hidden" name="cores" value={campos.cores} />
         <input type="hidden" name="acabamento" value={campos.acabamento} />
+        <input type="hidden" name="descricaoLivre" value={campos.descricaoLivre} />
         {campos.acabamentoIds.map((id) => (
           <input key={id} type="hidden" name="acabamentoIds" value={id} />
         ))}

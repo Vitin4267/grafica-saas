@@ -11,22 +11,29 @@ type ModeloCalculoPrecificavel =
   | "DIGITAL"
   | "SERIGRAFIA"
   | "SUBLIMACAO"
-  | "ESTAMPAGEM_QUENTE";
+  | "ESTAMPAGEM_QUENTE"
+  | "PERSONALIZACAO"
+  | "REVENDA";
 
-// Os 3 modelos de "setup por peça" — SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE —
-// e DIGITAL não têm nesting (sem largura/altura pro CUSTO em si), diferente de
-// M2/OFFSET/FLEXOGRAFIA. Usado tanto pra pular a guarda de dimensão obrigatória
-// quanto, na montagem do PedidoPrecificacao, pra escolher o branch certo.
+// Os 4 modelos de "setup por peça" — SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE/
+// PERSONALIZACAO (achado A3 da auditoria de abrangência: tampografia,
+// gravação a laser, DTG, transfer e OUTRO) — e DIGITAL não têm nesting (sem
+// largura/altura pro CUSTO em si), diferente de M2/OFFSET/FLEXOGRAFIA. Usado
+// tanto pra pular a guarda de dimensão obrigatória quanto, na montagem do
+// PedidoPrecificacao, pra escolher o branch certo.
 const MODELOS_SEM_NESTING = new Set<ModeloCalculoPrecificavel>([
   "DIGITAL",
   "SERIGRAFIA",
   "SUBLIMACAO",
   "ESTAMPAGEM_QUENTE",
+  "PERSONALIZACAO",
+  "REVENDA",
 ]);
 const MODELOS_SETUP_POR_PECA = new Set<ModeloCalculoPrecificavel>([
   "SERIGRAFIA",
   "SUBLIMACAO",
   "ESTAMPAGEM_QUENTE",
+  "PERSONALIZACAO",
 ]);
 
 type ItemGraficaParaPrecificacao = {
@@ -57,9 +64,32 @@ export type DadosItemOrcamento = {
   numeroCoresFlexo: number | null;
   // Só usado por DIGITAL — opcional (default 1 no motor se ausente).
   numeroCliques: number | null;
-  // Só usado por SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE (os 3 compartilham
-  // este campo, mesma razão de compartilharem calcularSetupPorPeca).
+  // Só usado por SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE/PERSONALIZACAO (os 4
+  // compartilham este campo, mesma razão de compartilharem calcularSetupPorPeca).
   numeroSetups: number | null;
+  // Só usado quando o item tem um acabamento anexado com baseCobranca=HORA
+  // (ex: instalação, criação de arte) — independente do modeloCalculo do
+  // item, ao contrário de numeroSetups acima.
+  horasEstimadas: number | null;
+  // Só usado por REVENDA (achado A12) — override opcional, POR ORÇAMENTO, do
+  // custo de aquisição do fornecedor; null = motor cai no
+  // ItemGrafica.precoCompra do catálogo (ver src/lib/pricing/carregar.ts).
+  custoAquisicaoUnitario: number | null;
+  // Achado B7 (correção de regressão do A2) — quando true, o cliente já
+  // trouxe a peça em branco e a gráfica só aplica a estampa/gravação: zera
+  // ContextoDigital/ContextoSetupPorPeca.custoSubstratoPorPeca pra este item.
+  // Só relevante pra DIGITAL/SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE/
+  // PERSONALIZACAO — ignorado (sem efeito) em qualquer outro modelo.
+  materialFornecidoPeloCliente: boolean;
+  // Achado A7 da auditoria de abrangência — sobrescreve
+  // ParametrosGrafica.margemPadrao com Cliente.margemPadraoOverride. Ao
+  // contrário dos campos acima (por ITEM), esta é uma propriedade do
+  // CLIENTE: constante em todos os itens de um mesmo orçamento, quem chama
+  // busca uma vez por Server Action (não por item) e repassa o mesmo valor
+  // pra cada calcularItemOrcamento. null = sem override (comportamento de
+  // hoje, motor cai no padrão da gráfica — ver ContextoPrecificacao em
+  // src/lib/pricing/precificar.ts).
+  margemLucroOverride: number | null;
 };
 
 export type AcabamentoParaGravar = {
@@ -79,6 +109,9 @@ export type ResultadoItemOrcamento =
       numeroCoresFlexo: number | null;
       numeroCliques: number | null;
       numeroSetups: number | null;
+      horasEstimadas: number | null;
+      custoAquisicaoUnitario: number | null;
+      materialFornecidoPeloCliente: boolean;
       breakdown: Prisma.InputJsonValue | null;
       acabamentos: AcabamentoParaGravar[];
       precificacaoEtiqueta: {
@@ -140,8 +173,20 @@ export async function calcularItemOrcamento(
   if (dados.custoFaca !== null && (!Number.isFinite(dados.custoFaca) || dados.custoFaca < 0)) {
     return { ok: false, mensagem: "Custo de faca inválido." };
   }
+  if (
+    dados.horasEstimadas !== null &&
+    (!Number.isFinite(dados.horasEstimadas) || dados.horasEstimadas <= 0)
+  ) {
+    return { ok: false, mensagem: "Horas estimadas inválidas (deve ser maior que zero)." };
+  }
   if (dados.custoFrete !== null && (!Number.isFinite(dados.custoFrete) || dados.custoFrete < 0)) {
     return { ok: false, mensagem: "Custo de frete inválido." };
+  }
+  if (
+    dados.custoAquisicaoUnitario !== null &&
+    (!Number.isFinite(dados.custoAquisicaoUnitario) || dados.custoAquisicaoUnitario < 0)
+  ) {
+    return { ok: false, mensagem: "Custo de aquisição inválido." };
   }
 
   // Guarda de FLEXOGRAFIA — mesmo cuidado das guardas acima: precisa vir ANTES
@@ -212,6 +257,9 @@ export async function calcularItemOrcamento(
       numeroCoresFlexo: null,
       numeroCliques: null,
       numeroSetups: null,
+      horasEstimadas: null,
+      custoAquisicaoUnitario: null,
+      materialFornecidoPeloCliente: false,
       breakdown: null,
       acabamentos: [],
       precificacaoEtiqueta: null,
@@ -251,6 +299,38 @@ export async function calcularItemOrcamento(
     );
     if (dados.custoFrete !== null) contexto.custoFreteEstimado = dados.custoFrete;
     if (dados.custoFaca !== null) contexto.custoFaca = dados.custoFaca;
+    if (dados.horasEstimadas !== null) contexto.horasEstimadas = dados.horasEstimadas;
+    // REVENDA: carregarContextoPrecificacao já preencheu contexto.revenda a
+    // partir do ItemGrafica.precoCompra (default do catálogo) — sobrescreve
+    // aqui só quando o orçamento informou um custo de aquisição próprio
+    // (mesmo padrão de horasEstimadas acima).
+    if (dados.custoAquisicaoUnitario !== null) {
+      contexto.revenda = { custoAquisicaoUnitario: dados.custoAquisicaoUnitario };
+    }
+    // Achado A7 — margem diferenciada do CLIENTE (não confundir com a
+    // margem padrão da gráfica em contexto.parametros.margemPadrao, que
+    // carregarContextoPrecificacao já preencheu). Mesmo padrão de
+    // custoAquisicaoUnitario acima: só sobrescreve quando quem chamou
+    // efetivamente resolveu um valor (Cliente.margemPadraoOverride
+    // preenchido) — null preserva o comportamento de hoje.
+    if (dados.margemLucroOverride !== null) contexto.margemLucroOverride = dados.margemLucroOverride;
+    // Achado B7 (correção de regressão do A2) — "material fornecido pelo
+    // cliente": o cliente já trouxe a peça em branco, a gráfica só aplica a
+    // estampa/gravação. Zera o substrato do contexto que estiver ativo
+    // (DIGITAL ou um dos 4 de setup-por-peça) — nunca contexto.revenda, onde
+    // o "custo de aquisição" É o produto inteiro, não um substrato aplicado.
+    if (dados.materialFornecidoPeloCliente) {
+      if (contexto.digital) {
+        contexto.digital = {
+          ...contexto.digital,
+          custoSubstratoPorPeca: 0,
+          materialFornecidoPeloCliente: true,
+        };
+      }
+      if (contexto.setupPorPeca) {
+        contexto.setupPorPeca = { ...contexto.setupPorPeca, custoSubstratoPorPeca: 0 };
+      }
+    }
 
     const acabamentos =
       dados.acabamentoIds.length > 0
@@ -259,19 +339,32 @@ export async function calcularItemOrcamento(
 
     // DIGITAL e os 3 de setup-por-peça não exigem largura/altura (guarda
     // acima pulou essa checagem pra eles) — mas se o produto tiver um
-    // acabamento anexado com baseCobranca=M2, esse acabamento precisa de
-    // largura×altura pra não custar R$0 silenciosamente (calcularQtdBase
-    // multiplicaria por 0). Bloqueia aqui, com mensagem clara, em vez de
-    // deixar passar.
+    // acabamento anexado com baseCobranca=M2 ou METRO_LINEAR, esse
+    // acabamento precisa de largura×altura pra não custar R$0 silenciosamente
+    // (calcularQtdBase multiplicaria por 0 — METRO_LINEAR deriva o perímetro
+    // da mesma geometria que M2 usa, ver ctxAcabamentoExtra em
+    // precificar.ts). Bloqueia aqui, com mensagem clara, em vez de deixar
+    // passar.
     if (
       MODELOS_SEM_NESTING.has(itemGrafica.modeloCalculo) &&
       (!larguraCm || !alturaCm) &&
-      acabamentos.some((a) => a.baseCobranca === "M2")
+      acabamentos.some((a) => a.baseCobranca === "M2" || a.baseCobranca === "METRO_LINEAR")
     ) {
       return {
         ok: false,
         mensagem:
-          "Este item tem um acabamento cobrado por m² — informe largura e altura pra calcular o custo desse acabamento corretamente.",
+          "Este item tem um acabamento cobrado por m² ou por metro linear — informe largura e altura pra calcular o custo desse acabamento corretamente.",
+      };
+    }
+
+    // Acabamento cobrado por HORA precisa de OrcamentoItem.horasEstimadas —
+    // diferente de M2/METRO_LINEAR acima, não dá pra derivar de geometria
+    // nenhuma, então a guarda aqui não depende de largura/altura.
+    if (acabamentos.some((a) => a.baseCobranca === "HORA") && dados.horasEstimadas === null) {
+      return {
+        ok: false,
+        mensagem:
+          "Este item tem um acabamento cobrado por hora — informe a estimativa de horas pra calcular o custo desse acabamento.",
       };
     }
 
@@ -350,6 +443,27 @@ export async function calcularItemOrcamento(
         },
         acabamentos,
       };
+    } else if (itemGrafica.modeloCalculo === "PERSONALIZACAO") {
+      pedido = {
+        tipo: "PERSONALIZACAO",
+        pedido: {
+          quantidade,
+          numeroSetups: dados.numeroSetups!,
+          larguraM: larguraMOpcional,
+          alturaM: alturaMOpcional,
+        },
+        acabamentos,
+      };
+    } else if (itemGrafica.modeloCalculo === "REVENDA") {
+      pedido = {
+        tipo: "REVENDA",
+        pedido: {
+          quantidade,
+          larguraM: larguraMOpcional,
+          alturaM: alturaMOpcional,
+        },
+        acabamentos,
+      };
     } else {
       pedido = {
         tipo: "M2",
@@ -384,6 +498,20 @@ export async function calcularItemOrcamento(
           ? resultado.metricas.numeroCliques
           : null,
       numeroSetups: MODELOS_SETUP_POR_PECA.has(itemGrafica.modeloCalculo) ? dados.numeroSetups! : null,
+      // Não é model-gated como numeroSetups acima — acabamento por hora pode
+      // ser anexado a qualquer motor avançado. Ecoa o valor validado (guarda
+      // já garantiu presença quando há acabamento HORA anexado).
+      horasEstimadas: dados.horasEstimadas,
+      // Ecoa o valor REALMENTE usado no cálculo (contexto.revenda, já
+      // resolvido com o fallback pro precoCompra do catálogo quando o
+      // orçamento não informou um override) — mesma razão de numeroCliques
+      // acima, nunca dados.custoAquisicaoUnitario cru.
+      custoAquisicaoUnitario:
+        itemGrafica.modeloCalculo === "REVENDA" ? contexto.revenda!.custoAquisicaoUnitario : null,
+      // Ecoa o valor de entrada como veio — não há fallback/resolução
+      // nenhuma pra este campo (diferente de custoAquisicaoUnitario acima),
+      // é usado direto pra decidir se zera o substrato.
+      materialFornecidoPeloCliente: dados.materialFornecidoPeloCliente,
       breakdown,
       acabamentos: resultado.detalhes.acabamentos.map((a) => ({
         itemGraficaId: a.itemGraficaId,

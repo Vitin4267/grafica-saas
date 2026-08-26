@@ -43,7 +43,10 @@ type Fixture = {
   quantidadeItem: number;
 };
 
-async function criarFixture(opts?: { custoAutomaticoConsumo?: boolean }): Promise<Fixture> {
+async function criarFixture(opts?: {
+  custoAutomaticoConsumo?: boolean;
+  perdaEhCustoDoPedido?: boolean;
+}): Promise<Fixture> {
   const s = sufixo();
   const grafica = await prisma.grafica.create({
     data: { nome: `Teste Custo Real ${s}`, slug: `teste-custo-real-${s}` },
@@ -57,9 +60,17 @@ async function criarFixture(opts?: { custoAutomaticoConsumo?: boolean }): Promis
   // ("primeira categoria ativa") precisa cair exatamente aqui.
   const categoria = await prisma.categoriaCusto.create({ data: { graficaId: grafica.id, nome: `Papel ${s}` } });
 
-  if (opts?.custoAutomaticoConsumo !== undefined) {
+  if (opts?.custoAutomaticoConsumo !== undefined || opts?.perdaEhCustoDoPedido !== undefined) {
     await prisma.parametrosGrafica.create({
-      data: { graficaId: grafica.id, custoAutomaticoConsumo: opts.custoAutomaticoConsumo },
+      data: {
+        graficaId: grafica.id,
+        ...(opts.custoAutomaticoConsumo !== undefined
+          ? { custoAutomaticoConsumo: opts.custoAutomaticoConsumo }
+          : {}),
+        ...(opts.perdaEhCustoDoPedido !== undefined
+          ? { perdaEhCustoDoPedido: opts.perdaEhCustoDoPedido }
+          : {}),
+      },
     });
   }
 
@@ -147,6 +158,17 @@ function perdasJson(f: Fixture): string {
   return JSON.stringify([{ chave: montarChavePerda(f.orcamentoItemId, f.fichaTecnicaItemId), perdaAplicada: 0 }]);
 }
 
+// perdaAplicada > 0 de verdade — dispara o branch de perda em
+// status-transicao.ts (que os testes de perdasJson() acima nunca exercitam,
+// já que perdaAplicada=0 lá é sempre falsy). resolverPerdasConfirmadas não
+// exige que o valor bata com nenhum "padrão" configurado — é só a
+// confirmação da tela de Iniciar Impressão.
+function perdasJsonComPerda(f: Fixture, perdaAplicada: number): string {
+  return JSON.stringify([
+    { chave: montarChavePerda(f.orcamentoItemId, f.fichaTecnicaItemId), perdaAplicada },
+  ]);
+}
+
 const graficaIdsParaLimpar: string[] = [];
 
 // Ordem de exclusão respeitando as FKs Restrict do schema (CustoPedido→
@@ -226,6 +248,48 @@ describe("custo automático da baixa de produção (fase custo real, PR-3)", () 
 
       const custos = await prisma.custoPedido.findMany({ where: { pedidoId: f.pedidoId } });
       expect(custos).toHaveLength(0);
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "perdaEhCustoDoPedido=false: a baixa de estoque da perda acontece, mas nenhum CustoPedido nasce pra ela",
+    async () => {
+      const f = await criarFixture({ perdaEhCustoDoPedido: false });
+      const resultado = await avancarStatusPedido(pedidoParaAvanco(f), perdasJsonComPerda(f, 5));
+      expect(resultado.ok).toBe(true);
+
+      // Duas movimentações: consumo normal + perda — a baixa de estoque da
+      // perda nunca é condicionada pelo flag, só o LANÇAMENTO DE CUSTO é.
+      const movimentacoes = await prisma.movimentacaoEstoque.findMany({
+        where: { pedidoId: f.pedidoId },
+      });
+      expect(movimentacoes).toHaveLength(2);
+      const movimentacaoPerda = movimentacoes.find((m) => m.motivo?.includes("Perda fixa"));
+      expect(movimentacaoPerda).toBeDefined();
+      expect(Number(movimentacaoPerda!.quantidade)).toBe(5);
+
+      // Só o CustoPedido do CONSUMO normal nasce — nada pra perda.
+      const custos = await prisma.custoPedido.findMany({ where: { pedidoId: f.pedidoId } });
+      expect(custos).toHaveLength(1);
+      expect(Number(custos[0].valor)).toBeCloseTo(f.precoCompra * f.quantidadePorUnidade * f.quantidadeItem, 2);
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "perdaEhCustoDoPedido=true (default): a perda gera seu próprio CustoPedido, separado do consumo normal",
+    async () => {
+      const f = await criarFixture();
+      const resultado = await avancarStatusPedido(pedidoParaAvanco(f), perdasJsonComPerda(f, 5));
+      expect(resultado.ok).toBe(true);
+
+      const custos = await prisma.custoPedido.findMany({ where: { pedidoId: f.pedidoId } });
+      expect(custos).toHaveLength(2);
+      expect(custos.every((c) => c.origem === "CONSUMO_ESTOQUE")).toBe(true);
+      const custoTotal = custos.reduce((soma, c) => soma + Number(c.valor), 0);
+      const custoEsperado = f.precoCompra * (f.quantidadePorUnidade * f.quantidadeItem + 5);
+      expect(custoTotal).toBeCloseTo(custoEsperado, 2);
     },
     TIMEOUT_MS
   );

@@ -15,8 +15,12 @@ const OPCOES_TIPO_PEDIDO: [string, string][] = [
   ["REPETICAO_COM_ALTERACAO", "Repetição com alteração"],
 ];
 const OPCOES_FRETE: [string, string][] = [
-  ["EMITENTE", "Emitente"],
-  ["DESTINATARIO", "Destinatário"],
+  ["SEM_FRETE", "Retirada no balcão / sem frete"],
+  ["CIF_REMETENTE", "Por conta do emitente (CIF)"],
+  ["FOB_DESTINATARIO", "Por conta do destinatário (FOB)"],
+  ["TERCEIROS", "Por conta de terceiros"],
+  ["PROPRIO_REMETENTE", "Transporte próprio do remetente"],
+  ["PROPRIO_DESTINATARIO", "Transporte próprio do destinatário"],
 ];
 const ROTULO_TIPO_PEDIDO = Object.fromEntries(OPCOES_TIPO_PEDIDO);
 const ROTULO_FRETE = Object.fromEntries(OPCOES_FRETE);

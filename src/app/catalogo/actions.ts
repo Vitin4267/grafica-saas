@@ -511,6 +511,13 @@ export async function salvarCatalogo(
     { campo: "estoqueMinimo" as const, rotulo: "Estoque mínimo", formatar: formatarQuantidade },
     { campo: "perdaFixaPadrao" as const, rotulo: "Perda fixa", formatar: formatarQuantidade },
   ];
+  // Carimba ItemGrafica.precoCompraAtualizadoEm só pros itens cujo PREÇO DE
+  // COMPRA especificamente mudou (não qualquer campo) — alimenta o aviso de
+  // "preço de insumo desatualizado" (ParametrosGrafica.diasPrecoInsumoDesatualizado,
+  // achado A1-Parte6 da auditoria de abrangência, 2026-08-24). Reaproveita o
+  // diff antes/depois já calculado neste loop, sem query nova por item.
+  const idsComPrecoAlterado: string[] = [];
+
   for (const item of itensCatalogo) {
     const depois = depoisPorItemCatalogoId.get(item.id);
     if (!depois || idsComVariante.has(item.id)) continue; // sem ItemGrafica, ou preço/estoque vive na variante
@@ -524,6 +531,7 @@ export async function salvarCatalogo(
       if (textoAntes !== textoDepois) {
         antesTextos.push(`${rotulo}: ${textoAntes}`);
         depoisTextos.push(`${rotulo}: ${textoDepois}`);
+        if (campo === "precoCompra") idsComPrecoAlterado.push(depois.id);
       }
     }
     if (antesTextos.length === 0) continue;
@@ -538,6 +546,13 @@ export async function salvarCatalogo(
       descricao: `Preço/estoque de "${item.nome}" atualizado`,
       valorAnterior: antesTextos.join(", "),
       valorNovo: depoisTextos.join(", "),
+    });
+  }
+
+  if (idsComPrecoAlterado.length > 0) {
+    await prisma.itemGrafica.updateMany({
+      where: { id: { in: idsComPrecoAlterado } },
+      data: { precoCompraAtualizadoEm: new Date() },
     });
   }
 

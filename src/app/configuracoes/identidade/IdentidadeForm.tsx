@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { validarArquivoLogo } from "@/lib/upload-validacao";
-import { salvarLogo, removerLogo, salvarCorPrimaria, restaurarCorPadrao } from "./actions";
+import { salvarLogo, removerLogo, salvarCorPrimaria, restaurarCorPadrao, salvarContato } from "./actions";
 
 const COR_PADRAO = "#0d9488";
 const HEX_REGEX_COR = /^#[0-9A-Fa-f]{6}$/;
@@ -15,9 +15,17 @@ const HEX_REGEX_COR = /^#[0-9A-Fa-f]{6}$/;
 export function IdentidadeForm({
   logoUrlAtual,
   corPrimariaAtual,
+  telefoneAtual,
+  emailContatoAtual,
+  siteAtual,
+  enderecoResumidoAtual,
 }: {
   logoUrlAtual: string | null;
   corPrimariaAtual: string | null;
+  telefoneAtual: string | null;
+  emailContatoAtual: string | null;
+  siteAtual: string | null;
+  enderecoResumidoAtual: string | null;
 }) {
   const [stateSalvar, formActionSalvar, isPendingSalvar] = useActionState(salvarLogo, null);
   const [stateRemover, formActionRemover, isPendingRemover] = useActionState(removerLogo, null);
@@ -34,6 +42,12 @@ export function IdentidadeForm({
   // mostrar o padrão aqui não muda nada no banco por conta própria).
   const [corDigitada, setCorDigitada] = useState(corPrimariaAtual ?? COR_PADRAO);
   const corValidaParaPreview = HEX_REGEX_COR.test(corDigitada) ? corDigitada : COR_PADRAO;
+
+  const [stateContato, formActionContato, isPendingContato] = useActionState(salvarContato, null);
+  const [telefone, setTelefone] = useState(telefoneAtual ?? "");
+  const [emailContato, setEmailContato] = useState(emailContatoAtual ?? "");
+  const [site, setSite] = useState(siteAtual ?? "");
+  const [enderecoResumido, setEnderecoResumido] = useState(enderecoResumidoAtual ?? "");
 
   // Sincroniza o campo local com o teal padrão quando "Restaurar cor padrão"
   // é confirmado — sem isso, o input continuaria mostrando a última cor
@@ -156,6 +170,67 @@ export function IdentidadeForm({
         )}
         {stateRestaurarCor && !stateRestaurarCor.ok && (
           <Alert variant="error">{stateRestaurarCor.mensagem}</Alert>
+        )}
+      </Card>
+
+      <Card className="flex flex-col gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Dados de contato
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Aparecem no rodapé do PDF de orçamento, permitindo que seus clientes
+            respondam por telefone, e-mail ou acesso ao site.
+          </p>
+        </div>
+
+        <form action={formActionContato} className="flex flex-col gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input
+              label="Telefone"
+              name="telefone"
+              type="tel"
+              placeholder="(11) 9999-9999"
+              value={telefone}
+              onChange={(evento) => setTelefone(evento.target.value)}
+            />
+            <Input
+              label="E-mail de contato"
+              name="emailContato"
+              type="email"
+              placeholder="contato@grafica.com.br"
+              value={emailContato}
+              onChange={(evento) => setEmailContato(evento.target.value)}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input
+              label="Site"
+              name="site"
+              type="url"
+              placeholder="https://grafica.com.br"
+              value={site}
+              onChange={(evento) => setSite(evento.target.value)}
+            />
+            <Input
+              label="Endereço resumido"
+              name="enderecoResumido"
+              placeholder="Rua X, nº 123, São Paulo - SP"
+              value={enderecoResumido}
+              onChange={(evento) => setEnderecoResumido(evento.target.value)}
+            />
+          </div>
+
+          <div className="flex justify-start">
+            <Button type="submit" loading={isPendingContato}>
+              Salvar dados de contato
+            </Button>
+          </div>
+        </form>
+
+        {stateContato && (
+          <Alert variant={stateContato.ok ? "success" : "error"}>{stateContato.mensagem}</Alert>
         )}
       </Card>
     </div>

@@ -115,6 +115,7 @@ export function OrcamentoAcoes({
       {state && !(state.ok && state.novoStatus === "APROVADO") && (
         <Alert variant={state.ok ? "success" : "error"}>{state.mensagem}</Alert>
       )}
+      {state?.ok && state.aviso && <Alert variant="warning">{state.aviso}</Alert>}
       {estadoCancelamento && !estadoCancelamento.ok && (
         <Alert variant="error">{estadoCancelamento.mensagem}</Alert>
       )}

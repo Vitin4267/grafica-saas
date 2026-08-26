@@ -36,6 +36,15 @@ export function NovaMaquinaSetupPorPecaForm() {
           </option>
         ))}
       </Select>
+      {tipoProcesso === "OUTRO" && (
+        <Input
+          label="Descreva o processo"
+          name="tipoProcessoOutro"
+          type="text"
+          placeholder="ex: chapeamento, corte e vinco..."
+          required
+        />
+      )}
       {state && !state.ok && <Alert variant="error">{state.mensagem}</Alert>}
       <Button type="submit" loading={isPending} className="self-start">
         {isPending ? "Criando..." : "+ Nova máquina"}
