@@ -2,7 +2,7 @@ import "server-only";
 
 import { prisma } from "@/lib/prisma";
 import type { DadosFiscaisGrafica, Prisma } from "@/generated/prisma/client";
-import type { RegimeTributario, TipoFrete } from "@/generated/prisma/enums";
+import type { IndicadorInscricaoEstadual, RegimeTributario, TipoFrete } from "@/generated/prisma/enums";
 
 // Dados fiscais "resolvidos" pra um orçamento/filial — DadosFiscaisFilial
 // espelha DadosFiscaisGrafica campo a campo (só troca graficaId por
@@ -57,6 +57,11 @@ export type ClienteParaChecagem = {
   enderecoMunicipio: string | null;
   enderecoUf: string | null;
   enderecoCep: string | null;
+  // Achado A1 da auditoria de abrangência — ver Cliente.indicadorInscricaoEstadual
+  // no schema. Ausentes (undefined) num cliente antigo tratam como null: nenhuma
+  // pendência nova pra quem nunca respondeu essas perguntas.
+  indicadorInscricaoEstadual?: IndicadorInscricaoEstadual | null;
+  inscricaoEstadual?: string | null;
 };
 
 export type ItemParaChecagem = { nome: string; ncm: string | null };
@@ -126,6 +131,13 @@ export function verificarProntidaoFiscal(input: {
   const semNcm = input.itens.filter((i) => !i.ncm);
   if (semNcm.length > 0) {
     pendencias.push(`NCM não configurado para: ${semNcm.map((i) => i.nome).join(", ")}.`);
+  }
+  // Achado A1 da auditoria de abrangência — sem isso a Focus NFe/SEFAZ
+  // rejeita com a rejeição 728 ("NF-e sem informação da IE do destinatário").
+  // Bloqueado aqui, ANTES de bater na API, mesmo princípio das pendências
+  // acima.
+  if (input.cliente.indicadorInscricaoEstadual === "CONTRIBUINTE" && !input.cliente.inscricaoEstadual) {
+    pendencias.push("Cliente marcado como contribuinte de ICMS sem Inscrição Estadual cadastrada.");
   }
 
   return { pronto: pendencias.length === 0, pendencias };

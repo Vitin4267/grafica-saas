@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
 import { CampoCategoriaDespesa } from "../CampoCategoriaDespesa";
+import { ROTULO_PERIODICIDADE } from "../periodicidade";
 import { editarDespesa, excluirDespesa, marcarComoPaga, marcarComoPendente } from "../actions";
 
 const ROTULO_FORMA: Record<string, string> = {
@@ -32,6 +33,9 @@ type ValoresDespesa = {
   categoriaCustoId: string | null;
   valor: string;
   vencimento: string;
+  periodicidade: string;
+  recorrenciaAteEm: string | null;
+  valorVariavel: boolean;
 };
 
 export function DespesaForm({
@@ -58,6 +62,7 @@ export function DespesaForm({
   const [state, formAction, isPending] = useActionState(editarDespesa, null);
   const [estadoExclusao, excluirAction, excluindo] = useActionState(excluirDespesa, null);
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
+  const [recorrenteAtivo, setRecorrenteAtivo] = useState(recorrente);
 
   useAoMudar(estadoExclusao, (estadoExclusao) => {
     if (estadoExclusao && !estadoExclusao.ok) setConfirmandoExclusao(false);
@@ -79,7 +84,9 @@ export function DespesaForm({
           {status === "PAGA"
             ? `Paga em ${pagoEm}${formaPagamento ? ` (${rotuloForma(formaPagamento, formaPagamentoDetalhe)})` : ""}`
             : "Pendente"}
-          {recorrente ? " · 🔁 Recorrente" : ""}
+          {recorrente
+            ? ` · 🔁 ${ROTULO_PERIODICIDADE[valoresIniciais.periodicidade as keyof typeof ROTULO_PERIODICIDADE] ?? "Recorrente"}`
+            : ""}
         </p>
         <p className="mt-2 text-xs text-slate-400">Você tem acesso só de visualização a esta tela.</p>
       </Card>
@@ -182,12 +189,13 @@ export function DespesaForm({
           <input
             type="checkbox"
             name="recorrente"
-            defaultChecked={recorrente}
+            checked={recorrenteAtivo}
+            onChange={(evento) => setRecorrenteAtivo(evento.target.checked)}
             className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
           />
           <span>
             <span className="block font-medium text-slate-700 dark:text-slate-200">
-              Repetir todo mês
+              Repetir
             </span>
             <span className="block text-xs text-slate-500">
               Desmarcar encerra a série — as ocorrências já lançadas continuam existindo, só
@@ -195,6 +203,46 @@ export function DespesaForm({
             </span>
           </span>
         </label>
+
+        {recorrenteAtivo && (
+          <div className="grid grid-cols-1 gap-4 rounded-xl border border-slate-200 p-4 dark:border-slate-700 sm:grid-cols-2">
+            <Select
+              label="Repete a cada"
+              name="periodicidade"
+              defaultValue={valoresIniciais.periodicidade}
+            >
+              {Object.entries(ROTULO_PERIODICIDADE).map(([valor, rotulo]) => (
+                <option key={valor} value={valor}>
+                  {rotulo}
+                </option>
+              ))}
+            </Select>
+            <Input
+              label="Repetir até (opcional)"
+              name="recorrenciaAteEm"
+              type="date"
+              defaultValue={valoresIniciais.recorrenciaAteEm ?? ""}
+              hint="Em branco = sem data pra parar"
+            />
+            <label className="flex items-start gap-2 text-sm sm:col-span-2">
+              <input
+                type="checkbox"
+                name="valorVariavel"
+                defaultChecked={valoresIniciais.valorVariavel}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+              />
+              <span>
+                <span className="block font-medium text-slate-700 dark:text-slate-200">
+                  Valor variável a cada ocorrência
+                </span>
+                <span className="block text-xs text-slate-500">
+                  Pra conta que muda de valor (ex: luz, água) — cada ocorrência nova nasce "a
+                  confirmar" (R$ 0,00) até você editar o valor real.
+                </span>
+              </span>
+            </label>
+          </div>
+        )}
 
         {state && <Alert variant={state.ok ? "success" : "error"}>{state.mensagem}</Alert>}
 

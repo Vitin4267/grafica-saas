@@ -47,4 +47,14 @@ export const clienteSchema = z.object({
   // valor conhecido do enum" em src/app/clientes/actions.ts, validarSegmento).
   segmento: opcional,
   segmentoOutro: opcional,
+  // tipoPessoa/indicadorInscricaoEstadual: achado A1 da auditoria de
+  // abrangência — mesmo padrão de segmento/origem acima (string solta aqui,
+  // validação "é um valor conhecido do enum" em src/app/clientes/actions.ts,
+  // validarTipoPessoa/validarIndicadorInscricaoEstadual).
+  tipoPessoa: opcional,
+  razaoSocial: opcional,
+  nomeFantasia: opcional,
+  inscricaoEstadual: opcional,
+  indicadorInscricaoEstadual: opcional,
+  inscricaoMunicipal: opcional,
 });

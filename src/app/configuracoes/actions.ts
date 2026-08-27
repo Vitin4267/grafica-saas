@@ -286,6 +286,12 @@ export async function salvarParametros(
   const perdaEhCustoDoPedido = formData.get("perdaEhCustoDoPedido") === "on";
   const comissaoEntraNoCustoPedido = formData.get("comissaoEntraNoCustoPedido") === "on";
 
+  // Achado A6 da Parte 4 da auditoria de abrangência (2026-08-27) — mesmo
+  // padrão dos 3 booleans acima. Ver comentário no schema.prisma
+  // (ParametrosGrafica.bloqueiaAoUltrapassarLimiteCredito) pra distinção
+  // com o bloqueio manual de Cliente, que nunca vira trava de verdade.
+  const bloqueiaAoUltrapassarLimiteCredito = formData.get("bloqueiaAoUltrapassarLimiteCredito") === "on";
+
   // categoriaCustoConsumoPadraoId — FK opcional pra CategoriaCusto ("nenhuma"
   // = cai no fallback "primeira categoria ativa por ordem", ver
   // criarCustoAutomaticoConsumo em src/app/producao/status-transicao.ts).
@@ -403,6 +409,7 @@ export async function salvarParametros(
       categoriaCustoConsumoPadraoId,
       perdaEhCustoDoPedido,
       comissaoEntraNoCustoPedido,
+      bloqueiaAoUltrapassarLimiteCredito,
       margemFaixaBaixa: percentuaisInteiros.margemFaixaBaixa,
       margemFaixaBoa: percentuaisInteiros.margemFaixaBoa,
       descontoMaxSemAprovacao: percentuaisInteiros.descontoMaxSemAprovacao,
@@ -504,6 +511,14 @@ export async function salvarParametros(
     );
     depoisTextos.push(
       `Comissão do vendedor entra no custo do pedido: ${comissaoEntraNoCustoPedido ? "sim" : "não"}`
+    );
+  }
+  if ((parametrosAntes?.bloqueiaAoUltrapassarLimiteCredito ?? false) !== bloqueiaAoUltrapassarLimiteCredito) {
+    antesTextos.push(
+      `Bloquear ao ultrapassar limite de crédito: ${(parametrosAntes?.bloqueiaAoUltrapassarLimiteCredito ?? false) ? "sim" : "não"}`
+    );
+    depoisTextos.push(
+      `Bloquear ao ultrapassar limite de crédito: ${bloqueiaAoUltrapassarLimiteCredito ? "sim" : "não"}`
     );
   }
 

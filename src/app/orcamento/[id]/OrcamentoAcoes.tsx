@@ -43,6 +43,7 @@ export function OrcamentoAcoes({
   opcoes = [],
   totalOpcaoBase,
   prazoEntregaSugerido = null,
+  creditoClienteDisponivel = null,
 }: {
   orcamentoId: string;
   status: string;
@@ -57,6 +58,11 @@ export function OrcamentoAcoes({
   // pra PRÉ-PREENCHER o campo abaixo — puramente uma sugestão de
   // defaultValue, o vendedor continua livre pra digitar outra data.
   prazoEntregaSugerido?: string | null;
+  // Achado A13 da auditoria de abrangência — saldo de CreditoCliente do
+  // cliente deste orçamento (string, já formatado com 2 casas, ver
+  // page.tsx). null quando o cliente não tem crédito nenhum — nesse caso o
+  // campo "usar crédito" simplesmente não aparece, nunca força a escolha.
+  creditoClienteDisponivel?: string | null;
 }) {
   const [state, formAction, isPending] = useActionState(atualizarStatusOrcamento, null);
   const [opcaoEscolhidaId, setOpcaoEscolhidaId] = useState("");
@@ -216,6 +222,18 @@ export function OrcamentoAcoes({
                   type="date"
                   defaultValue={prazoEntregaSugerido ?? undefined}
                   hint="Se preenchido, um alerta de atraso pode ser disparado depois dessa data."
+                />
+              )}
+              {!aprovacaoAcabouDeAcontecer && creditoClienteDisponivel && (
+                <Input
+                  label="Usar crédito do cliente (opcional)"
+                  name="usarCredito"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max={creditoClienteDisponivel}
+                  placeholder="0,00"
+                  hint={`Cliente tem ${formatoMoeda.format(Number(creditoClienteDisponivel))} de saldo adiantado. Deixe em branco pra não usar.`}
                 />
               )}
               {aprovacaoAcabouDeAcontecer ? (

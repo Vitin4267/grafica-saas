@@ -9,10 +9,22 @@ import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { clienteSchema } from "@/lib/clientes";
+import { contatoClienteSchema, ORDEM_FUNCAO_CONTATO_CLIENTE } from "@/lib/contatos-cliente";
 import { ehViolacaoDeChaveEstrangeira } from "@/lib/prisma-conflito";
 import { registrarAuditoria } from "@/lib/auditoria";
-import { ORDEM_ORIGEM_CLIENTE, ORDEM_SEGMENTO_CLIENTE } from "@/lib/tipos-cliente";
-import type { OrigemCliente, SegmentoCliente } from "@/generated/prisma/enums";
+import {
+  ORDEM_ORIGEM_CLIENTE,
+  ORDEM_SEGMENTO_CLIENTE,
+  ORDEM_TIPO_PESSOA,
+  ORDEM_INDICADOR_INSCRICAO_ESTADUAL,
+} from "@/lib/tipos-cliente";
+import type {
+  OrigemCliente,
+  SegmentoCliente,
+  TipoPessoa,
+  IndicadorInscricaoEstadual,
+  FuncaoContatoCliente,
+} from "@/generated/prisma/enums";
 
 // Mesmo padrão do resto do schema (UnidadeMedida, CategoriaEquipamento etc.):
 // origem vem de uma lista fechada com OUTRO de escape — origemOutro só é
@@ -63,6 +75,41 @@ function validarSegmento(
   return { ok: true, segmento: segmento as SegmentoCliente, segmentoOutro: null };
 }
 
+// Achado A1 da auditoria de abrangência — distinção Pessoa Física × Pessoa
+// Jurídica, mesmo padrão de validarOrigem/validarSegmento acima (lista
+// fechada, campo em si opcional). Diferente dos outros dois: não tem
+// "*Outro" de escape, porque o enum não tem OUTRO (ver comentário no schema).
+function validarTipoPessoa(
+  formData: FormData
+): { ok: true; tipoPessoa: TipoPessoa | null } | { ok: false; mensagem: string } {
+  const tipoPessoa = String(formData.get("tipoPessoa") ?? "").trim();
+  if (!tipoPessoa) {
+    return { ok: true, tipoPessoa: null };
+  }
+  if (!ORDEM_TIPO_PESSOA.includes(tipoPessoa as TipoPessoa)) {
+    return { ok: false, mensagem: "Tipo de pessoa inválido." };
+  }
+  return { ok: true, tipoPessoa: tipoPessoa as TipoPessoa };
+}
+
+// Achado A1 — indicador de contribuinte de ICMS do destinatário (tag
+// indIEDest da NF-e 4.0). Mesmo padrão de validarTipoPessoa acima. A regra
+// "IE só quando CONTRIBUINTE" é aplicada na emissão (src/lib/focus-nfe.ts) e
+// verificada em verificarProntidaoFiscal (src/lib/nota-fiscal.ts) — aqui só
+// valida que o valor é um dos 3 conhecidos.
+function validarIndicadorInscricaoEstadual(
+  formData: FormData
+): { ok: true; indicador: IndicadorInscricaoEstadual | null } | { ok: false; mensagem: string } {
+  const indicador = String(formData.get("indicadorInscricaoEstadual") ?? "").trim();
+  if (!indicador) {
+    return { ok: true, indicador: null };
+  }
+  if (!ORDEM_INDICADOR_INSCRICAO_ESTADUAL.includes(indicador as IndicadorInscricaoEstadual)) {
+    return { ok: false, mensagem: "Indicador de Inscrição Estadual inválido." };
+  }
+  return { ok: true, indicador: indicador as IndicadorInscricaoEstadual };
+}
+
 // Achado A8 da auditoria de abrangência — vendedor/responsável comercial do
 // cliente, opcional. Precisa pertencer à MESMA gráfica (nunca confia no id
 // cru do formulário) e estar ativo — a lista que alimenta o <select> já só
@@ -107,6 +154,43 @@ function validarMargemPadraoOverride(
   return { ok: true, valor };
 }
 
+// Achado A6 da Parte 4 da auditoria de abrangência — teto de exposição de
+// crédito do cliente (ver Cliente.limiteCredito no schema pra distinção com
+// bloqueadoParaVenda). Mesma guarda de presença-antes-de-Number() de
+// validarMargemPadraoOverride acima: em branco = sem limite (comportamento
+// de hoje), presente e inválido é rejeitado, nunca vira 0 silenciosamente
+// (0 seria um limite de crédito real e válido, diferente de "sem limite").
+function validarLimiteCredito(
+  formData: FormData
+): { ok: true; valor: number | null } | { ok: false; mensagem: string } {
+  const bruto = formData.get("limiteCredito");
+  if (typeof bruto !== "string" || bruto.trim() === "") {
+    return { ok: true, valor: null };
+  }
+  const valor = Number(bruto);
+  if (!Number.isFinite(valor) || valor < 0) {
+    return { ok: false, mensagem: "Limite de crédito inválido." };
+  }
+  return { ok: true, valor };
+}
+
+// Mesmo padrão de validarLimiteCredito acima — puramente informativo hoje
+// (ver comentário do campo no schema), mas validado do mesmo jeito rigoroso
+// pra não gravar lixo no cadastro.
+function validarPrazoPagamentoPadraoDias(
+  formData: FormData
+): { ok: true; valor: number | null } | { ok: false; mensagem: string } {
+  const bruto = formData.get("prazoPagamentoPadraoDias");
+  if (typeof bruto !== "string" || bruto.trim() === "") {
+    return { ok: true, valor: null };
+  }
+  const valor = Number(bruto);
+  if (!Number.isInteger(valor) || valor < 0) {
+    return { ok: false, mensagem: "Prazo de pagamento padrão inválido — use um número inteiro de dias." };
+  }
+  return { ok: true, valor };
+}
+
 export type CriarClienteResult = { ok: boolean; mensagem: string };
 
 export async function criarCliente(
@@ -135,6 +219,10 @@ export async function criarCliente(
     enderecoUf: formData.get("enderecoUf"),
     observacoes: formData.get("observacoes"),
     preferenciasProducao: formData.get("preferenciasProducao"),
+    razaoSocial: formData.get("razaoSocial"),
+    nomeFantasia: formData.get("nomeFantasia"),
+    inscricaoEstadual: formData.get("inscricaoEstadual"),
+    inscricaoMunicipal: formData.get("inscricaoMunicipal"),
   });
 
   if (!parsed.success) {
@@ -148,6 +236,14 @@ export async function criarCliente(
   const validacaoSegmento = validarSegmento(formData);
   if (!validacaoSegmento.ok) {
     return validacaoSegmento;
+  }
+  const validacaoTipoPessoa = validarTipoPessoa(formData);
+  if (!validacaoTipoPessoa.ok) {
+    return validacaoTipoPessoa;
+  }
+  const validacaoIndicadorIe = validarIndicadorInscricaoEstadual(formData);
+  if (!validacaoIndicadorIe.ok) {
+    return validacaoIndicadorIe;
   }
   const validacaoMargem = validarMargemPadraoOverride(formData);
   if (!validacaoMargem.ok) {
@@ -173,6 +269,10 @@ export async function criarCliente(
     enderecoUf,
     observacoes,
     preferenciasProducao,
+    razaoSocial,
+    nomeFantasia,
+    inscricaoEstadual,
+    inscricaoMunicipal,
   } = parsed.data;
 
   try {
@@ -192,6 +292,12 @@ export async function criarCliente(
         enderecoCodigoIbge: enderecoCodigoIbge || null,
         enderecoUf: enderecoUf || null,
         observacoes: observacoes || null,
+        tipoPessoa: validacaoTipoPessoa.tipoPessoa,
+        razaoSocial: razaoSocial || null,
+        nomeFantasia: nomeFantasia || null,
+        inscricaoEstadual: inscricaoEstadual || null,
+        indicadorInscricaoEstadual: validacaoIndicadorIe.indicador,
+        inscricaoMunicipal: inscricaoMunicipal || null,
         preferenciasProducao: preferenciasProducao || null,
         origem: validacaoOrigem.origem,
         origemOutro: validacaoOrigem.origemOutro,
@@ -251,6 +357,10 @@ export async function atualizarCliente(
     enderecoUf: formData.get("enderecoUf"),
     observacoes: formData.get("observacoes"),
     preferenciasProducao: formData.get("preferenciasProducao"),
+    razaoSocial: formData.get("razaoSocial"),
+    nomeFantasia: formData.get("nomeFantasia"),
+    inscricaoEstadual: formData.get("inscricaoEstadual"),
+    inscricaoMunicipal: formData.get("inscricaoMunicipal"),
   });
 
   if (!parsed.success) {
@@ -265,6 +375,14 @@ export async function atualizarCliente(
   if (!validacaoSegmento.ok) {
     return validacaoSegmento;
   }
+  const validacaoTipoPessoa = validarTipoPessoa(formData);
+  if (!validacaoTipoPessoa.ok) {
+    return validacaoTipoPessoa;
+  }
+  const validacaoIndicadorIe = validarIndicadorInscricaoEstadual(formData);
+  if (!validacaoIndicadorIe.ok) {
+    return validacaoIndicadorIe;
+  }
   const validacaoMargem = validarMargemPadraoOverride(formData);
   if (!validacaoMargem.ok) {
     return validacaoMargem;
@@ -272,6 +390,14 @@ export async function atualizarCliente(
   const validacaoVendedor = await validarVendedorId(formData, usuario.graficaId);
   if (!validacaoVendedor.ok) {
     return validacaoVendedor;
+  }
+  const validacaoLimiteCredito = validarLimiteCredito(formData);
+  if (!validacaoLimiteCredito.ok) {
+    return validacaoLimiteCredito;
+  }
+  const validacaoPrazoPagamento = validarPrazoPagamentoPadraoDias(formData);
+  if (!validacaoPrazoPagamento.ok) {
+    return validacaoPrazoPagamento;
   }
 
   const {
@@ -289,16 +415,30 @@ export async function atualizarCliente(
     enderecoUf,
     observacoes,
     preferenciasProducao,
+    razaoSocial,
+    nomeFantasia,
+    inscricaoEstadual,
+    inscricaoMunicipal,
   } = parsed.data;
 
-  // bloqueadoParaVenda/motivoBloqueio ficam fora do clienteSchema (zod)
-  // de propósito: esse schema é reusado byte-a-byte pela importação de
-  // planilha (src/lib/importacao/campos.ts), e esses dois campos são
-  // conceito novo (bloqueio comercial), não dado de cadastro — não faz
-  // sentido nem é seguro estender o schema compartilhado aqui.
+  // bloqueadoParaVenda/motivoBloqueio e bloqueadoParaFaturamento/
+  // motivoBloqueioFaturamento ficam fora do clienteSchema (zod) de
+  // propósito: esse schema é reusado byte-a-byte pela importação de
+  // planilha (src/lib/importacao/campos.ts), e esses campos são conceito de
+  // bloqueio comercial, não dado de cadastro — não faz sentido nem é seguro
+  // estender o schema compartilhado aqui.
   const bloqueadoParaVenda = formData.get("bloqueadoParaVenda") === "on";
   const motivoBloqueioRaw = String(formData.get("motivoBloqueio") ?? "").trim();
   const motivoBloqueio = bloqueadoParaVenda && motivoBloqueioRaw ? motivoBloqueioRaw.slice(0, 300) : null;
+
+  // Achado A6 da Parte 4 — mesmo padrão do par acima, causa DIFERENTE (ver
+  // comentário em Cliente.bloqueadoParaFaturamento no schema).
+  const bloqueadoParaFaturamento = formData.get("bloqueadoParaFaturamento") === "on";
+  const motivoBloqueioFaturamentoRaw = String(formData.get("motivoBloqueioFaturamento") ?? "").trim();
+  const motivoBloqueioFaturamento =
+    bloqueadoParaFaturamento && motivoBloqueioFaturamentoRaw
+      ? motivoBloqueioFaturamentoRaw.slice(0, 300)
+      : null;
 
   try {
     await prisma.cliente.update({
@@ -318,6 +458,12 @@ export async function atualizarCliente(
         enderecoUf: enderecoUf || null,
         observacoes: observacoes || null,
         preferenciasProducao: preferenciasProducao || null,
+        tipoPessoa: validacaoTipoPessoa.tipoPessoa,
+        razaoSocial: razaoSocial || null,
+        nomeFantasia: nomeFantasia || null,
+        inscricaoEstadual: inscricaoEstadual || null,
+        indicadorInscricaoEstadual: validacaoIndicadorIe.indicador,
+        inscricaoMunicipal: inscricaoMunicipal || null,
         origem: validacaoOrigem.origem,
         origemOutro: validacaoOrigem.origemOutro,
         segmento: validacaoSegmento.segmento,
@@ -326,6 +472,10 @@ export async function atualizarCliente(
         vendedorId: validacaoVendedor.vendedorId,
         bloqueadoParaVenda,
         motivoBloqueio,
+        limiteCredito: validacaoLimiteCredito.valor,
+        prazoPagamentoPadraoDias: validacaoPrazoPagamento.valor,
+        bloqueadoParaFaturamento,
+        motivoBloqueioFaturamento,
       },
     });
   } catch (erro) {
@@ -546,4 +696,236 @@ export async function anonimizarCliente(
     ok: true,
     mensagem: "Dados pessoais anonimizados com sucesso. Orçamentos e notas fiscais foram preservados.",
   };
+}
+
+// Achado A4 da Parte 5 da auditoria de abrangência — mesmo padrão
+// enum-fechado+OUTRO de validarOrigem/validarSegmento acima. funcaoOutro só
+// é obrigatório quando funcao=OUTRO. Sem seleção no formulário, cai no
+// default do schema (COMPRADOR) — nunca fica ausente.
+function validarFuncaoContato(
+  formData: FormData
+): { ok: true; funcao: FuncaoContatoCliente; funcaoOutro: string | null } | { ok: false; mensagem: string } {
+  const funcao = String(formData.get("funcao") ?? "COMPRADOR").trim();
+  if (!ORDEM_FUNCAO_CONTATO_CLIENTE.includes(funcao as FuncaoContatoCliente)) {
+    return { ok: false, mensagem: "Função do contato inválida." };
+  }
+  if (funcao === "OUTRO") {
+    const funcaoOutro = String(formData.get("funcaoOutro") ?? "").trim();
+    if (!funcaoOutro) {
+      return { ok: false, mensagem: 'Descreva a função quando escolher "Outro".' };
+    }
+    return { ok: true, funcao: "OUTRO", funcaoOutro };
+  }
+  return { ok: true, funcao: funcao as FuncaoContatoCliente, funcaoOutro: null };
+}
+
+export type ContatoClienteResult = { ok: boolean; mensagem: string };
+
+// Cadastro de contato individual de um Cliente Pessoa Jurídica (achado A4 da
+// Parte 5 da auditoria de abrangência) — quem compra != quem aprova arte !=
+// financeiro != recebimento. Não substitui Cliente.email/telefone, que
+// continuam funcionando exatamente como hoje pra quem não usa contatos.
+export async function criarContatoCliente(
+  _estadoAnterior: ContatoClienteResult | null,
+  formData: FormData
+): Promise<ContatoClienteResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CLIENTES"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar clientes." };
+  }
+  const clienteId = String(formData.get("clienteId"));
+
+  const cliente = await prisma.cliente.findFirst({
+    where: { id: clienteId, graficaId: usuario.graficaId },
+  });
+  if (!cliente) {
+    return { ok: false, mensagem: "Cliente não encontrado." };
+  }
+
+  const parsed = contatoClienteSchema.safeParse({
+    nome: formData.get("nome"),
+    cargo: formData.get("cargo"),
+    departamento: formData.get("departamento"),
+    email: formData.get("email"),
+    telefone: formData.get("telefone"),
+    whatsapp: formData.get("whatsapp"),
+  });
+  if (!parsed.success) {
+    return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Dados inválidos." };
+  }
+
+  const validacaoFuncao = validarFuncaoContato(formData);
+  if (!validacaoFuncao.ok) {
+    return validacaoFuncao;
+  }
+
+  const { nome, cargo, departamento, email, telefone, whatsapp } = parsed.data;
+  const principal = formData.get("principal") === "on";
+
+  // Só um contato principal por cliente (regra de aplicação, ver comentário
+  // no schema) — desmarca qualquer outro principal do mesmo cliente antes de
+  // marcar este, dentro da mesma transação pra não deixar 2 principais
+  // simultâneos em caso de corrida.
+  await prisma.$transaction(async (tx) => {
+    if (principal) {
+      await tx.contatoCliente.updateMany({
+        where: { clienteId, principal: true },
+        data: { principal: false },
+      });
+    }
+    await tx.contatoCliente.create({
+      data: {
+        clienteId,
+        nome,
+        cargo: cargo || null,
+        departamento: departamento || null,
+        email: email || null,
+        telefone: telefone || null,
+        whatsapp: whatsapp || null,
+        funcao: validacaoFuncao.funcao,
+        funcaoOutro: validacaoFuncao.funcaoOutro,
+        principal,
+      },
+    });
+  });
+
+  revalidatePath(`/clientes/${clienteId}`);
+
+  return { ok: true, mensagem: `Contato "${nome}" adicionado.` };
+}
+
+export async function atualizarContatoCliente(
+  _estadoAnterior: ContatoClienteResult | null,
+  formData: FormData
+): Promise<ContatoClienteResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CLIENTES"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar clientes." };
+  }
+  const contatoId = String(formData.get("contatoId"));
+
+  // Junta com Cliente pra confirmar que o contato pertence à MESMA gráfica —
+  // ContatoCliente não tem graficaId próprio (escopado só por clienteId),
+  // mesmo precedente de CreditoCliente/MovimentacaoCreditoCliente no schema.
+  const contato = await prisma.contatoCliente.findFirst({
+    where: { id: contatoId, cliente: { graficaId: usuario.graficaId } },
+  });
+  if (!contato) {
+    return { ok: false, mensagem: "Contato não encontrado." };
+  }
+
+  const parsed = contatoClienteSchema.safeParse({
+    nome: formData.get("nome"),
+    cargo: formData.get("cargo"),
+    departamento: formData.get("departamento"),
+    email: formData.get("email"),
+    telefone: formData.get("telefone"),
+    whatsapp: formData.get("whatsapp"),
+  });
+  if (!parsed.success) {
+    return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Dados inválidos." };
+  }
+
+  const validacaoFuncao = validarFuncaoContato(formData);
+  if (!validacaoFuncao.ok) {
+    return validacaoFuncao;
+  }
+
+  const { nome, cargo, departamento, email, telefone, whatsapp } = parsed.data;
+  const principal = formData.get("principal") === "on";
+
+  await prisma.$transaction(async (tx) => {
+    if (principal) {
+      await tx.contatoCliente.updateMany({
+        where: { clienteId: contato.clienteId, principal: true, id: { not: contatoId } },
+        data: { principal: false },
+      });
+    }
+    await tx.contatoCliente.update({
+      where: { id: contatoId },
+      data: {
+        nome,
+        cargo: cargo || null,
+        departamento: departamento || null,
+        email: email || null,
+        telefone: telefone || null,
+        whatsapp: whatsapp || null,
+        funcao: validacaoFuncao.funcao,
+        funcaoOutro: validacaoFuncao.funcaoOutro,
+        principal,
+      },
+    });
+  });
+
+  revalidatePath(`/clientes/${contato.clienteId}`);
+
+  return { ok: true, mensagem: `Contato "${nome}" atualizado.` };
+}
+
+// Soft-delete — nunca hard delete, o contato pode já estar referenciado por
+// Orcamento.contatoClienteId (histórico de orçamento passado não pode
+// quebrar). Contato desativado some do <select> de novos orçamentos (ver
+// ContatoSelectOrcamento), mas continua existindo e reversível.
+export async function desativarContatoCliente(
+  _estadoAnterior: ContatoClienteResult | null,
+  formData: FormData
+): Promise<ContatoClienteResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CLIENTES"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar clientes." };
+  }
+  const contatoId = String(formData.get("contatoId"));
+
+  const contato = await prisma.contatoCliente.findFirst({
+    where: { id: contatoId, cliente: { graficaId: usuario.graficaId } },
+  });
+  if (!contato) {
+    return { ok: false, mensagem: "Contato não encontrado." };
+  }
+
+  await prisma.contatoCliente.update({
+    where: { id: contatoId },
+    data: { ativo: false },
+  });
+
+  revalidatePath(`/clientes/${contato.clienteId}`);
+
+  return { ok: true, mensagem: `Contato "${contato.nome}" desativado.` };
+}
+
+// Reverso de desativarContatoCliente — mesmo precedente reversível de
+// reativarCliente acima.
+export async function reativarContatoCliente(
+  _estadoAnterior: ContatoClienteResult | null,
+  formData: FormData
+): Promise<ContatoClienteResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CLIENTES"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar clientes." };
+  }
+  const contatoId = String(formData.get("contatoId"));
+
+  const contato = await prisma.contatoCliente.findFirst({
+    where: { id: contatoId, cliente: { graficaId: usuario.graficaId } },
+  });
+  if (!contato) {
+    return { ok: false, mensagem: "Contato não encontrado." };
+  }
+
+  await prisma.contatoCliente.update({
+    where: { id: contatoId },
+    data: { ativo: true },
+  });
+
+  revalidatePath(`/clientes/${contato.clienteId}`);
+
+  return { ok: true, mensagem: `Contato "${contato.nome}" reativado.` };
 }

@@ -13,6 +13,7 @@ import {
 import { UserNav } from "@/components/UserNav";
 import { ArrowLeftIcon } from "@/components/icons";
 import { ClienteEditForm } from "./ClienteEditForm";
+import { ContatosClienteCard } from "./ContatosClienteCard";
 
 export default async function ClienteDetalhePage({
   params,
@@ -26,7 +27,7 @@ export default async function ClienteDetalhePage({
   await exigirVerModulo(usuario, "CLIENTES");
   const podeEditar = await podeEditarModulo(usuario, "CLIENTES");
 
-  const [cliente, vendedores] = await Promise.all([
+  const [cliente, vendedores, contatos] = await Promise.all([
     prisma.cliente.findFirst({
       where: { id, graficaId: usuario.graficaId },
     }),
@@ -36,6 +37,13 @@ export default async function ClienteDetalhePage({
       where: { graficaId: usuario.graficaId, desativadoEm: null },
       orderBy: { nome: "asc" },
       select: { id: true, nome: true },
+    }),
+    // Achado A4 da Parte 5 — inclui inativos de propósito: esta é a tela de
+    // GESTÃO dos contatos (precisa reativar), diferente do <select> do
+    // orçamento (esse sim só ativos, ver EditarDadosGeraisOrcamentoForm.tsx).
+    prisma.contatoCliente.findMany({
+      where: { clienteId: id },
+      orderBy: [{ ativo: "desc" }, { principal: "desc" }, { nome: "asc" }],
     }),
   ]);
 
@@ -80,6 +88,12 @@ export default async function ClienteDetalhePage({
             email: cliente.email ?? "",
             telefone: cliente.telefone ?? "",
             documento: cliente.documento ?? "",
+            tipoPessoa: cliente.tipoPessoa ?? "",
+            razaoSocial: cliente.razaoSocial ?? "",
+            nomeFantasia: cliente.nomeFantasia ?? "",
+            inscricaoEstadual: cliente.inscricaoEstadual ?? "",
+            indicadorInscricaoEstadual: cliente.indicadorInscricaoEstadual ?? "",
+            inscricaoMunicipal: cliente.inscricaoMunicipal ?? "",
             enderecoCep: cliente.enderecoCep ?? "",
             enderecoLogradouro: cliente.enderecoLogradouro ?? "",
             enderecoNumero: cliente.enderecoNumero ?? "",
@@ -90,6 +104,11 @@ export default async function ClienteDetalhePage({
             enderecoUf: cliente.enderecoUf ?? "",
             bloqueadoParaVenda: cliente.bloqueadoParaVenda,
             motivoBloqueio: cliente.motivoBloqueio ?? "",
+            limiteCredito: cliente.limiteCredito !== null ? cliente.limiteCredito.toString() : "",
+            prazoPagamentoPadraoDias:
+              cliente.prazoPagamentoPadraoDias !== null ? cliente.prazoPagamentoPadraoDias.toString() : "",
+            bloqueadoParaFaturamento: cliente.bloqueadoParaFaturamento,
+            motivoBloqueioFaturamento: cliente.motivoBloqueioFaturamento ?? "",
             observacoes: cliente.observacoes ?? "",
             preferenciasProducao: cliente.preferenciasProducao ?? "",
             origem: cliente.origem ?? "",
@@ -102,6 +121,26 @@ export default async function ClienteDetalhePage({
             desativadoEm: cliente.desativadoEm ? cliente.desativadoEm.toISOString() : null,
           }}
         />
+
+        <div className="mt-6">
+          <ContatosClienteCard
+            clienteId={cliente.id}
+            podeEditar={podeEditar}
+            contatos={contatos.map((contato) => ({
+              id: contato.id,
+              nome: contato.nome,
+              cargo: contato.cargo,
+              departamento: contato.departamento,
+              email: contato.email,
+              telefone: contato.telefone,
+              whatsapp: contato.whatsapp,
+              funcao: contato.funcao,
+              funcaoOutro: contato.funcaoOutro,
+              principal: contato.principal,
+              ativo: contato.ativo,
+            }))}
+          />
+        </div>
       </main>
     </div>
   );

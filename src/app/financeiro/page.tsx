@@ -16,6 +16,7 @@ import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { NovaDespesaForm } from "./NovaDespesaForm";
+import { ROTULO_PERIODICIDADE } from "./periodicidade";
 
 function statusPill(status: "PENDENTE" | "PAGA", vencimento: Date) {
   if (status === "PAGA") {
@@ -107,6 +108,9 @@ export default async function FinanceiroPage() {
             <Link href="/financeiro/contas-prepagas" className="font-medium text-teal-700 hover:underline dark:text-teal-400">
               Ver contas prepagas →
             </Link>
+            <Link href="/financeiro/creditos-clientes" className="font-medium text-teal-700 hover:underline dark:text-teal-400">
+              Ver créditos de clientes →
+            </Link>
             <Link href="/financeiro/contas-receber" className="font-medium text-teal-700 hover:underline dark:text-teal-400">
               Ver contas a receber →
             </Link>
@@ -132,7 +136,7 @@ export default async function FinanceiroPage() {
                     {despesa.descricao}
                   </p>
                   <p className="mt-0.5 text-xs text-slate-500">
-                    {despesa.recorrente ? "🔁 Recorrente · " : ""}
+                    {despesa.recorrente ? `🔁 ${ROTULO_PERIODICIDADE[despesa.periodicidade]} · ` : ""}
                     {despesa.categoria ? `${despesa.categoria} · ` : ""}
                     Vence em {formatoData.format(despesa.vencimento)}
                   </p>
@@ -141,6 +145,11 @@ export default async function FinanceiroPage() {
                   <p className="font-semibold text-slate-900 dark:text-white">
                     {formatoMoeda.format(Number(despesa.valor))}
                   </p>
+                  {despesa.valorVariavel && despesa.status === "PENDENTE" && Number(despesa.valor) === 0 && (
+                    <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+                      Valor a confirmar
+                    </span>
+                  )}
                   {statusPill(despesa.status, despesa.vencimento)}
                 </div>
               </Card>

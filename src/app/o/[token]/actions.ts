@@ -21,6 +21,7 @@ import {
 import { assinaturaEstaLiberada } from "@/lib/billing/status";
 import { calcularPrevisaoAprovacaoPedido, gravarPrevisaoAprovacaoPedido } from "@/lib/pedido-aprovacao";
 import { criarCustoAutomaticoComissao } from "@/lib/custo-pedido";
+import { calcularExposicaoCreditoCliente } from "@/lib/exposicao-credito-cliente";
 import { registrarCandidatosGangRun } from "@/lib/gang-run-servico";
 import { resolverOpcoesNaAprovacao, descartarOpcoesAlternativas } from "@/lib/orcamento-opcoes";
 import { prepararNotificacaoNotaFiscal } from "@/lib/nota-fiscal";
@@ -104,7 +105,13 @@ export async function responderOrcamentoPublico(
   const orcamento = await prisma.orcamento.findUnique({
     where: { linkPublicoToken: token },
     include: {
-      cliente: { select: { nome: true, vendedorId: true } },
+      // limiteCredito: achado A6 da Parte 4 — ver bloco de crédito logo
+      // abaixo. Nunca populamos `aviso` pro cliente por aqui (é o próprio
+      // cliente aprovando, não faz sentido avisar ele que está bloqueado),
+      // mas um bloqueio DE VERDADE (ParametrosGrafica.bloqueiaAoUltrapassarLimiteCredito)
+      // precisa valer nos dois caminhos, senão a trava não tem efeito nenhum
+      // — o link público é justamente o caminho sem revisão humana.
+      cliente: { select: { nome: true, vendedorId: true, limiteCredito: true } },
       grafica: { select: { nome: true, corPrimaria: true } },
     },
   });
@@ -219,6 +226,7 @@ export async function responderOrcamentoPublico(
           comissaoVendedorBase: true,
           comissaoEntraNoCustoPedido: true,
           comissaoSegueVendedorDoCliente: true,
+          bloqueiaAoUltrapassarLimiteCredito: true,
         },
       }),
       // Mesmo cuidado do bloco de comissão acima: leitura de breakdown/ficha
@@ -249,6 +257,24 @@ export async function responderOrcamentoPublico(
       (soma, item) => soma + Number(item.precoTotal),
       0
     );
+
+    // Achado A6 da Parte 4 — mesmo cálculo do caminho autenticado
+    // (atualizarStatusOrcamento), mas SEM aviso: aqui é o próprio cliente
+    // aprovando, não faz sentido informar a ele que está estourando o
+    // próprio limite. Só o bloqueio DE VERDADE se aplica (quando a gráfica
+    // ligou ParametrosGrafica.bloqueiaAoUltrapassarLimiteCredito) — sem essa
+    // flag, aprova normalmente, igual hoje. Mensagem genérica de propósito:
+    // não expõe número de limite/exposição a quem só tem o link.
+    if (orcamento.cliente.limiteCredito !== null && parametros?.bloqueiaAoUltrapassarLimiteCredito) {
+      const limite = Number(orcamento.cliente.limiteCredito);
+      const exposicaoAtual = await calcularExposicaoCreditoCliente(orcamento.clienteId);
+      if (exposicaoAtual + totalEscolhidoNumero > limite) {
+        return {
+          ok: false,
+          mensagem: "Não foi possível aprovar este orçamento automaticamente — entre em contato com a gráfica.",
+        };
+      }
+    }
 
     const percentualVendedor = usuarioVendedor?.comissaoPercent
       ? Number(usuarioVendedor.comissaoPercent)

@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { mapearItemNfePayload, normalizarDocumentoDestinatario, normalizarCnpjEmitente, type ItemNfe } from "./focus-nfe";
+import {
+  mapearItemNfePayload,
+  normalizarDocumentoDestinatario,
+  normalizarCnpjEmitente,
+  mapearIndicadorInscricaoEstadual,
+  montarCamposIeDestinatario,
+  resolverNomeDestinatario,
+  type ItemNfe,
+} from "./focus-nfe";
+import type { IndicadorInscricaoEstadual } from "@/generated/prisma/enums";
 
 const itemBase: ItemNfe = {
   numeroItem: 1,
@@ -133,5 +142,81 @@ describe("normalizarCnpjEmitente", () => {
 
   it("normaliza minúsculas pra maiúsculas", () => {
     expect(normalizarCnpjEmitente("12abc34501de35")).toBe("12ABC34501DE35");
+  });
+});
+
+// Achado A1 da auditoria de abrangência (2026-08-27): antes disso o payload
+// nunca mandava indicador_inscricao_estadual_destinatario nem
+// inscricao_estadual_destinatario pra Focus NFe/SEFAZ. Códigos confirmados
+// contra pesquisa-abrangencia-modulos.md (Parte 5, achado A1), que cita a
+// doc da Focus NFe (tag indIEDest da NF-e 4.0) e as rejeições SEFAZ 728/791.
+describe("mapearIndicadorInscricaoEstadual", () => {
+  const casos: [IndicadorInscricaoEstadual, string][] = [
+    ["CONTRIBUINTE", "1"],
+    ["ISENTO", "2"],
+    ["NAO_CONTRIBUINTE", "9"],
+  ];
+
+  it.each(casos)("%s mapeia pro código %s", (indicador, codigo) => {
+    expect(mapearIndicadorInscricaoEstadual(indicador)).toBe(codigo);
+  });
+
+  it("null (cliente antigo, sem indicador cadastrado) retorna undefined", () => {
+    expect(mapearIndicadorInscricaoEstadual(null)).toBeUndefined();
+  });
+});
+
+describe("montarCamposIeDestinatario", () => {
+  it("CONTRIBUINTE com IE preenchida: manda os dois campos", () => {
+    const campos = montarCamposIeDestinatario("CONTRIBUINTE", "1234567890");
+    expect(campos).toEqual({
+      indicador_inscricao_estadual_destinatario: "1",
+      inscricao_estadual_destinatario: "1234567890",
+    });
+  });
+
+  it("CONTRIBUINTE sem IE preenchida: manda só o indicador, nunca inscricao_estadual_destinatario vazio", () => {
+    const campos = montarCamposIeDestinatario("CONTRIBUINTE", null);
+    expect(campos).toEqual({ indicador_inscricao_estadual_destinatario: "1" });
+  });
+
+  it("ISENTO: manda só o indicador, NUNCA a IE — mesmo se ela vier preenchida (evita rejeição SEFAZ 791)", () => {
+    const campos = montarCamposIeDestinatario("ISENTO", "1234567890");
+    expect(campos).toEqual({ indicador_inscricao_estadual_destinatario: "2" });
+  });
+
+  it("NAO_CONTRIBUINTE: manda só o indicador, nunca a IE", () => {
+    const campos = montarCamposIeDestinatario("NAO_CONTRIBUINTE", "1234567890");
+    expect(campos).toEqual({ indicador_inscricao_estadual_destinatario: "9" });
+  });
+
+  it("indicador null (cliente antigo): não manda nenhum dos dois campos, mesmo comportamento de hoje", () => {
+    expect(montarCamposIeDestinatario(null, null)).toEqual({});
+  });
+
+  it("indicador undefined (campo nem passado): mesmo resultado de null", () => {
+    expect(montarCamposIeDestinatario(undefined, undefined)).toEqual({});
+  });
+});
+
+// Achado A1 — a nota DEVE usar razão social, nome fantasia não tem validade
+// jurídica pra documento fiscal.
+describe("resolverNomeDestinatario", () => {
+  it("razaoSocial presente: usa razaoSocial, não nome", () => {
+    expect(resolverNomeDestinatario({ nome: "Fantasia Ltda", razaoSocial: "Razão Social Real LTDA" })).toBe(
+      "Razão Social Real LTDA"
+    );
+  });
+
+  it("razaoSocial ausente (null): cai em nome — comportamento de hoje pra cliente antigo/pessoa física", () => {
+    expect(resolverNomeDestinatario({ nome: "João da Silva", razaoSocial: null })).toBe("João da Silva");
+  });
+
+  it("razaoSocial ausente (undefined): cai em nome", () => {
+    expect(resolverNomeDestinatario({ nome: "João da Silva" })).toBe("João da Silva");
+  });
+
+  it("razaoSocial string vazia: cai em nome (nunca manda destinatário vazio)", () => {
+    expect(resolverNomeDestinatario({ nome: "João da Silva", razaoSocial: "" })).toBe("João da Silva");
   });
 });

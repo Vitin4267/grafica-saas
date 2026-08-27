@@ -39,6 +39,7 @@ export default async function ConfiguracoesPage() {
     categoriaCustoConsumoPadraoId,
     perdaEhCustoDoPedido,
     comissaoEntraNoCustoPedido,
+    bloqueiaAoUltrapassarLimiteCredito,
     margemFaixaBaixa,
     margemFaixaBoa,
     descontoMaxSemAprovacao,
@@ -63,6 +64,7 @@ export default async function ConfiguracoesPage() {
       categoriaCustoConsumoPadraoId: true,
       perdaEhCustoDoPedido: true,
       comissaoEntraNoCustoPedido: true,
+      bloqueiaAoUltrapassarLimiteCredito: true,
       margemFaixaBaixa: true,
       margemFaixaBoa: true,
       descontoMaxSemAprovacao: true,
@@ -158,6 +160,7 @@ export default async function ConfiguracoesPage() {
           categoriasCusto={categoriasCusto}
           perdaEhCustoDoPedido={perdaEhCustoDoPedido}
           comissaoEntraNoCustoPedido={comissaoEntraNoCustoPedido}
+          bloqueiaAoUltrapassarLimiteCredito={bloqueiaAoUltrapassarLimiteCredito}
           margemFaixaBaixa={Number(margemFaixaBaixa)}
           margemFaixaBoa={Number(margemFaixaBoa)}
           descontoMaxSemAprovacao={Number(descontoMaxSemAprovacao)}

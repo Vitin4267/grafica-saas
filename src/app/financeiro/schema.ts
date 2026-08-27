@@ -3,6 +3,17 @@ import { dataInputParaUTC } from "@/lib/data";
 
 const FORMAS_PAGAMENTO = ["DINHEIRO", "PIX", "CARTAO", "BOLETO", "TRANSFERENCIA", "OUTRO"] as const;
 
+// Mesma ordem do enum PeriodicidadeDespesa no schema.prisma.
+const PERIODICIDADES_DESPESA = [
+  "SEMANAL",
+  "QUINZENAL",
+  "MENSAL",
+  "BIMESTRAL",
+  "TRIMESTRAL",
+  "SEMESTRAL",
+  "ANUAL",
+] as const;
+
 export const despesaSchema = z.object({
   descricao: z.string().trim().min(2, "Descrição muito curta").max(160),
   categoria: z
@@ -26,6 +37,18 @@ export const despesaSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Data de vencimento inválida")
     .transform((v) => dataInputParaUTC(v)),
+  // Só usado quando "recorrente" está marcado — a action ignora quando não
+  // está (ver criarDespesa/editarDespesa em actions.ts). Default MENSAL
+  // preserva o único comportamento que existia antes deste campo.
+  periodicidade: z.enum(PERIODICIDADES_DESPESA).optional().default("MENSAL"),
+  // Opcional: string vazia (campo de data não preenchido) vira undefined,
+  // não erro de validação — "sem fim" é o comportamento de hoje.
+  recorrenciaAteEm: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Data de fim da recorrência inválida")
+    .optional()
+    .or(z.literal(""))
+    .transform((v) => (v ? dataInputParaUTC(v) : undefined)),
 });
 
 // Schema separado de propósito: status/pagoEm nunca aparecem no form

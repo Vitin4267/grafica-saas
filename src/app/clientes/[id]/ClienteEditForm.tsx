@@ -23,14 +23,24 @@ import {
   ROTULO_ORIGEM_CLIENTE,
   ORDEM_SEGMENTO_CLIENTE,
   ROTULO_SEGMENTO_CLIENTE,
+  ORDEM_TIPO_PESSOA,
+  ROTULO_TIPO_PESSOA,
+  ORDEM_INDICADOR_INSCRICAO_ESTADUAL,
+  ROTULO_INDICADOR_INSCRICAO_ESTADUAL,
 } from "@/lib/tipos-cliente";
-import type { OrigemCliente, SegmentoCliente } from "@/generated/prisma/enums";
+import type { OrigemCliente, SegmentoCliente, TipoPessoa, IndicadorInscricaoEstadual } from "@/generated/prisma/enums";
 
 type ValoresCliente = {
   nome: string;
   email: string;
   telefone: string;
   documento: string;
+  tipoPessoa: TipoPessoa | "";
+  razaoSocial: string;
+  nomeFantasia: string;
+  inscricaoEstadual: string;
+  indicadorInscricaoEstadual: IndicadorInscricaoEstadual | "";
+  inscricaoMunicipal: string;
   enderecoCep: string;
   enderecoLogradouro: string;
   enderecoNumero: string;
@@ -41,6 +51,13 @@ type ValoresCliente = {
   enderecoUf: string;
   bloqueadoParaVenda: boolean;
   motivoBloqueio: string;
+  // Achado A6 da Parte 4 — string vazia = sem limite configurado (mesmo
+  // padrão de margemPadraoOverride abaixo: Decimal do Prisma não atravessa
+  // a fronteira Server→Client).
+  limiteCredito: string;
+  prazoPagamentoPadraoDias: string;
+  bloqueadoParaFaturamento: boolean;
+  motivoBloqueioFaturamento: string;
   observacoes: string;
   preferenciasProducao: string;
   origem: OrigemCliente | "";
@@ -78,8 +95,12 @@ export function ClienteEditForm({
   const [confirmandoDesativacao, setConfirmandoDesativacao] = useState(false);
   const [confirmandoAnonimizacao, setConfirmandoAnonimizacao] = useState(false);
   const [mostrarBloqueio, setMostrarBloqueio] = useState(valoresIniciais.bloqueadoParaVenda);
+  const [mostrarBloqueioFaturamento, setMostrarBloqueioFaturamento] = useState(
+    valoresIniciais.bloqueadoParaFaturamento
+  );
   const [origem, setOrigem] = useState<OrigemCliente | "">(valoresIniciais.origem);
   const [segmento, setSegmento] = useState<SegmentoCliente | "">(valoresIniciais.segmento);
+  const [tipoPessoa, setTipoPessoa] = useState<TipoPessoa | "">(valoresIniciais.tipoPessoa);
 
   useAoMudar(estadoExclusao, (estadoExclusao) => {
     if (estadoExclusao && !estadoExclusao.ok) setConfirmandoExclusao(false);
@@ -147,6 +168,59 @@ export function ClienteEditForm({
         <Input label="CPF/CNPJ" name="documento" defaultValue={valoresIniciais.documento} placeholder="opcional" />
 
         <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Select
+              label="Tipo de pessoa"
+              name="tipoPessoa"
+              value={tipoPessoa}
+              onChange={(e) => setTipoPessoa(e.target.value as TipoPessoa | "")}
+            >
+              <option value="">Não informado</option>
+              {ORDEM_TIPO_PESSOA.map((valor) => (
+                <option key={valor} value={valor}>
+                  {ROTULO_TIPO_PESSOA[valor]}
+                </option>
+              ))}
+            </Select>
+          </div>
+          {tipoPessoa === "JURIDICA" && (
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Input
+                label="Razão social"
+                name="razaoSocial"
+                defaultValue={valoresIniciais.razaoSocial}
+                hint="Usada na nota fiscal em vez do nome — o nome fantasia não tem validade jurídica pra NF-e"
+              />
+              <Input label="Nome fantasia" name="nomeFantasia" defaultValue={valoresIniciais.nomeFantasia} />
+              <Select
+                label="Indicador de Inscrição Estadual"
+                name="indicadorInscricaoEstadual"
+                defaultValue={valoresIniciais.indicadorInscricaoEstadual}
+              >
+                <option value="">Não informado</option>
+                {ORDEM_INDICADOR_INSCRICAO_ESTADUAL.map((valor) => (
+                  <option key={valor} value={valor}>
+                    {ROTULO_INDICADOR_INSCRICAO_ESTADUAL[valor]}
+                  </option>
+                ))}
+              </Select>
+              <Input
+                label="Inscrição Estadual"
+                name="inscricaoEstadual"
+                defaultValue={valoresIniciais.inscricaoEstadual}
+                placeholder="obrigatória se contribuinte de ICMS"
+              />
+              <Input
+                label="Inscrição Municipal"
+                name="inscricaoMunicipal"
+                defaultValue={valoresIniciais.inscricaoMunicipal}
+                placeholder="opcional"
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
           <label className="flex items-start gap-2 text-sm">
             <input
               type="checkbox"
@@ -171,6 +245,61 @@ export function ClienteEditForm({
               name="motivoBloqueio"
               defaultValue={valoresIniciais.motivoBloqueio}
               placeholder="Ex: inadimplente desde 10/2026"
+              rows={2}
+              className="mt-3"
+              maxLength={300}
+            />
+          )}
+        </div>
+
+        <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
+          <p className="mb-3 text-sm font-medium text-slate-700 dark:text-slate-200">Crédito</p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input
+              label="Limite de crédito (R$)"
+              name="limiteCredito"
+              type="number"
+              step="0.01"
+              min="0"
+              defaultValue={valoresIniciais.limiteCredito}
+              placeholder="em branco = sem limite"
+              hint="Soma das contas a receber pendentes do cliente + orçamento sendo aprovado — se ultrapassar, quem aprovar vê um aviso (ou a aprovação é recusada, se ligado em Configurações)"
+            />
+            <Input
+              label="Prazo de pagamento padrão (dias)"
+              name="prazoPagamentoPadraoDias"
+              type="number"
+              step="1"
+              min="0"
+              defaultValue={valoresIniciais.prazoPagamentoPadraoDias}
+              placeholder="ex: 30"
+            />
+          </div>
+          <label className="mt-4 flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              name="bloqueadoParaFaturamento"
+              defaultChecked={valoresIniciais.bloqueadoParaFaturamento}
+              onChange={(e) => setMostrarBloqueioFaturamento(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span>
+              <span className="block font-medium text-slate-700 dark:text-slate-200">
+                Bloqueado para faturamento
+              </span>
+              <span className="block text-xs text-slate-500">
+                Trava comercial ligada a crédito/cobrança — quem aprovar um orçamento pra ele vê um
+                aviso (não impede a aprovação). Diferente de &quot;bloqueado para venda&quot; acima:
+                use os dois, um, ou nenhum, sem conflito.
+              </span>
+            </span>
+          </label>
+          {mostrarBloqueioFaturamento && (
+            <Textarea
+              label="Motivo do bloqueio de faturamento"
+              name="motivoBloqueioFaturamento"
+              defaultValue={valoresIniciais.motivoBloqueioFaturamento}
+              placeholder="Ex: fatura de julho em atraso"
               rows={2}
               className="mt-3"
               maxLength={300}

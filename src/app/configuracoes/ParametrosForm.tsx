@@ -47,6 +47,7 @@ export function ParametrosForm({
   categoriasCusto,
   perdaEhCustoDoPedido,
   comissaoEntraNoCustoPedido,
+  bloqueiaAoUltrapassarLimiteCredito,
   margemFaixaBaixa,
   margemFaixaBoa,
   descontoMaxSemAprovacao,
@@ -72,6 +73,7 @@ export function ParametrosForm({
   categoriasCusto: { id: string; nome: string }[];
   perdaEhCustoDoPedido: boolean;
   comissaoEntraNoCustoPedido: boolean;
+  bloqueiaAoUltrapassarLimiteCredito: boolean;
   margemFaixaBaixa: number;
   margemFaixaBoa: number;
   descontoMaxSemAprovacao: number;
@@ -295,6 +297,37 @@ export function ParametrosForm({
           hint="100 = sem trava (qualquer desconto passa sem aprovação)"
           className="max-w-xs"
         />
+      </Card>
+
+      <Card className="flex flex-col gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Limite de crédito do cliente
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Cliente com limite de crédito cadastrado (Clientes {"›"} editar) que
+            estoura o limite na aprovação de um orçamento — soma das contas a
+            receber pendentes dele + este orçamento.
+          </p>
+        </div>
+        <label className="flex items-center gap-2.5">
+          <input
+            type="checkbox"
+            name="bloqueiaAoUltrapassarLimiteCredito"
+            defaultChecked={bloqueiaAoUltrapassarLimiteCredito}
+            className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+          />
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+            Bloquear aprovação ao ultrapassar limite de crédito
+          </span>
+        </label>
+        <p className="text-xs text-slate-500">
+          Desligado (padrão): só avisa quem está aprovando, a aprovação segue
+          normalmente. Ligado: a aprovação é recusada — tanto no painel quanto
+          no link público que o cliente usa pra aprovar. Não afeta o bloqueio
+          manual de cliente (bloqueado para venda/faturamento), que continua
+          só avisando sempre.
+        </p>
       </Card>
 
       <Card className="flex flex-col gap-4 p-6">

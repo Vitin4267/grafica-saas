@@ -300,6 +300,79 @@ explícita, com a mesma instabilidade intermitente de conexão ao Neon já
 vista antes (1 retry resolveu). Verificação: `tsc --noEmit` limpo, 867/867
 testes (84 arquivos) passando, `npm run build` OK.
 
+**Atualização 2026-08-27 (rodada 12) — mais 5 achados CONSTRUÍDOS** (5
+subagentes em paralelo):
+- **A1 da Parte 5** (sem distinção Pessoa Física × Jurídica — bug fiscal:
+  faltava razão social/Inscrição Estadual/indicador de contribuinte do
+  destinatário, risco de rejeição SEFAZ 728/791) — `Cliente.tipoPessoa`/
+  `razaoSocial`/`nomeFantasia`/`inscricaoEstadual`/
+  `indicadorInscricaoEstadual`/`inscricaoMunicipal`. `focus-nfe.ts` manda
+  `indicador_inscricao_estadual_destinatario` sempre (1/2/9) e
+  `inscricao_estadual_destinatario` só quando CONTRIBUINTE — exatamente a
+  regra que evita a 791. Nova pendência em `verificarProntidaoFiscal`
+  bloqueando ANTES da SEFAZ rejeitar. `razaoSocial ?? nome` na emissão,
+  `nome` do cadastro nunca migrado/alterado.
+- **A6 da Parte 4** (sem controle de crédito do cliente) —
+  `Cliente.limiteCredito`/`prazoPagamentoPadraoDias`/
+  `bloqueadoParaFaturamento` + `ParametrosGrafica.
+  bloqueiaAoUltrapassarLimiteCredito` (default `false` = só avisa, igual
+  `descontoMaxSemAprovacao`). Deliberadamente NÃO reaproveita
+  `bloqueadoParaVenda` (causas independentes — bloqueio manual vs. estouro
+  automático de exposição), mas os dois avisos são compostos num único
+  `aviso` na resposta de `atualizarStatusOrcamento`. A trava (quando
+  ligada) vale nos dois caminhos de aprovação; o aviso não-bloqueante só no
+  painel autenticado.
+- **A13 da Parte 4** (`ContaPrepaga` é a carteira da GRÁFICA com um
+  fornecedor; crédito do CLIENTE — sentido oposto — não tinha onde ir) —
+  `model CreditoCliente`/`MovimentacaoCreditoCliente` novo, espelhando a
+  mecânica de `ContaPrepaga` (saldo sempre calculado a partir da soma de
+  movimentações, nunca armazenado). Tela `/financeiro/creditos-clientes`.
+  Consumo na aprovação do orçamento é opcional (campo "quanto usar", nunca
+  forçado), revalidado no servidor dentro da mesma transação — nunca deixa
+  `CONSUMO` exceder o saldo real.
+- **A14 da Parte 4** (resto do achado — despesa recorrente só mensal,
+  valor sempre igual, sem fim; o bug concreto de `categoriaCustoId` já
+  tinha sido corrigido numa rodada anterior) — `Despesa.periodicidade`
+  (7 valores, default MENSAL preserva 100% do comportamento de toda série
+  já existente), `recorrenciaAteEm` (série para de gerar depois dessa
+  data), `valorVariavel` (ocorrência nasce com valor 0, badge "a
+  confirmar"). Achado de implementação: o teto de catch-up (gerar até N
+  ocorrências de uma vez se a gráfica ficou muito tempo sem abrir
+  `/financeiro`) tinha que parar de ser contado em OCORRÊNCIAS (24
+  ocorrências anuais seria catch-up de 24 anos) e virar um teto de TEMPO
+  (24 meses de calendário, qualquer periodicidade).
+- **A4 da Parte 5** (sem cadastro de contatos do cliente — comprador ≠
+  financeiro ≠ aprovador de arte ≠ recebimento, tudo caía no mesmo
+  e-mail/telefone genérico) — `model ContatoCliente` (soft-delete via
+  `ativo`, só 1 principal por cliente, imposto na action) +
+  `Orcamento.contatoClienteId` convivendo com o snapshot em texto já
+  existente `contatoNome`/`contatoEmail` (mesmo precedente de `Comissao`/
+  `opcaoEscolhidaNome`) — escolher um contato pré-preenche o snapshot, mas
+  digitar à mão continua funcionando. Roteamento automático (link de
+  aprovação pro contato de `APROVACAO_ARTE`, boleto pro `FINANCEIRO`)
+  deliberadamente fora desta rodada.
+
+Achado extra na verificação: os 5 subagentes editaram `prisma/schema.prisma`
+concorrentemente (até 3 ao mesmo tempo em `ClienteForm.tsx`/
+`clientes/actions.ts`) — reconciliação limpa, um deles inclusive detectou
+sozinho uma colisão de NOME DE ARQUIVO com outro subagente
+(`src/lib/credito-cliente.ts` já estava em uso pro achado A13/CreditoCliente)
+e se renomeou pra `src/lib/exposicao-credito-cliente.ts` sem que eu
+precisasse intervir. Um teste do achado A4
+(`actions.contatos.test.ts`) falhava com `"Invalid input"` em 4 dos 6 casos
+— **bug do fixture do teste, não da action**: `contatoClienteSchema` (mesmo
+padrão de `clienteSchema`) espera `undefined` ou string pros campos
+opcionais, mas o helper `formDataDe` do teste só chama `FormData.set` pros
+campos explicitamente passados, então campos como `cargo`/`telefone`
+ausentes viravam `null` (não `undefined`) — coisa que nunca acontece com um
+`<form>` de verdade (`ContatosClienteCard.tsx` sempre renderiza os 4 inputs,
+mesmo vazios). Corrigido preenchendo os campos opcionais com `""` explícito
+nos 5 `formDataDe(...)` que criam contato de verdade no teste. As 5
+migrations (aditivas) aplicadas ao banco de dev com aprovação explícita, com
+a mesma instabilidade intermitente de conexão ao Neon de sempre (1 retry
+resolveu). Verificação: `tsc --noEmit` limpo, 916/916 testes (89 arquivos)
+passando, `npm run build` OK.
+
 ## Como ler cada parte
 
 Cada uma das 6 partes abaixo cobre um módulo (ou par de módulos muito
@@ -918,7 +991,9 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 
 **Proposta.** `ParametrosGrafica.multaAtrasoPercent @default(2)`, `jurosMoraMensalPercent @default(1)`. Permitir marcar recebido informando `valorJuros`/`valorMulta` separados (receita financeira, linha própria no DRE). `model ReguaCobrancaEtapa` com canal e-mail/webhook, idempotência via CAS igual `alerta-atraso.ts`. `StatusContaReceber` ganha `EM_COBRANCA` e `PERDA` (hoje um calote só pode virar `CANCELADO`, indistinguível de erro de digitação). Indicadores: aging por faixa, DSO, índice de inadimplência.
 
-#### A6 — Não existe controle de crédito do cliente
+#### A6 — Não existe controle de crédito do cliente — **CONSTRUÍDO 2026-08-27 (rodada 12)**
+
+**Status:** ver bloco "Atualização (rodada 12)" no topo do documento — `Cliente.limiteCredito`/`bloqueadoParaFaturamento` + `ParametrosGrafica.bloqueiaAoUltrapassarLimiteCredito` (default só avisa). Independente de `bloqueadoParaVenda` (bloqueio manual), os dois avisos são compostos numa única resposta.
 **O que falta.** `Cliente` não tem limite de crédito, prazo padrão, nem bloqueio por inadimplência. Um cliente com 3 parcelas vencidas pode ter novo orçamento de R$50 mil aprovado sem aviso nenhum.
 
 **Proposta.** `Cliente.limiteCredito Decimal?` (null = sem limite), `prazoPagamentoPadraoDias Int?`, `bloqueadoParaFaturamento Boolean @default(false)` + motivo. Aviso não-bloqueante por padrão na aprovação (flag em `ParametrosGrafica` decide se vira trava, mesmo espírito de `descontoMaxSemAprovacao`).
@@ -967,12 +1042,16 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 
 ### E. Cadastros e estrutura
 
-#### A13 — `ContaPrepaga` é a carteira da gráfica no fornecedor; crédito de cliente não existe
+#### A13 — `ContaPrepaga` é a carteira da gráfica no fornecedor; crédito de cliente não existe — **CONSTRUÍDO 2026-08-27 (rodada 12)**
+
+**Status:** ver bloco "Atualização (rodada 12)" no topo do documento — `model CreditoCliente`/`MovimentacaoCreditoCliente`, saldo sempre calculado (nunca armazenado), tela `/financeiro/creditos-clientes`, consumo opcional na aprovação do orçamento revalidado no servidor.
 **Confirmado.** `ContaPrepaga` é carteira da gráfica junto a um fornecedor (ex: Lalamove) — correto e bem feito, mas é o oposto do que soa e não tem nada a ver com cliente. Cliente que deposita R$5.000 e consome ao longo de meses (comum em conta recorrente corporativa) não tem onde ser registrado — `Pagamento` exige orçamento **aprovado**, que ainda não existe.
 
 **Proposta.** `model CreditoCliente { clienteId @unique, saldo }` + `MovimentacaoCreditoCliente { tipo DEPOSITO|CONSUMO|ESTORNO|AJUSTE, valor, orcamentoId?, pagamentoId? @unique }`, espelhando a mecânica de `ContaPrepaga`. Comentário cruzado nos dois models pra não confundir.
 
-#### A14 — Despesa recorrente: só mensal, valor sempre igual, sem fim — e perde `categoriaCustoId` — **BUG CORRIGIDO 2026-08-24 (rodada 2, parcial)**
+#### A14 — Despesa recorrente: só mensal, valor sempre igual, sem fim — e perde `categoriaCustoId` — **CONSTRUÍDO 2026-08-27 (rodada 12)** (bug do `categoriaCustoId` já corrigido na rodada 2)
+
+**Status:** ver bloco "Atualização (rodada 12)" no topo do documento — `Despesa.periodicidade` (7 valores, default MENSAL sem regressão), `recorrenciaAteEm`, `valorVariavel`. Catch-up de série atrasada virou teto de TEMPO (24 meses), não de contagem de ocorrências.
 
 **Status:** só o "achado concreto" (cópia de `categoriaCustoId`) foi corrigido — 1 linha. `periodicidade`/`recorrenciaAteEm`/`valorVariavel` (a proposta completa, abaixo) continuam gap.
 
@@ -1030,7 +1109,9 @@ Pesquisei como o cadastro de cliente é estruturado em (a) ERPs brasileiros de m
 
 ## Achados
 
-### A1. Não existe distinção Pessoa Física × Pessoa Jurídica — e por isso faltam razão social, Inscrição Estadual e indicador de IE do destinatário
+### A1. Não existe distinção Pessoa Física × Pessoa Jurídica — e por isso faltam razão social, Inscrição Estadual e indicador de IE do destinatário — **CONSTRUÍDO 2026-08-27 (rodada 12)**
+
+**Status:** ver bloco "Atualização (rodada 12)" no topo do documento — `Cliente.tipoPessoa`/`razaoSocial`/`inscricaoEstadual`/`indicadorInscricaoEstadual`, pendência nova em `verificarProntidaoFiscal`, `focus-nfe.ts` enviando os campos de IE condicionalmente (evita rejeições SEFAZ 728/791). **Escopo restrito de propósito**: validação de dígito verificador e normalização do `documento` continuam gap, ver achado A2 da mesma Parte.
 
 **O que falta:** `Cliente` tem um único campo `nome` e um único campo `documento` ("CPF ou CNPJ", texto livre). Não existe `tipoPessoa`, não existe `razaoSocial`/`nomeFantasia`, não existe `inscricaoEstadual`, não existe indicador de contribuinte de ICMS. O impacto é direto na emissão: em `src/lib/focus-nfe.ts:236-240` o payload manda `nome_destinatario` (o `Cliente.nome`, que pode perfeitamente ser o nome fantasia digitado pelo balconista) e só CPF **ou** CNPJ, decidido por contagem de dígitos. **Nenhum dos dois campos de IE do destinatário é enviado** — nem `inscricao_estadual_destinatario`, nem `indicador_inscricao_estadual_destinatario`. E `verificarProntidaoFiscal` (`src/lib/nota-fiscal.ts:82-127`) não tem como exigir IE, porque o campo não existe no schema.
 
@@ -1080,7 +1161,9 @@ enum IndicadorInscricaoEstadual { CONTRIBUINTE, ISENTO, NAO_CONTRIBUINTE }
 
 **Status (2026-08-24):** construída a parte interno × interestadual — `DadosFiscaisGrafica.cfopPadraoInterestadual`/`DadosFiscaisFilial.cfopPadraoInterestadual` (default `"6102"`) + `resolverCfop()` em `src/lib/nota-fiscal.ts`, usado em `src/app/orcamento/[id]/actions.ts` na emissão. **Gap remanescente, deliberadamente fora do escopo desta rodada:** a distinção contribuinte × não-contribuinte de ICMS (6102 vs 6108, com implicação de DIFAL) continua sem existir — `resolverCfop` sempre usa `cfopPadraoInterestadual` pra qualquer venda fora do estado, porque depende do indicador de contribuinte do cliente (achado A1, campo ainda não existe no schema). Enquanto isso não for construído, gráfica que vende pra consumidor final não-contribuinte de outro estado ainda emite com CFOP potencialmente incorreto (6102 em vez de 6108) e sem cálculo/alerta de DIFAL.
 
-### A4. Não existe cadastro de contatos do cliente — o cliente PJ é tratado como se fosse uma pessoa só
+### A4. Não existe cadastro de contatos do cliente — o cliente PJ é tratado como se fosse uma pessoa só — **CONSTRUÍDO 2026-08-27 (rodada 12)**
+
+**Status:** ver bloco "Atualização (rodada 12)" no topo do documento — `model ContatoCliente` (soft-delete, 1 principal por cliente) + `Orcamento.contatoClienteId` convivendo com o snapshot em texto já existente. **Escopo restrito de propósito:** roteamento automático de aprovação de arte/financeiro pro contato certo continua gap, fica pra quando alguém pedir.
 
 **O que falta:** um único `email` e um único `telefone` no `Cliente`. Não existe model de contato. O único contato nominal do sistema é o snapshot `Orcamento.contatoNome`/`contatoEmail`, digitado de novo a cada orçamento, sem vínculo com cadastro nenhum (é a causa raiz dos achados B6/B7 da Parte 1). Verifiquei também que `Cliente.email` é hoje **decorativo**: aparece só na listagem e no formulário de edição — nenhum e-mail do sistema é enviado para ele (os templates em `src/lib/email/templates.ts` disparam para donos/responsáveis da gráfica; o link público vai por WhatsApp/e-mail manual do vendedor).
 

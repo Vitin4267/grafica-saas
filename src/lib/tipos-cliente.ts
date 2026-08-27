@@ -1,4 +1,9 @@
-import type { OrigemCliente, SegmentoCliente } from "@/generated/prisma/enums";
+import type {
+  OrigemCliente,
+  SegmentoCliente,
+  TipoPessoa,
+  IndicadorInscricaoEstadual,
+} from "@/generated/prisma/enums";
 
 // Canal de aquisição do cliente (achado A11 da auditoria de abrangência,
 // pesquisa-abrangencia-modulos.md) — mesmo padrão enum-fechado+OUTRO do
@@ -48,4 +53,28 @@ export const ROTULO_SEGMENTO_CLIENTE: Record<SegmentoCliente, string> = {
   INDUSTRIA: "Indústria",
   ORGAO_PUBLICO: "Órgão público",
   OUTRO: "Outro",
+};
+
+// Distinção Pessoa Física × Pessoa Jurídica (achado A1 da auditoria de
+// abrangência) — sem OUTRO de propósito, ver comentário do enum no schema.
+export const ORDEM_TIPO_PESSOA: TipoPessoa[] = ["FISICA", "JURIDICA"];
+
+export const ROTULO_TIPO_PESSOA: Record<TipoPessoa, string> = {
+  FISICA: "Pessoa física",
+  JURIDICA: "Pessoa jurídica",
+};
+
+// Indicador de contribuinte de ICMS do destinatário (tag indIEDest da NF-e
+// 4.0, achado A1 da auditoria de abrangência) — decide se a Inscrição
+// Estadual é obrigatória (CONTRIBUINTE) ou proibida (ISENTO) na emissão.
+export const ORDEM_INDICADOR_INSCRICAO_ESTADUAL: IndicadorInscricaoEstadual[] = [
+  "CONTRIBUINTE",
+  "ISENTO",
+  "NAO_CONTRIBUINTE",
+];
+
+export const ROTULO_INDICADOR_INSCRICAO_ESTADUAL: Record<IndicadorInscricaoEstadual, string> = {
+  CONTRIBUINTE: "Contribuinte de ICMS",
+  ISENTO: "Contribuinte isento de Inscrição Estadual",
+  NAO_CONTRIBUINTE: "Não contribuinte",
 };

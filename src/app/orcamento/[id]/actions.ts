@@ -71,6 +71,8 @@ import {
 } from "@/lib/billing/armazenamento";
 import { calcularPrevisaoAprovacaoPedido, gravarPrevisaoAprovacaoPedido } from "@/lib/pedido-aprovacao";
 import { criarCustoAutomaticoComissao } from "@/lib/custo-pedido";
+import { calcularExposicaoCreditoCliente } from "@/lib/exposicao-credito-cliente";
+import { lancarConsumoCreditoCliente } from "@/lib/credito-cliente";
 import { registrarCandidatosGangRun } from "@/lib/gang-run-servico";
 import { resolverOpcoesNaAprovacao, descartarOpcoesAlternativas } from "@/lib/orcamento-opcoes";
 import { UNIDADES_DIMENSAO, converterParaCm } from "@/lib/unidade-dimensao";
@@ -87,6 +89,13 @@ const unidadeDimensaoSchema = z.enum(UNIDADES_DIMENSAO);
 // (ver removerItemOrcamento). Não é um erro de banco de verdade.
 class ErroUltimoItemOrcamento extends Error {}
 
+// Mesmo princípio de ErroUltimoItemOrcamento acima — aborta a transação de
+// aprovação (rollback de tudo: Pedido, Comissao, etc.) quando o valor de
+// crédito que o vendedor pediu pra abater excede o saldo disponível do
+// cliente. Re-checado DENTRO da transação (ver lancarConsumoCreditoCliente
+// em src/lib/credito-cliente.ts) — nunca confia só na leitura de fora.
+class ErroCreditoClienteInsuficiente extends Error {}
+
 const MENSAGEM_CONFLITO_CONCORRENTE =
   "Outra pessoa alterou este orçamento ao mesmo tempo — tente de novo.";
 
@@ -98,11 +107,18 @@ export type AtualizarStatusResult = {
   ok: boolean;
   mensagem: string;
   novoStatus?: StatusOrcamento;
-  // Não bloqueia a aprovação (achado A9 da auditoria de abrangência,
-  // 2026-08-24) — só avisa quem aprovou que o cliente está marcado como
-  // bloqueado pra venda (inadimplência), pra decisão consciente em vez de
-  // aprovação automática silenciosa. OrcamentoAcoes.tsx mostra isso mesmo no
-  // caminho de sucesso do APROVADO, que normalmente esconde `mensagem`.
+  // Não bloqueia a aprovação por padrão (achado A9, 2026-08-24, e achado A6
+  // da Parte 4, 2026-08-27) — só avisa quem aprovou que o cliente está
+  // bloqueado pra venda/faturamento ou que este orçamento estoura o limite
+  // de crédito configurado, pra decisão consciente em vez de aprovação
+  // automática silenciosa. As 3 causas são compostas num único texto (ver
+  // final de atualizarStatusOrcamento). OrcamentoAcoes.tsx mostra isso mesmo
+  // no caminho de sucesso do APROVADO, que normalmente esconde `mensagem`.
+  // O estouro de limite de crédito pode virar bloqueio DE VERDADE (a
+  // aprovação falha com ok:false em vez de popular este campo) quando
+  // ParametrosGrafica.bloqueiaAoUltrapassarLimiteCredito está ligada — os
+  // bloqueios manuais (bloqueadoParaVenda/bloqueadoParaFaturamento) nunca
+  // bloqueiam de verdade, só avisam, independente dessa flag.
   aviso?: string;
 };
 
@@ -122,7 +138,20 @@ export async function atualizarStatusOrcamento(
   const orcamento = await prisma.orcamento.findFirst({
     where: { id: orcamentoId, graficaId: usuario.graficaId },
     // vendedorId: achado A8 — ver bloco de comissão logo abaixo.
-    include: { cliente: { select: { bloqueadoParaVenda: true, motivoBloqueio: true, vendedorId: true } } },
+    // limiteCredito/bloqueadoParaFaturamento/motivoBloqueioFaturamento:
+    // achado A6 da Parte 4 — ver bloco de crédito logo abaixo.
+    include: {
+      cliente: {
+        select: {
+          bloqueadoParaVenda: true,
+          motivoBloqueio: true,
+          vendedorId: true,
+          limiteCredito: true,
+          bloqueadoParaFaturamento: true,
+          motivoBloqueioFaturamento: true,
+        },
+      },
+    },
   });
   if (!orcamento) {
     return { ok: false, mensagem: "Orçamento não encontrado." };
@@ -135,6 +164,10 @@ export async function atualizarStatusOrcamento(
     return { ok: false, mensagem: "Transição de status inválida." };
   }
 
+  // Hoisted pra fora do bloco de APROVADO abaixo (que é seu próprio escopo de
+  // bloco) — precisa estar visível lá embaixo, na composição do `aviso` final.
+  let avisoExcedeCredito: string | undefined;
+
   if (novoStatus === "APROVADO") {
     // Opcional: string vazia (campo em branco) vira undefined, pedido nasce
     // sem prazo e nunca vai gerar alerta de atraso (ver src/lib/alerta-atraso.ts).
@@ -142,6 +175,17 @@ export async function atualizarStatusOrcamento(
     const prazoEntrega =
       typeof prazoEntregaBruto === "string" && prazoEntregaBruto
         ? dataInputParaUTC(prazoEntregaBruto)
+        : undefined;
+
+    // Achado A13 da auditoria de abrangência — quanto do CreditoCliente
+    // (saldo adiantado do cliente, ver src/lib/credito-cliente.ts) o
+    // vendedor está optando por abater deste orçamento. Campo em branco
+    // (o caso de sempre, hoje) não usa crédito nenhum — nunca automático,
+    // sempre uma escolha explícita no momento da aprovação.
+    const usarCreditoBruto = formData.get("usarCredito");
+    const usarCreditoValor =
+      typeof usarCreditoBruto === "string" && usarCreditoBruto && Number(usarCreditoBruto) > 0
+        ? paraDecimal(usarCreditoBruto)
         : undefined;
 
     // Qual opção o vendedor está aprovando em nome do cliente (ver
@@ -182,6 +226,7 @@ export async function atualizarStatusOrcamento(
           comissaoVendedorBase: true,
           comissaoEntraNoCustoPedido: true,
           comissaoSegueVendedorDoCliente: true,
+          bloqueiaAoUltrapassarLimiteCredito: true,
         },
       }),
       calcularPrevisaoAprovacaoPedido(orcamentoId, usuario.graficaId, undefined, opcaoEscolhidaId),
@@ -214,6 +259,31 @@ export async function atualizarStatusOrcamento(
       (soma, item) => soma + Number(item.precoTotal),
       0
     );
+
+    // Achado A6 da Parte 4 da auditoria de abrangência — estouro de limite
+    // de crédito detectado automaticamente (ver comentário em Cliente no
+    // schema.prisma pra distinção com bloqueadoParaVenda, que é manual).
+    // limiteCredito null = sem limite configurado, nenhuma checagem roda
+    // (comportamento de hoje). ParametrosGrafica.bloqueiaAoUltrapassarLimiteCredito
+    // decide se isso vira erro (aprovação recusada, ANTES da transação que
+    // cria o Pedido) ou só aviso — mesmo espírito de descontoMaxSemAprovacao,
+    // mas nunca vale pro bloqueio MANUAL (bloqueadoParaVenda/
+    // bloqueadoParaFaturamento), que continua só avisando sempre.
+    if (orcamento.cliente.limiteCredito !== null) {
+      const limite = Number(orcamento.cliente.limiteCredito);
+      const exposicaoAtual = await calcularExposicaoCreditoCliente(orcamento.clienteId);
+      const exposicaoTotal = exposicaoAtual + totalEscolhidoNumero;
+      if (exposicaoTotal > limite) {
+        if (parametros?.bloqueiaAoUltrapassarLimiteCredito) {
+          return {
+            ok: false,
+            mensagem: `Aprovação recusada: a exposição de crédito do cliente chegaria a ${formatoMoeda.format(exposicaoTotal)}, acima do limite de ${formatoMoeda.format(limite)} configurado no cadastro. Ajuste o limite em Clientes ou desligue "Bloquear ao ultrapassar limite de crédito" em Configurações pra aprovar mesmo assim.`,
+          };
+        }
+        const percentualExcedente = limite > 0 ? (exposicaoTotal / limite - 1) * 100 : 100;
+        avisoExcedeCredito = `Atenção: este orçamento deixa o cliente ${percentualExcedente.toFixed(0)}% acima do limite de crédito configurado (exposição total de ${formatoMoeda.format(exposicaoTotal)} contra limite de ${formatoMoeda.format(limite)}).`;
+      }
+    }
 
     const percentualVendedor = usuarioVendedor?.comissaoPercent
       ? Number(usuarioVendedor.comissaoPercent)
@@ -248,12 +318,14 @@ export async function atualizarStatusOrcamento(
     // público aprovando enquanto o painel rejeita) poderiam ambas passar e a
     // última venceria, deixando um Pedido órfão. upsert continua idempotente
     // contra duplo clique (orcamentoId único em Pedido e Comissao).
-    const aprovado = await prisma.$transaction(async (tx) => {
-      const cas = await tx.orcamento.updateMany({
-        where: { id: orcamentoId, status: orcamento.status },
-        data: { status: "APROVADO" },
-      });
-      if (cas.count === 0) return false;
+    let aprovado: boolean;
+    try {
+      aprovado = await prisma.$transaction(async (tx) => {
+        const cas = await tx.orcamento.updateMany({
+          where: { id: orcamentoId, status: orcamento.status },
+          data: { status: "APROVADO" },
+        });
+        if (cas.count === 0) return false;
 
       // Promove a opção escolhida (descarta as outras — ver
       // src/lib/orcamento-opcoes.ts) e grava o total/nome final ANTES do
@@ -333,8 +405,32 @@ export async function atualizarStatusOrcamento(
           });
         }
       }
+
+      // Achado A13 — abate o valor escolhido do crédito adiantado do
+      // cliente (ver CreditoCliente/MovimentacaoCreditoCliente no schema).
+      // Roda por último, DENTRO desta mesma transação: se o saldo não
+      // cobrir o valor pedido, o throw abaixo desfaz TUDO que já rodou
+      // aqui em cima (Pedido, Comissao, etc.) — a aprovação não fica
+      // "meio feita".
+      if (usarCreditoValor) {
+        const resultadoCredito = await lancarConsumoCreditoCliente(tx, {
+          clienteId: orcamento.clienteId,
+          orcamentoId,
+          valor: usarCreditoValor,
+          criadoPorId: usuario.id,
+        });
+        if (!resultadoCredito.ok) {
+          throw new ErroCreditoClienteInsuficiente(resultadoCredito.mensagem);
+        }
+      }
       return true;
-    });
+      });
+    } catch (erro) {
+      if (erro instanceof ErroCreditoClienteInsuficiente) {
+        return { ok: false, mensagem: erro.message };
+      }
+      throw erro;
+    }
 
     if (!aprovado) {
       return { ok: false, mensagem: "Este orçamento já teve o status alterado. Atualize a página." };
@@ -431,16 +527,36 @@ export async function atualizarStatusOrcamento(
     revalidatePath("/financeiro/comissoes");
   }
 
+  // Compõe todos os avisos não-bloqueantes num único `aviso` (achado A9 +
+  // achado A6 da Parte 4) em vez de um campo por causa — bloqueadoParaVenda,
+  // bloqueadoParaFaturamento e estouro de limite de crédito são causas
+  // independentes, mas todas cabem no mesmo Alert warning em OrcamentoAcoes.tsx.
+  const avisos: string[] = [];
+  if (novoStatus === "APROVADO") {
+    if (orcamento.cliente.bloqueadoParaVenda) {
+      avisos.push(
+        `Atenção: este cliente está bloqueado para venda${
+          orcamento.cliente.motivoBloqueio ? ` (${orcamento.cliente.motivoBloqueio})` : ""
+        }. O orçamento foi aprovado mesmo assim — confira antes de seguir com a produção.`
+      );
+    }
+    if (orcamento.cliente.bloqueadoParaFaturamento) {
+      avisos.push(
+        `Atenção: este cliente está bloqueado para faturamento${
+          orcamento.cliente.motivoBloqueioFaturamento ? ` (${orcamento.cliente.motivoBloqueioFaturamento})` : ""
+        }. O orçamento foi aprovado mesmo assim — confira antes de seguir com a produção.`
+      );
+    }
+    if (avisoExcedeCredito) {
+      avisos.push(avisoExcedeCredito);
+    }
+  }
+
   return {
     ok: true,
     mensagem: `Orçamento atualizado para ${ROTULOS_STATUS_ORCAMENTO[novoStatus]}.`,
     novoStatus,
-    aviso:
-      novoStatus === "APROVADO" && orcamento.cliente.bloqueadoParaVenda
-        ? `Atenção: este cliente está bloqueado para venda${
-            orcamento.cliente.motivoBloqueio ? ` (${orcamento.cliente.motivoBloqueio})` : ""
-          }. O orçamento foi aprovado mesmo assim — confira antes de seguir com a produção.`
-        : undefined,
+    aviso: avisos.length > 0 ? avisos.join(" ") : undefined,
   };
 }
 
@@ -867,6 +983,23 @@ export async function editarDadosGeraisOrcamento(
     return { ok: false, mensagem: "Tipo de frete inválido." };
   }
 
+  // Achado A4 da Parte 5 — contatoClienteId nunca é lido do form sem
+  // verificar que o contato pertence ao MESMO cliente deste orçamento (nunca
+  // confia no id cru vindo do <select>, mesmo princípio de validarVendedorId
+  // em clientes/actions.ts). "" = digitação manual, sem contato escolhido.
+  const contatoClienteIdBruto = String(formData.get("contatoClienteId") ?? "").trim();
+  let contatoClienteId: string | null = null;
+  if (contatoClienteIdBruto) {
+    const contatoCliente = await prisma.contatoCliente.findFirst({
+      where: { id: contatoClienteIdBruto, clienteId: orcamento.clienteId },
+      select: { id: true },
+    });
+    if (!contatoCliente) {
+      return { ok: false, mensagem: "Contato selecionado inválido." };
+    }
+    contatoClienteId = contatoCliente.id;
+  }
+
   const campoTexto = (nome: string, max: number) =>
     String(formData.get(nome) || "").trim().slice(0, max) || null;
 
@@ -877,6 +1010,7 @@ export async function editarDadosGeraisOrcamento(
       tipoPedido: tipoPedidoParsed?.success ? tipoPedidoParsed.data : null,
       contatoNome: campoTexto("contatoNome", 120),
       contatoEmail: campoTexto("contatoEmail", 200),
+      contatoClienteId,
       condicoesPagamento: campoTexto("condicoesPagamento", 200),
       frete: freteParsed?.success ? freteParsed.data : null,
       transportadora: campoTexto("transportadora", 120),
@@ -2835,6 +2969,9 @@ export async function emitirNotaFiscal(
         destinatario: {
           documento: orcamento.cliente.documento!,
           nome: orcamento.cliente.nome,
+          razaoSocial: orcamento.cliente.razaoSocial,
+          indicadorInscricaoEstadual: orcamento.cliente.indicadorInscricaoEstadual,
+          inscricaoEstadual: orcamento.cliente.inscricaoEstadual,
           logradouro: orcamento.cliente.enderecoLogradouro!,
           numero: orcamento.cliente.enderecoNumero!,
           bairro: orcamento.cliente.enderecoBairro!,

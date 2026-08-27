@@ -22,6 +22,7 @@ import {
   hojeBrasiliaInputValue,
 } from "@/lib/data";
 import { somarDiasUteis } from "@/lib/dias-uteis";
+import { saldoCreditoCliente } from "@/lib/credito-cliente";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/Badge";
@@ -173,6 +174,36 @@ export default async function OrcamentoDetalhePage({
 
   if (!orcamento) {
     notFound();
+  }
+
+  // Achado A4 da Parte 5 da auditoria de abrangência — contatos cadastrados
+  // do cliente deste orçamento, pra popular o <select> opcional em
+  // EditarDadosGeraisOrcamentoForm.tsx. Só ativos (diferente da tela de
+  // gestão em /clientes/[id], que também lista os desativados pra permitir
+  // reativar). Cliente sem nenhum contato cadastrado -> lista vazia -> select
+  // não aparece, digitação livre continua idêntica a hoje.
+  const contatosCliente = await prisma.contatoCliente.findMany({
+    where: { clienteId: orcamento.clienteId, ativo: true },
+    orderBy: [{ principal: "desc" }, { nome: "asc" }],
+    select: { id: true, nome: true, email: true, funcao: true, funcaoOutro: true },
+  });
+
+  // Achado A13 da auditoria de abrangência — saldo de CreditoCliente do
+  // cliente deste orçamento, só pra oferecer o campo "usar crédito" em
+  // OrcamentoAcoes quando ainda faz sentido (orçamento pra ser aprovado e
+  // saldo > 0). null/0 pra todo cliente que nunca recebeu depósito
+  // adiantado (o caso de sempre, hoje) — o campo simplesmente não aparece.
+  let creditoClienteDisponivel: string | null = null;
+  if (orcamento.status === "ENVIADO") {
+    const creditoCliente = await prisma.creditoCliente.findUnique({
+      where: { clienteId: orcamento.clienteId },
+    });
+    if (creditoCliente) {
+      const saldo = await saldoCreditoCliente(prisma, creditoCliente.id);
+      if (saldo.gt(0)) {
+        creditoClienteDisponivel = saldo.toFixed(2);
+      }
+    }
   }
 
   // Sugestão de prazo de entrega (achado A2 da Parte 6 — auditoria de
@@ -391,12 +422,14 @@ export default async function OrcamentoDetalhePage({
               tipoPedido: orcamento.tipoPedido,
               contatoNome: orcamento.contatoNome,
               contatoEmail: orcamento.contatoEmail,
+              contatoClienteId: orcamento.contatoClienteId,
               condicoesPagamento: orcamento.condicoesPagamento,
               frete: orcamento.frete,
               transportadora: orcamento.transportadora,
               localEntrega: orcamento.localEntrega,
               observacoes: orcamento.observacoes,
             }}
+            contatosCliente={contatosCliente}
           />
         </Card>
 
@@ -710,6 +743,7 @@ export default async function OrcamentoDetalhePage({
           opcoes={opcoesFormatadas.map((o) => ({ id: o.id, nome: o.nome, total: o.total }))}
           totalOpcaoBase={orcamento.total.toString()}
           prazoEntregaSugerido={prazoEntregaSugerido}
+          creditoClienteDisponivel={creditoClienteDisponivel}
         />
       </main>
     </div>

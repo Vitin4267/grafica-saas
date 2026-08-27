@@ -14,8 +14,12 @@ import {
   ROTULO_ORIGEM_CLIENTE,
   ORDEM_SEGMENTO_CLIENTE,
   ROTULO_SEGMENTO_CLIENTE,
+  ORDEM_TIPO_PESSOA,
+  ROTULO_TIPO_PESSOA,
+  ORDEM_INDICADOR_INSCRICAO_ESTADUAL,
+  ROTULO_INDICADOR_INSCRICAO_ESTADUAL,
 } from "@/lib/tipos-cliente";
-import type { OrigemCliente, SegmentoCliente } from "@/generated/prisma/enums";
+import type { OrigemCliente, SegmentoCliente, TipoPessoa } from "@/generated/prisma/enums";
 
 export function ClienteForm({ vendedores }: { vendedores: { id: string; nome: string }[] }) {
   const [state, formAction, isPending] = useActionState(criarCliente, null);
@@ -23,6 +27,7 @@ export function ClienteForm({ vendedores }: { vendedores: { id: string; nome: st
   const [estadoAnterior, setEstadoAnterior] = useState(state);
   const [origem, setOrigem] = useState<OrigemCliente | "">("");
   const [segmento, setSegmento] = useState<SegmentoCliente | "">("");
+  const [tipoPessoa, setTipoPessoa] = useState<TipoPessoa | "">("");
 
   // Reseta o form (campos não-controlados) após um cadastro bem-sucedido,
   // seguindo o padrão de "ajustar estado durante a renderização" do React
@@ -33,6 +38,7 @@ export function ClienteForm({ vendedores }: { vendedores: { id: string; nome: st
       setResetKey((k) => k + 1);
       setOrigem("");
       setSegmento("");
+      setTipoPessoa("");
     }
   }
 
@@ -44,6 +50,48 @@ export function ClienteForm({ vendedores }: { vendedores: { id: string; nome: st
         <Input label="Telefone" name="telefone" placeholder="(00) 00000-0000" />
       </div>
       <Input label="CPF/CNPJ" name="documento" placeholder="opcional" />
+
+      <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Select
+            label="Tipo de pessoa"
+            name="tipoPessoa"
+            value={tipoPessoa}
+            onChange={(e) => setTipoPessoa(e.target.value as TipoPessoa | "")}
+          >
+            <option value="">Não informado</option>
+            {ORDEM_TIPO_PESSOA.map((valor) => (
+              <option key={valor} value={valor}>
+                {ROTULO_TIPO_PESSOA[valor]}
+              </option>
+            ))}
+          </Select>
+        </div>
+        {tipoPessoa === "JURIDICA" && (
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input
+              label="Razão social"
+              name="razaoSocial"
+              hint="Usada na nota fiscal em vez do nome — o nome fantasia não tem validade jurídica pra NF-e"
+            />
+            <Input label="Nome fantasia" name="nomeFantasia" />
+            <Select label="Indicador de Inscrição Estadual" name="indicadorInscricaoEstadual" defaultValue="">
+              <option value="">Não informado</option>
+              {ORDEM_INDICADOR_INSCRICAO_ESTADUAL.map((valor) => (
+                <option key={valor} value={valor}>
+                  {ROTULO_INDICADOR_INSCRICAO_ESTADUAL[valor]}
+                </option>
+              ))}
+            </Select>
+            <Input
+              label="Inscrição Estadual"
+              name="inscricaoEstadual"
+              placeholder="obrigatória se contribuinte de ICMS"
+            />
+            <Input label="Inscrição Municipal" name="inscricaoMunicipal" placeholder="opcional" />
+          </div>
+        )}
+      </div>
 
       <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
         <p className="mb-3 text-sm font-medium text-slate-700 dark:text-slate-200">

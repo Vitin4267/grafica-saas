@@ -62,6 +62,8 @@ export async function criarDespesa(
     categoriaCustoId: formData.get("categoriaCustoId") ?? undefined,
     valor: formData.get("valor"),
     vencimento: formData.get("vencimento"),
+    periodicidade: formData.get("periodicidade") ?? undefined,
+    recorrenciaAteEm: formData.get("recorrenciaAteEm") ?? undefined,
   });
   if (!parsed.success) {
     return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Dados inválidos." };
@@ -73,6 +75,7 @@ export async function criarDespesa(
   }
 
   const recorrente = formData.get("recorrente") === "on";
+  const valorVariavel = formData.get("valorVariavel") === "on";
 
   // A primeira ocorrência de uma série usa o próprio id como
   // serieRecorrenciaId — precisa de um segundo update porque o id só existe
@@ -90,6 +93,9 @@ export async function criarDespesa(
         valor: parsed.data.valor,
         vencimento: parsed.data.vencimento,
         recorrente,
+        periodicidade: parsed.data.periodicidade,
+        recorrenciaAteEm: parsed.data.recorrenciaAteEm ?? null,
+        valorVariavel,
       },
     });
     if (!recorrente) return criada;
@@ -145,6 +151,8 @@ export async function editarDespesa(
     categoriaCustoId: formData.get("categoriaCustoId") ?? undefined,
     valor: formData.get("valor"),
     vencimento: formData.get("vencimento"),
+    periodicidade: formData.get("periodicidade") ?? undefined,
+    recorrenciaAteEm: formData.get("recorrenciaAteEm") ?? undefined,
   });
   if (!parsed.success) {
     return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Dados inválidos." };
@@ -156,6 +164,7 @@ export async function editarDespesa(
   }
 
   const recorrente = formData.get("recorrente") === "on";
+  const valorVariavel = formData.get("valorVariavel") === "on";
 
   await prisma.despesa.update({
     where: { id: despesaId },
@@ -166,6 +175,9 @@ export async function editarDespesa(
       valor: parsed.data.valor,
       vencimento: parsed.data.vencimento,
       recorrente,
+      periodicidade: parsed.data.periodicidade,
+      recorrenciaAteEm: parsed.data.recorrenciaAteEm ?? null,
+      valorVariavel,
       // Liga recorrência numa despesa que ainda não tinha série: essa
       // ocorrência vira o início. Já tinha série (recorrente antes ou
       // desligando agora): mantém o serieRecorrenciaId como estava — ver

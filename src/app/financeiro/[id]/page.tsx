@@ -82,6 +82,9 @@ export default async function DespesaDetalhePage({
             categoriaCustoId: despesa.categoriaCustoId,
             valor: despesa.valor.toString(),
             vencimento: dataParaInputValue(despesa.vencimento),
+            periodicidade: despesa.periodicidade,
+            recorrenciaAteEm: despesa.recorrenciaAteEm ? dataParaInputValue(despesa.recorrenciaAteEm) : null,
+            valorVariavel: despesa.valorVariavel,
           }}
           categoriasCusto={categoriasCusto}
           status={despesa.status}

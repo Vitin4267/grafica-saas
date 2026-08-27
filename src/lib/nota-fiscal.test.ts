@@ -146,6 +146,57 @@ describe("verificarProntidaoFiscal", () => {
     });
     expect(resultado).toEqual({ pronto: true, pendencias: [] });
   });
+
+  // Achado A1 da auditoria de abrangência (2026-08-27): sem essa pendência,
+  // um cliente marcado como contribuinte de ICMS sem IE só aparecia como
+  // rejeição SEFAZ 728 opaca, na hora de emitir.
+  it("cliente CONTRIBUINTE sem Inscrição Estadual: bloqueia com pendência específica", () => {
+    const resultado = verificarProntidaoFiscal({
+      dadosFiscais: dadosFiscaisCompletos,
+      cliente: { ...clienteCompleto, indicadorInscricaoEstadual: "CONTRIBUINTE", inscricaoEstadual: null },
+      itens: [{ nome: "Item", ncm: "1" }],
+    });
+    expect(resultado.pronto).toBe(false);
+    expect(resultado.pendencias).toContain(
+      "Cliente marcado como contribuinte de ICMS sem Inscrição Estadual cadastrada."
+    );
+  });
+
+  it("cliente CONTRIBUINTE com Inscrição Estadual cadastrada: não bloqueia", () => {
+    const resultado = verificarProntidaoFiscal({
+      dadosFiscais: dadosFiscaisCompletos,
+      cliente: { ...clienteCompleto, indicadorInscricaoEstadual: "CONTRIBUINTE", inscricaoEstadual: "1234567890" },
+      itens: [{ nome: "Cartão de Visita", ncm: "49111090" }],
+    });
+    expect(resultado).toEqual({ pronto: true, pendencias: [] });
+  });
+
+  it("cliente ISENTO sem IE: nunca dispara a pendência (IE não é obrigatória pra isento)", () => {
+    const resultado = verificarProntidaoFiscal({
+      dadosFiscais: dadosFiscaisCompletos,
+      cliente: { ...clienteCompleto, indicadorInscricaoEstadual: "ISENTO", inscricaoEstadual: null },
+      itens: [{ nome: "Cartão de Visita", ncm: "49111090" }],
+    });
+    expect(resultado).toEqual({ pronto: true, pendencias: [] });
+  });
+
+  it("cliente NAO_CONTRIBUINTE sem IE: nunca dispara a pendência", () => {
+    const resultado = verificarProntidaoFiscal({
+      dadosFiscais: dadosFiscaisCompletos,
+      cliente: { ...clienteCompleto, indicadorInscricaoEstadual: "NAO_CONTRIBUINTE", inscricaoEstadual: null },
+      itens: [{ nome: "Cartão de Visita", ncm: "49111090" }],
+    });
+    expect(resultado).toEqual({ pronto: true, pendencias: [] });
+  });
+
+  it("cliente antigo sem indicador cadastrado (undefined): não dispara a pendência nova, comportamento de hoje preservado", () => {
+    const resultado = verificarProntidaoFiscal({
+      dadosFiscais: dadosFiscaisCompletos,
+      cliente: clienteCompleto, // sem indicadorInscricaoEstadual/inscricaoEstadual no objeto
+      itens: [{ nome: "Cartão de Visita", ncm: "49111090" }],
+    });
+    expect(resultado).toEqual({ pronto: true, pendencias: [] });
+  });
 });
 
 describe("resolverCfop", () => {

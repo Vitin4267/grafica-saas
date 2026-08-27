@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { editarDadosGeraisOrcamento } from "./actions";
+import { ROTULO_FUNCAO_CONTATO_CLIENTE } from "@/lib/contatos-cliente";
 
 const OPCOES_TIPO_PEDIDO: [string, string][] = [
   ["MODELO_NOVO", "Modelo novo"],
@@ -30,11 +31,24 @@ type DadosGerais = {
   tipoPedido: string | null;
   contatoNome: string | null;
   contatoEmail: string | null;
+  // Achado A4 da Parte 5 da auditoria de abrangência — id do ContatoCliente
+  // escolhido no <select> abaixo, quando houver. Convive com
+  // contatoNome/contatoEmail acima (snapshot em texto, o que de fato
+  // aparece no PDF/link público) — ver comentário completo no schema.
+  contatoClienteId: string | null;
   condicoesPagamento: string | null;
   frete: string | null;
   transportadora: string | null;
   localEntrega: string | null;
   observacoes: string | null;
+};
+
+type ContatoClienteOpcao = {
+  id: string;
+  nome: string;
+  email: string | null;
+  funcao: string;
+  funcaoOutro: string | null;
 };
 
 // Bloco de campos gerais do pedido — editável a qualquer status do
@@ -45,12 +59,33 @@ type DadosGerais = {
 export function EditarDadosGeraisOrcamentoForm({
   orcamentoId,
   dados,
+  contatosCliente,
 }: {
   orcamentoId: string;
   dados: DadosGerais;
+  // Só contatos ATIVOS do cliente deste orçamento (ver page.tsx) — vazio pra
+  // quem nunca cadastrou contato nenhum, e nesse caso o <select> nem aparece
+  // (digitação livre continua idêntica a hoje).
+  contatosCliente: ContatoClienteOpcao[];
 }) {
   const [state, formAction, isPending] = useActionState(editarDadosGeraisOrcamento, null);
   const [editando, setEditando] = useState(false);
+  // Controlados só porque o <select> de contato precisa escrever neles ao
+  // escolher — o resto do form continua não-controlado (defaultValue), o
+  // padrão de sempre. Inicializado uma vez a partir de `dados`, mesmo
+  // precedente de `mostrarBloqueio` em ClienteEditForm.tsx.
+  const [contatoNome, setContatoNome] = useState(dados.contatoNome ?? "");
+  const [contatoEmail, setContatoEmail] = useState(dados.contatoEmail ?? "");
+  const [contatoClienteId, setContatoClienteId] = useState(dados.contatoClienteId ?? "");
+
+  function aoEscolherContato(id: string) {
+    setContatoClienteId(id);
+    const contato = contatosCliente.find((c) => c.id === id);
+    if (contato) {
+      setContatoNome(contato.nome);
+      setContatoEmail(contato.email ?? "");
+    }
+  }
 
   // Fecha o modo de edição quando a action salva com sucesso: a própria
   // troca pra visão-resumo (com os valores novos, já que os campos abaixo
@@ -111,17 +146,39 @@ export function EditarDadosGeraisOrcamentoForm({
             </option>
           ))}
         </Select>
+        {contatosCliente.length > 0 && (
+          <Select
+            label="Contato"
+            name="contatoClienteId"
+            value={contatoClienteId}
+            onChange={(e) => aoEscolherContato(e.target.value)}
+            hint="Escolher preenche nome/e-mail abaixo — que continuam editáveis"
+          >
+            <option value="">digitar manualmente</option>
+            {contatosCliente.map((contato) => (
+              <option key={contato.id} value={contato.id}>
+                {contato.nome} (
+                {contato.funcao === "OUTRO"
+                  ? contato.funcaoOutro || "Outro"
+                  : ROTULO_FUNCAO_CONTATO_CLIENTE[contato.funcao as keyof typeof ROTULO_FUNCAO_CONTATO_CLIENTE] ?? contato.funcao}
+                )
+              </option>
+            ))}
+          </Select>
+        )}
         <Input
           label="Contato do pedido"
           name="contatoNome"
-          defaultValue={dados.contatoNome ?? ""}
+          value={contatoNome}
+          onChange={(e) => setContatoNome(e.target.value)}
           hint="Pessoa de contato deste pedido, se diferente do cadastro do cliente"
         />
         <Input
           label="E-mail de contato"
           name="contatoEmail"
           type="email"
-          defaultValue={dados.contatoEmail ?? ""}
+          value={contatoEmail}
+          onChange={(e) => setContatoEmail(e.target.value)}
         />
         <Input
           label="Condições de pagamento"

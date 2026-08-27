@@ -1,6 +1,11 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { prisma } from "@/lib/prisma";
-import { proximoMes, mesmoMesOuDepois, gerarDespesasRecorrentesPendentes } from "./despesa-recorrente";
+import {
+  proximoMes,
+  proximaOcorrencia,
+  mesmoMesOuDepois,
+  gerarDespesasRecorrentesPendentes,
+} from "./despesa-recorrente";
 
 describe("proximoMes", () => {
   it("dia 31 em mês seguido de mês com 30 dias vira dia 30 (não 31, nem invalid date)", () => {
@@ -39,6 +44,41 @@ describe("proximoMes", () => {
     expect(resultado.getUTCFullYear()).toBe(2026);
     expect(resultado.getUTCMonth()).toBe(3); // abril
     expect(resultado.getUTCDate()).toBe(15);
+  });
+});
+
+describe("proximaOcorrencia", () => {
+  it("SEMANAL avança exatamente 7 dias corridos (não usa lógica de mês)", () => {
+    const resultado = proximaOcorrencia(new Date(Date.UTC(2026, 7, 20)), "SEMANAL"); // 20/08/2026, quinta
+    expect(resultado.getUTCFullYear()).toBe(2026);
+    expect(resultado.getUTCMonth()).toBe(7); // agosto
+    expect(resultado.getUTCDate()).toBe(27);
+  });
+
+  it("SEMANAL vira o mês quando os 7 dias cruzam a virada", () => {
+    const resultado = proximaOcorrencia(new Date(Date.UTC(2026, 7, 28)), "SEMANAL"); // 28/08/2026
+    expect(resultado.getUTCFullYear()).toBe(2026);
+    expect(resultado.getUTCMonth()).toBe(8); // setembro
+    expect(resultado.getUTCDate()).toBe(4);
+  });
+
+  it("QUINZENAL avança exatamente 14 dias corridos", () => {
+    const resultado = proximaOcorrencia(new Date(Date.UTC(2026, 7, 20)), "QUINZENAL");
+    expect(resultado.getUTCFullYear()).toBe(2026);
+    expect(resultado.getUTCMonth()).toBe(8); // setembro
+    expect(resultado.getUTCDate()).toBe(3);
+  });
+
+  it("MENSAL se comporta exatamente como proximoMes (mesma lógica de ajuste de dia)", () => {
+    const data = new Date(Date.UTC(2026, 0, 31)); // 31/01/2026
+    expect(proximaOcorrencia(data, "MENSAL").getTime()).toBe(proximoMes(data).getTime());
+  });
+
+  it("ANUAL avança 12 meses, ajustando 29/fev de bissexto pro 28/fev de não-bissexto", () => {
+    const resultado = proximaOcorrencia(new Date(Date.UTC(2028, 1, 29)), "ANUAL"); // 29/02/2028
+    expect(resultado.getUTCFullYear()).toBe(2029);
+    expect(resultado.getUTCMonth()).toBe(1); // fevereiro
+    expect(resultado.getUTCDate()).toBe(28);
   });
 });
 
@@ -152,6 +192,140 @@ describe("gerarDespesasRecorrentesPendentes", () => {
         expect(ocorrencia.descricao).toBe(original.descricao);
         expect(Number(ocorrencia.valor)).toBe(1500);
       }
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "periodicidade SEMANAL: catch-up gera a próxima ocorrência exatamente 7 dias após a última",
+    async () => {
+      const s = sufixo();
+      const grafica = await prisma.grafica.create({
+        data: { nome: `Teste Despesa Semanal ${s}`, slug: `teste-despesa-semanal-${s}` },
+      });
+      graficaIdsParaLimpar.push(grafica.id);
+
+      // 10 dias atrás — já vencida há mais de uma semana, força catch-up.
+      const hoje = new Date();
+      const dezDiasAtras = new Date(hoje);
+      dezDiasAtras.setUTCDate(dezDiasAtras.getUTCDate() - 10);
+      const vencimentoOriginal = new Date(
+        Date.UTC(dezDiasAtras.getUTCFullYear(), dezDiasAtras.getUTCMonth(), dezDiasAtras.getUTCDate())
+      );
+
+      const original = await prisma.despesa.create({
+        data: {
+          graficaId: grafica.id,
+          descricao: `Feira semanal ${s}`,
+          valor: 200,
+          vencimento: vencimentoOriginal,
+          recorrente: true,
+          periodicidade: "SEMANAL",
+        },
+      });
+      await prisma.despesa.update({
+        where: { id: original.id },
+        data: { serieRecorrenciaId: original.id },
+      });
+
+      await gerarDespesasRecorrentesPendentes(grafica.id);
+
+      const serie = await prisma.despesa.findMany({
+        where: { graficaId: grafica.id, serieRecorrenciaId: original.id },
+        orderBy: { vencimento: "asc" },
+      });
+
+      // 10 dias vencidos, passo de 7 dias: pelo menos 1 nova ocorrência.
+      expect(serie.length).toBeGreaterThanOrEqual(2);
+      const diffDias =
+        (serie[1].vencimento.getTime() - serie[0].vencimento.getTime()) / (1000 * 60 * 60 * 24);
+      expect(diffDias).toBe(7);
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "recorrenciaAteEm no passado impede a geração de nova ocorrência",
+    async () => {
+      const s = sufixo();
+      const grafica = await prisma.grafica.create({
+        data: { nome: `Teste Despesa Ate Em ${s}`, slug: `teste-despesa-ate-em-${s}` },
+      });
+      graficaIdsParaLimpar.push(grafica.id);
+
+      const hoje = new Date();
+      const vencimentoOriginal = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() - 2, 5));
+      // Fim da recorrência antes até do vencimento original: a série já
+      // devia ter parado, então nenhuma ocorrência nova pode nascer.
+      const recorrenciaAteEm = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() - 3, 1));
+
+      const original = await prisma.despesa.create({
+        data: {
+          graficaId: grafica.id,
+          descricao: `Assinatura encerrada ${s}`,
+          valor: 90,
+          vencimento: vencimentoOriginal,
+          recorrente: true,
+          recorrenciaAteEm,
+        },
+      });
+      await prisma.despesa.update({
+        where: { id: original.id },
+        data: { serieRecorrenciaId: original.id },
+      });
+
+      await gerarDespesasRecorrentesPendentes(grafica.id);
+
+      const serie = await prisma.despesa.findMany({
+        where: { graficaId: grafica.id, serieRecorrenciaId: original.id },
+      });
+
+      expect(serie.length).toBe(1);
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "valorVariavel: ocorrência gerada automaticamente nasce com valor 0 em vez de copiar o valor anterior",
+    async () => {
+      const s = sufixo();
+      const grafica = await prisma.grafica.create({
+        data: { nome: `Teste Despesa Valor Variavel ${s}`, slug: `teste-despesa-valor-variavel-${s}` },
+      });
+      graficaIdsParaLimpar.push(grafica.id);
+
+      const hoje = new Date();
+      const vencimentoOriginal = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() - 2, 5));
+
+      const original = await prisma.despesa.create({
+        data: {
+          graficaId: grafica.id,
+          descricao: `Conta de luz ${s}`,
+          valor: 350,
+          vencimento: vencimentoOriginal,
+          recorrente: true,
+          valorVariavel: true,
+        },
+      });
+      await prisma.despesa.update({
+        where: { id: original.id },
+        data: { serieRecorrenciaId: original.id },
+      });
+
+      await gerarDespesasRecorrentesPendentes(grafica.id);
+
+      const serie = await prisma.despesa.findMany({
+        where: { graficaId: grafica.id, serieRecorrenciaId: original.id },
+        orderBy: { vencimento: "asc" },
+      });
+
+      expect(serie.length).toBeGreaterThanOrEqual(2);
+      for (const ocorrencia of serie.slice(1)) {
+        expect(Number(ocorrencia.valor)).toBe(0);
+        expect(ocorrencia.valorVariavel).toBe(true);
+      }
+      // A original não é retroativamente zerada — só as novas ocorrências.
+      expect(Number(serie[0].valor)).toBe(350);
     },
     TIMEOUT_MS
   );

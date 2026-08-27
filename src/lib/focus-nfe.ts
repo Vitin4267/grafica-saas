@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { TipoFrete } from "@/generated/prisma/enums";
+import type { IndicadorInscricaoEstadual, TipoFrete } from "@/generated/prisma/enums";
 import { resolverModalidadeFrete } from "@/lib/nota-fiscal";
 
 // Cliente fino da API da Focus NFe (https://doc.focusnfe.com.br) — sem SDK
@@ -70,6 +70,16 @@ export type EmitirNfeInput = {
   destinatario: {
     documento: string; // CPF (11 dígitos) ou CNPJ (14 chars, alfanumérico desde 31/07/2026) — decidido pelo tamanho, ver normalizarDocumentoDestinatario
     nome: string;
+    // Achado A1 da auditoria de abrangência — razão social tem preferência
+    // sobre `nome` (que pode ser o nome fantasia digitado pelo balconista,
+    // sem validade jurídica pra nota fiscal). Ausente/null cai em `nome`,
+    // mesmo comportamento de sempre.
+    razaoSocial?: string | null;
+    // null/ausente = cliente antigo, sem indicador cadastrado — o payload
+    // builder não manda nenhum dos dois campos abaixo (comportamento de
+    // hoje). Ver mapearIndicadorInscricaoEstadual.
+    indicadorInscricaoEstadual?: IndicadorInscricaoEstadual | null;
+    inscricaoEstadual?: string | null;
   } & EnderecoFocusNfe;
   itens: ItemNfe[];
   valorTotal: number;
@@ -133,6 +143,53 @@ export function normalizarDocumentoDestinatario(
 // letras, normalizando pra maiúsculo.
 export function normalizarCnpjEmitente(cnpj: string): string {
   return limparDocumento(cnpj);
+}
+
+// Mapeia IndicadorInscricaoEstadual (enum interno, ver schema.prisma) pro
+// código indIEDest que a Focus NFe/SEFAZ espera — achado A1 da auditoria de
+// abrangência (2026-08-27): 1 = contribuinte de ICMS, 2 = contribuinte
+// isento de inscrição, 9 = não contribuinte (tag indIEDest da NF-e 4.0,
+// confirmado em pesquisa-abrangencia-modulos.md contra a doc da Focus NFe e
+// referência de rejeições SEFAZ 728/791). null (cliente antigo, sem
+// indicador cadastrado) retorna undefined — mesmo comportamento de
+// resolverModalidadeFrete/normalizarDocumentoDestinatario pra dado ausente.
+export function mapearIndicadorInscricaoEstadual(
+  indicador: IndicadorInscricaoEstadual | null
+): string | undefined {
+  if (!indicador) return undefined;
+  const mapa: Record<IndicadorInscricaoEstadual, string> = {
+    CONTRIBUINTE: "1",
+    ISENTO: "2",
+    NAO_CONTRIBUINTE: "9",
+  };
+  return mapa[indicador];
+}
+
+// Monta indicador_inscricao_estadual_destinatario + inscricao_estadual_destinatario
+// — extraído como função pura (sem fetch, sem I/O) pra ser testável direto,
+// mesmo padrão de mapearItemNfePayload. A IE só é incluída quando o
+// indicador é CONTRIBUINTE: mandar IE junto de ISENTO/NAO_CONTRIBUINTE é
+// exatamente a rejeição SEFAZ 791. Indicador ausente (cliente antigo) não
+// manda nenhum dos dois campos — mesmo comportamento de sempre.
+export function montarCamposIeDestinatario(
+  indicador: IndicadorInscricaoEstadual | null | undefined,
+  inscricaoEstadual: string | null | undefined
+): Record<string, string> {
+  const codigo = mapearIndicadorInscricaoEstadual(indicador ?? null);
+  if (!codigo) return {};
+  return {
+    indicador_inscricao_estadual_destinatario: codigo,
+    ...(indicador === "CONTRIBUINTE" && inscricaoEstadual ? { inscricao_estadual_destinatario: inscricaoEstadual } : {}),
+  };
+}
+
+// Nome de destinatário pra nota fiscal — extraído como função pura pra ser
+// testável direto, mesmo padrão de montarCamposIeDestinatario acima. A nota
+// DEVE usar razão social (nome fantasia não tem validade jurídica pra
+// documento fiscal); razaoSocial ausente/vazia (cliente antigo, ou pessoa
+// física) cai em `nome`, comportamento de sempre.
+export function resolverNomeDestinatario(destinatario: { nome: string; razaoSocial?: string | null }): string {
+  return destinatario.razaoSocial || destinatario.nome;
 }
 
 function montarEnderecoPayload(prefixo: string, endereco: EnderecoFocusNfe) {
@@ -271,10 +328,16 @@ export async function emitirNfe(
     inscricao_estadual_emitente: input.emitente.inscricaoEstadual,
     ...montarEnderecoPayload("emitente", input.emitente),
 
-    nome_destinatario: ehHomologacao ? NOME_DESTINATARIO_HOMOLOGACAO : input.destinatario.nome,
+    nome_destinatario: ehHomologacao
+      ? NOME_DESTINATARIO_HOMOLOGACAO
+      : resolverNomeDestinatario(input.destinatario),
     ...documentoDestinatario,
     ...montarEnderecoPayload("destinatario", input.destinatario),
     pais_destinatario: "Brasil",
+    ...montarCamposIeDestinatario(
+      input.destinatario.indicadorInscricaoEstadual,
+      input.destinatario.inscricaoEstadual
+    ),
 
     valor_frete: "0",
     valor_seguro: "0",

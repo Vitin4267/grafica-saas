@@ -173,12 +173,24 @@ model ParametrosGrafica {
   margemFaixaBoa                Decimal @default(25) @db.Decimal(5, 2) // % — acima disso o medidor mostra verde
   descontoMaxSemAprovacao       Decimal @default(100) @db.Decimal(5, 2) // % — 100 = sem trava (comportamento de hoje)
   diasPrecoInsumoDesatualizado  Int     @default(90)
+
+  // Achado A6 da Parte 4 da auditoria de abrangência (2026-08-27) — mesmo
+  // espírito de descontoMaxSemAprovacao acima: por padrão, estourar
+  // Cliente.limiteCredito na aprovação de um orçamento é só um AVISO
+  // (atualizarStatusOrcamento/responderOrcamentoPublico continuam aprovando).
+  // Ligada, a aprovação passa a ser recusada de verdade quando a exposição
+  // (ContaReceber pendente + este orçamento) ultrapassa o limite. Só afeta o
+  // estouro AUTOMÁTICO de limite — o bloqueio manual
+  // (Cliente.bloqueadoParaVenda/bloqueadoParaFaturamento) nunca bloqueia de
+  // verdade, só avisa, independente desta flag. default(false) preserva o
+  // comportamento de hoje pra quem já usa o sistema.
+  bloqueiaAoUltrapassarLimiteCredito Boolean @default(false)
   // Quantos dias um orçamento fica válido depois de virar ENVIADO (ver
   // Orcamento.validoAteEm e orcamentoEstaExpirado em
   // src/lib/orcamento-status.ts). Nullable + default(15) de propósito: o
   // form sempre manda um inteiro, mas o nullable deixa espaço pra uma
   // futura opção de "sem expiração" sem precisar de sentinela mágico.
-  diasValidadeOrcamentoPadrao   Int?    @default(15)
+  diasValidadeOrcamentoPadrao        Int?    @default(15)
 
   // Variação admissível entre a quantidade CONTRATADA e a quantidade
   // efetivamente ENTREGUE, em %, sem que isso seja motivo de disputa —
@@ -239,12 +251,12 @@ model ParametrosGrafica {
   // municipais/estaduais próprios (Carnaval é feriado no Rio, não em SP; um
   // feriado municipal de Araxá não existe em Manaus). false = a gráfica cota
   // em dias corridos simples (ver somarDiasUteis em src/lib/dias-uteis.ts).
-  prazoEmDiasUteis Boolean @default(true)
+  prazoEmDiasUteis  Boolean @default(true)
   // Bitmask dos dias da semana em que a gráfica funciona — bit0=segunda,
   // bit1=terça, bit2=quarta, bit3=quinta, bit4=sexta, bit5=sábado,
   // bit6=domingo (bit ligado = funciona nesse dia). Default 31 = 0b0011111 =
   // segunda a sexta.
-  diasFuncionamento Int @default(31)
+  diasFuncionamento Int     @default(31)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -260,15 +272,15 @@ model ParametrosGrafica {
 // ParametrosGrafica.prazoEmDiasUteis acima). Consumido por somarDiasUteis
 // (src/lib/dias-uteis.ts) e por enviarAlertasPrazoEmail (src/lib/alerta-prazo-email.ts).
 model FeriadoGrafica {
-  id        String   @id @default(cuid())
-  graficaId String
-  data      DateTime @db.Date
-  descricao String
+  id              String   @id @default(cuid())
+  graficaId       String
+  data            DateTime @db.Date
+  descricao       String
   // 25/12 (Natal) é recorrente todo ano; Carnaval/Corpus Christi são datas
   // móveis e precisam ser recadastrados ano a ano — somarDiasUteis compara
   // só mês/dia (ignorando o ano) quando este flag está ligado, nunca a data
   // inteira.
-  recorrenteAnual Boolean @default(false)
+  recorrenteAnual Boolean  @default(false)
 
   grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
 
@@ -617,10 +629,10 @@ model DadosFiscaisGrafica {
   enderecoMunicipio  String?
   enderecoUf         String?
 
-  naturezaOperacaoPadrao String @default("Venda de mercadoria")
-  cfopPadrao             String @default("5102") // venda dentro do estado, mercadoria de terceiros
+  naturezaOperacaoPadrao  String @default("Venda de mercadoria")
+  cfopPadrao              String @default("5102") // venda dentro do estado, mercadoria de terceiros
   cfopPadraoInterestadual String @default("6102") // venda interestadual (UF do cliente != UF da gráfica), mercadoria de terceiros — ver resolverCfop em src/lib/nota-fiscal.ts. Não distingue contribuinte/não-contribuinte de ICMS (6102 vs 6108) — gap remanescente, ver achado A1/A3 em pesquisa-abrangencia-modulos.md
-  csosnPadrao            String @default("102") // Simples Nacional, tributada sem permissão de crédito — só lido/enviado quando regimeTributario=SIMPLES_NACIONAL
+  csosnPadrao             String @default("102") // Simples Nacional, tributada sem permissão de crédito — só lido/enviado quando regimeTributario=SIMPLES_NACIONAL
 
   // Só relevantes/obrigatórios (validado na Server Action, não CHECK no
   // banco — mesmo padrão do resto do arquivo) quando regimeTributario !=
@@ -672,10 +684,10 @@ model DadosFiscaisFilial {
   enderecoMunicipio  String?
   enderecoUf         String?
 
-  naturezaOperacaoPadrao String @default("Venda de mercadoria")
-  cfopPadrao             String @default("5102")
+  naturezaOperacaoPadrao  String @default("Venda de mercadoria")
+  cfopPadrao              String @default("5102")
   cfopPadraoInterestadual String @default("6102") // ver comentário do campo espelho em DadosFiscaisGrafica
-  csosnPadrao            String @default("102")
+  csosnPadrao             String @default("102")
 
   // Espelha DadosFiscaisGrafica campo a campo — ver comentário lá.
   cstIcmsPadrao                     String?
@@ -1138,6 +1150,39 @@ model Cliente {
   bloqueadoParaVenda Boolean @default(false)
   motivoBloqueio     String?
 
+  // Achado A6 da Parte 4 da auditoria de abrangência (2026-08-27) — controle
+  // de crédito, DIFERENTE de bloqueadoParaVenda acima: aquele é uma decisão
+  // MANUAL do dono ("só à vista"); isto aqui é estouro de limite detectado
+  // AUTOMATICAMENTE pelo sistema (soma de ContaReceber pendente/vencida do
+  // cliente + o orçamento sendo aprovado, ver calcularExposicaoCreditoCliente
+  // em src/lib/credito-cliente.ts) comparado contra um teto configurável.
+  // Deliberadamente NÃO reaproveita bloqueadoParaVenda: são causas
+  // independentes (um cliente pode estourar o limite sem nunca ter sido
+  // bloqueado manualmente, e vice-versa) — mas os DOIS avisos são
+  // compostos num único `aviso` na resposta de atualizarStatusOrcamento, sem
+  // precisar de um segundo campo no resultado.
+  //
+  // null = sem limite configurado (comportamento de hoje, sem regressão).
+  limiteCredito Decimal? @db.Decimal(12, 2)
+
+  // Puramente informativo por enquanto — nenhum motor lê isto ainda (não
+  // existe ainda o conceito de vencimento previsto de um orçamento não
+  // aprovado). Existe pra a gráfica já cadastrar a condição comercial
+  // combinada com o cliente, pronta pra quando um fluxo futuro precisar dela
+  // (ex: sugerir parcelas de ContaReceber na aprovação).
+  prazoPagamentoPadraoDias Int?
+
+  // Espelha bloqueadoParaVenda/motivoBloqueio acima em FORMATO (boolean +
+  // motivo em texto livre, mesmo aviso não-bloqueante na aprovação), mas é
+  // outra causa: "faturamento" aqui é a decisão de travar NOVAS vendas a
+  // prazo por decisão comercial explícita ligada a crédito/cobrança
+  // (ex: fatura em atraso há muito tempo), enquanto bloqueadoParaVenda cobre
+  // qualquer motivo comercial mais amplo ("só à vista" por request do
+  // cliente, briga comercial, etc.) — a gráfica pode usar só um dos dois,
+  // ou os dois ao mesmo tempo, sem conflito.
+  bloqueadoParaFaturamento  Boolean @default(false)
+  motivoBloqueioFaturamento String?
+
   // Endereço — opcional pra cadastro comum, mas exigido pra emitir nota fiscal
   // (ver DadosFiscaisGrafica / NotaFiscal). enderecoCodigoIbge é nullable e não
   // bloqueia emissão: o exemplo oficial da Focus NFe envia só município+UF.
@@ -1204,9 +1249,41 @@ model Cliente {
   // false).
   vendedorId String?
 
-  grafica    Grafica     @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  vendedor   Usuario?    @relation(fields: [vendedorId], references: [id], onDelete: SetNull)
-  orcamentos Orcamento[]
+  // Achado A1 da auditoria de abrangência (pesquisa-abrangencia-modulos.md,
+  // Parte 5) — distinção Pessoa Física × Pessoa Jurídica, base pra razão
+  // social/IE na emissão de NF-e (ver src/lib/focus-nfe.ts e
+  // verificarProntidaoFiscal em src/lib/nota-fiscal.ts). null = cadastro
+  // anterior a este campo, sem mudança de comportamento na emissão.
+  tipoPessoa TipoPessoa?
+
+  // `nome` continua sendo o rótulo de uso interno (nunca migrado/apagado) —
+  // a emissão fiscal passa a preferir `razaoSocial ?? nome`, porque nome
+  // fantasia não tem validade jurídica pra nota fiscal. razaoSocial/
+  // nomeFantasia só fazem sentido pra JURIDICA, mas não são bloqueados no
+  // banco pra FISICA (validado na tela/action, não aqui).
+  razaoSocial  String?
+  nomeFantasia String?
+
+  // IE só é exigida quando indicadorInscricaoEstadual=CONTRIBUINTE (rejeição
+  // SEFAZ 728 se faltar) e NUNCA pode vir preenchida quando ISENTO (rejeição
+  // 791) — ver verificarProntidaoFiscal e a montagem do payload em
+  // src/lib/focus-nfe.ts. null = cadastro antigo, emissão cai no
+  // comportamento de sempre (não manda nenhum dos dois campos).
+  inscricaoEstadual          String?
+  indicadorInscricaoEstadual IndicadorInscricaoEstadual?
+
+  // Campo do TOMADOR que qualquer NFS-e municipal pede — barato guardar
+  // agora mesmo sem uso imediato (o GrafPro só emite NF-e hoje, ver achado
+  // A3 da mesma Parte da auditoria).
+  inscricaoMunicipal String?
+
+  grafica        Grafica          @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  vendedor       Usuario?         @relation(fields: [vendedorId], references: [id], onDelete: SetNull)
+  orcamentos     Orcamento[]
+  creditoCliente CreditoCliente?
+  // Achado A4 da Parte 5 da auditoria de abrangência — ver ContatoCliente
+  // mais abaixo no schema.
+  contatos       ContatoCliente[]
 
   // NULL não colide com NULL em unique index do Postgres — várias gráficas
   // podem ter clientes sem documento cadastrado sem problema. Escopado por
@@ -1247,6 +1324,92 @@ enum SegmentoCliente {
   INDUSTRIA
   ORGAO_PUBLICO
   OUTRO
+}
+
+// Achado A1 da auditoria de abrangência (pesquisa-abrangencia-modulos.md,
+// Parte 5) — distinção Pessoa Física × Pessoa Jurídica do cliente, base pra
+// razão social/Inscrição Estadual na emissão de NF-e. Sem OUTRO de
+// propósito: não existe um terceiro tipo de pessoa no direito brasileiro,
+// diferente dos enums enum-fechado+OUTRO do resto do schema.
+enum TipoPessoa {
+  FISICA
+  JURIDICA
+}
+
+// Tag indIEDest da NF-e 4.0 — decide se a Inscrição Estadual do destinatário
+// é obrigatória (CONTRIBUINTE, rejeição SEFAZ 728 se faltar) ou proibida
+// (ISENTO, rejeição 791 se vier preenchida). NAO_CONTRIBUINTE é o terceiro
+// valor da mesma tag (consumidor final sem IE). Ver mapeamento pros códigos
+// 1/2/9 da Focus NFe em src/lib/focus-nfe.ts.
+enum IndicadorInscricaoEstadual {
+  CONTRIBUINTE
+  ISENTO
+  NAO_CONTRIBUINTE
+}
+
+// Papel da pessoa de contato dentro da empresa cliente (achado A4 da Parte 5
+// da auditoria de abrangência, pesquisa-abrangencia-modulos.md) — quem
+// COMPRA não é necessariamente quem aprova arte, nem quem está no
+// financeiro, nem quem recebe a entrega. Mandar automaticamente o link de
+// aprovação pro contato APROVACAO_ARTE (ou o boleto/NF pro FINANCEIRO) é o
+// que esta lista DESTRAVA pro futuro — nenhum dos dois é implementado nesta
+// rodada, só o cadastro do papel. Mesmo padrão enum-fechado+OUTRO do resto
+// do schema (ver ContatoCliente.funcaoOutro).
+enum FuncaoContatoCliente {
+  COMPRADOR
+  FINANCEIRO
+  APROVACAO_ARTE
+  RECEBIMENTO
+  OUTRO
+}
+
+// Contato individual de um Cliente Pessoa Jurídica (achado A4 da Parte 5 da
+// auditoria de abrangência) — até aqui Cliente.email/telefone tratava a
+// empresa cliente como se fosse uma pessoa só. Não substitui
+// Cliente.email/telefone (que continuam existindo e funcionando exatamente
+// como hoje pra quem nunca cadastrar um contato); é um cadastro adicional,
+// só usado por quem escolher usá-lo — ver Orcamento.contatoClienteId abaixo,
+// que convive com o snapshot em texto Orcamento.contatoNome/contatoEmail
+// (mesmo precedente de Comissao/Orcamento.opcaoEscolhidaNome: FK opcional +
+// snapshot em texto que sobrevive mesmo se o contato mudar ou for
+// desativado depois).
+model ContatoCliente {
+  id        String  @id @default(cuid())
+  clienteId String
+  cliente   Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  nome         String
+  cargo        String?
+  departamento String?
+  email        String?
+  telefone     String?
+  whatsapp     String?
+
+  funcao FuncaoContatoCliente @default(COMPRADOR)
+  // Só preenchido (e obrigatório, validado na action) quando funcao=OUTRO —
+  // mesmo padrão de Cliente.origemOutro/segmentoOutro.
+  funcaoOutro String?
+
+  // Só um contato principal por cliente — imposto na action
+  // (ver src/app/clientes/actions.ts), não como constraint de banco: um
+  // índice único parcial (WHERE principal) resolveria, mas é mais
+  // complexidade de migração manual do que vale a pena pra esta regra.
+  principal Boolean @default(false)
+
+  // Soft-delete — nunca hard delete, porque o contato pode já estar
+  // referenciado por Orcamento.contatoClienteId (histórico de quem foi
+  // escolhido num orçamento passado não pode quebrar). Contato inativo some
+  // do <select> de novos orçamentos, mas continua existindo pra quem já
+  // aponta pra ele.
+  ativo Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orcamentos Orcamento[]
+
+  @@index([clienteId])
+  @@map("contatos_cliente")
 }
 
 // Perfil de negócio da GRÁFICA (tenant), não confundir com SegmentoCliente
@@ -1384,11 +1547,11 @@ model ItemCatalogo {
 // venda = quanto cobra do cliente). ativo=false "desliga" o item sem apagar
 // histórico (orçamentos e movimentações de estoque continuam íntegros).
 model ItemGrafica {
-  id                     String    @id @default(cuid())
-  graficaId              String
-  itemCatalogoId         String
-  ativo                  Boolean   @default(true)
-  precoCompra            Decimal?  @db.Decimal(12, 4)
+  id                      String    @id @default(cuid())
+  graficaId               String
+  itemCatalogoId          String
+  ativo                   Boolean   @default(true)
+  precoCompra             Decimal?  @db.Decimal(12, 4)
   // Quando precoCompra mudou pela última vez — carimbado só quando o VALOR
   // muda de verdade (não em toda edição da linha, ao contrário de
   // updatedAt). null = nunca rastreado (todo item já existente antes deste
@@ -1396,9 +1559,9 @@ model ItemGrafica {
   // (ParametrosGrafica.diasPrecoInsumoDesatualizado): sem dado é "não sei",
   // nunca "está velho".
   precoCompraAtualizadoEm DateTime?
-  precoVenda             Decimal?  @db.Decimal(12, 2)
-  estoqueAtual           Decimal?  @db.Decimal(12, 4)
-  estoqueMinimo          Decimal?  @db.Decimal(12, 4)
+  precoVenda              Decimal?  @db.Decimal(12, 2)
+  estoqueAtual            Decimal?  @db.Decimal(12, 4)
+  estoqueMinimo           Decimal?  @db.Decimal(12, 4)
   // Quantas unidades individuais tem em cada "unidade cadastrada" deste item
   // (ex: unidade=PACOTE, quantidadePorEmbalagem=500 → 1 pacote = 500
   // etiquetas). Puramente informativo: mostra a conversão ao lado do estoque
@@ -1406,7 +1569,7 @@ model ItemGrafica {
   // entrada/saída/ajuste são lançados nem como ficha técnica/custo calculam
   // (estoqueAtual continua sendo "quantas unidades cadastradas", igual hoje).
   // null = sem conversão configurada (comportamento atual, sem mudança).
-  quantidadePorEmbalagem Decimal?  @db.Decimal(12, 4)
+  quantidadePorEmbalagem  Decimal?  @db.Decimal(12, 4)
   // Quanto desse material é perdido por CALIBRAGEM toda vez que uma produção
   // entra em impressão (FILA→IMPRESSAO) — fixo, não escala com a quantidade
   // do pedido (1 unidade ou 1000 = mesma perda). Diferente de
@@ -1417,14 +1580,14 @@ model ItemGrafica {
   // ItemGrafica é matéria-prima (itemCatalogo.tipo=MATERIA_PRIMA); é o
   // padrão sugerido na tela de confirmação de avancarPedido — editável por
   // pedido lá, sem alterar este valor.
-  perdaFixaPadrao        Decimal?  @db.Decimal(12, 4)
+  perdaFixaPadrao         Decimal?  @db.Decimal(12, 4)
   // Dedup do alerta de estoque baixo por e-mail (ver src/lib/alerta-estoque.ts)
   // — preenchido quando o e-mail/aviso é disparado, limpo de volta pra null
   // assim que o estoque volta a ficar acima do mínimo (self-healing: cai nunca
   // avisado → avisa; sobe → limpa; cai de novo → avisa de novo).
-  alertaEstoqueEnviadoEm DateTime?
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  alertaEstoqueEnviadoEm  DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   // Motor avançado — só relevante quando tipo=PRODUTO no ItemCatalogo relacionado.
   modeloCalculo ModeloCalculo @default(SIMPLES)
@@ -2000,6 +2163,16 @@ model Orcamento {
   tipoPedido               TipoPedidoOrcamento?
   contatoNome              String?
   contatoEmail             String?
+  // Achado A4 da Parte 5 — quando o vendedor escolhe um ContatoCliente
+  // cadastrado (em vez de digitar contatoNome/contatoEmail à mão), este id
+  // fica salvo aqui. FK opcional que CONVIVE com o snapshot em texto acima
+  // (mesmo precedente de Comissao/opcaoEscolhidaNome): escolher um contato
+  // pré-preenche o snapshot, mas o snapshot continua sendo o que aparece no
+  // PDF/link público — nunca lido daqui, pra não quebrar se o contato for
+  // editado ou desativado depois de o orçamento já ter sido enviado.
+  // SetNull: contato excluído (nunca acontece de verdade, é soft-delete via
+  // ContatoCliente.ativo) não pode travar nada, só perde o vínculo.
+  contatoClienteId         String?
   condicoesPagamento       String?
   frete                    TipoFrete?
   transportadora           String?
@@ -2025,7 +2198,7 @@ model Orcamento {
   // zero ao reenviar. Aparece no PDF (src/lib/pdf/OrcamentoDocumento.tsx)
   // como respaldo contratual pra faturar a quantidade real. null = ainda
   // em RASCUNHO/nunca enviado, ou orçamento criado antes desta feature.
-  toleranciaTiragemPercent Decimal? @db.Decimal(5, 2)
+  toleranciaTiragemPercent Decimal?             @db.Decimal(5, 2)
   // Nota interna — nunca aparece no PDF nem no link público (ver
   // src/lib/pdf/mapear-dados.ts), só na tela autenticada da gráfica.
   observacoes              String?
@@ -2088,24 +2261,27 @@ model Orcamento {
   // src/lib/orcamento-opcoes.ts), mesmo princípio de Comissao.baseCalculo.
   opcaoEscolhidaNome String?
 
-  grafica     Grafica          @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  cliente     Cliente          @relation(fields: [clienteId], references: [id])
-  usuario     Usuario          @relation(fields: [usuarioId], references: [id])
-  filial      Filial?          @relation(fields: [filialId], references: [id], onDelete: SetNull)
-  itens       OrcamentoItem[]
-  opcoes      OrcamentoOpcao[]
-  pedido      Pedido?
-  notaFiscal  NotaFiscal?
-  comissao    Comissao?
-  duplicadoDe Orcamento?       @relation("DuplicacaoOrcamento", fields: [duplicadoDeId], references: [id], onDelete: SetNull)
-  duplicados  Orcamento[]      @relation("DuplicacaoOrcamento")
+  grafica        Grafica          @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  cliente        Cliente          @relation(fields: [clienteId], references: [id])
+  usuario        Usuario          @relation(fields: [usuarioId], references: [id])
+  filial         Filial?          @relation(fields: [filialId], references: [id], onDelete: SetNull)
+  contatoCliente ContatoCliente?  @relation(fields: [contatoClienteId], references: [id], onDelete: SetNull)
+  itens          OrcamentoItem[]
+  opcoes         OrcamentoOpcao[]
+  pedido         Pedido?
+  notaFiscal     NotaFiscal?
+  comissao       Comissao?
+  duplicadoDe    Orcamento?       @relation("DuplicacaoOrcamento", fields: [duplicadoDeId], references: [id], onDelete: SetNull)
+  duplicados     Orcamento[]      @relation("DuplicacaoOrcamento")
 
-  pagamentos    Pagamento[]
-  contasReceber ContaReceber[]
+  pagamentos                  Pagamento[]
+  contasReceber               ContaReceber[]
+  movimentacoesCreditoCliente MovimentacaoCreditoCliente[]
 
   @@index([graficaId])
   @@index([filialId])
   @@index([duplicadoDeId])
+  @@index([contatoClienteId])
   // Query da lista de "orçamentos parados" (ver /orcamento/parados) —
   // filtra por graficaId+status=ENVIADO e ordena por enviadoEm.
   @@index([graficaId, status, enviadoEm])
@@ -2149,6 +2325,12 @@ model Pagamento {
   // deduplicação automática entre os dois caminhos.
   contaReceber ContaReceber?
 
+  // Presente quando este pagamento é a origem de um DEPOSITO de
+  // CreditoCliente (ver MovimentacaoCreditoCliente.pagamentoId) — cliente
+  // pagou a mais num orçamento aprovado e a diferença virou saldo. null no
+  // caminho comum de depósito adiantado (sem Pagamento nenhum envolvido).
+  movimentacaoCreditoCliente MovimentacaoCreditoCliente?
+
   @@index([orcamentoId])
   @@map("pagamentos")
 }
@@ -2156,6 +2338,20 @@ model Pagamento {
 enum StatusDespesa {
   PENDENTE
   PAGA
+}
+
+// Unidade de avanço de uma série recorrente de Despesa — ver
+// src/lib/despesa-recorrente.ts pra como cada valor avança a data de
+// vencimento. MENSAL é @default porque era o único comportamento que
+// existia antes deste campo (achado A14 da auditoria de abrangência).
+enum PeriodicidadeDespesa {
+  SEMANAL
+  QUINZENAL
+  MENSAL
+  BIMESTRAL
+  TRIMESTRAL
+  SEMESTRAL
+  ANUAL
 }
 
 // Contraparte de Pagamento: dinheiro SAINDO da gráfica (fornecedor, aluguel,
@@ -2193,14 +2389,27 @@ model Despesa {
   updatedAt             DateTime        @updatedAt
 
   // Recorrência: recorrente=true marca que essa ocorrência faz parte de uma
-  // série mensal. serieRecorrenciaId agrupa as ocorrências da mesma série
+  // série. serieRecorrenciaId agrupa as ocorrências da mesma série
   // (a primeira ocorrência recebe o próprio id como serieRecorrenciaId — ver
   // criarDespesa). Só a ocorrência de VENCIMENTO MAIS RECENTE de uma série é
   // consultada pra decidir se gera a próxima (ver src/lib/despesa-recorrente.ts)
   // — então desmarcar "recorrente" só nessa ocorrência mais recente já
   // encerra a série, sem precisar tocar nas anteriores.
-  recorrente         Boolean @default(false)
+  recorrente         Boolean              @default(false)
   serieRecorrenciaId String?
+  // Unidade de avanço da série — ver enum PeriodicidadeDespesa acima.
+  // @default(MENSAL) preserva o comportamento de toda série criada antes
+  // deste campo existir, sem precisar de backfill.
+  periodicidade      PeriodicidadeDespesa @default(MENSAL)
+  // Série para de gerar novas ocorrências quando a PRÓXIMA ocorrência
+  // ultrapassaria essa data — as ocorrências já geradas antes disso
+  // continuam existindo normalmente. null = sem fim (comportamento de hoje).
+  recorrenciaAteEm   DateTime?            @db.Date
+  // true: cada ocorrência nova nasce com valor 0 ("a confirmar") em vez de
+  // copiar o valor da anterior — pra série cujo valor muda a cada vencimento
+  // (ex: conta de luz/água). false (default): copia o valor da ocorrência
+  // anterior, como sempre foi.
+  valorVariavel      Boolean              @default(false)
 
   grafica        Grafica         @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   // SetNull, não Restrict: uma categoria de custo nunca é apagada de
@@ -2241,6 +2450,13 @@ model Despesa {
 // saldoAtual é cache redundante da soma de MovimentacaoContaPrepaga — existe
 // só pra não recalcular a soma inteira em toda leitura da tela; sempre
 // atualizado na MESMA transação que cria a movimentação.
+//
+// Não confundir com CreditoCliente (achado A13 da auditoria de abrangência,
+// 2026-08-27): isto aqui é a carteira da PRÓPRIA gráfica junto a um
+// FORNECEDOR (ela deve/tem saldo lá). CreditoCliente é o sentido oposto —
+// um CLIENTE da gráfica com saldo adiantado (ela deve pra ele). Modelos
+// irmãos na mecânica (saldo sempre derivado das movimentações), opostos no
+// sentido do dinheiro.
 model ContaPrepaga {
   id         String   @id @default(cuid())
   graficaId  String
@@ -2281,6 +2497,82 @@ model MovimentacaoContaPrepaga {
 
   @@index([contaId, createdAt])
   @@map("movimentacoes_conta_prepaga")
+}
+
+// Saldo adiantado que um CLIENTE tem com a gráfica (ex: conta corporativa
+// B2B que deposita R$5.000 e vai consumindo em pedidos ao longo dos meses)
+// — achado A13 da auditoria de abrangência (2026-08-27). Até aqui não havia
+// onde registrar isso: Pagamento sempre exige um Orcamento APROVADO, que
+// ainda nem existe no momento do depósito adiantado.
+//
+// Não confundir com ContaPrepaga (ver comentário lá): isto aqui é o sentido
+// oposto — o CLIENTE tem saldo com a gráfica (ela deve pra ele), não a
+// gráfica com um fornecedor. Mesma mecânica (saldo sempre derivado da soma
+// das movimentações), sentido do dinheiro invertido.
+//
+// Saldo é SEMPRE calculado a partir da soma de MovimentacaoCreditoCliente
+// (ver saldoCreditoCliente em src/lib/credito-cliente.ts) — deliberadamente
+// SEM campo `saldo` armazenado aqui. Diferente de ContaPrepaga.saldoAtual
+// (que é cache com precedente de corrida documentado ali): CONSUMO precisa
+// reler o saldo real dentro da própria transação pra nunca deixar consumir
+// mais do que existe (ver lançarConsumoCreditoCliente), e um cache
+// incrementado fora dessa checagem reabriria exatamente a corrida que a
+// validação existe pra fechar.
+model CreditoCliente {
+  id        String @id @default(cuid())
+  clienteId String @unique
+
+  cliente       Cliente                      @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  movimentacoes MovimentacaoCreditoCliente[]
+
+  @@map("creditos_cliente")
+}
+
+// AJUSTE cobre correção de lançamento errado (depósito duplicado, valor
+// digitado errado) — pode ir em qualquer direção, por isso valorSinalizado
+// (ver MovimentacaoCreditoCliente abaixo) permite negativo só pra este tipo.
+// ESTORNO é sempre positivo (devolve saldo que tinha sido consumido, ex:
+// pedido cancelado depois de abater do crédito).
+enum TipoMovimentacaoCreditoCliente {
+  DEPOSITO
+  CONSUMO
+  ESTORNO
+  AJUSTE
+}
+
+model MovimentacaoCreditoCliente {
+  id               String                         @id @default(cuid())
+  creditoClienteId String
+  tipo             TipoMovimentacaoCreditoCliente
+  // Sempre positivo pra DEPOSITO/CONSUMO/ESTORNO (o `tipo` já diz a direção
+  // — ver saldoCreditoCliente). Só AJUSTE aceita negativo, pra corrigir
+  // lançamento indevido pra qualquer lado sem precisar de um tipo a mais.
+  valor            Decimal                        @db.Decimal(12, 2)
+  // Presente quando o consumo (ou um estorno de consumo) está ligado a um
+  // orçamento específico — null pra DEPOSITO/AJUSTE, que não têm orçamento
+  // nenhum envolvido. Não é @unique: um mesmo orçamento pode em tese ter um
+  // CONSUMO e depois um ESTORNO (pedido cancelado).
+  orcamentoId      String?
+  // Presente quando um DEPOSITO já nasceu vinculado a um Pagamento existente
+  // (ex: cliente pagou a mais num orçamento aprovado e a diferença virou
+  // crédito) — evita esse valor contar 2x na exportação financeira, mesmo
+  // padrão de ContaReceber.pagamentoId. @unique: um Pagamento nunca gera
+  // mais de um depósito de crédito. null no caminho comum (depósito
+  // adiantado lançado manualmente, sem Pagamento nenhum ainda — é
+  // exatamente o caso que motivou este model, ver comentário em
+  // CreditoCliente acima).
+  pagamentoId      String?                        @unique
+  descricao        String?
+  criadoPorId      String?
+  createdAt        DateTime                       @default(now())
+
+  creditoCliente CreditoCliente @relation(fields: [creditoClienteId], references: [id], onDelete: Cascade)
+  orcamento      Orcamento?     @relation(fields: [orcamentoId], references: [id], onDelete: SetNull)
+  pagamento      Pagamento?     @relation(fields: [pagamentoId], references: [id], onDelete: SetNull)
+
+  @@index([creditoClienteId, createdAt])
+  @@index([orcamentoId])
+  @@map("movimentacoes_credito_cliente")
 }
 
 enum StatusContaReceber {
@@ -2500,32 +2792,32 @@ model OrcamentoItem {
   // Motor avançado (M2/OFFSET/FLEXOGRAFIA): snapshot do modelo usado + árvore de
   // custo auditável (spec §0d). Fica null pra itens SIMPLES — nada muda no caminho
   // existente.
-  modeloCalculo    ModeloCalculo @default(SIMPLES)
-  corFrente        Int?
-  corVerso         Int?
+  modeloCalculo                ModeloCalculo @default(SIMPLES)
+  corFrente                    Int?
+  corVerso                     Int?
   // Nº de cores da arte — modeloCalculo=FLEXOGRAFIA only. Deliberadamente separado
   // de corFrente/corVerso (que têm semântica de "frente/verso de folha", lida em
   // ~20 lugares — PDF, webhook-tinta.ts, pedido-aprovacao.ts) pra não arriscar bug
   // silencioso de significado errado nesses consumidores.
-  numeroCoresFlexo Int?
+  numeroCoresFlexo             Int?
   // Nº de cliques da impressora digital — modeloCalculo=DIGITAL only.
-  numeroCliques    Int?
+  numeroCliques                Int?
   // Nº de setups (telas/matrizes/artes) — modeloCalculo SERIGRAFIA/
   // SUBLIMACAO/ESTAMPAGEM_QUENTE only, os 3 compartilham este mesmo campo
   // (mesma razão de compartilharem calcularSetupPorPeca).
-  numeroSetups     Int?
+  numeroSetups                 Int?
   // Estimativa de horas — só usada quando o item tem um acabamento anexado
   // com ConfiguracaoAcabamento.baseCobranca=HORA (ex: instalação, criação de
   // arte). Independente de modeloCalculo, ao contrário de numeroSetups
   // acima: acabamento por hora pode ser anexado a qualquer motor.
-  horasEstimadas   Decimal?      @db.Decimal(8, 2)
+  horasEstimadas               Decimal?      @db.Decimal(8, 2)
   // Override opcional, POR ORÇAMENTO, do custo de aquisição do fornecedor —
   // modeloCalculo=REVENDA only (achado A12). O preço de um brinde muda por
   // cotação/faixa de quantidade a cada orçamento; quando null, o motor cai no
   // ItemGrafica.precoCompra do catálogo (mesmo fallback que
   // ContextoDigital/ContextoSetupPorPeca já usam a partir de precoCompra —
   // ver src/lib/pricing/carregar.ts).
-  custoAquisicaoUnitario Decimal? @db.Decimal(12, 4)
+  custoAquisicaoUnitario       Decimal?      @db.Decimal(12, 4)
   // Achado B7 (correção de regressão introduzida pelo A2, 2026-08-24): quando
   // true, a gráfica só aplica a estampa/gravação — o cliente já trouxe a
   // peça em branco (camiseta/caneca/boné) — então o motor zera
@@ -2536,7 +2828,7 @@ model OrcamentoItem {
   // "custo de aquisição" É o produto inteiro, não um substrato aplicado.
   // @default(false) preserva 100% o comportamento de todo item já existente
   // (continua cobrando o substrato normalmente).
-  materialFornecidoPeloCliente Boolean @default(false)
+  materialFornecidoPeloCliente Boolean       @default(false)
   // Achado B6 — sobrepõe o nome do catálogo (ItemGrafica.itemCatalogo.nome)
   // no PDF e no link público quando preenchido (ver src/lib/pdf/mapear-dados.ts
   // e src/app/o/[token]/page.tsx). Puramente descritivo: nunca entra no motor
@@ -2546,8 +2838,8 @@ model OrcamentoItem {
   // comportamento de sempre. Não remove a exigência de itemGraficaId — só
   // resolve a falta de descrição específica, não a falta de item de catálogo
   // (parte maior do achado B6, deixada de fora de propósito).
-  descricaoLivre String? @db.Text
-  breakdown        Json?
+  descricaoLivre               String?       @db.Text
+  breakdown                    Json?
 
   orcamento   Orcamento       @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
   opcao       OrcamentoOpcao? @relation(fields: [opcaoId], references: [id], onDelete: Cascade)
