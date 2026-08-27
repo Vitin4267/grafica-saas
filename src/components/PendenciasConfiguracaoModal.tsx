@@ -158,6 +158,36 @@ export function PendenciasConfiguracaoModal() {
             </div>
           </div>
         )}
+
+        {pendencia.tipo === "MAQUINA_NAO_VINCULADA" && (
+          <div className="flex flex-col gap-4">
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+              Máquina não configurada — {pendencia.nomeProduto}
+            </h2>
+            <p className="text-sm text-slate-500">
+              Esse produto usa um modelo de cálculo que depende de uma máquina (prensa,
+              impressora ou equipamento) configurada, mas nenhuma está vinculada ainda —
+              sem isso o motor de preço não consegue montar um orçamento com ele. Escolha
+              a máquina na tela do produto, em Catálogo.
+            </p>
+            <div className="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={aoFechar}
+                className="text-xs font-medium text-slate-500 hover:text-slate-700 hover:underline dark:text-slate-400 dark:hover:text-slate-200"
+              >
+                Depois
+              </button>
+              <Link
+                href={`/catalogo/${pendencia.itemGraficaId}`}
+                onClick={aoFechar}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm shadow-teal-600/20 transition-colors hover:bg-teal-700"
+              >
+                Configurar máquina
+              </Link>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

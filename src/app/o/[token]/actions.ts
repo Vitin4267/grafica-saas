@@ -100,10 +100,11 @@ export async function responderOrcamentoPublico(
   const opcaoIdBruto = String(formData.get("opcaoId") ?? "").trim();
   const opcaoEscolhidaId = opcaoIdBruto || null;
 
+  // vendedorId: achado A8 — ver bloco de comissão logo abaixo.
   const orcamento = await prisma.orcamento.findUnique({
     where: { linkPublicoToken: token },
     include: {
-      cliente: { select: { nome: true } },
+      cliente: { select: { nome: true, vendedorId: true } },
       grafica: { select: { nome: true, corPrimaria: true } },
     },
   });
@@ -207,18 +208,18 @@ export async function responderOrcamentoPublico(
     // vendedor vem de orcamento.usuarioId e os parâmetros da própria gráfica
     // do orçamento. opcaoId: opcaoEscolhidaId — sempre os itens da opção
     // ESCOLHIDA (base ou alternativa), nunca "todos os itens do orçamento".
-    const [orcamentoComItens, usuarioVendedor, parametros, previsaoCusto] = await Promise.all([
+    const [orcamentoComItens, parametros, previsaoCusto] = await Promise.all([
       prisma.orcamentoItem.findMany({
         where: { orcamentoId: orcamento.id, opcaoId: opcaoEscolhidaId },
         include: { itemGrafica: { select: { precoCompra: true } } },
       }),
-      prisma.usuario.findUnique({
-        where: { id: orcamento.usuarioId },
-        select: { comissaoPercent: true },
-      }),
       prisma.parametrosGrafica.findUnique({
         where: { graficaId: orcamento.graficaId },
-        select: { comissaoVendedorBase: true, comissaoEntraNoCustoPedido: true },
+        select: {
+          comissaoVendedorBase: true,
+          comissaoEntraNoCustoPedido: true,
+          comissaoSegueVendedorDoCliente: true,
+        },
       }),
       // Mesmo cuidado do bloco de comissão acima: leitura de breakdown/ficha
       // técnica fica FORA da transação (ver fase-custo-real.md §3.1 e
@@ -226,6 +227,21 @@ export async function responderOrcamentoPublico(
       // resposta pra aprovadoEm bater com respostaPublicaEm.
       calcularPrevisaoAprovacaoPedido(orcamento.id, orcamento.graficaId, agora, opcaoEscolhidaId),
     ]);
+
+    // Achado A8 — mesmo comportamento do caminho autenticado
+    // (atualizarStatusOrcamento em src/app/orcamento/[id]/actions.ts): a
+    // origem do usuarioId da comissão nunca vem de input do link público
+    // (não confiável), sempre re-derivada no servidor a partir da flag da
+    // gráfica + Cliente.vendedorId.
+    const vendedorComissaoId =
+      parametros?.comissaoSegueVendedorDoCliente && orcamento.cliente.vendedorId
+        ? orcamento.cliente.vendedorId
+        : orcamento.usuarioId;
+
+    const usuarioVendedor = await prisma.usuario.findUnique({
+      where: { id: vendedorComissaoId },
+      select: { comissaoPercent: true },
+    });
 
     // Total da opção ESCOLHIDA — nunca orcamento.total direto (ver mesmo
     // comentário em atualizarStatusOrcamento).
@@ -331,7 +347,7 @@ export async function responderOrcamentoPublico(
           create: {
             graficaId: orcamento.graficaId,
             orcamentoId: orcamento.id,
-            usuarioId: orcamento.usuarioId,
+            usuarioId: vendedorComissaoId,
             baseCalculo: dadosComissao.baseCalculo,
             percentualAplicado: percentualVendedor!,
             valorBase: dadosComissao.valorBase,

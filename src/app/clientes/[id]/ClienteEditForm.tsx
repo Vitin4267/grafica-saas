@@ -51,6 +51,8 @@ type ValoresCliente = {
   // (Decimal do Prisma não atravessa a fronteira Server→Client, e o valor
   // "cru" da coluna já é a fração 0-1 que o Input mostra direto).
   margemPadraoOverride: string;
+  // Achado A8 — vendedor/responsável comercial do cliente. "" = não atribuído.
+  vendedorId: string;
   // ISO string ou null — Date não atravessa a fronteira Server→Client
   // Component (mesmo padrão de FuncionarioDesativado em UsuariosLista.tsx).
   desativadoEm: string | null;
@@ -60,10 +62,12 @@ export function ClienteEditForm({
   clienteId,
   valoresIniciais,
   podeEditar,
+  vendedores,
 }: {
   clienteId: string;
   valoresIniciais: ValoresCliente;
   podeEditar: boolean;
+  vendedores: { id: string; nome: string }[];
 }) {
   const [state, formAction, isPending] = useActionState(atualizarCliente, null);
   const [estadoExclusao, excluirAction, excluindo] = useActionState(excluirCliente, null);
@@ -253,6 +257,14 @@ export function ClienteEditForm({
               placeholder="ex: 0.15"
               hint="Sobrescreve a margem padrão da gráfica só pra este cliente — em branco usa o padrão de Configurações"
             />
+            <Select label="Vendedor responsável" name="vendedorId" defaultValue={valoresIniciais.vendedorId}>
+              <option value="">Não atribuído</option>
+              {vendedores.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.nome}
+                </option>
+              ))}
+            </Select>
           </div>
         </div>
 

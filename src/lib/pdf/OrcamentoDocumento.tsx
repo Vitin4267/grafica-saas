@@ -56,6 +56,11 @@ export type DadosPdfOrcamento = {
   itens: ItemPdfOrcamento[];
   total: string;
   dadosPedido: DadosPdfPedido | null;
+  // Achado A2 da Parte 6 (auditoria de abrangência, 2026-08-27) — decide se
+  // "Prazo estimado de entrega" (abaixo) fala em "dias úteis" ou "dias
+  // corridos", em vez do literal "dias úteis" fixo de sempre. Ver
+  // ParametrosGrafica.prazoEmDiasUteis no schema.
+  prazoEmDiasUteis: boolean;
   // Texto livre configurado pela gráfica em /configuracoes (ver
   // ParametrosGrafica.termosCondicoesPdf). Null = gráfica nunca configurou —
   // o rodapé usa TERMOS_CONDICOES_PDF_PADRAO em vez de ficar em branco.
@@ -302,7 +307,7 @@ export function OrcamentoDocumento({ dados }: { dados: DadosPdfOrcamento }) {
                 [
                   "Prazo estimado de entrega",
                   dados.dadosPedido.prazoEntregaEstimadoDias !== null
-                    ? `${dados.dadosPedido.prazoEntregaEstimadoDias} dias úteis após aprovação`
+                    ? `${dados.dadosPedido.prazoEntregaEstimadoDias} ${dados.prazoEmDiasUteis ? "dias úteis" : "dias corridos"} após aprovação`
                     : null,
                 ],
               ]

@@ -44,6 +44,8 @@ export default async function ConfiguracoesPage() {
     descontoMaxSemAprovacao,
     toleranciaTiragemPadraoPercent,
     diasPrecoInsumoDesatualizado,
+    prazoEmDiasUteis,
+    diasFuncionamento,
   } = await prisma.parametrosGrafica.findUniqueOrThrow({
     where: { graficaId: usuario.graficaId },
     select: {
@@ -66,6 +68,8 @@ export default async function ConfiguracoesPage() {
       descontoMaxSemAprovacao: true,
       toleranciaTiragemPadraoPercent: true,
       diasPrecoInsumoDesatualizado: true,
+      prazoEmDiasUteis: true,
+      diasFuncionamento: true,
     },
   });
   // Alimenta o <select> de categoria de custo padrão — só as ativas, mesma
@@ -161,6 +165,8 @@ export default async function ConfiguracoesPage() {
             toleranciaTiragemPadraoPercent ? Number(toleranciaTiragemPadraoPercent) : 10
           }
           diasPrecoInsumoDesatualizado={diasPrecoInsumoDesatualizado}
+          prazoEmDiasUteis={prazoEmDiasUteis}
+          diasFuncionamento={diasFuncionamento}
         />
       </main>
     </div>

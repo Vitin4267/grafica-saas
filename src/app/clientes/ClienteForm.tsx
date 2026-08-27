@@ -17,7 +17,7 @@ import {
 } from "@/lib/tipos-cliente";
 import type { OrigemCliente, SegmentoCliente } from "@/generated/prisma/enums";
 
-export function ClienteForm() {
+export function ClienteForm({ vendedores }: { vendedores: { id: string; nome: string }[] }) {
   const [state, formAction, isPending] = useActionState(criarCliente, null);
   const [resetKey, setResetKey] = useState(0);
   const [estadoAnterior, setEstadoAnterior] = useState(state);
@@ -100,6 +100,14 @@ export function ClienteForm() {
             placeholder="ex: 0.15"
             hint="Sobrescreve a margem padrão da gráfica só pra este cliente — em branco usa o padrão de Configurações"
           />
+          <Select label="Vendedor responsável" name="vendedorId" defaultValue="">
+            <option value="">Não atribuído</option>
+            {vendedores.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.nome}
+              </option>
+            ))}
+          </Select>
         </div>
       </div>
 

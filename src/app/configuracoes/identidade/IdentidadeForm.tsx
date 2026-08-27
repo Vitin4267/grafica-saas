@@ -4,10 +4,20 @@ import { useActionState, useState, type ChangeEvent } from "react";
 import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { validarArquivoLogo } from "@/lib/upload-validacao";
-import { salvarLogo, removerLogo, salvarCorPrimaria, restaurarCorPadrao, salvarContato } from "./actions";
+import {
+  salvarLogo,
+  removerLogo,
+  salvarCorPrimaria,
+  restaurarCorPadrao,
+  salvarContato,
+  salvarSegmento,
+} from "./actions";
+import { ORDEM_SEGMENTO_GRAFICA, ROTULO_SEGMENTO_GRAFICA } from "@/lib/tipos-grafica";
+import type { SegmentoGrafica } from "@/generated/prisma/enums";
 
 const COR_PADRAO = "#0d9488";
 const HEX_REGEX_COR = /^#[0-9A-Fa-f]{6}$/;
@@ -19,6 +29,8 @@ export function IdentidadeForm({
   emailContatoAtual,
   siteAtual,
   enderecoResumidoAtual,
+  segmentoAtual,
+  segmentoOutroAtual,
 }: {
   logoUrlAtual: string | null;
   corPrimariaAtual: string | null;
@@ -26,6 +38,8 @@ export function IdentidadeForm({
   emailContatoAtual: string | null;
   siteAtual: string | null;
   enderecoResumidoAtual: string | null;
+  segmentoAtual: SegmentoGrafica | null;
+  segmentoOutroAtual: string | null;
 }) {
   const [stateSalvar, formActionSalvar, isPendingSalvar] = useActionState(salvarLogo, null);
   const [stateRemover, formActionRemover, isPendingRemover] = useActionState(removerLogo, null);
@@ -48,6 +62,10 @@ export function IdentidadeForm({
   const [emailContato, setEmailContato] = useState(emailContatoAtual ?? "");
   const [site, setSite] = useState(siteAtual ?? "");
   const [enderecoResumido, setEnderecoResumido] = useState(enderecoResumidoAtual ?? "");
+
+  const [stateSegmento, formActionSegmento, isPendingSegmento] = useActionState(salvarSegmento, null);
+  const [segmento, setSegmento] = useState<SegmentoGrafica | "">(segmentoAtual ?? "");
+  const [segmentoOutro, setSegmentoOutro] = useState(segmentoOutroAtual ?? "");
 
   // Sincroniza o campo local com o teal padrão quando "Restaurar cor padrão"
   // é confirmado — sem isso, o input continuaria mostrando a última cor
@@ -231,6 +249,57 @@ export function IdentidadeForm({
 
         {stateContato && (
           <Alert variant={stateContato.ok ? "success" : "error"}>{stateContato.mensagem}</Alert>
+        )}
+      </Card>
+
+      <Card className="flex flex-col gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Perfil de negócio
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Opcional — usamos isso só pra sugerir categorias de custo e dados de exemplo
+            mais parecidos com o seu tipo de gráfica. Não trava nada: você continua livre
+            pra cadastrar qualquer produto ou máquina.
+          </p>
+        </div>
+
+        <form action={formActionSegmento} className="flex flex-col gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Select
+              label="Sua gráfica trabalha principalmente com"
+              name="segmento"
+              value={segmento}
+              onChange={(e) => setSegmento(e.target.value as SegmentoGrafica | "")}
+            >
+              <option value="">Não informado</option>
+              {ORDEM_SEGMENTO_GRAFICA.map((valor) => (
+                <option key={valor} value={valor}>
+                  {ROTULO_SEGMENTO_GRAFICA[valor]}
+                </option>
+              ))}
+            </Select>
+            {segmento === "OUTRO" && (
+              <Input
+                label="Descreva o perfil"
+                name="segmentoOutro"
+                value={segmentoOutro}
+                onChange={(evento) => setSegmentoOutro(evento.target.value)}
+                placeholder="ex: gráfica de brindes têxteis"
+                required
+              />
+            )}
+          </div>
+
+          <div className="flex justify-start">
+            <Button type="submit" loading={isPendingSegmento}>
+              Salvar perfil
+            </Button>
+          </div>
+        </form>
+
+        {stateSegmento && (
+          <Alert variant={stateSegmento.ok ? "success" : "error"}>{stateSegmento.mensagem}</Alert>
         )}
       </Card>
     </div>

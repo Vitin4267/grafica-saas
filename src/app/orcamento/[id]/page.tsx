@@ -15,7 +15,13 @@ import { buscarCustoRealVsOrcado } from "@/lib/custo-producao";
 import { verificarProntidaoFiscal, resolverDadosFiscais } from "@/lib/nota-fiscal";
 import { formatoMoeda } from "@/lib/moeda";
 import { calcularConversoesPreco } from "@/lib/unidade-contagem";
-import { formatoInstanteRealComHora } from "@/lib/data";
+import {
+  formatoInstanteRealComHora,
+  dataInputParaUTC,
+  dataParaInputValue,
+  hojeBrasiliaInputValue,
+} from "@/lib/data";
+import { somarDiasUteis } from "@/lib/dias-uteis";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/Badge";
@@ -168,6 +174,25 @@ export default async function OrcamentoDetalhePage({
   if (!orcamento) {
     notFound();
   }
+
+  // Sugestão de prazo de entrega (achado A2 da Parte 6 — auditoria de
+  // abrangência, 2026-08-27): calcula a partir de hoje + o número de dias
+  // que o cliente já viu no PDF/link público (Orcamento.prazoEntregaEstimadoDias),
+  // respeitando dias úteis/feriados da gráfica — só PRÉ-PREENCHE o campo em
+  // OrcamentoAcoes, o vendedor continua livre pra editar (ver
+  // atualizarStatusOrcamento em ./actions.ts, que grava exatamente o que
+  // vier do form, sem recalcular nada). Só compensa calcular quando o
+  // orçamento ainda está pra ser aprovado.
+  const prazoEntregaSugerido =
+    orcamento.status === "ENVIADO" && orcamento.prazoEntregaEstimadoDias
+      ? dataParaInputValue(
+          await somarDiasUteis(
+            dataInputParaUTC(hojeBrasiliaInputValue()),
+            orcamento.prazoEntregaEstimadoDias,
+            usuario.graficaId
+          )
+        )
+      : null;
 
   // Opções alternativas (ver model OrcamentoOpcao no schema.prisma) — cada
   // uma com seu próprio conjunto de itens/total, exibidas lado a lado com a
@@ -684,6 +709,7 @@ export default async function OrcamentoDetalhePage({
           status={orcamento.status}
           opcoes={opcoesFormatadas.map((o) => ({ id: o.id, nome: o.nome, total: o.total }))}
           totalOpcaoBase={orcamento.total.toString()}
+          prazoEntregaSugerido={prazoEntregaSugerido}
         />
       </main>
     </div>

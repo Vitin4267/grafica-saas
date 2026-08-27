@@ -37,7 +37,9 @@ export async function GET(
       // comercial interno) pra dentro do processo que gera o PDF público.
       grafica: {
         include: {
-          parametros: { select: { termosCondicoesPdf: true, mostrarEspecificacoesTecnicas: true } },
+          parametros: {
+            select: { termosCondicoesPdf: true, mostrarEspecificacoesTecnicas: true, prazoEmDiasUteis: true },
+          },
         },
       },
       // opcaoId: null — o PDF sempre representa a opção-base ("Opção A").

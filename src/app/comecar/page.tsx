@@ -1,5 +1,6 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
@@ -35,9 +36,15 @@ export default async function ComecarPage({
   await exigirAssinaturaAtiva(usuario);
   // Independentes entre si — mesma lógica de "não faça em cascata" adotada no
   // resto da navegação (ver commit "Reduz cascata de queries na navegação").
-  const [status, dadosExemploCarregados] = await Promise.all([
+  const [status, dadosExemploCarregados, vendedores] = await Promise.all([
     obterStatusOnboarding(usuario.graficaId),
     existemDadosExemplo(usuario.graficaId),
+    // Achado A8 — mesma lista de src/app/clientes/page.tsx.
+    prisma.usuario.findMany({
+      where: { graficaId: usuario.graficaId, desativadoEm: null },
+      orderBy: { nome: "asc" },
+      select: { id: true, nome: true },
+    }),
   ]);
   const { tour } = await searchParams;
 
@@ -104,7 +111,7 @@ export default async function ComecarPage({
                 )}
               </div>
             </div>
-            <ClienteForm />
+            <ClienteForm vendedores={vendedores} />
           </Card>
 
           <Card className="flex items-center justify-between gap-4 p-6">

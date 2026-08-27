@@ -31,7 +31,9 @@ export default async function OrcamentoPublicoPage({
     where: { linkPublicoToken: token },
     include: {
       cliente: true,
-      grafica: { include: { parametros: { select: { mostrarEspecificacoesTecnicas: true } } } },
+      grafica: {
+        include: { parametros: { select: { mostrarEspecificacoesTecnicas: true, prazoEmDiasUteis: true } } },
+      },
       // opcaoId: null — só a opção-base ("Opção A"). Opções alternativas
       // (ver model OrcamentoOpcao) vêm à parte, no include `opcoes` abaixo.
       itens: {
@@ -63,6 +65,9 @@ export default async function OrcamentoPublicoPage({
   // Default true: mesmo comportamento de sempre mostrar, que já existia
   // antes deste toggle (ver comentário do campo no schema).
   const mostrarEspecificacoesTecnicas = orcamento.grafica.parametros?.mostrarEspecificacoesTecnicas ?? true;
+  // Achado A2 da Parte 6 (auditoria de abrangência, 2026-08-27) — decide se
+  // "Prazo estimado" (abaixo) fala em "dias úteis" ou "dias corridos".
+  const prazoEmDiasUteis = orcamento.grafica.parametros?.prazoEmDiasUteis ?? true;
 
   // Mapeia um conjunto de OrcamentoItem (base ou de uma opção alternativa)
   // pro shape simples que OpcoesPublicasTabs consome — mesmos campos que a
@@ -178,7 +183,8 @@ export default async function OrcamentoPublicoPage({
                 <div>
                   <dt className="text-slate-500">Prazo estimado</dt>
                   <dd className="font-medium text-slate-800 dark:text-slate-100">
-                    {orcamento.prazoEntregaEstimadoDias} dias úteis após aprovação
+                    {orcamento.prazoEntregaEstimadoDias} {prazoEmDiasUteis ? "dias úteis" : "dias corridos"} após
+                    aprovação
                   </dd>
                 </div>
               )}

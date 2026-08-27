@@ -17,6 +17,18 @@ import {
 } from "@/lib/unidade-dimensao";
 import { TERMOS_CONDICOES_PDF_PADRAO } from "@/lib/pdf/termos-padrao";
 
+// Convenção do bitmask de ParametrosGrafica.diasFuncionamento (ver comentário
+// no schema): bit0=segunda...bit6=domingo.
+const DIAS_SEMANA: { bit: number; rotulo: string }[] = [
+  { bit: 0, rotulo: "Seg" },
+  { bit: 1, rotulo: "Ter" },
+  { bit: 2, rotulo: "Qua" },
+  { bit: 3, rotulo: "Qui" },
+  { bit: 4, rotulo: "Sex" },
+  { bit: 5, rotulo: "Sáb" },
+  { bit: 6, rotulo: "Dom" },
+];
+
 export function ParametrosForm({
   parametros,
   comissaoVendedorBase,
@@ -40,6 +52,8 @@ export function ParametrosForm({
   descontoMaxSemAprovacao,
   toleranciaTiragemPadraoPercent,
   diasPrecoInsumoDesatualizado,
+  prazoEmDiasUteis,
+  diasFuncionamento,
 }: {
   parametros: ParametrosTenant;
   comissaoVendedorBase: BaseComissao;
@@ -63,6 +77,8 @@ export function ParametrosForm({
   descontoMaxSemAprovacao: number;
   toleranciaTiragemPadraoPercent: number;
   diasPrecoInsumoDesatualizado: number;
+  prazoEmDiasUteis: boolean;
+  diasFuncionamento: number;
 }) {
   const [state, formAction, isPending] = useActionState(salvarParametros, null);
 
@@ -363,6 +379,64 @@ export function ParametrosForm({
       <Card className="flex flex-col gap-4 p-6">
         <div>
           <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Prazo de entrega em dias úteis
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Como sua gráfica cota o prazo de entrega no PDF/link público do
+            orçamento (&quot;N dias úteis&quot; ou &quot;N dias corridos&quot;
+            após aprovação). Também usado pra sugerir o prazo de entrega na
+            aprovação do orçamento e pro alerta de prazo por e-mail abaixo
+            contar certo. Os feriados da sua cidade/estado entram em{" "}
+            <Link href="/configuracoes/feriados" className="underline">
+              Feriados
+            </Link>
+            .
+          </p>
+        </div>
+
+        <label className="flex items-center gap-2.5">
+          <input
+            type="checkbox"
+            name="prazoEmDiasUteis"
+            defaultChecked={prazoEmDiasUteis}
+            className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+          />
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+            Cotar prazo de entrega em dias úteis
+          </span>
+        </label>
+        <p className="text-xs text-slate-500">
+          Desligue se sua gráfica prefere prometer o prazo em dias corridos
+          simples.
+        </p>
+
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+            Dias de funcionamento
+          </span>
+          <div className="flex flex-wrap gap-4">
+            {DIAS_SEMANA.map((dia) => (
+              <label
+                key={dia.bit}
+                className="flex items-center gap-1.5 text-sm text-slate-700 dark:text-slate-200"
+              >
+                <input
+                  type="checkbox"
+                  name="diaFuncionamento"
+                  value={dia.bit}
+                  defaultChecked={(diasFuncionamento & (1 << dia.bit)) !== 0}
+                  className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                />
+                {dia.rotulo}
+              </label>
+            ))}
+          </div>
+        </div>
+      </Card>
+
+      <Card className="flex flex-col gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
             Alerta de prazo por e-mail
           </h2>
           <p className="mt-1 text-sm text-slate-500">
@@ -589,6 +663,23 @@ export function ParametrosForm({
         <Link href="/configuracoes/categorias-custo">
           <Button type="button" variant="outline">
             Gerenciar categorias
+          </Button>
+        </Link>
+      </Card>
+
+      <Card className="flex items-center justify-between gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Feriados
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            O calendário de feriados da sua gráfica — usado pra calcular o
+            prazo de entrega em dias úteis e pro alerta de prazo por e-mail.
+          </p>
+        </div>
+        <Link href="/configuracoes/feriados">
+          <Button type="button" variant="outline">
+            Gerenciar feriados
           </Button>
         </Link>
       </Card>

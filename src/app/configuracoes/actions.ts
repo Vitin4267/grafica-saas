@@ -68,6 +68,25 @@ const ROTULO_UNIDADE_DIMENSAO: Record<"MM" | "CM" | "M", string> = {
   M: "Metro",
 };
 
+// Convenção do bitmask de ParametrosGrafica.diasFuncionamento (ver comentário
+// no schema): bit0=segunda...bit6=domingo — achado A2 da Parte 6 da
+// auditoria de abrangência (2026-08-27).
+const ROTULO_DIA_BIT: Record<number, string> = {
+  0: "Seg",
+  1: "Ter",
+  2: "Qua",
+  3: "Qui",
+  4: "Sex",
+  5: "Sáb",
+  6: "Dom",
+};
+function formatarDiasFuncionamento(bitmask: number): string {
+  const dias = [0, 1, 2, 3, 4, 5, 6]
+    .filter((bit) => (bitmask & (1 << bit)) !== 0)
+    .map((bit) => ROTULO_DIA_BIT[bit]);
+  return dias.length > 0 ? dias.join(", ") : "nenhum";
+}
+
 // Os 3 limiares (dias antes do prazo) do alerta de prazo por e-mail — ver
 // src/lib/alerta-prazo-email.ts. Fora de CAMPOS_DECIMAL/CAMPOS_INTEIRO
 // (que exigem > 0) porque o terceiro limiar é 0 por padrão (dia do prazo).
@@ -312,6 +331,20 @@ export async function salvarParametros(
     };
   }
 
+  // Achado A2 da Parte 6 (auditoria de abrangência, 2026-08-27) — como a
+  // gráfica cota o prazo de entrega (dias úteis vs corridos) + em quais dias
+  // da semana ela funciona (bitmask, ver ParametrosGrafica.diasFuncionamento
+  // no schema). Vem como checkbox único + N checkboxes de dia-da-semana
+  // (ParametrosForm.tsx converte pro bitmask aqui, não no form).
+  const prazoEmDiasUteis = formData.get("prazoEmDiasUteis") === "on";
+  const diasFuncionamento = formData
+    .getAll("diaFuncionamento")
+    .map(Number)
+    .reduce((acc, bit) => (Number.isInteger(bit) && bit >= 0 && bit <= 6 ? acc | (1 << bit) : acc), 0);
+  if (diasFuncionamento === 0) {
+    return { ok: false, mensagem: "Selecione ao menos um dia de funcionamento." };
+  }
+
   const diasPrecoInsumoDesatualizadoBruto = formData.get("diasPrecoInsumoDesatualizado");
   if (
     typeof diasPrecoInsumoDesatualizadoBruto !== "string" ||
@@ -375,6 +408,8 @@ export async function salvarParametros(
       descontoMaxSemAprovacao: percentuaisInteiros.descontoMaxSemAprovacao,
       toleranciaTiragemPadraoPercent: percentuaisInteiros.toleranciaTiragemPadraoPercent,
       diasPrecoInsumoDesatualizado,
+      prazoEmDiasUteis,
+      diasFuncionamento,
     },
   });
 
@@ -508,6 +543,17 @@ export async function salvarParametros(
   if (diasPrecoInsumoDesatualizadoAntes !== diasPrecoInsumoDesatualizado) {
     antesTextos.push(`Dias para avisar preço de insumo desatualizado: ${diasPrecoInsumoDesatualizadoAntes}`);
     depoisTextos.push(`Dias para avisar preço de insumo desatualizado: ${diasPrecoInsumoDesatualizado}`);
+  }
+
+  const prazoEmDiasUteisAntes = parametrosAntes?.prazoEmDiasUteis ?? true;
+  if (prazoEmDiasUteisAntes !== prazoEmDiasUteis) {
+    antesTextos.push(`Prazo em dias úteis: ${prazoEmDiasUteisAntes ? "sim" : "não"}`);
+    depoisTextos.push(`Prazo em dias úteis: ${prazoEmDiasUteis ? "sim" : "não"}`);
+  }
+  const diasFuncionamentoAntes = parametrosAntes?.diasFuncionamento ?? 31;
+  if (diasFuncionamentoAntes !== diasFuncionamento) {
+    antesTextos.push(`Dias de funcionamento: ${formatarDiasFuncionamento(diasFuncionamentoAntes)}`);
+    depoisTextos.push(`Dias de funcionamento: ${formatarDiasFuncionamento(diasFuncionamento)}`);
   }
 
   if (antesTextos.length > 0) {

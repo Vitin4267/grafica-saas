@@ -55,29 +55,54 @@ async function criarFixture(opts: {
   alertaPrazoUltimoLimiarDias?: number | null;
   vendedorEhDono?: boolean;
   // Sobrescreve ParametrosGrafica.alertaPrazo* pra esta gráfica de teste —
-  // omitido = sem linha em ParametrosGrafica, cai nos defaults do schema
-  // (ativo=true, limiares 5/3/0), mesmo comportamento hardcoded de antes.
+  // omitido = usa os mesmos valores default do schema (ativo=true, limiares
+  // 5/3/0), mas SEMPRE grava a linha (ver comentário de diasFuncionamento
+  // abaixo) — mesmo comportamento observável de antes.
   parametrosPrazo?: { ativo?: boolean; limiar1?: number; limiar2?: number; limiar3?: number };
   // Cria um 3º funcionário (nem vendedor, nem DONO) e marca ele como
   // ResponsavelAdministrativo da área PRAZO_PRODUCAO — achado A9 da
   // auditoria de abrangência: com isto, o alerta deve rotear pra ele em vez
   // de cair nos DONOs.
   responsavelPrazo?: boolean;
+  // Achado A2 da Parte 6 (2026-08-27): ParametrosGrafica.prazoEmDiasUteis
+  // default TRUE no schema — omitido aqui usa esse mesmo default (true) de
+  // propósito, pra exercitar o caminho de produção real. diasFuncionamento
+  // default 127 (TODOS os 7 dias, não só seg-sex) neutraliza a diferença
+  // entre dias úteis/corridos nos testes de cascata que não são sobre isso
+  // — sem depender de qual dia da semana a suíte roda, contarDiasUteis
+  // devolve exatamente os mesmos dias corridos que os testes já esperavam
+  // antes desta feature existir. Só os testes dedicados a dias úteis (ver
+  // describe "dias úteis vs corridos" mais abaixo) passam um valor explícito.
+  prazoEmDiasUteis?: boolean;
+  diasFuncionamento?: number;
+  // Feriados cadastrados como offset em dias a partir de `hoje` (não-
+  // recorrentes) — só usado pelos testes de dias úteis.
+  feriadosOffsetDias?: number[];
 }): Promise<Fixture> {
   const s = sufixo();
   const grafica = await prisma.grafica.create({
     data: { nome: `Teste Alerta Prazo ${s}`, slug: `teste-alerta-prazo-${s}` },
   });
 
-  if (opts.parametrosPrazo) {
-    await prisma.parametrosGrafica.create({
-      data: {
+  await prisma.parametrosGrafica.create({
+    data: {
+      graficaId: grafica.id,
+      alertaPrazoAtivo: opts.parametrosPrazo?.ativo ?? true,
+      alertaPrazoLimiar1Dias: opts.parametrosPrazo?.limiar1 ?? 5,
+      alertaPrazoLimiar2Dias: opts.parametrosPrazo?.limiar2 ?? 3,
+      alertaPrazoLimiar3Dias: opts.parametrosPrazo?.limiar3 ?? 0,
+      prazoEmDiasUteis: opts.prazoEmDiasUteis ?? true,
+      diasFuncionamento: opts.diasFuncionamento ?? 127,
+    },
+  });
+
+  if (opts.feriadosOffsetDias && opts.feriadosOffsetDias.length > 0) {
+    await prisma.feriadoGrafica.createMany({
+      data: opts.feriadosOffsetDias.map((offset, indice) => ({
         graficaId: grafica.id,
-        alertaPrazoAtivo: opts.parametrosPrazo.ativo ?? true,
-        alertaPrazoLimiar1Dias: opts.parametrosPrazo.limiar1 ?? 5,
-        alertaPrazoLimiar2Dias: opts.parametrosPrazo.limiar2 ?? 3,
-        alertaPrazoLimiar3Dias: opts.parametrosPrazo.limiar3 ?? 0,
-      },
+        data: new Date(hoje.getTime() + offset * MS_POR_DIA),
+        descricao: `Feriado de teste ${indice}`,
+      })),
     });
   }
 
@@ -383,6 +408,64 @@ describe("enviarAlertasPrazoEmail — roteamento por ResponsavelAdministrativo (
       const destinatarios = dispararEventoEmailMock.mock.calls.map((c) => c[0].destinatario).sort();
       expect(destinatarios).toEqual([f.responsavelPrazoEmail, f.vendedorEmail].sort());
       expect(destinatarios).not.toContain(f.donoEmail);
+    },
+    TIMEOUT_MS
+  );
+});
+
+describe("enviarAlertasPrazoEmail — dias úteis vs corridos (achado A2 da Parte 6, 2026-08-27)", () => {
+  it(
+    "gráfica que cota em dias úteis pula feriados cadastrados ao contar 'faltam quantos dias'",
+    async () => {
+      // diasFuncionamento=127 (todos os 7 dias) isola o efeito dos feriados
+      // do dia da semana em que a suíte roda — só os 2 feriados cadastrados
+      // (dentro da janela de 5 dias corridos até o prazo) deveriam reduzir a
+      // contagem: 5 dias corridos - 2 feriados = 3 dias úteis, batendo com
+      // o 2º limiar padrão (3).
+      const f = await criarFixture({
+        diasAtePrazo: 5,
+        prazoEmDiasUteis: true,
+        diasFuncionamento: 127,
+        feriadosOffsetDias: [1, 2],
+      });
+
+      const resultado = await enviarAlertasPrazoEmail(ORIGEM);
+      expect(resultado.processados).toBe(1);
+
+      const pedido = await prisma.pedido.findUniqueOrThrow({ where: { id: f.pedidoId } });
+      expect(pedido.alertaPrazoUltimoLimiarDias).toBe(3);
+
+      expect(dispararEventoEmailMock).toHaveBeenCalledTimes(2);
+      for (const chamada of dispararEventoEmailMock.mock.calls) {
+        expect(chamada[0].tipo).toBe("pedido_prazo_proximo");
+        expect(chamada[0].texto).toContain("Faltam 3 dias");
+      }
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "gráfica que cota em dias corridos (prazoEmDiasUteis=false) ignora feriados cadastrados",
+    async () => {
+      // Mesmos 2 feriados do teste acima, mas prazoEmDiasUteis=false —
+      // devem ser ignorados: 5 dias corridos batem com o 1º limiar padrão
+      // (5), não com o 2º (3) como no teste de dias úteis.
+      const f = await criarFixture({
+        diasAtePrazo: 5,
+        prazoEmDiasUteis: false,
+        feriadosOffsetDias: [1, 2],
+      });
+
+      const resultado = await enviarAlertasPrazoEmail(ORIGEM);
+      expect(resultado.processados).toBe(1);
+
+      const pedido = await prisma.pedido.findUniqueOrThrow({ where: { id: f.pedidoId } });
+      expect(pedido.alertaPrazoUltimoLimiarDias).toBe(5);
+
+      expect(dispararEventoEmailMock).toHaveBeenCalledTimes(2);
+      for (const chamada of dispararEventoEmailMock.mock.calls) {
+        expect(chamada[0].texto).toContain("Faltam 5 dias");
+      }
     },
     TIMEOUT_MS
   );

@@ -42,6 +42,7 @@ export function OrcamentoAcoes({
   status,
   opcoes = [],
   totalOpcaoBase,
+  prazoEntregaSugerido = null,
 }: {
   orcamentoId: string;
   status: string;
@@ -51,6 +52,11 @@ export function OrcamentoAcoes({
   // (mesma escolha que o link público oferece, ver src/app/o/[token]).
   opcoes?: OpcaoParaAprovar[];
   totalOpcaoBase: string;
+  // Valor pré-calculado (hoje + prazoEntregaEstimadoDias, em dias úteis/
+  // feriados da gráfica — ver somarDiasUteis em src/lib/dias-uteis.ts) só
+  // pra PRÉ-PREENCHER o campo abaixo — puramente uma sugestão de
+  // defaultValue, o vendedor continua livre pra digitar outra data.
+  prazoEntregaSugerido?: string | null;
 }) {
   const [state, formAction, isPending] = useActionState(atualizarStatusOrcamento, null);
   const [opcaoEscolhidaId, setOpcaoEscolhidaId] = useState("");
@@ -208,6 +214,7 @@ export function OrcamentoAcoes({
                   label="Prazo de entrega (opcional)"
                   name="prazoEntrega"
                   type="date"
+                  defaultValue={prazoEntregaSugerido ?? undefined}
                   hint="Se preenchido, um alerta de atraso pode ser disparado depois dessa data."
                 />
               )}

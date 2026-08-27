@@ -1,25 +1,133 @@
 import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
+import type { SegmentoGrafica } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 
-// Conjunto sugerido de categorias — inspirado na planilha real de controle de
-// custo de uma gráfica cliente (papel, ferramental, laminação, clichê,
-// impressão, frete, mão de obra, retrabalho, comissão). Só usado como PONTO
-// DE PARTIDA na primeira vez que a gráfica abre a tela de configuração de
-// custo — depois disso a gráfica é livre pra renomear/desativar/criar as
-// suas próprias, nunca fixo em código daqui pra frente (mesmo princípio já
-// aplicado a UnidadeDimensao: cada gráfica trabalha de um jeito).
-export const CATEGORIAS_CUSTO_SUGERIDAS = [
-  "Papel",
-  "Ferramental (faca)",
-  "Laminação",
-  "Clichê",
-  "Impressão",
-  "Frete",
-  "Mão de obra",
-  "Retrabalho",
-  "Comissão",
-];
+// Conjunto sugerido de categorias, POR PERFIL DE GRÁFICA (Grafica.segmento —
+// achado A6 da Parte 6 da auditoria de abrangência, 2026-08-27). "PADRAO" é
+// a lista original — inspirada na planilha real de controle de custo da
+// gráfica-piloto (rótulos/etiquetas: papel, ferramental, laminação, clichê,
+// impressão, frete, mão de obra, retrabalho, comissão) — usada tanto pra
+// segmento=null (tenant anterior a este campo, ou que não respondeu) quanto
+// pra ROTULOS_ETIQUETAS/OUTRO. Cada lista é só PONTO DE PARTIDA na primeira
+// vez que a gráfica abre a tela de configuração de custo — depois disso a
+// gráfica é livre pra renomear/desativar/criar as suas próprias, nunca fixo
+// em código daqui pra frente (mesmo princípio já aplicado a UnidadeDimensao:
+// cada gráfica trabalha de um jeito).
+export const CATEGORIAS_CUSTO_SUGERIDAS: Record<SegmentoGrafica | "PADRAO", string[]> = {
+  PADRAO: [
+    "Papel",
+    "Ferramental (faca)",
+    "Laminação",
+    "Clichê",
+    "Impressão",
+    "Frete",
+    "Mão de obra",
+    "Retrabalho",
+    "Comissão",
+  ],
+  ROTULOS_ETIQUETAS: [
+    "Papel",
+    "Ferramental (faca)",
+    "Laminação",
+    "Clichê",
+    "Impressão",
+    "Frete",
+    "Mão de obra",
+    "Retrabalho",
+    "Comissão",
+  ],
+  OFFSET_COMERCIAL: [
+    "Papel",
+    "Chapa/CTP",
+    "Tinta offset",
+    "Laminação",
+    "Ferramental (faca)",
+    "Frete",
+    "Mão de obra",
+    "Retrabalho",
+    "Comissão",
+  ],
+  COMUNICACAO_VISUAL: [
+    "Lona/Vinil/ACM",
+    "Tinta/Insumo digital grande formato",
+    "Ilhós/Perfil de acabamento",
+    "Instalação/mão de obra externa",
+    "Frete",
+    "Mão de obra",
+    "Retrabalho",
+    "Comissão",
+  ],
+  ESTAMPARIA_VESTUARIO: [
+    "Malha/peça em branco",
+    "Tinta plastisol",
+    "Tela/quadro serigráfico",
+    "Filme DTF/Transfer",
+    "Frete",
+    "Mão de obra",
+    "Retrabalho",
+    "Comissão",
+  ],
+  BRINDES_PERSONALIZADOS: [
+    "Peça/brinde em branco",
+    "Gravação a laser/tampografia",
+    "Personalização digital (DTG/sublimação)",
+    "Embalagem individual",
+    "Frete",
+    "Mão de obra",
+    "Retrabalho",
+    "Comissão",
+  ],
+  EMBALAGEM_CARTONAGEM: [
+    "Papel cartão/cartonado",
+    "Chapa ondulada",
+    "Ferramental (faca)",
+    "Colagem/montagem",
+    "Frete",
+    "Mão de obra",
+    "Retrabalho",
+    "Comissão",
+  ],
+  EDITORIAL_LIVRO: [
+    "Papel miolo",
+    "Papel capa",
+    "Encadernação",
+    "Revisão/diagramação",
+    "Frete",
+    "Mão de obra",
+    "Retrabalho",
+    "Comissão",
+  ],
+  CORTE_LASER_ACRILICO: [
+    "Chapa de acrílico/MDF",
+    "Energia/manutenção do laser",
+    "Ferramental/matriz",
+    "Frete",
+    "Mão de obra",
+    "Retrabalho",
+    "Comissão",
+  ],
+  GRAFICA_RAPIDA: [
+    "Papel",
+    "Toner/Tinta digital",
+    "Encadernação/acabamento rápido",
+    "Frete",
+    "Mão de obra",
+    "Retrabalho",
+    "Comissão",
+  ],
+  OUTRO: [
+    "Papel",
+    "Ferramental (faca)",
+    "Laminação",
+    "Clichê",
+    "Impressão",
+    "Frete",
+    "Mão de obra",
+    "Retrabalho",
+    "Comissão",
+  ],
+};
 
 // Espelha a comissão do vendedor (model Comissao) como um CustoPedido, só
 // quando ParametrosGrafica.comissaoEntraNoCustoPedido está ligado (achado
@@ -36,8 +144,9 @@ export async function criarCustoAutomaticoComissao(
 ): Promise<void> {
   if (params.valorComissao <= 0) return;
 
-  // Prefere uma categoria chamada "Comissão" (a sugerida em
-  // CATEGORIAS_CUSTO_SUGERIDAS acima) — tenant que já tinha categorias antes
+  // Prefere uma categoria chamada "Comissão" (presente em toda lista de
+  // CATEGORIAS_CUSTO_SUGERIDAS acima, qualquer que seja o segmento) — tenant
+  // que já tinha categorias antes
   // desta feature não ganha "Comissão" retroativamente (garantirCategoriasCustoPadrao
   // só roda com zero categorias), então cai no fallback abaixo.
   const categoria =
@@ -85,13 +194,19 @@ export async function criarCustoAutomaticoComissao(
 // primeira vez é uma escolha da gráfica, não "esqueceu de configurar".
 // Chamado sob demanda pela tela de configuração (lazy-bootstrap), em vez de
 // tocar no fluxo de criação de conta/gráfica em múltiplos pontos de entrada
-// (/registro, /comecar, /admin/graficas).
+// (/registro, /comecar, /admin/graficas). Lê Grafica.segmento pra escolher a
+// lista certa em CATEGORIAS_CUSTO_SUGERIDAS — segmento=null (tenant anterior
+// a esse campo, ou que não respondeu) cai em "PADRAO", mesmo comportamento
+// de antes desta feature.
 export async function garantirCategoriasCustoPadrao(graficaId: string): Promise<void> {
   const existentes = await prisma.categoriaCusto.count({ where: { graficaId } });
   if (existentes > 0) return;
 
+  const grafica = await prisma.grafica.findUnique({ where: { id: graficaId }, select: { segmento: true } });
+  const categoriasSugeridas = CATEGORIAS_CUSTO_SUGERIDAS[grafica?.segmento ?? "PADRAO"];
+
   await prisma.categoriaCusto.createMany({
-    data: CATEGORIAS_CUSTO_SUGERIDAS.map((nome, indice) => ({
+    data: categoriasSugeridas.map((nome, indice) => ({
       graficaId,
       nome,
       ordem: indice,

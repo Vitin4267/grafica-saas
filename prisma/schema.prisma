@@ -66,6 +66,19 @@ model Grafica {
   // este padrão aqui nunca reconverte/altera orçamentos já salvos.
   unidadePadraoDimensao UnidadeDimensao @default(CM)
 
+  // Perfil de negócio da gráfica (achado A6 da Parte 6 da auditoria de
+  // abrangência, 2026-08-27) — DESCRITIVO, nunca restritivo: só semeia
+  // defaults (categorias de custo sugeridas, pacote de dados de exemplo) e
+  // filtra sugestões; uma gráfica ESTAMPARIA_VESTUARIO continua podendo
+  // cadastrar uma prensa offset sem nenhuma trava. null = tenant anterior a
+  // este campo, ou que ainda não respondeu — cai nos mesmos defaults de
+  // sempre (perfil rótulo/etiqueta da gráfica-piloto), sem mudança de
+  // comportamento. Pergunta opcional, respondida em /configuracoes/identidade.
+  segmento      SegmentoGrafica?
+  // Só obrigatório (validado no server) quando segmento = OUTRO — mesmo
+  // padrão de Cliente.segmentoOutro/OrigemCliente.origemOutro.
+  segmentoOutro String?
+
   usuarios              Usuario[]
   clientes              Cliente[]
   itensGrafica          ItemGrafica[]
@@ -99,6 +112,7 @@ model Grafica {
   entregas              Entrega[]
   filaGangRun           FilaGangRun[]
   gruposGangRun         GrupoGangRun[]
+  feriados              FeriadoGrafica[]
 
   @@map("graficas")
 }
@@ -135,6 +149,19 @@ model ParametrosGrafica {
   // nunca pago a ninguém. Esta aqui decide se o valor-base da comissão de
   // cada vendedor é o total do orçamento ou o lucro (total - custo).
   comissaoVendedorBase BaseComissao @default(VALOR)
+
+  // Achado A8 da auditoria de abrangência (pesquisa-abrangencia-modulos.md)
+  // — hoje Comissao.usuarioId nasce sempre de Orcamento.usuarioId (quem
+  // DIGITOU o orçamento no sistema), não de Cliente.vendedorId (quem
+  // efetivamente atende o cliente). Quando ligada, o vendedor do CLIENTE
+  // passa a ser a base de Comissao.usuarioId no fechamento (ver
+  // atualizarStatusOrcamento em src/app/orcamento/[id]/actions.ts e
+  // responderOrcamentoPublico em src/app/o/[token]/actions.ts), com
+  // fallback pra Orcamento.usuarioId quando o cliente não tem vendedor
+  // atribuído. default(false) preserva 100% do comportamento de hoje pra
+  // quem já usa o sistema — muitas gráficas pequenas não distinguem "quem
+  // atende o cliente" de "quem lança no sistema".
+  comissaoSegueVendedorDoCliente Boolean @default(false)
 
   // Flags da fase "custo real" (fase-custo-real.md §1.5) — tudo que varia
   // entre gráficas nasce aqui, nunca hardcoded.
@@ -204,12 +231,50 @@ model ParametrosGrafica {
   // campo existir) pra toda gráfica já cadastrada.
   mostrarEspecificacoesTecnicas Boolean @default(true)
 
+  // Calendário de dias úteis por tenant (achado A2 da Parte 6 — auditoria de
+  // abrangência, 2026-08-27): o PDF de orçamento promete "N dias úteis após
+  // aprovação" (texto fixo em src/lib/pdf/OrcamentoDocumento.tsx e
+  // src/app/o/[token]/page.tsx) mas nada no sistema sabia calcular um dia
+  // útil de verdade — nem sequer sabia que cada gráfica tem feriados
+  // municipais/estaduais próprios (Carnaval é feriado no Rio, não em SP; um
+  // feriado municipal de Araxá não existe em Manaus). false = a gráfica cota
+  // em dias corridos simples (ver somarDiasUteis em src/lib/dias-uteis.ts).
+  prazoEmDiasUteis Boolean @default(true)
+  // Bitmask dos dias da semana em que a gráfica funciona — bit0=segunda,
+  // bit1=terça, bit2=quarta, bit3=quinta, bit4=sexta, bit5=sábado,
+  // bit6=domingo (bit ligado = funciona nesse dia). Default 31 = 0b0011111 =
+  // segunda a sexta.
+  diasFuncionamento Int @default(31)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
 
   @@map("parametros_grafica")
+}
+
+// Feriado (ou ponto facultativo tratado como feriado) de UMA gráfica — nunca
+// um calendário nacional único: cada gráfica tem sua cidade/UF, com feriados
+// municipais/estaduais próprios (ver comentário de
+// ParametrosGrafica.prazoEmDiasUteis acima). Consumido por somarDiasUteis
+// (src/lib/dias-uteis.ts) e por enviarAlertasPrazoEmail (src/lib/alerta-prazo-email.ts).
+model FeriadoGrafica {
+  id        String   @id @default(cuid())
+  graficaId String
+  data      DateTime @db.Date
+  descricao String
+  // 25/12 (Natal) é recorrente todo ano; Carnaval/Corpus Christi são datas
+  // móveis e precisam ser recadastrados ano a ano — somarDiasUteis compara
+  // só mês/dia (ignorando o ano) quando este flag está ligado, nunca a data
+  // inteira.
+  recorrenteAnual Boolean @default(false)
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+
+  @@unique([graficaId, data])
+  @@index([graficaId])
+  @@map("feriados_grafica")
 }
 
 enum BaseComissao {
@@ -859,6 +924,8 @@ model Usuario {
   responsaveisAdministrativo  ResponsavelAdministrativo[]
   solicitacoesCompraFeitas    SolicitacaoCompra[]         @relation("SolicitacoesCompraSolicitadas")
   solicitacoesCompraAprovadas SolicitacaoCompra[]         @relation("SolicitacoesCompraAprovadas")
+  // Achado A8 da auditoria de abrangência — ver Cliente.vendedorId.
+  clientesVendedor            Cliente[]
 
   @@index([graficaId])
   @@map("usuarios")
@@ -1126,7 +1193,19 @@ model Cliente {
   // e vice-versa.
   margemPadraoOverride Decimal? @db.Decimal(5, 4)
 
+  // Achado A8 da auditoria de abrangência — vendedor/responsável comercial
+  // do cliente, distinto de Orcamento.usuarioId (quem DIGITOU o orçamento no
+  // sistema). Nullable: maioria das gráficas pequenas não faz essa
+  // distinção (comportamento de hoje, sem regressão). SetNull: vendedor
+  // desligado não pode travar a exclusão do cadastro do usuário nem do
+  // cliente, só perde a atribuição — mesmo padrão de Orcamento.duplicadoDeId.
+  // Só afeta Comissao.usuarioId quando
+  // ParametrosGrafica.comissaoSegueVendedorDoCliente está ligada (default
+  // false).
+  vendedorId String?
+
   grafica    Grafica     @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  vendedor   Usuario?    @relation(fields: [vendedorId], references: [id], onDelete: SetNull)
   orcamentos Orcamento[]
 
   // NULL não colide com NULL em unique index do Postgres — várias gráficas
@@ -1135,6 +1214,7 @@ model Cliente {
   // impede duas gráficas diferentes atenderem o mesmo cliente.
   @@unique([graficaId, documento])
   @@index([graficaId])
+  @@index([vendedorId])
   @@map("clientes")
 }
 
@@ -1166,6 +1246,26 @@ enum SegmentoCliente {
   REVENDA_AGENCIA
   INDUSTRIA
   ORGAO_PUBLICO
+  OUTRO
+}
+
+// Perfil de negócio da GRÁFICA (tenant), não confundir com SegmentoCliente
+// acima (perfil comercial de um cliente da gráfica) — achado A6 da Parte 6
+// da auditoria de abrangência (2026-08-27): nada no schema dizia que TIPO
+// de gráfica o tenant é, então defaults (categorias de custo sugeridas,
+// pacote de dados de exemplo) ficavam implicitamente calibrados só no
+// perfil da gráfica-piloto (rótulos/etiquetas). Mesmo padrão
+// enum-fechado+OUTRO do resto do schema — ver Grafica.segmento/segmentoOutro.
+enum SegmentoGrafica {
+  ROTULOS_ETIQUETAS
+  OFFSET_COMERCIAL
+  COMUNICACAO_VISUAL
+  ESTAMPARIA_VESTUARIO
+  BRINDES_PERSONALIZADOS
+  EMBALAGEM_CARTONAGEM
+  EDITORIAL_LIVRO
+  CORTE_LASER_ACRILICO
+  GRAFICA_RAPIDA
   OUTRO
 }
 

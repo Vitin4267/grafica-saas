@@ -54,7 +54,7 @@ export default async function ClientesPage({
       : {}),
   };
 
-  const [clientes, totalClientes, clientesDesativados, totalGeral] = await Promise.all([
+  const [clientes, totalClientes, clientesDesativados, totalGeral, vendedores] = await Promise.all([
     prisma.cliente.findMany({
       where,
       orderBy: { nome: "asc" },
@@ -67,6 +67,15 @@ export default async function ClientesPage({
       orderBy: { desativadoEm: "desc" },
     }),
     prisma.cliente.count({ where: { graficaId: usuario.graficaId } }),
+    // Achado A8 — lista fechada de usuários que podem ser atribuídos como
+    // vendedor de um cliente: ativos da própria gráfica. Sem role
+    // "vendedor" no sistema hoje, então lista todos (DONO/ADMIN/OPERADOR
+    // podem todos vender, mesmo princípio de Usuario.comissaoPercent).
+    prisma.usuario.findMany({
+      where: { graficaId: usuario.graficaId, desativadoEm: null },
+      orderBy: { nome: "asc" },
+      select: { id: true, nome: true },
+    }),
   ]);
 
   const totalPaginas = Math.max(1, Math.ceil(totalClientes / POR_PAGINA));
@@ -103,7 +112,7 @@ export default async function ClientesPage({
               <h2 className="mb-5 text-base font-semibold text-slate-900 dark:text-white">
                 Novo cliente
               </h2>
-              <ClienteForm />
+              <ClienteForm vendedores={vendedores} />
             </Card>
           )}
 

@@ -48,7 +48,15 @@ export type OrcamentoParaPdf = {
     // que são dado comercial interno e não podem chegar no PDF (nem no
     // autenticado, nem no público). Ver comentário equivalente no topo de
     // DadosPdfOrcamento.
-    parametros: { termosCondicoesPdf: string | null; mostrarEspecificacoesTecnicas: boolean } | null;
+    parametros: {
+      termosCondicoesPdf: string | null;
+      mostrarEspecificacoesTecnicas: boolean;
+      // Achado A2 da Parte 6 (auditoria de abrangência, 2026-08-27) — decide
+      // se o rótulo do prazo estimado (abaixo) fala em "dias úteis" ou "dias
+      // corridos", em vez do literal fixo de sempre. Ver
+      // ParametrosGrafica.prazoEmDiasUteis no schema.
+      prazoEmDiasUteis: boolean;
+    } | null;
   };
   // Bloco 1 (dados gerais) — seguros pro cliente ver, ao contrário de
   // observações (interno) e etapas de produção (interno), que nunca entram
@@ -124,6 +132,9 @@ export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
   // parametros é nullable) continua mostrando tudo, o comportamento de
   // sempre que já existia antes deste toggle.
   const mostrarEspecificacoesTecnicas = orcamento.grafica.parametros?.mostrarEspecificacoesTecnicas ?? true;
+  // Default true preserva o texto de sempre ("dias úteis") pra gráfica sem
+  // ParametrosGrafica ainda — mesmo espírito do default no schema.
+  const prazoEmDiasUteis = orcamento.grafica.parametros?.prazoEmDiasUteis ?? true;
   const dadosPedido = {
     vendedor: orcamento.vendedor,
     tipoPedido: orcamento.tipoPedido ? (ROTULO_TIPO_PEDIDO[orcamento.tipoPedido] ?? orcamento.tipoPedido) : null,
@@ -153,6 +164,7 @@ export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
       orcamento.toleranciaTiragemPercent !== null ? Number(orcamento.toleranciaTiragemPercent) : null,
     total: formatoMoeda.format(Number(orcamento.total)),
     dadosPedido: temDadosPedido ? dadosPedido : null,
+    prazoEmDiasUteis,
     termosCondicoesPdf: orcamento.grafica.parametros?.termosCondicoesPdf ?? null,
     itens: orcamento.itens.map((item) => ({
       // Achado B6 — descrição específica do pedido (ex: "Banner 3×1m lona

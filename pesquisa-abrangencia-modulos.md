@@ -244,6 +244,62 @@ explícita, mesma instabilidade intermitente de conexão ao Neon de sempre
 (retries resolveram). Verificação: `tsc --noEmit` limpo, 840/840 testes (80
 arquivos) passando, `npm run build` OK.
 
+**Atualização 2026-08-27 (rodada 11) — mais 3 achados CONSTRUÍDOS** (3
+subagentes em paralelo, primeira rodada depois de commitar as 10
+anteriores):
+- **A6 da Parte 6** (nada no schema diz que tipo de gráfica o tenant é) —
+  `Grafica.segmento`/`segmentoOutro` (10 valores + OUTRO), respondido de
+  forma opcional e não-bloqueante em `/configuracoes/identidade`.
+  `CATEGORIAS_CUSTO_SUGERIDAS` virou `Record<SegmentoGrafica | "PADRAO",
+  string[]>` com listas curadas pra cada segmento; `dados-exemplo.ts` ganhou
+  pacotes de Comunicação Visual e Estamparia além do pacote Offset
+  original; e `listarPendenciasConfiguracao` ganhou a checagem genérica
+  `MAQUINA_NAO_VINCULADA` (item de maior retorno do achado: produto OFFSET
+  sem prensa, DIGITAL sem impressora etc. antes só quebrava em silêncio na
+  hora de orçar, com `ErroPrecificacao` — agora vira pendência visível).
+  `segmento` é só descritivo, nunca restritivo.
+- **A2 da Parte 6** (PDF promete "dias úteis" sem calendário nenhum por
+  trás) — `ParametrosGrafica.prazoEmDiasUteis`/`diasFuncionamento` (bitmask
+  seg-dom) + `model FeriadoGrafica` novo (por gráfica, nunca um calendário
+  nacional único — Carnaval é feriado estadual no Rio e não em SP). Novo
+  helper `somarDiasUteis` em `src/lib/dias-uteis.ts` (deliberadamente NÃO
+  em `data.ts`, que é importado por componente cliente — evita vazar
+  Prisma pro bundle do browser); tela de aprovação passa a SUGERIR
+  `prazoEntrega` a partir do prazo estimado (campo continua editável);
+  `alerta-prazo-email.ts` conta em dia útil quando o tenant cota assim, só
+  no caminho "ainda não venceu" (o "venceu há N dias" continua em dias
+  corridos — "atraso em dias úteis" não é um conceito que faça sentido
+  aí); PDF deriva o texto ("dias úteis" vs. "dias corridos") do parâmetro
+  em vez do literal fixo de sempre. Tela nova `/configuracoes/feriados`
+  (CRUD), semeia os 8 feriados nacionais fixos na primeira abertura, mesmo
+  padrão lazy-bootstrap de `garantirCategoriasCustoPadrao`.
+- **A8 da Parte 5** (sem vendedor atribuído ao cliente — comissão sempre
+  vai pra quem DIGITOU o orçamento, não pra quem vendeu) —
+  `Cliente.vendedorId` (FK `Usuario`) +
+  `ParametrosGrafica.comissaoSegueVendedorDoCliente` (default `false`,
+  preserva 100% do comportamento de hoje). Quando ligada,
+  `Comissao.usuarioId` no fechamento passa a vir de `Cliente.vendedorId`
+  (lido na hora da aprovação, nunca snapshotado — mesmo princípio já usado
+  pra `margemLucroOverride` na rodada 10) em vez de `Orcamento.usuarioId`,
+  com fallback pro comportamento de hoje quando o cliente não tem vendedor.
+  Espelhado nos dois caminhos de aprovação (painel autenticado e link
+  público `/o/[token]`). Escopo contido: nenhuma role nova de "vendedor",
+  nenhuma tela de "minha carteira" — só o campo e o fio até a comissão.
+
+Achado extra na verificação: os 3 subagentes editaram `prisma/schema.prisma`
+concorrentemente (esperado, sem worktree isolado) — reconciliação limpa,
+sem nenhuma edição sobrescrita. Um teste de integração do achado A8
+(`actions.vendedor-cliente.test.ts`) falhava com `resultado.ok === false`
+porque o usuário de teste "criador" nasceu com `papel: "OPERADOR"` sem
+nenhuma `PermissaoUsuario` de `ORCAMENTO` concedida — `podeEditarModulo`
+barra OPERADOR sem permissão explícita antes mesmo de chegar na lógica de
+comissão (bug do fixture do teste, não da action; corrigido trocando pra
+`papel: "ADMIN"`, mesmo padrão já usado em `actions.comissao-custo.test.ts`).
+As 3 migrations (aditivas) aplicadas ao banco de dev com aprovação
+explícita, com a mesma instabilidade intermitente de conexão ao Neon já
+vista antes (1 retry resolveu). Verificação: `tsc --noEmit` limpo, 867/867
+testes (84 arquivos) passando, `npm run build` OK.
+
 ## Como ler cada parte
 
 Cada uma das 6 partes abaixo cobre um módulo (ou par de módulos muito
@@ -1118,7 +1174,9 @@ Cliente.margemPadraoOverride Decimal? @db.Decimal(5,4)
 
 *Nível 2 (se e quando aparecer demanda real):* `model TabelaPreco { graficaId, nome, ajustePercent, ativa }` + `Cliente.tabelaPrecoId String?` + preço por item opcional (`TabelaPrecoItem`). Cuidado de nomenclatura: `TabelaPrecoPapel` já existe no schema e é **outra coisa** (preço/kg por gramatura de papel) — o nome novo precisa não confundir.
 
-### A8. Não há vendedor/responsável comercial atribuído ao cliente — e o vendedor do orçamento é texto livre desalinhado da comissão
+### A8. Não há vendedor/responsável comercial atribuído ao cliente — e o vendedor do orçamento é texto livre desalinhado da comissão — **CONSTRUÍDO 2026-08-27 (rodada 11)**
+
+**Status:** ver bloco "Atualização (rodada 11)" no topo do documento — `Cliente.vendedorId` + `ParametrosGrafica.comissaoSegueVendedorDoCliente` (default `false`, sem mudança de comportamento pra quem não liga), lido na hora da aprovação (nunca snapshotado) nos dois caminhos (painel e link público). **Escopo restrito de propósito:** `Orcamento.vendedor` (texto livre) e "minha carteira de clientes" continuam de fora — só o campo e o fio até a comissão.
 
 **O que falta:** `Cliente` não tem dono comercial. No orçamento existem **dois conceitos concorrentes de vendedor**: `Orcamento.vendedor String?` (texto livre, digitado) e `Orcamento.usuarioId` (quem criou o registro) — e é o **segundo** que vira `Comissao.usuarioId` no fechamento (`model Comissao`: "usuarioId — vendedor, snapshot de Orcamento.usuarioId"). Ou seja, se um auxiliar administrativo digita o orçamento que a vendedora fechou, a comissão é atribuída ao auxiliar e o nome da vendedora fica num campo de texto que ninguém lê.
 
@@ -1256,7 +1314,9 @@ O comentário do schema diz literalmente "tudo que varia entre gráficas nasce a
 
 **Proposta.** Não é mudança de schema — é completar `ParametrosForm.tsx` + `salvarParametros` com uma seção nova ("Custo e margem" / "Política de desconto"), reaproveitando o padrão de log campo-a-campo que a action já tem para os `CAMPOS_DECIMAL`. Dois cuidados: `categoriaCustoConsumoPadraoId` precisa de `<select>` alimentado por `CategoriaCusto` ativa (e validado contra o tenant antes de gravar), e `margemFaixaBaixa < margemFaixaBoa` precisa de validação na action, no mesmo estilo da validação de ordem decrescente dos limiares de prazo.
 
-## A2 — O PDF promete "dias úteis" ao cliente, mas o sistema não tem calendário de dias úteis nem feriado
+## A2 — O PDF promete "dias úteis" ao cliente, mas o sistema não tem calendário de dias úteis nem feriado — **CONSTRUÍDO 2026-08-27 (rodada 11)**
+
+**Status:** ver bloco "Atualização (rodada 11)" no topo do documento — `ParametrosGrafica.prazoEmDiasUteis`/`diasFuncionamento` + `model FeriadoGrafica` por gráfica, helper `somarDiasUteis`, tela `/configuracoes/feriados`, PDF/alerta-prazo-email/sugestão de prazo na aprovação todos ligados ao parâmetro real.
 
 **O que falta.** `src/lib/pdf/OrcamentoDocumento.tsx:282` e `src/app/o/[token]/page.tsx:179` renderizam, em texto fixo, `` `${prazoEntregaEstimadoDias} dias úteis após aprovação` ``. Nenhum outro ponto do sistema conhece o conceito: `Pedido.prazoEntrega` é digitado à mão na aprovação (`src/app/orcamento/[id]/actions.ts:131-135`, sem nenhum cálculo a partir do estimado); `src/lib/alerta-atraso.ts` faz `Math.floor((hoje - prazo) / 86_400_000)` — dias corridos; `src/lib/alerta-prazo-email.ts` calcula `diasParaPrazo` também em dias corridos. Não existe model de feriado, de dia de funcionamento (sábado?) nem de turno — `grep -i "turno|capacidade|expediente|jornada"` não retorna nada em `src/` fora de um comentário sobre fração de folha em `gang-run.ts`.
 
@@ -1374,7 +1434,9 @@ perfilAcessoId String?  // null = comportamento de hoje, permissão só individu
 
 Resolução: permissão individual (se a linha existir) vence a do perfil; sem nenhuma das duas, mantém-se "ausência = sem acesso". Prioridade média, não alta: dói na gráfica de 20+ pessoas, não na de 5 — mas é barato agora e caro depois de centenas de tenants terem permissões espalhadas linha a linha.
 
-## A6 — Nada no schema diz que TIPO de gráfica o tenant é, e por isso todo default do produto ficou congelado no perfil da gráfica-piloto
+## A6 — Nada no schema diz que TIPO de gráfica o tenant é, e por isso todo default do produto ficou congelado no perfil da gráfica-piloto — **CONSTRUÍDO 2026-08-27 (rodada 11)**
+
+**Status:** ver bloco "Atualização (rodada 11)" no topo do documento — `Grafica.segmento`/`segmentoOutro` (descritivo, não restritivo), `CATEGORIAS_CUSTO_SUGERIDAS` por segmento, pacotes de dados de exemplo por segmento, e a pendência `MAQUINA_NAO_VINCULADA` (item de maior retorno, vale pra qualquer segmento).
 
 **O que falta.** `model Grafica` tem `nome`, `slug`, `compartilharMeuNegocio`, `logoUrl`, `corPrimaria`, `unidadePadraoDimensao`. Não há campo de segmento, porte, nem processos que a gráfica opera. Como nenhum código pode perguntar "que tipo de gráfica é essa?", todos os pontos de partida do sistema foram fixados num perfil só — três instâncias verificadas:
 

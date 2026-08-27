@@ -22,6 +22,11 @@ export type PendenciaConfiguracao =
       tipo: "PAPEL_MATERIA_PRIMA_FALTANDO";
       itemGraficaId: string;
       nomeProduto: string;
+    }
+  | {
+      tipo: "MAQUINA_NAO_VINCULADA";
+      itemGraficaId: string;
+      nomeProduto: string;
     };
 
 export async function listarPendenciasConfiguracao(
@@ -74,5 +79,36 @@ export async function listarPendenciasConfiguracao(
     }));
   }
 
-  return [...pendenciasBobina, ...pendenciasPapel];
+  // Produto OFFSET/FLEXOGRAFIA/DIGITAL/SERIGRAFIA/SUBLIMACAO/
+  // ESTAMPAGEM_QUENTE/PERSONALIZACAO ativo sem a máquina correspondente
+  // vinculada — o motor de preço lança ErroPrecificacao pra qualquer um
+  // desses (ver PRENSA_NAO_CONFIGURADA/MAQUINA_FLEXO_NAO_CONFIGURADA/
+  // IMPRESSORA_DIGITAL_NAO_CONFIGURADA/MAQUINA_SETUP_POR_PECA_NAO_CONFIGURADA
+  // em src/lib/pricing/carregar.ts), mas hoje só aparece pro vendedor na
+  // hora de montar um orçamento. Igual à checagem de bobina acima: pega
+  // antes, independente do segmento da gráfica — vale pra qualquer perfil.
+  const itensSemMaquina = await prisma.itemGrafica.findMany({
+    where: {
+      graficaId,
+      ativo: true,
+      OR: [
+        { modeloCalculo: "OFFSET", prensaId: null },
+        { modeloCalculo: "FLEXOGRAFIA", maquinaFlexografiaId: null },
+        { modeloCalculo: "DIGITAL", impressoraDigitalId: null },
+        {
+          modeloCalculo: { in: ["SERIGRAFIA", "SUBLIMACAO", "ESTAMPAGEM_QUENTE", "PERSONALIZACAO"] },
+          maquinaSetupPorPecaId: null,
+        },
+      ],
+    },
+    include: { itemCatalogo: true },
+  });
+
+  const pendenciasMaquina = itensSemMaquina.map((item) => ({
+    tipo: "MAQUINA_NAO_VINCULADA" as const,
+    itemGraficaId: item.id,
+    nomeProduto: item.itemCatalogo.nome,
+  }));
+
+  return [...pendenciasBobina, ...pendenciasPapel, ...pendenciasMaquina];
 }

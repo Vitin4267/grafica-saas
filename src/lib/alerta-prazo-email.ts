@@ -2,6 +2,7 @@ import "server-only";
 import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { dataInputParaUTC, hojeBrasiliaInputValue, formatoData } from "@/lib/data";
+import { contarDiasUteis, type CalendarioTrabalho } from "@/lib/dias-uteis";
 import { dispararEventoEmail } from "@/lib/email/webhook-email";
 import {
   templatePedidoPrazoProximo,
@@ -154,7 +155,16 @@ export async function enviarAlertasPrazoEmail(
   // ParametrosGrafica (gráfica que nunca configurou nada em /configuracoes)
   // usa os defaults do schema, mesmo padrão de margemFaixaBaixa/margemFaixaBoa
   // em src/app/meu-negocio/relatorios/page.tsx.
-  const parametrosAlertaPorGrafica = new Map<string, { ativo: boolean; limiares: number[] }>();
+  const parametrosAlertaPorGrafica = new Map<
+    string,
+    { ativo: boolean; limiares: number[]; prazoEmDiasUteis: boolean; diasFuncionamento: number }
+  >();
+  // Cache do calendário de dias úteis (feriados cadastrados em
+  // FeriadoGrafica) por gráfica dentro desta run — só populado sob demanda,
+  // pra gráfica que efetivamente cota em dias úteis (achado A2 da Parte 6,
+  // 2026-08-27): a maioria dos pedidos processados numa run não precisa
+  // dessa query extra.
+  const calendarioPorGrafica = new Map<string, CalendarioTrabalho>();
 
   for (const pedido of pedidos) {
     if (!parametrosAlertaPorGrafica.has(pedido.graficaId)) {
@@ -165,6 +175,8 @@ export async function enviarAlertasPrazoEmail(
           alertaPrazoLimiar1Dias: true,
           alertaPrazoLimiar2Dias: true,
           alertaPrazoLimiar3Dias: true,
+          prazoEmDiasUteis: true,
+          diasFuncionamento: true,
         },
       });
       parametrosAlertaPorGrafica.set(pedido.graficaId, {
@@ -174,19 +186,44 @@ export async function enviarAlertasPrazoEmail(
           parametros?.alertaPrazoLimiar2Dias ?? LIMIAR_2_PADRAO,
           parametros?.alertaPrazoLimiar3Dias ?? LIMIAR_3_PADRAO,
         ],
+        // Defaults espelhando ParametrosGrafica no schema (mesmo raciocínio
+        // do comentário grande no topo do arquivo) — achado A2 da Parte 6.
+        prazoEmDiasUteis: parametros?.prazoEmDiasUteis ?? true,
+        diasFuncionamento: parametros?.diasFuncionamento ?? 31,
       });
     }
     // Gate logo no início do processamento desta gráfica: se ela desligou o
     // alerta de prazo (alertaPrazoAtivo=false), pula o pedido sem gerar
     // nenhum e-mail — nem marca alertaPrazoUltimoLimiarDias, então se a
     // gráfica reativar depois o pedido volta a ser avaliado normalmente.
-    const { ativo, limiares } = parametrosAlertaPorGrafica.get(pedido.graficaId)!;
+    const { ativo, limiares, prazoEmDiasUteis, diasFuncionamento } = parametrosAlertaPorGrafica.get(
+      pedido.graficaId
+    )!;
     if (!ativo) continue;
 
     const prazoEntrega = pedido.prazoEntrega!;
     // Ambos já são meia-noite UTC representando um dia de calendário — a
     // subtração dá dias inteiros exatos, sem arredondamento necessário.
-    const diasParaPrazo = (prazoEntrega.getTime() - hoje.getTime()) / MS_POR_DIA;
+    const diasParaPrazoCalendario = (prazoEntrega.getTime() - hoje.getTime()) / MS_POR_DIA;
+    // Achado A2 da Parte 6 (auditoria de abrangência, 2026-08-27): o PDF/link
+    // público prometem "N dias ÚTEIS" — o alerta de prazo precisa contar do
+    // mesmo jeito quando a gráfica cota assim, senão o limiar "faltam 5 dias"
+    // pode disparar cedo/tarde demais em relação ao que o cliente leu. Só
+    // entra em ação enquanto o prazo ainda não chegou (diasParaPrazoCalendario
+    // > 0) — pedido no dia do prazo ou atrasado continua em dias corridos
+    // simples (ver `-diasParaPrazo` no template de "venceu há N dias" abaixo,
+    // onde "dias úteis de atraso" não faz sentido de exibir).
+    let diasParaPrazo = diasParaPrazoCalendario;
+    if (prazoEmDiasUteis && diasParaPrazoCalendario > 0) {
+      if (!calendarioPorGrafica.has(pedido.graficaId)) {
+        const feriados = await prisma.feriadoGrafica.findMany({
+          where: { graficaId: pedido.graficaId },
+          select: { data: true, recorrenteAnual: true },
+        });
+        calendarioPorGrafica.set(pedido.graficaId, { diasFuncionamento, feriados });
+      }
+      diasParaPrazo = contarDiasUteis(hoje, prazoEntrega, calendarioPorGrafica.get(pedido.graficaId)!);
+    }
 
     const limiarAplicavel = calcularLimiarAplicavel(diasParaPrazo, limiares);
     if (limiarAplicavel === null) continue; // prazo longe demais ainda pros limiares desta gráfica

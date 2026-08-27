@@ -54,6 +54,8 @@ export default async function ConfiguracoesIdentidadePage() {
           emailContatoAtual={usuario.grafica.emailContato}
           siteAtual={usuario.grafica.site}
           enderecoResumidoAtual={usuario.grafica.enderecoResumido}
+          segmentoAtual={usuario.grafica.segmento}
+          segmentoOutroAtual={usuario.grafica.segmentoOutro}
         />
       </main>
     </div>

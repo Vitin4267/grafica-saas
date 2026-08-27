@@ -63,6 +63,29 @@ function validarSegmento(
   return { ok: true, segmento: segmento as SegmentoCliente, segmentoOutro: null };
 }
 
+// Achado A8 da auditoria de abrangência — vendedor/responsável comercial do
+// cliente, opcional. Precisa pertencer à MESMA gráfica (nunca confia no id
+// cru do formulário) e estar ativo — a lista que alimenta o <select> já só
+// mostra usuários com desativadoEm: null, então um id de usuário desativado
+// aqui só pode vir de um POST forjado.
+async function validarVendedorId(
+  formData: FormData,
+  graficaId: string
+): Promise<{ ok: true; vendedorId: string | null } | { ok: false; mensagem: string }> {
+  const vendedorId = String(formData.get("vendedorId") ?? "").trim();
+  if (!vendedorId) {
+    return { ok: true, vendedorId: null };
+  }
+  const vendedor = await prisma.usuario.findFirst({
+    where: { id: vendedorId, graficaId, desativadoEm: null },
+    select: { id: true },
+  });
+  if (!vendedor) {
+    return { ok: false, mensagem: "Vendedor inválido." };
+  }
+  return { ok: true, vendedorId: vendedor.id };
+}
+
 // Achado A7 — sobrescreve ParametrosGrafica.margemPadrao só pra este
 // cliente. Mesmo formato de ParametrosGrafica.margemPadrao (fração 0-1,
 // nunca 0-100) e mesma guarda de presença-antes-de-Number() de
@@ -130,6 +153,10 @@ export async function criarCliente(
   if (!validacaoMargem.ok) {
     return validacaoMargem;
   }
+  const validacaoVendedor = await validarVendedorId(formData, usuario.graficaId);
+  if (!validacaoVendedor.ok) {
+    return validacaoVendedor;
+  }
 
   const {
     nome,
@@ -171,6 +198,7 @@ export async function criarCliente(
         segmento: validacaoSegmento.segmento,
         segmentoOutro: validacaoSegmento.segmentoOutro,
         margemPadraoOverride: validacaoMargem.valor,
+        vendedorId: validacaoVendedor.vendedorId,
       },
     });
   } catch (erro) {
@@ -241,6 +269,10 @@ export async function atualizarCliente(
   if (!validacaoMargem.ok) {
     return validacaoMargem;
   }
+  const validacaoVendedor = await validarVendedorId(formData, usuario.graficaId);
+  if (!validacaoVendedor.ok) {
+    return validacaoVendedor;
+  }
 
   const {
     nome,
@@ -291,6 +323,7 @@ export async function atualizarCliente(
         segmento: validacaoSegmento.segmento,
         segmentoOutro: validacaoSegmento.segmentoOutro,
         margemPadraoOverride: validacaoMargem.valor,
+        vendedorId: validacaoVendedor.vendedorId,
         bloqueadoParaVenda,
         motivoBloqueio,
       },

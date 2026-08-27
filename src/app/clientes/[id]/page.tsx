@@ -26,9 +26,18 @@ export default async function ClienteDetalhePage({
   await exigirVerModulo(usuario, "CLIENTES");
   const podeEditar = await podeEditarModulo(usuario, "CLIENTES");
 
-  const cliente = await prisma.cliente.findFirst({
-    where: { id, graficaId: usuario.graficaId },
-  });
+  const [cliente, vendedores] = await Promise.all([
+    prisma.cliente.findFirst({
+      where: { id, graficaId: usuario.graficaId },
+    }),
+    // Achado A8 — mesma lista fechada de ClientesPage (usuários ativos da
+    // gráfica, sem role "vendedor" explícita no sistema).
+    prisma.usuario.findMany({
+      where: { graficaId: usuario.graficaId, desativadoEm: null },
+      orderBy: { nome: "asc" },
+      select: { id: true, nome: true },
+    }),
+  ]);
 
   if (!cliente) {
     notFound();
@@ -65,6 +74,7 @@ export default async function ClienteDetalhePage({
         <ClienteEditForm
           clienteId={cliente.id}
           podeEditar={podeEditar}
+          vendedores={vendedores}
           valoresIniciais={{
             nome: cliente.nome,
             email: cliente.email ?? "",
@@ -88,6 +98,7 @@ export default async function ClienteDetalhePage({
             segmentoOutro: cliente.segmentoOutro ?? "",
             margemPadraoOverride:
               cliente.margemPadraoOverride !== null ? cliente.margemPadraoOverride.toString() : "",
+            vendedorId: cliente.vendedorId ?? "",
             desativadoEm: cliente.desativadoEm ? cliente.desativadoEm.toISOString() : null,
           }}
         />

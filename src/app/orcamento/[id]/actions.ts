@@ -121,7 +121,8 @@ export async function atualizarStatusOrcamento(
 
   const orcamento = await prisma.orcamento.findFirst({
     where: { id: orcamentoId, graficaId: usuario.graficaId },
-    include: { cliente: { select: { bloqueadoParaVenda: true, motivoBloqueio: true } } },
+    // vendedorId: achado A8 — ver bloco de comissão logo abaixo.
+    include: { cliente: { select: { bloqueadoParaVenda: true, motivoBloqueio: true, vendedorId: true } } },
   });
   if (!orcamento) {
     return { ok: false, mensagem: "Orçamento não encontrado." };
@@ -170,21 +171,40 @@ export async function atualizarStatusOrcamento(
     // opcaoEscolhidaId — sempre os itens da opção ESCOLHIDA (base ou
     // alternativa), nunca "todos os itens do orçamento" (que incluiria
     // opções perdedoras, se houver mais de uma).
-    const [orcamentoComItens, usuarioVendedor, parametros, previsaoCusto] = await Promise.all([
+    const [orcamentoComItens, parametros, previsaoCusto] = await Promise.all([
       prisma.orcamentoItem.findMany({
         where: { orcamentoId, opcaoId: opcaoEscolhidaId },
         include: { itemGrafica: { select: { precoCompra: true } } },
       }),
-      prisma.usuario.findUnique({
-        where: { id: orcamento.usuarioId },
-        select: { comissaoPercent: true },
-      }),
       prisma.parametrosGrafica.findUnique({
         where: { graficaId: usuario.graficaId },
-        select: { comissaoVendedorBase: true, comissaoEntraNoCustoPedido: true },
+        select: {
+          comissaoVendedorBase: true,
+          comissaoEntraNoCustoPedido: true,
+          comissaoSegueVendedorDoCliente: true,
+        },
       }),
       calcularPrevisaoAprovacaoPedido(orcamentoId, usuario.graficaId, undefined, opcaoEscolhidaId),
     ]);
+
+    // Achado A8 da auditoria de abrangência — a quem a comissão é atribuída.
+    // Leitura tardia direto de Cliente.vendedorId (mesmo princípio de
+    // margemLucroOverride em src/lib/orcamento-precificacao.ts: nunca
+    // snapshotado em Orcamento, sempre lido do cliente no momento em que é
+    // consumido) — aqui o único ponto de consumo é a criação da Comissao,
+    // que acontece uma vez só, no momento da aprovação, então não há
+    // necessidade de um campo novo em Orcamento. Fallback pra
+    // Orcamento.usuarioId (comportamento de hoje) quando a flag está
+    // desligada OU o cliente não tem vendedor atribuído.
+    const vendedorComissaoId =
+      parametros?.comissaoSegueVendedorDoCliente && orcamento.cliente.vendedorId
+        ? orcamento.cliente.vendedorId
+        : orcamento.usuarioId;
+
+    const usuarioVendedor = await prisma.usuario.findUnique({
+      where: { id: vendedorComissaoId },
+      select: { comissaoPercent: true },
+    });
 
     // Total da opção ESCOLHIDA — nunca orcamento.total direto: antes da
     // promoção (que só acontece dentro da transação abaixo, via
@@ -294,7 +314,7 @@ export async function atualizarStatusOrcamento(
           create: {
             graficaId: usuario.graficaId,
             orcamentoId,
-            usuarioId: orcamento.usuarioId,
+            usuarioId: vendedorComissaoId,
             baseCalculo: dadosComissao.baseCalculo,
             percentualAplicado: percentualVendedor!,
             valorBase: dadosComissao.valorBase,

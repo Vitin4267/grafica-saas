@@ -26,7 +26,7 @@ function orcamentoBase(
       emailContato: null,
       site: null,
       enderecoResumido: null,
-      parametros: { termosCondicoesPdf: null, mostrarEspecificacoesTecnicas: true },
+      parametros: { termosCondicoesPdf: null, mostrarEspecificacoesTecnicas: true, prazoEmDiasUteis: true },
     },
     vendedor: null,
     tipoPedido: null,
@@ -78,5 +78,27 @@ describe("mapearDadosPdf — nome do item (achado B6)", () => {
   it("descricaoLivre só com espaços em branco: cai no nome do catálogo (trim vira vazio)", () => {
     const dados = mapearDadosPdf(orcamentoBase({ descricaoLivre: "   " }));
     expect(dados.itens[0].nome).toBe("Banner em Lona");
+  });
+});
+
+// Achado A2 da Parte 6 (auditoria de abrangência, 2026-08-27) — o rótulo do
+// prazo estimado no PDF ("dias úteis" vs "dias corridos") passa a vir de
+// ParametrosGrafica.prazoEmDiasUteis, não mais fixo em código.
+describe("mapearDadosPdf — dias úteis vs corridos (achado A2 da Parte 6)", () => {
+  it("prazoEmDiasUteis true (ou gráfica sem ParametrosGrafica): flag sai true", () => {
+    const dados = mapearDadosPdf(orcamentoBase());
+    expect(dados.prazoEmDiasUteis).toBe(true);
+  });
+
+  it("prazoEmDiasUteis false: flag sai false", () => {
+    const base = orcamentoBase();
+    const dados = mapearDadosPdf({
+      ...base,
+      grafica: {
+        ...base.grafica,
+        parametros: { termosCondicoesPdf: null, mostrarEspecificacoesTecnicas: true, prazoEmDiasUteis: false },
+      },
+    });
+    expect(dados.prazoEmDiasUteis).toBe(false);
   });
 });

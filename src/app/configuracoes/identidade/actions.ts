@@ -21,6 +21,8 @@ import {
   removerArquivo,
 } from "@/lib/billing/armazenamento";
 import { registrarAuditoria } from "@/lib/auditoria";
+import { ORDEM_SEGMENTO_GRAFICA, ROTULO_SEGMENTO_GRAFICA } from "@/lib/tipos-grafica";
+import type { SegmentoGrafica } from "@/generated/prisma/enums";
 
 export type SalvarLogoResult = { ok: boolean; mensagem: string };
 
@@ -318,4 +320,67 @@ export async function salvarContato(
 
   revalidatePath("/configuracoes/identidade");
   return { ok: true, mensagem: "Dados de contato salvos com sucesso!" };
+}
+
+export type SalvarSegmentoResult = { ok: boolean; mensagem: string };
+
+// Achado A6 da Parte 6 da auditoria de abrangência — pergunta única e
+// opcional sobre o perfil de negócio da gráfica (ver Grafica.segmento no
+// schema). Mesma validação de validarSegmento em src/app/clientes/actions.ts:
+// lista fechada, segmentoOutro só obrigatório quando segmento=OUTRO, campo
+// em si sempre opcional (o Dono pode limpar de volta pra "Não informado").
+export async function salvarSegmento(
+  _estadoAnterior: SalvarSegmentoResult | null,
+  formData: FormData
+): Promise<SalvarSegmentoResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CONFIGURACOES"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar configurações." };
+  }
+
+  const segmentoBruto = String(formData.get("segmento") ?? "").trim();
+  let segmento: SegmentoGrafica | null = null;
+  let segmentoOutro: string | null = null;
+
+  if (segmentoBruto) {
+    if (!ORDEM_SEGMENTO_GRAFICA.includes(segmentoBruto as SegmentoGrafica)) {
+      return { ok: false, mensagem: "Perfil de negócio inválido." };
+    }
+    segmento = segmentoBruto as SegmentoGrafica;
+    if (segmento === "OUTRO") {
+      segmentoOutro = String(formData.get("segmentoOutro") ?? "").trim();
+      if (!segmentoOutro) {
+        return { ok: false, mensagem: 'Descreva o perfil quando escolher "Outro".' };
+      }
+    }
+  }
+
+  const anterior = await prisma.grafica.findUniqueOrThrow({
+    where: { id: usuario.graficaId },
+    select: { segmento: true, segmentoOutro: true },
+  });
+
+  await prisma.grafica.update({
+    where: { id: usuario.graficaId },
+    data: { segmento, segmentoOutro },
+  });
+
+  if (anterior.segmento !== segmento || anterior.segmentoOutro !== segmentoOutro) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "configuracoes.salvar_segmento",
+      entidade: "Grafica",
+      entidadeId: usuario.graficaId,
+      descricao: "Perfil de negócio da gráfica atualizado",
+      valorAnterior: `Perfil: ${anterior.segmento ? ROTULO_SEGMENTO_GRAFICA[anterior.segmento] : "não informado"}`,
+      valorNovo: `Perfil: ${segmento ? ROTULO_SEGMENTO_GRAFICA[segmento] : "não informado"}`,
+    });
+  }
+
+  revalidatePath("/configuracoes/identidade");
+  return { ok: true, mensagem: "Perfil de negócio salvo com sucesso!" };
 }
