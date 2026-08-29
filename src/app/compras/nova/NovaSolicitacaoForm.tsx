@@ -11,6 +11,7 @@ import { formatoMoeda } from "@/lib/moeda";
 import { formatoInstanteReal } from "@/lib/data";
 import { chaveComparativo } from "@/lib/comparativo-fornecedores";
 import { criarSolicitacaoCompra } from "../actions";
+import { ORIGENS_SOLICITACAO_COMPRA, ROTULOS_ORIGEM_SOLICITACAO_COMPRA, type OrigemSolicitacaoCompra } from "@/lib/compras-status";
 
 type Material = {
   id: string;
@@ -35,6 +36,7 @@ export function NovaSolicitacaoForm({
   itemGraficaIdInicial,
   varianteIdInicial,
   comparativoPorChave,
+  pedidos,
 }: {
   materiais: Material[];
   // Fornecedores ativos da gráfica — "Ainda não definido" é sempre válido
@@ -49,10 +51,15 @@ export function NovaSolicitacaoForm({
   // chaveComparativo). Trocar a seleção no formulário só troca qual entrada
   // deste objeto é exibida, sem round-trip ao servidor.
   comparativoPorChave: Record<string, LinhaComparativo[]>;
+  // Pedidos elegíveis pra origem=PEDIDO_ESPECIFICO (achado A3 da auditoria
+  // de abrangência, Parte 3/Compras) — só aparece quando essa origem é
+  // escolhida.
+  pedidos: { id: string; clienteNome: string }[];
 }) {
   const [state, formAction, pending] = useActionState(criarSolicitacaoCompra, null);
   const [itemGraficaId, setItemGraficaId] = useState(itemGraficaIdInicial || materiais[0]?.id || "");
   const [varianteId, setVarianteId] = useState(varianteIdInicial);
+  const [origem, setOrigem] = useState<OrigemSolicitacaoCompra>("REPOSICAO_ESTOQUE");
 
   const materialSelecionado = materiais.find((m) => m.id === itemGraficaId) ?? null;
 
@@ -84,6 +91,37 @@ export function NovaSolicitacaoForm({
             </option>
           ))}
         </Select>
+
+        <Select
+          label="Origem da compra"
+          name="origem"
+          value={origem}
+          onChange={(e) => setOrigem(e.target.value as OrigemSolicitacaoCompra)}
+        >
+          {ORIGENS_SOLICITACAO_COMPRA.map((o) => (
+            <option key={o} value={o}>
+              {ROTULOS_ORIGEM_SOLICITACAO_COMPRA[o]}
+            </option>
+          ))}
+        </Select>
+
+        {origem === "PEDIDO_ESPECIFICO" &&
+          (pedidos.length > 0 ? (
+            <Select label="Pedido" name="pedidoId" defaultValue="" required>
+              <option value="">Selecione...</option>
+              {pedidos.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.clienteNome} — {p.id.slice(-8)}
+                </option>
+              ))}
+            </Select>
+          ) : (
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              Nenhum pedido em andamento pra vincular esta compra.
+            </p>
+          ))}
+
+        {origem === "OUTRO" && <Input label="Qual? (opcional)" name="origemOutro" type="text" maxLength={120} />}
 
         {materialSelecionado && materialSelecionado.variantes.length > 0 && (
           <Select

@@ -7,6 +7,7 @@ import {
   ROTULOS_STATUS_SOLICITACAO_COMPRA,
   type StatusSolicitacaoCompra,
 } from "@/lib/compras-status";
+import { criarCustoAutomaticoCompra } from "@/lib/custo-pedido";
 
 // Núcleo da transição de status de uma SolicitacaoCompra — mesma filosofia
 // de avancarStatusPedido (src/app/producao/status-transicao.ts): não faz
@@ -24,6 +25,10 @@ export type SolicitacaoParaTransicao = {
   valorFinal: Prisma.Decimal | null;
   fornecedorId: string | null;
   documento: string | null;
+  // Achado A3 da auditoria de abrangência (Parte 3/Compras) — preenchido só
+  // quando origem=PEDIDO_ESPECIFICO. Ao chegar em RECEBIDO, gera o
+  // CustoPedido origem=COMPRA deste pedido (ver criarCustoAutomaticoCompra).
+  pedidoId: string | null;
 };
 
 // Campos opcionais que o formulário de transição pode enviar junto — cada
@@ -207,6 +212,28 @@ export async function avancarStatusCompra(
             criadoPorId: usuario.id,
           },
         });
+
+        // Achado A3 da auditoria de abrangência (Parte 3/Compras): compra
+        // sob encomenda (origem=PEDIDO_ESPECIFICO) vira CustoPedido origem
+        // COMPRA deste pedido — REPOSICAO_ESTOQUE e as demais origens nunca
+        // têm pedidoId, então nunca entram aqui (comportamento de hoje
+        // preservado). Nunca lança (ver comentário de
+        // criarCustoAutomaticoCompra em src/lib/custo-pedido.ts).
+        if (solicitacao.pedidoId && valorFinalFinal !== null) {
+          const itemGraficaMaterial = await tx.itemGrafica.findUnique({
+            where: { id: solicitacao.itemGraficaId },
+            select: { categoriaCustoId: true },
+          });
+          await criarCustoAutomaticoCompra(tx, {
+            graficaId: solicitacao.graficaId,
+            pedidoId: solicitacao.pedidoId,
+            solicitacaoCompraId: solicitacao.id,
+            itemGraficaId: solicitacao.itemGraficaId,
+            varianteId: solicitacao.varianteId,
+            categoriaCustoIdMaterial: itemGraficaMaterial?.categoriaCustoId ?? null,
+            valor: valorFinalFinal,
+          });
+        }
       });
     } else {
       const resultado = await prisma.solicitacaoCompra.updateMany({

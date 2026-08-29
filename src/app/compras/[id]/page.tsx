@@ -17,7 +17,7 @@ import { ArrowLeftIcon } from "@/components/icons";
 import { formatoMoeda } from "@/lib/moeda";
 import { formatoInstanteRealComHora } from "@/lib/data";
 import { rotuloUnidade } from "@/lib/unidade";
-import { TRANSICOES_VALIDAS, ROTULOS_STATUS_SOLICITACAO_COMPRA } from "@/lib/compras-status";
+import { TRANSICOES_VALIDAS, ROTULOS_STATUS_SOLICITACAO_COMPRA, ROTULOS_ORIGEM_SOLICITACAO_COMPRA } from "@/lib/compras-status";
 import { buscarUltimasCotacoesPorItem } from "@/lib/cotacao-fornecedor-db";
 import { AcoesSolicitacaoForm } from "./AcoesSolicitacaoForm";
 import { CotacoesFornecedorCard } from "./CotacoesFornecedorCard";
@@ -50,6 +50,7 @@ export default async function DetalheSolicitacaoCompraPage({
         fornecedor: true,
         usuarioSolicitante: { select: { nome: true } },
         usuarioAprovador: { select: { nome: true } },
+        pedido: { include: { orcamento: { include: { cliente: { select: { nome: true } } } } } },
       },
     }),
     prisma.fornecedor.findMany({
@@ -169,6 +170,23 @@ export default async function DetalheSolicitacaoCompraPage({
               <p className="text-xs font-medium text-slate-500">Nº da nota</p>
               <p className="mt-0.5 text-slate-900 dark:text-white">{solicitacao.documento ?? "—"}</p>
             </div>
+            <div>
+              <p className="text-xs font-medium text-slate-500">Origem</p>
+              <p className="mt-0.5 text-slate-900 dark:text-white">
+                {ROTULOS_ORIGEM_SOLICITACAO_COMPRA[solicitacao.origem]}
+                {solicitacao.origem === "OUTRO" && solicitacao.origemOutro ? ` — ${solicitacao.origemOutro}` : ""}
+              </p>
+            </div>
+            {solicitacao.pedido && (
+              <div>
+                <p className="text-xs font-medium text-slate-500">Pedido vinculado</p>
+                <p className="mt-0.5 text-slate-900 dark:text-white">
+                  <Link href={`/producao/${solicitacao.pedido.id}`} className="text-teal-700 underline dark:text-teal-400">
+                    {solicitacao.pedido.orcamento.cliente.nome}
+                  </Link>
+                </p>
+              </div>
+            )}
             {solicitacao.observacao && (
               <div className="col-span-2">
                 <p className="text-xs font-medium text-slate-500">Observação</p>

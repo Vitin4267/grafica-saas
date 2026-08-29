@@ -43,6 +43,7 @@ export function DespesaForm({
   valoresIniciais,
   categoriasCusto,
   status,
+  saldo,
   pagoEm,
   formaPagamento,
   formaPagamentoDetalhe,
@@ -52,7 +53,10 @@ export function DespesaForm({
   despesaId: string;
   valoresIniciais: ValoresDespesa;
   categoriasCusto: { id: string; nome: string }[];
-  status: "PENDENTE" | "PAGA";
+  status: "PENDENTE" | "PARCIAL" | "PAGA";
+  // Saldo em aberto — sempre calculado (achado A8 da Parte 4), nunca
+  // armazenado. Igual ao valor cheio pra despesa PENDENTE.
+  saldo: string;
   pagoEm: string | null;
   formaPagamento: string | null;
   formaPagamentoDetalhe: string | null;
@@ -83,7 +87,9 @@ export function DespesaForm({
           Status:{" "}
           {status === "PAGA"
             ? `Paga em ${pagoEm}${formaPagamento ? ` (${rotuloForma(formaPagamento, formaPagamentoDetalhe)})` : ""}`
-            : "Pendente"}
+            : status === "PARCIAL"
+              ? `Parcial · falta ${Number(saldo).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`
+              : "Pendente"}
           {recorrente
             ? ` · 🔁 ${ROTULO_PERIODICIDADE[valoresIniciais.periodicidade as keyof typeof ROTULO_PERIODICIDADE] ?? "Recorrente"}`
             : ""}
@@ -115,9 +121,28 @@ export function DespesaForm({
         </Card>
       ) : (
         <Card className="flex flex-col gap-3 p-5">
-          <p className="text-sm font-medium text-slate-500">Marcar como paga</p>
+          <p className="text-sm font-medium text-slate-500">
+            {status === "PARCIAL"
+              ? `Registrar pagamento — falta ${Number(saldo).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`
+              : "Marcar como paga"}
+          </p>
           <form action={pagaAction} className="flex flex-wrap items-end gap-3">
             <input type="hidden" name="despesaId" value={despesaId} />
+            {/* Valor editável (achado A8 da Parte 4) — pré-preenchido com o
+                saldo em aberto (valor cheio pra despesa PENDENTE). Deixar
+                como está e enviar continua fechando a despesa inteira,
+                exatamente como antes; reduzir o valor registra um pagamento
+                parcial. */}
+            <Input
+              label="Valor pago (R$)"
+              name="valor"
+              type="number"
+              step="0.01"
+              min="0.01"
+              max={saldo}
+              defaultValue={saldo}
+              className="w-32"
+            />
             <Select
               label="Forma de pagamento"
               name="formaPagamento"
@@ -141,7 +166,7 @@ export function DespesaForm({
               />
             )}
             <Button type="submit" loading={marcandoPaga}>
-              {marcandoPaga ? "Salvando..." : "Marcar como paga"}
+              {marcandoPaga ? "Salvando..." : "Registrar pagamento"}
             </Button>
           </form>
           {estadoPaga && !estadoPaga.ok && <Alert variant="error">{estadoPaga.mensagem}</Alert>}

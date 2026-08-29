@@ -74,6 +74,7 @@ import { criarCustoAutomaticoComissao } from "@/lib/custo-pedido";
 import { gerarContasReceberDaAprovacao } from "@/lib/condicao-pagamento";
 import { calcularExposicaoCreditoCliente } from "@/lib/exposicao-credito-cliente";
 import { lancarConsumoCreditoCliente } from "@/lib/credito-cliente";
+import { saldoContaReceber } from "@/lib/baixa-financeira";
 import { registrarCandidatosGangRun } from "@/lib/gang-run-servico";
 import { resolverOpcoesNaAprovacao, descartarOpcoesAlternativas } from "@/lib/orcamento-opcoes";
 import { UNIDADES_DIMENSAO, converterParaCm } from "@/lib/unidade-dimensao";
@@ -1013,6 +1014,24 @@ export async function editarDadosGeraisOrcamento(
     contatoClienteId = contatoCliente.id;
   }
 
+  // Achado A5 da Parte 5 — mesmo princípio de contatoClienteId acima:
+  // enderecoEntregaId nunca é lido do form sem verificar que o endereço
+  // pertence ao MESMO cliente deste orçamento. "" = digitação manual, sem
+  // endereço escolhido (localEntrega continua funcionando exatamente como
+  // hoje pra quem não usa EnderecoCliente).
+  const enderecoEntregaIdBruto = String(formData.get("enderecoEntregaId") ?? "").trim();
+  let enderecoEntregaId: string | null = null;
+  if (enderecoEntregaIdBruto) {
+    const enderecoCliente = await prisma.enderecoCliente.findFirst({
+      where: { id: enderecoEntregaIdBruto, clienteId: orcamento.clienteId },
+      select: { id: true },
+    });
+    if (!enderecoCliente) {
+      return { ok: false, mensagem: "Endereço de entrega selecionado inválido." };
+    }
+    enderecoEntregaId = enderecoCliente.id;
+  }
+
   const campoTexto = (nome: string, max: number) =>
     String(formData.get(nome) || "").trim().slice(0, max) || null;
 
@@ -1028,6 +1047,7 @@ export async function editarDadosGeraisOrcamento(
       frete: freteParsed?.success ? freteParsed.data : null,
       transportadora: campoTexto("transportadora", 120),
       localEntrega: campoTexto("localEntrega", 500),
+      enderecoEntregaId,
       observacoes: campoTexto("observacoes", 2000),
     },
   });
@@ -2767,15 +2787,16 @@ export async function registrarPagamento(
   // usuário): se o valor bate EXATO com uma parcela PENDENTE deste mesmo
   // orçamento, marca ela como recebida também — sem isso, a fatura ficava
   // paga aqui mas pendente lá, mesmo o cliente tendo preenchido o próprio
-  // campo de recebimento. Só reconcilia em match EXATO de valor: pagamento
-  // parcial ou com sobra não mexe em nada (evita casar errado — ver
-  // pendencias-negocio-pos-auditoria.md). Entre parcelas pendentes do mesmo
-  // valor, pega a de vencimento mais próximo (determinístico, não há como
-  // saber qual o cliente quis pagar). Tudo na mesma transação, com
-  // compare-and-swap na ContaReceber (mesmo padrão de marcarComoRecebido em
-  // financeiro/contas-receber/actions.ts) — se ela for marcada como
-  // recebida ou cancelada por outra requisição bem no meio disso, não
-  // sobrescreve.
+  // campo de recebimento. Só reconcilia em match EXATO de valor TOTAL:
+  // pagamento parcial ou com sobra não mexe em nada aqui (evita casar
+  // errado — ver pendencias-negocio-pos-auditoria.md). Entre parcelas
+  // pendentes do mesmo valor, pega a de vencimento mais próximo
+  // (determinístico, não há como saber qual o cliente quis pagar). Tudo na
+  // mesma transação, com compare-and-swap na ContaReceber (mesmo padrão de
+  // registrarBaixaContaReceber em financeiro/contas-receber/actions.ts) — se
+  // ela for marcada como recebida ou cancelada por outra requisição bem no
+  // meio disso, não sobrescreve. ESTE BLOCO NÃO MUDOU desde 2026-08-16 —
+  // preservado 100% (ver bloco de saldo remanescente logo abaixo, achado A8).
   const { pagamento, contaReceberVinculada } = await prisma.$transaction(async (tx) => {
     const pagamentoCriado = await tx.pagamento.create({
       data: { orcamentoId, valor, forma: formaParsed.data, formaDetalhe, observacao },
@@ -2794,6 +2815,39 @@ export async function registrarPagamento(
       });
       if (cas.count > 0) {
         vinculada = { id: candidata.id, descricao: candidata.descricao };
+      }
+    }
+
+    // Achado A8 da Parte 4 (2026-08-29): quando não há match de valor TOTAL
+    // acima, tenta casar com o SALDO REMANESCENTE de uma conta já PARCIAL
+    // (ex: parcela de R$5.000 com R$3.000 já baixados — um segundo
+    // pagamento de R$2.000 fecha ela sozinho). Mesmo espírito determinístico
+    // do bloco acima (vencimento mais próximo entre empates de saldo).
+    // Deliberadamente NUNCA cria uma baixa PARCIAL nova por aqui — só fecha
+    // uma conta cujo saldo já bate exato — porque decidir sozinho "esse
+    // pagamento genérico do orçamento é parcial de QUAL conta" é a situação
+    // ambígua que a proposta pede pra nunca resolver em silêncio; isso só
+    // acontece com escolha explícita do usuário, em
+    // registrarBaixaContaReceber (financeiro/contas-receber/actions.ts).
+    if (!vinculada) {
+      const parciais = await tx.contaReceber.findMany({
+        where: { orcamentoId, graficaId: usuario.graficaId, status: "PARCIAL" },
+        orderBy: { vencimento: "asc" },
+      });
+      for (const conta of parciais) {
+        const saldo = await saldoContaReceber(tx, conta);
+        if (!saldo.eq(valor)) continue;
+        const cas = await tx.contaReceber.updateMany({
+          where: { id: conta.id, status: "PARCIAL" },
+          data: { status: "RECEBIDO", recebidoEm: new Date() },
+        });
+        if (cas.count > 0) {
+          await tx.baixaContaReceber.create({
+            data: { contaReceberId: conta.id, pagamentoId: pagamentoCriado.id, valor },
+          });
+          vinculada = { id: conta.id, descricao: conta.descricao };
+        }
+        break;
       }
     }
 

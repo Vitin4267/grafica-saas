@@ -10,6 +10,7 @@ import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { clienteSchema } from "@/lib/clientes";
 import { contatoClienteSchema, ORDEM_FUNCAO_CONTATO_CLIENTE } from "@/lib/contatos-cliente";
+import { enderecoClienteSchema, ORDEM_TIPO_ENDERECO_CLIENTE } from "@/lib/enderecos-cliente";
 import { ehViolacaoDeChaveEstrangeira } from "@/lib/prisma-conflito";
 import { registrarAuditoria } from "@/lib/auditoria";
 import {
@@ -26,6 +27,7 @@ import type {
   IndicadorInscricaoEstadual,
   FuncaoContatoCliente,
   FormaPagamento,
+  TipoEnderecoCliente,
 } from "@/generated/prisma/enums";
 
 // Mesmo padrão do resto do schema (UnidadeMedida, CategoriaEquipamento etc.):
@@ -981,4 +983,283 @@ export async function reativarContatoCliente(
   revalidatePath(`/clientes/${contato.clienteId}`);
 
   return { ok: true, mensagem: `Contato "${contato.nome}" reativado.` };
+}
+
+// Achado A5 da Parte 5 da auditoria de abrangência — mesmo padrão
+// enum-fechado de validarFuncaoContato acima, mas SEM *Outro de escape: só
+// existem os 3 papéis PRINCIPAL/COBRANCA/ENTREGA, nenhum aberto.
+function validarTipoEnderecoCliente(
+  formData: FormData
+): { ok: true; tipo: TipoEnderecoCliente } | { ok: false; mensagem: string } {
+  const tipo = String(formData.get("tipo") ?? "ENTREGA").trim();
+  if (!ORDEM_TIPO_ENDERECO_CLIENTE.includes(tipo as TipoEnderecoCliente)) {
+    return { ok: false, mensagem: "Tipo de endereço inválido." };
+  }
+  return { ok: true, tipo: tipo as TipoEnderecoCliente };
+}
+
+export type EnderecoClienteResult = { ok: boolean; mensagem: string };
+
+// Cadastro de endereço adicional de um Cliente (achado A5 da Parte 5 da
+// auditoria de abrangência) — os 8 campos `endereco*` inline em Cliente
+// continuam sendo o endereço FISCAL (cadastro/nota fiscal); isto aqui é
+// aditivo pra quando o faturamento e a entrega vão pra lugares diferentes,
+// ou pra registrar múltiplos pontos de entrega do mesmo cliente.
+export async function criarEnderecoCliente(
+  _estadoAnterior: EnderecoClienteResult | null,
+  formData: FormData
+): Promise<EnderecoClienteResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CLIENTES"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar clientes." };
+  }
+  const clienteId = String(formData.get("clienteId"));
+
+  const cliente = await prisma.cliente.findFirst({
+    where: { id: clienteId, graficaId: usuario.graficaId },
+  });
+  if (!cliente) {
+    return { ok: false, mensagem: "Cliente não encontrado." };
+  }
+
+  const parsed = enderecoClienteSchema.safeParse({
+    apelido: formData.get("apelido"),
+    cep: formData.get("cep"),
+    logradouro: formData.get("logradouro"),
+    numero: formData.get("numero"),
+    complemento: formData.get("complemento"),
+    bairro: formData.get("bairro"),
+    municipio: formData.get("municipio"),
+    codigoIbge: formData.get("codigoIbge"),
+    uf: formData.get("uf"),
+    contatoNome: formData.get("contatoNome"),
+    contatoTelefone: formData.get("contatoTelefone"),
+    instrucoesEntrega: formData.get("instrucoesEntrega"),
+  });
+  if (!parsed.success) {
+    return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Dados inválidos." };
+  }
+
+  const validacaoTipo = validarTipoEnderecoCliente(formData);
+  if (!validacaoTipo.ok) {
+    return validacaoTipo;
+  }
+
+  const {
+    apelido,
+    cep,
+    logradouro,
+    numero,
+    complemento,
+    bairro,
+    municipio,
+    codigoIbge,
+    uf,
+    contatoNome,
+    contatoTelefone,
+    instrucoesEntrega,
+  } = parsed.data;
+  const padrao = formData.get("padrao") === "on";
+
+  // Só um endereço padrão por TIPO, por cliente (ver comentário no schema) —
+  // desmarca qualquer outro padrão do MESMO tipo pro mesmo cliente antes de
+  // marcar este, dentro da mesma transação pra não deixar 2 padrão
+  // simultâneos em caso de corrida. Mesmo mecanismo de
+  // criarContatoCliente/principal acima, mas escopado também por `tipo`.
+  await prisma.$transaction(async (tx) => {
+    if (padrao) {
+      await tx.enderecoCliente.updateMany({
+        where: { clienteId, tipo: validacaoTipo.tipo, padrao: true },
+        data: { padrao: false },
+      });
+    }
+    await tx.enderecoCliente.create({
+      data: {
+        clienteId,
+        apelido,
+        tipo: validacaoTipo.tipo,
+        cep: cep || null,
+        logradouro: logradouro || null,
+        numero: numero || null,
+        complemento: complemento || null,
+        bairro: bairro || null,
+        municipio: municipio || null,
+        codigoIbge: codigoIbge || null,
+        uf: uf || null,
+        contatoNome: contatoNome || null,
+        contatoTelefone: contatoTelefone || null,
+        instrucoesEntrega: instrucoesEntrega || null,
+        padrao,
+      },
+    });
+  });
+
+  revalidatePath(`/clientes/${clienteId}`);
+
+  return { ok: true, mensagem: `Endereço "${apelido}" adicionado.` };
+}
+
+export async function atualizarEnderecoCliente(
+  _estadoAnterior: EnderecoClienteResult | null,
+  formData: FormData
+): Promise<EnderecoClienteResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CLIENTES"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar clientes." };
+  }
+  const enderecoId = String(formData.get("enderecoId"));
+
+  // Junta com Cliente pra confirmar que o endereço pertence à MESMA gráfica —
+  // EnderecoCliente não tem graficaId próprio (escopado só por clienteId),
+  // mesmo precedente de ContatoCliente acima.
+  const endereco = await prisma.enderecoCliente.findFirst({
+    where: { id: enderecoId, cliente: { graficaId: usuario.graficaId } },
+  });
+  if (!endereco) {
+    return { ok: false, mensagem: "Endereço não encontrado." };
+  }
+
+  const parsed = enderecoClienteSchema.safeParse({
+    apelido: formData.get("apelido"),
+    cep: formData.get("cep"),
+    logradouro: formData.get("logradouro"),
+    numero: formData.get("numero"),
+    complemento: formData.get("complemento"),
+    bairro: formData.get("bairro"),
+    municipio: formData.get("municipio"),
+    codigoIbge: formData.get("codigoIbge"),
+    uf: formData.get("uf"),
+    contatoNome: formData.get("contatoNome"),
+    contatoTelefone: formData.get("contatoTelefone"),
+    instrucoesEntrega: formData.get("instrucoesEntrega"),
+  });
+  if (!parsed.success) {
+    return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Dados inválidos." };
+  }
+
+  const validacaoTipo = validarTipoEnderecoCliente(formData);
+  if (!validacaoTipo.ok) {
+    return validacaoTipo;
+  }
+
+  const {
+    apelido,
+    cep,
+    logradouro,
+    numero,
+    complemento,
+    bairro,
+    municipio,
+    codigoIbge,
+    uf,
+    contatoNome,
+    contatoTelefone,
+    instrucoesEntrega,
+  } = parsed.data;
+  const padrao = formData.get("padrao") === "on";
+
+  await prisma.$transaction(async (tx) => {
+    if (padrao) {
+      await tx.enderecoCliente.updateMany({
+        where: {
+          clienteId: endereco.clienteId,
+          tipo: validacaoTipo.tipo,
+          padrao: true,
+          id: { not: enderecoId },
+        },
+        data: { padrao: false },
+      });
+    }
+    await tx.enderecoCliente.update({
+      where: { id: enderecoId },
+      data: {
+        apelido,
+        tipo: validacaoTipo.tipo,
+        cep: cep || null,
+        logradouro: logradouro || null,
+        numero: numero || null,
+        complemento: complemento || null,
+        bairro: bairro || null,
+        municipio: municipio || null,
+        codigoIbge: codigoIbge || null,
+        uf: uf || null,
+        contatoNome: contatoNome || null,
+        contatoTelefone: contatoTelefone || null,
+        instrucoesEntrega: instrucoesEntrega || null,
+        padrao,
+      },
+    });
+  });
+
+  revalidatePath(`/clientes/${endereco.clienteId}`);
+
+  return { ok: true, mensagem: `Endereço "${apelido}" atualizado.` };
+}
+
+// Soft-delete — nunca hard delete, o endereço pode já estar referenciado por
+// Orcamento.enderecoEntregaId (histórico de orçamento passado não pode
+// quebrar). Endereço desativado some do <select> de novos orçamentos, mas
+// continua existindo e reversível.
+export async function desativarEnderecoCliente(
+  _estadoAnterior: EnderecoClienteResult | null,
+  formData: FormData
+): Promise<EnderecoClienteResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CLIENTES"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar clientes." };
+  }
+  const enderecoId = String(formData.get("enderecoId"));
+
+  const endereco = await prisma.enderecoCliente.findFirst({
+    where: { id: enderecoId, cliente: { graficaId: usuario.graficaId } },
+  });
+  if (!endereco) {
+    return { ok: false, mensagem: "Endereço não encontrado." };
+  }
+
+  await prisma.enderecoCliente.update({
+    where: { id: enderecoId },
+    data: { ativo: false },
+  });
+
+  revalidatePath(`/clientes/${endereco.clienteId}`);
+
+  return { ok: true, mensagem: `Endereço "${endereco.apelido}" desativado.` };
+}
+
+// Reverso de desativarEnderecoCliente — mesmo precedente reversível de
+// reativarContatoCliente acima.
+export async function reativarEnderecoCliente(
+  _estadoAnterior: EnderecoClienteResult | null,
+  formData: FormData
+): Promise<EnderecoClienteResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CLIENTES"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar clientes." };
+  }
+  const enderecoId = String(formData.get("enderecoId"));
+
+  const endereco = await prisma.enderecoCliente.findFirst({
+    where: { id: enderecoId, cliente: { graficaId: usuario.graficaId } },
+  });
+  if (!endereco) {
+    return { ok: false, mensagem: "Endereço não encontrado." };
+  }
+
+  await prisma.enderecoCliente.update({
+    where: { id: enderecoId },
+    data: { ativo: true },
+  });
+
+  revalidatePath(`/clientes/${endereco.clienteId}`);
+
+  return { ok: true, mensagem: `Endereço "${endereco.apelido}" reativado.` };
 }

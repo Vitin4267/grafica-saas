@@ -14,6 +14,7 @@ import { dataParaInputValue } from "@/lib/data";
 import { UserNav } from "@/components/UserNav";
 import { ArrowLeftIcon } from "@/components/icons";
 import { DespesaForm } from "./DespesaForm";
+import { saldoDespesa } from "@/lib/baixa-financeira";
 
 export default async function DespesaDetalhePage({
   params,
@@ -34,6 +35,11 @@ export default async function DespesaDetalhePage({
   if (!despesa) {
     notFound();
   }
+
+  // Saldo em aberto — sempre calculado (achado A8 da Parte 4), nunca
+  // armazenado. Igual ao valor cheio pra despesa PENDENTE (nenhum pagamento
+  // registrado ainda).
+  const saldo = (await saldoDespesa(prisma, despesa)).toFixed(2);
 
   // Inclui a categoria já vinculada mesmo se ela tiver sido desativada
   // depois — senão o <select> perderia a opção selecionada e trocaria a
@@ -88,6 +94,7 @@ export default async function DespesaDetalhePage({
           }}
           categoriasCusto={categoriasCusto}
           status={despesa.status}
+          saldo={saldo}
           pagoEm={despesa.pagoEm ? dataParaInputValue(despesa.pagoEm) : null}
           formaPagamento={despesa.formaPagamento}
           formaPagamentoDetalhe={despesa.formaPagamentoDetalhe}

@@ -7,6 +7,38 @@ export type StatusSolicitacaoCompra =
   | "CONFERIDO"
   | "CANCELADO";
 
+// Achado A3 da auditoria de abrangência (Parte 3/Compras, 2026-08-29) —
+// distingue reposição de estoque (make-to-stock, nasce do ponto de
+// encomenda) de compra pra um Pedido específico (make-to-order, nasce da
+// venda) — ver enum OrigemSolicitacaoCompra no schema. PEDIDO_ESPECIFICO
+// exige SolicitacaoCompra.pedidoId (obrigatório na aplicação, ver
+// criarSolicitacaoCompra em src/app/compras/actions.ts).
+export type OrigemSolicitacaoCompra =
+  | "REPOSICAO_ESTOQUE"
+  | "PEDIDO_ESPECIFICO"
+  | "MANUTENCAO"
+  | "CONSUMO_INTERNO"
+  | "CONTRATO_PROGRAMADO"
+  | "OUTRO";
+
+export const ROTULOS_ORIGEM_SOLICITACAO_COMPRA: Record<OrigemSolicitacaoCompra, string> = {
+  REPOSICAO_ESTOQUE: "Reposição de estoque",
+  PEDIDO_ESPECIFICO: "Pedido específico",
+  MANUTENCAO: "Manutenção",
+  CONSUMO_INTERNO: "Consumo interno",
+  CONTRATO_PROGRAMADO: "Contrato programado",
+  OUTRO: "Outro",
+};
+
+export const ORIGENS_SOLICITACAO_COMPRA: OrigemSolicitacaoCompra[] = [
+  "REPOSICAO_ESTOQUE",
+  "PEDIDO_ESPECIFICO",
+  "MANUTENCAO",
+  "CONSUMO_INTERNO",
+  "CONTRATO_PROGRAMADO",
+  "OUTRO",
+];
+
 // Nunca confia no status enviado pelo client — só permite as transições
 // abaixo, validadas de novo no servidor a partir do status atual lido do
 // banco (mesmo padrão de TRANSICOES_VALIDAS em src/lib/orcamento-status.ts).

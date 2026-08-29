@@ -12,7 +12,7 @@ import { formatoMoeda } from "@/lib/moeda";
 import { formatoData, dataEhPassado } from "@/lib/data";
 import {
   criarContaReceber,
-  marcarComoRecebido,
+  registrarBaixaContaReceber,
   cancelarContaReceber,
 } from "@/app/financeiro/contas-receber/actions";
 
@@ -29,8 +29,11 @@ type ContaReceber = {
   id: string;
   descricao: string;
   valor: string;
+  // Saldo em aberto — sempre calculado (achado A8 da Parte 4), nunca
+  // armazenado. Igual a `valor` pra conta PENDENTE (nenhuma baixa ainda).
+  saldo: string;
   vencimento: string; // ISO
-  status: "PENDENTE" | "RECEBIDO" | "CANCELADO";
+  status: "PENDENTE" | "PARCIAL" | "RECEBIDO" | "CANCELADO";
   recebidoEm: string | null;
 };
 
@@ -49,6 +52,13 @@ function statusPill(conta: ContaReceber) {
       </span>
     );
   }
+  if (conta.status === "PARCIAL") {
+    return (
+      <span className="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 dark:bg-sky-950/50 dark:text-sky-300">
+        Parcial · falta {formatoMoeda.format(Number(conta.saldo))}
+      </span>
+    );
+  }
   if (dataEhPassado(new Date(conta.vencimento))) {
     return (
       <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 dark:bg-rose-950/50 dark:text-rose-300">
@@ -64,7 +74,7 @@ function statusPill(conta: ContaReceber) {
 }
 
 function LinhaContaReceber({ conta, podeEditar }: { conta: ContaReceber; podeEditar: boolean }) {
-  const [estadoRecebido, acaoRecebido, marcandoRecebido] = useActionState(marcarComoRecebido, null);
+  const [estadoRecebido, acaoRecebido, marcandoRecebido] = useActionState(registrarBaixaContaReceber, null);
   const [estadoCancelar, acaoCancelar, cancelando] = useActionState(cancelarContaReceber, null);
   const [confirmandoCancelamento, setConfirmandoCancelamento] = useState(false);
 
@@ -96,30 +106,53 @@ function LinhaContaReceber({ conta, podeEditar }: { conta: ContaReceber; podeEdi
         </div>
       </div>
 
-      {podeEditar && conta.status === "PENDENTE" && !confirmandoCancelamento && (
-        <div className="flex flex-wrap items-end gap-3">
-          <form action={acaoRecebido} className="flex items-end gap-2">
-            <input type="hidden" name="id" value={conta.id} />
-            <Select label="Forma" name="forma" defaultValue="PIX" className="!py-1.5 text-xs">
-              {Object.entries(ROTULO_FORMA).map(([valor, rotulo]) => (
-                <option key={valor} value={valor}>
-                  {rotulo}
-                </option>
-              ))}
-            </Select>
-            <Button type="submit" variant="outline" loading={marcandoRecebido}>
-              {marcandoRecebido ? "Marcando..." : "Marcar como recebido"}
-            </Button>
-          </form>
-          <button
-            type="button"
-            onClick={() => setConfirmandoCancelamento(true)}
-            className="text-xs font-medium text-rose-600 hover:underline"
-          >
-            Cancelar
-          </button>
-        </div>
-      )}
+      {podeEditar &&
+        (conta.status === "PENDENTE" || conta.status === "PARCIAL") &&
+        !confirmandoCancelamento && (
+          <div className="flex flex-wrap items-end gap-3">
+            <form action={acaoRecebido} className="flex flex-wrap items-end gap-2">
+              <input type="hidden" name="id" value={conta.id} />
+              {/* Valor editável (achado A8 da Parte 4) — pré-preenchido com o
+                  saldo em aberto. Deixar como está e enviar continua
+                  fechando a conta inteira, exatamente como antes; reduzir o
+                  valor registra um recebimento parcial. */}
+              <div className="flex flex-col gap-1">
+                <label htmlFor={`valor-${conta.id}`} className="text-xs font-medium text-slate-500">
+                  Valor recebido
+                </label>
+                <input
+                  id={`valor-${conta.id}`}
+                  type="number"
+                  name="valor"
+                  step="0.01"
+                  min="0.01"
+                  max={conta.saldo}
+                  defaultValue={conta.saldo}
+                  className="w-28 rounded-md border border-slate-300 px-2 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900"
+                />
+              </div>
+              <Select label="Forma" name="forma" defaultValue="PIX" className="!py-1.5 text-xs">
+                {Object.entries(ROTULO_FORMA).map(([valor, rotulo]) => (
+                  <option key={valor} value={valor}>
+                    {rotulo}
+                  </option>
+                ))}
+              </Select>
+              <Button type="submit" variant="outline" loading={marcandoRecebido}>
+                {marcandoRecebido ? "Registrando..." : "Registrar recebimento"}
+              </Button>
+            </form>
+            {conta.status === "PENDENTE" && (
+              <button
+                type="button"
+                onClick={() => setConfirmandoCancelamento(true)}
+                className="text-xs font-medium text-rose-600 hover:underline"
+              >
+                Cancelar
+              </button>
+            )}
+          </div>
+        )}
 
       {confirmandoCancelamento && (
         <ConfirmarExclusao
@@ -156,9 +189,12 @@ export function ContasReceberCard({
 }) {
   const [state, formAction, isPending] = useActionState(criarContaReceber, null);
 
+  // Soma o SALDO em aberto (não o valor cheio da parcela) pra uma conta
+  // PARCIAL não continuar contando o pedaço que já foi recebido (achado A8
+  // da Parte 4 — exatamente o bug que essa mudança corrige).
   const totalPendente = contas
-    .filter((c) => c.status === "PENDENTE")
-    .reduce((soma, c) => soma + Number(c.valor), 0);
+    .filter((c) => c.status === "PENDENTE" || c.status === "PARCIAL")
+    .reduce((soma, c) => soma + Number(c.saldo), 0);
   const totalRecebido = contas
     .filter((c) => c.status === "RECEBIDO")
     .reduce((soma, c) => soma + Number(c.valor), 0);

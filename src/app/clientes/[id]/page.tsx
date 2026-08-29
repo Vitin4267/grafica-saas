@@ -14,6 +14,7 @@ import { UserNav } from "@/components/UserNav";
 import { ArrowLeftIcon } from "@/components/icons";
 import { ClienteEditForm } from "./ClienteEditForm";
 import { ContatosClienteCard } from "./ContatosClienteCard";
+import { EnderecoClienteCard } from "./EnderecoClienteCard";
 
 export default async function ClienteDetalhePage({
   params,
@@ -27,7 +28,7 @@ export default async function ClienteDetalhePage({
   await exigirVerModulo(usuario, "CLIENTES");
   const podeEditar = await podeEditarModulo(usuario, "CLIENTES");
 
-  const [cliente, vendedores, contatos] = await Promise.all([
+  const [cliente, vendedores, contatos, enderecos] = await Promise.all([
     prisma.cliente.findFirst({
       where: { id, graficaId: usuario.graficaId },
     }),
@@ -44,6 +45,12 @@ export default async function ClienteDetalhePage({
     prisma.contatoCliente.findMany({
       where: { clienteId: id },
       orderBy: [{ ativo: "desc" }, { principal: "desc" }, { nome: "asc" }],
+    }),
+    // Achado A5 da Parte 5 — mesmo motivo de contatos acima: tela de GESTÃO
+    // inclui inativos.
+    prisma.enderecoCliente.findMany({
+      where: { clienteId: id },
+      orderBy: [{ ativo: "desc" }, { padrao: "desc" }, { apelido: "asc" }],
     }),
   ]);
 
@@ -142,6 +149,31 @@ export default async function ClienteDetalhePage({
               funcaoOutro: contato.funcaoOutro,
               principal: contato.principal,
               ativo: contato.ativo,
+            }))}
+          />
+        </div>
+
+        <div className="mt-6">
+          <EnderecoClienteCard
+            clienteId={cliente.id}
+            podeEditar={podeEditar}
+            enderecos={enderecos.map((endereco) => ({
+              id: endereco.id,
+              apelido: endereco.apelido,
+              tipo: endereco.tipo,
+              cep: endereco.cep,
+              logradouro: endereco.logradouro,
+              numero: endereco.numero,
+              complemento: endereco.complemento,
+              bairro: endereco.bairro,
+              municipio: endereco.municipio,
+              codigoIbge: endereco.codigoIbge,
+              uf: endereco.uf,
+              contatoNome: endereco.contatoNome,
+              contatoTelefone: endereco.contatoTelefone,
+              instrucoesEntrega: endereco.instrucoesEntrega,
+              padrao: endereco.padrao,
+              ativo: endereco.ativo,
             }))}
           />
         </div>

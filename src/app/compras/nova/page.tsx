@@ -52,7 +52,7 @@ export default async function NovaSolicitacaoCompraPage({
 
   const { alvoId } = await searchParams;
 
-  const [materiais, fornecedores, alvoPreSelecionado, comparativoPorChave] = await Promise.all([
+  const [materiais, fornecedores, alvoPreSelecionado, comparativoPorChave, pedidos] = await Promise.all([
     prisma.itemGrafica.findMany({
       where: { graficaId: usuario.graficaId, ativo: true, itemCatalogo: { tipo: "MATERIA_PRIMA" } },
       include: { itemCatalogo: true, variantes: { where: { ativo: true }, orderBy: { rotulo: "asc" } } },
@@ -65,6 +65,15 @@ export default async function NovaSolicitacaoCompraPage({
     }),
     resolverAlvoPreSelecionado(alvoId, usuario.graficaId),
     buscarComparativoFornecedores(usuario.graficaId),
+    // Pedidos elegíveis pra origem=PEDIDO_ESPECIFICO (achado A3 da auditoria
+    // de abrangência, Parte 3/Compras) — CANCELADO fica de fora, não faz
+    // sentido comprar material especificamente pra um pedido cancelado.
+    prisma.pedido.findMany({
+      where: { graficaId: usuario.graficaId, status: { not: "CANCELADO" } },
+      include: { orcamento: { include: { cliente: { select: { nome: true } } } } },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    }),
   ]);
 
   // Serializa o Map pra objeto simples (chave = itemGraficaId ou varianteId,
@@ -128,6 +137,7 @@ export default async function NovaSolicitacaoCompraPage({
             itemGraficaIdInicial={alvoPreSelecionado.itemGraficaId}
             varianteIdInicial={alvoPreSelecionado.varianteId}
             comparativoPorChave={comparativoSerializado}
+            pedidos={pedidos.map((p) => ({ id: p.id, clienteNome: p.orcamento.cliente.nome }))}
           />
         )}
       </main>

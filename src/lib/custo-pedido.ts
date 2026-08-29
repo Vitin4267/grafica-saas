@@ -188,6 +188,95 @@ export async function criarCustoAutomaticoComissao(
   });
 }
 
+// Gera o CustoPedido origem=COMPRA quando uma SolicitacaoCompra
+// origem=PEDIDO_ESPECIFICO chega em RECEBIDO (achado A3 da auditoria de
+// abrangência, Parte 3/Compras, 2026-08-29) — mesmo estilo defensivo de
+// criarCustoAutomaticoConsumo (src/app/producao/status-transicao.ts) e
+// criarCustoAutomaticoComissao acima: NUNCA lança, a confirmação de
+// recebimento não pode falhar por causa disto. Dedup via
+// CustoPedido.solicitacaoCompraId @unique — chamar de novo pra mesma
+// solicitação (reentrância, duplo clique) é no-op.
+//
+// possivelDuplicidade: avancarStatusCompra SEMPRE gera uma MovimentacaoEstoque
+// ENTRADA_COMPRA em RECEBIDO (o material entra fisicamente no estoque, mesmo
+// quando comprado pra um pedido específico) — se esse MESMO material também
+// está na ficha técnica de algum item/acabamento deste pedido, ele pode ser
+// contado DUAS vezes: uma vez aqui (a compra em si), outra via
+// CONSUMO_ESTOQUE quando a produção baixar o estoque desse material pra este
+// mesmo pedido (ver comentário da proposta do achado A3).
+export async function criarCustoAutomaticoCompra(
+  tx: Prisma.TransactionClient,
+  params: {
+    graficaId: string;
+    pedidoId: string;
+    solicitacaoCompraId: string;
+    itemGraficaId: string;
+    varianteId: string | null;
+    categoriaCustoIdMaterial: string | null;
+    valor: number;
+  }
+): Promise<void> {
+  if (params.valor <= 0) return;
+
+  const jaExiste = await tx.custoPedido.findUnique({
+    where: { solicitacaoCompraId: params.solicitacaoCompraId },
+    select: { id: true },
+  });
+  if (jaExiste) return;
+
+  let categoriaCustoId = params.categoriaCustoIdMaterial;
+  if (!categoriaCustoId) {
+    const categoria = await tx.categoriaCusto.findFirst({
+      where: { graficaId: params.graficaId, ativa: true },
+      orderBy: { ordem: "asc" },
+      select: { id: true },
+    });
+    categoriaCustoId = categoria?.id ?? null;
+  }
+  if (!categoriaCustoId) {
+    console.error(
+      `[custo-automatico] Gráfica ${params.graficaId} sem nenhuma CategoriaCusto ativa — CustoPedido de compra da solicitação ${params.solicitacaoCompraId} (pedido ${params.pedidoId}) não foi criado.`
+    );
+    return;
+  }
+
+  const pedido = await tx.pedido.findUnique({
+    where: { id: params.pedidoId },
+    select: { orcamentoId: true },
+  });
+  let materialNaFichaTecnica = false;
+  if (pedido) {
+    const bate = (f: { materiaPrimaId: string; varianteId: string | null }) =>
+      f.materiaPrimaId === params.itemGraficaId && f.varianteId === params.varianteId;
+    const itens = await tx.orcamentoItem.findMany({
+      where: { orcamentoId: pedido.orcamentoId },
+      select: {
+        itemGrafica: { select: { fichaTecnica: { select: { materiaPrimaId: true, varianteId: true } } } },
+        acabamentos: {
+          select: { itemGrafica: { select: { fichaTecnica: { select: { materiaPrimaId: true, varianteId: true } } } } },
+        },
+      },
+    });
+    materialNaFichaTecnica = itens.some(
+      (item) =>
+        item.itemGrafica.fichaTecnica.some(bate) || item.acabamentos.some((ac) => ac.itemGrafica.fichaTecnica.some(bate))
+    );
+  }
+
+  await tx.custoPedido.create({
+    data: {
+      graficaId: params.graficaId,
+      pedidoId: params.pedidoId,
+      categoriaCustoId,
+      origem: "COMPRA",
+      solicitacaoCompraId: params.solicitacaoCompraId,
+      valor: params.valor,
+      valorCalculado: params.valor,
+      possivelDuplicidade: materialNaFichaTecnica,
+    },
+  });
+}
+
 // Idempotente: só cria as categorias sugeridas se a gráfica ainda não tem
 // NENHUMA linha cadastrada. Se a gráfica já tinha categorias e apagou todas
 // de propósito, isto NUNCA recria sozinho — ausência de linhas depois da

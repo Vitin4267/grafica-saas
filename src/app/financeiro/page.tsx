@@ -17,12 +17,22 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { NovaDespesaForm } from "./NovaDespesaForm";
 import { ROTULO_PERIODICIDADE } from "./periodicidade";
+import { saldoDespesa } from "@/lib/baixa-financeira";
 
-function statusPill(status: "PENDENTE" | "PAGA", vencimento: Date) {
+// saldo só é passado (e só importa) quando status === "PARCIAL" — achado A8
+// da Parte 4 (2026-08-29).
+function statusPill(status: "PENDENTE" | "PARCIAL" | "PAGA", vencimento: Date, saldo?: string) {
   if (status === "PAGA") {
     return (
       <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
         Paga
+      </span>
+    );
+  }
+  if (status === "PARCIAL") {
+    return (
+      <span className="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 dark:bg-sky-950/50 dark:text-sky-300">
+        Parcial · falta {formatoMoeda.format(Number(saldo ?? 0))}
       </span>
     );
   }
@@ -59,6 +69,18 @@ export default async function FinanceiroPage() {
     orderBy: { ordem: "asc" },
     select: { id: true, nome: true },
   });
+
+  // Saldo em aberto de cada despesa PARCIAL — sempre calculado (achado A8 da
+  // Parte 4), nunca armazenado.
+  const saldosPorDespesa = new Map<string, string>();
+  await Promise.all(
+    despesas
+      .filter((d) => d.status === "PARCIAL")
+      .map(async (d) => {
+        const saldo = await saldoDespesa(prisma, d);
+        saldosPorDespesa.set(d.id, saldo.toFixed(2));
+      })
+  );
 
   const mesAtual = new Date().toISOString().slice(0, 7);
 
@@ -150,7 +172,7 @@ export default async function FinanceiroPage() {
                       Valor a confirmar
                     </span>
                   )}
-                  {statusPill(despesa.status, despesa.vencimento)}
+                  {statusPill(despesa.status, despesa.vencimento, saldosPorDespesa.get(despesa.id))}
                 </div>
               </Card>
             </Link>

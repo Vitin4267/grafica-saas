@@ -1317,6 +1317,9 @@ model Cliente {
   // Achado A4 da Parte 5 da auditoria de abrangência — ver ContatoCliente
   // mais abaixo no schema.
   contatos       ContatoCliente[]
+  // Achado A5 da Parte 5 da auditoria de abrangência — ver EnderecoCliente
+  // mais abaixo no schema.
+  enderecos      EnderecoCliente[]
 
   // NULL não colide com NULL em unique index do Postgres — várias gráficas
   // podem ter clientes sem documento cadastrado sem problema. Escopado por
@@ -1443,6 +1446,93 @@ model ContatoCliente {
 
   @@index([clienteId])
   @@map("contatos_cliente")
+}
+
+// Tipo do endereço cadastrado (achado A5 da Parte 5 da auditoria de
+// abrangência, pesquisa-abrangencia-modulos.md) — mesmo padrão de ERP
+// brasileiro: endereço comercial/de cadastro, de cobrança (pra onde vai a
+// fatura/boleto) e de entrega (pra onde vai a mercadoria) podem ser 3
+// lugares diferentes. Sem OUTRO de escape: são só 3 papéis fixos, não uma
+// lista aberta como origem/segmento do cliente.
+enum TipoEnderecoCliente {
+  PRINCIPAL
+  COBRANCA
+  ENTREGA
+}
+
+// Endereço adicional de um Cliente (achado A5 da Parte 5 da auditoria de
+// abrangência) — até aqui os 8 campos `endereco*` inline em Cliente eram
+// SIMULTANEAMENTE endereço de cadastro, de cobrança e de entrega, então não
+// dava pra registrar que o faturamento vai pra matriz em São Paulo e a caixa
+// de rótulos vai pra fábrica em Extrema. Não substitui os campos `endereco*`
+// de Cliente (que continuam sendo o endereço FISCAL do destinatário, nada
+// muda na emissão de nota, nada migra pra cá); é um cadastro aditivo e
+// opcional, só usado por quem escolher usá-lo — mesmo precedente de
+// ContatoCliente logo acima não substituir Cliente.email/telefone. Ver
+// Orcamento.enderecoEntregaId abaixo, que convive com o snapshot em texto
+// Orcamento.localEntrega (mesmo padrão de contatoClienteId/contatoNome).
+//
+// Grupos econômicos / matriz-filial do cliente (um Cliente "pai" com vários
+// Cliente "filho") ficam FORA de escopo aqui — o achado que motivou este
+// model é só "várias entregas/cobranças pro MESMO cadastro de cliente", não
+// inferir hierarquia entre cadastros diferentes.
+model EnderecoCliente {
+  id        String  @id @default(cuid())
+  clienteId String
+  cliente   Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  // Rótulo livre de uso interno — "Fábrica Extrema", "Loja Shopping
+  // Iguatemi" — pra reconhecer o endereço numa lista sem precisar ler o
+  // logradouro inteiro.
+  apelido String
+
+  tipo TipoEnderecoCliente @default(ENTREGA)
+
+  // Mesmos nomes/formato dos campos `endereco*` de Cliente (sem o prefixo
+  // `endereco`, redundante aqui dentro do próprio model EnderecoCliente).
+  cep         String?
+  logradouro  String?
+  numero      String?
+  complemento String?
+  bairro      String?
+  municipio   String?
+  codigoIbge  String?
+  uf          String?
+
+  // Quem recebe NESTE endereço — pode ser diferente do ContatoCliente
+  // comercial da empresa (ex: o vigia da doca, não o comprador). Texto
+  // livre, não FK pra ContatoCliente: são conceitos independentes, um
+  // endereço não precisa ter um contato cadastrado pra ter um recebedor.
+  contatoNome     String?
+  contatoTelefone String?
+
+  // Horário de recebimento, doca, agendamento, "tocar interfone" — o tipo de
+  // detalhe que só existe pra ENTREGA, mas o campo fica disponível pra
+  // qualquer tipo (não é validado por tipo, só normalmente vazio pra
+  // PRINCIPAL/COBRANCA).
+  instrucoesEntrega String? @db.Text
+
+  // Só um endereço `padrao: true` por TIPO, por cliente (ex: pode ter um
+  // ENTREGA padrão E um COBRANCA padrão ao mesmo tempo, mas nunca 2 ENTREGA
+  // padrão) — imposto na action via $transaction, mesmo mecanismo de
+  // ContatoCliente.principal acima (não é constraint de banco, mesmo motivo:
+  // um índice único parcial resolveria, mas é mais complexidade de migração
+  // manual do que vale a pena pra esta regra).
+  padrao Boolean @default(false)
+
+  // Soft-delete — nunca hard delete, o endereço pode já estar referenciado
+  // por Orcamento.enderecoEntregaId (histórico de orçamento passado não pode
+  // quebrar). Endereço inativo some do <select> de novos orçamentos, mas
+  // continua existindo pra quem já aponta pra ele.
+  ativo Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orcamentos Orcamento[]
+
+  @@index([clienteId])
+  @@map("enderecos_cliente")
 }
 
 // Perfil de negócio da GRÁFICA (tenant), não confundir com SegmentoCliente
@@ -2044,6 +2134,25 @@ enum StatusSolicitacaoCompra {
   CANCELADO
 }
 
+// De onde nasce a necessidade da compra — achado A3 da auditoria de
+// abrangência (Parte 3/Compras, 2026-08-29): sem isso, reposição de estoque
+// (make-to-stock, nasce do ponto de encomenda) e compra pra um pedido
+// específico (make-to-order, nasce da venda) eram indistinguíveis, e o
+// custo de uma compra sob encomenda só chegava ao pedido indiretamente via
+// baixa de ficha técnica — nunca quando o item comprado não está na ficha
+// técnica (clichê, faca, terceirização). PEDIDO_ESPECIFICO exige
+// SolicitacaoCompra.pedidoId (obrigatório na aplicação, não no schema — ver
+// criarSolicitacaoCompra em src/app/compras/actions.ts); as demais nunca
+// preenchem pedidoId.
+enum OrigemSolicitacaoCompra {
+  REPOSICAO_ESTOQUE // ponto de encomenda / estoque baixo — o caso de sempre, default
+  PEDIDO_ESPECIFICO // comprado especificamente pra um Pedido — vira CustoPedido origem COMPRA em RECEBIDO
+  MANUTENCAO
+  CONSUMO_INTERNO
+  CONTRATO_PROGRAMADO
+  OUTRO
+}
+
 model SolicitacaoCompra {
   id        String                  @id @default(cuid())
   graficaId String
@@ -2068,6 +2177,17 @@ model SolicitacaoCompra {
   valorFinal    Decimal? @db.Decimal(12, 2)
 
   observacao String? // texto livre — ex: motivo da solicitação, condição de pagamento
+
+  // Achado A3 da auditoria de abrangência (Parte 3/Compras) — ver comentário
+  // de OrigemSolicitacaoCompra acima. origemOutro é texto livre só usado
+  // quando origem=OUTRO (mesmo padrão de TipoPessoa/segmento "outro" já
+  // usados no resto do schema). pedidoId aponta pro Pedido de PRODUÇÃO (não
+  // pro Orcamento) — é o Pedido que tem CustoPedido; nullable porque só
+  // PEDIDO_ESPECIFICO preenche (obrigatoriedade condicional validada na
+  // action, não constraint de banco).
+  origem      OrigemSolicitacaoCompra @default(REPOSICAO_ESTOQUE)
+  origemOutro String?
+  pedidoId    String?
 
   usuarioSolicitanteId String
   usuarioAprovadorId   String?
@@ -2104,18 +2224,27 @@ model SolicitacaoCompra {
   fornecedor          Fornecedor?           @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
   usuarioSolicitante  Usuario               @relation("SolicitacoesCompraSolicitadas", fields: [usuarioSolicitanteId], references: [id])
   usuarioAprovador    Usuario?              @relation("SolicitacoesCompraAprovadas", fields: [usuarioAprovadorId], references: [id])
+  // SetNull, mesmo raciocínio de MovimentacaoEstoque.pedido: apagar um
+  // Pedido (hoje não existe fluxo que apague) não pode apagar a solicitação
+  // de compra, só perde a referência de qual pedido a originou.
+  pedido              Pedido?               @relation(fields: [pedidoId], references: [id], onDelete: SetNull)
   // Lado inverso de MovimentacaoEstoque.solicitacaoCompraId (FK mora lá, não
   // aqui) — a entrada de estoque gerada ao confirmar RECEBIDO.
   movimentacaoEstoque MovimentacaoEstoque?
   // Cotações registradas de cada fornecedor consultado (ver model
   // CotacaoFornecedor abaixo) — achado A4 da auditoria de abrangência.
   cotacoes            CotacaoFornecedor[]
+  // Lado inverso de CustoPedido.solicitacaoCompraId — o CustoPedido origem
+  // COMPRA gerado ao confirmar RECEBIDO quando pedidoId está preenchido
+  // (achado A3 da auditoria de abrangência).
+  custoPedidoGerado   CustoPedido?
 
   @@index([graficaId, status])
   @@index([itemGraficaId])
   @@index([varianteId])
   @@index([fornecedorId])
   @@index([usuarioSolicitanteId])
+  @@index([pedidoId])
   @@map("solicitacoes_compra")
 }
 
@@ -2283,6 +2412,17 @@ model Orcamento {
   frete                    TipoFrete?
   transportadora           String?
   localEntrega             String?
+  // Achado A5 da Parte 5 da auditoria de abrangência (2026-08-28) — quando o
+  // vendedor escolhe um EnderecoCliente cadastrado (normalmente tipo
+  // ENTREGA) em vez de digitar `localEntrega` à mão, este id fica salvo
+  // aqui. FK opcional que CONVIVE com o texto livre acima (mesmo precedente
+  // de contatoClienteId/contatoNome, achado A4): escolher um endereço
+  // pré-preenche `localEntrega`, mas o texto livre continua sendo o que
+  // aparece no PDF/Ordem de Produção — nunca lido daqui, pra não quebrar se
+  // o endereço for editado ou desativado depois de o orçamento já enviado.
+  // SetNull: endereço excluído (nunca acontece de verdade, é soft-delete via
+  // EnderecoCliente.ativo) não pode travar nada, só perde o vínculo.
+  enderecoEntregaId        String?
   // Estimativa em DIAS, preenchida pelo vendedor ANTES do cliente decidir —
   // distinto de Pedido.prazoEntrega (data CONFIRMADA, só existe depois da
   // aprovação). Um é promessa pré-venda em dias, o outro é compromisso
@@ -2373,6 +2513,7 @@ model Orcamento {
   filial            Filial?            @relation(fields: [filialId], references: [id], onDelete: SetNull)
   contatoCliente    ContatoCliente?    @relation(fields: [contatoClienteId], references: [id], onDelete: SetNull)
   condicaoPagamento CondicaoPagamento? @relation(fields: [condicaoPagamentoId], references: [id], onDelete: SetNull)
+  enderecoEntrega   EnderecoCliente?   @relation(fields: [enderecoEntregaId], references: [id], onDelete: SetNull)
   itens             OrcamentoItem[]
   opcoes            OrcamentoOpcao[]
   pedido            Pedido?
@@ -2390,6 +2531,7 @@ model Orcamento {
   @@index([duplicadoDeId])
   @@index([contatoClienteId])
   @@index([condicaoPagamentoId])
+  @@index([enderecoEntregaId])
   // Query da lista de "orçamentos parados" (ver /orcamento/parados) —
   // filtra por graficaId+status=ENVIADO e ordena por enviadoEm.
   @@index([graficaId, status, enviadoEm])
@@ -2439,12 +2581,25 @@ model Pagamento {
   // caminho comum de depósito adiantado (sem Pagamento nenhum envolvido).
   movimentacaoCreditoCliente MovimentacaoCreditoCliente?
 
+  // Baixas (recebimento total ou parcial) de ContaReceber financiadas por
+  // este pagamento — achado A8 da Parte 4. Só populado pelo caminho NOVO
+  // (registrarBaixaContaReceber / fechamento automático de saldo parcial em
+  // registrarPagamento); o caminho antigo de valor EXATO continua usando só
+  // ContaReceber.pagamentoId acima, sem nenhuma linha aqui. Ver comentário em
+  // BaixaContaReceber abaixo.
+  baixasContaReceber BaixaContaReceber[]
+
   @@index([orcamentoId])
   @@map("pagamentos")
 }
 
+// PARCIAL — achado A8 da Parte 4 da auditoria de abrangência (2026-08-29):
+// até então PENDENTE/PAGA era tudo-ou-nada, sem jeito de registrar um
+// pagamento que cobre só parte do valor (ex: acordo de pagar metade agora).
+// Ver model PagamentoDespesa abaixo.
 enum StatusDespesa {
   PENDENTE
+  PARCIAL
   PAGA
 }
 
@@ -2539,6 +2694,12 @@ model Despesa {
   // de fora do relatório/exportação financeira.
   movimentacaoContaPrepaga MovimentacaoContaPrepaga?
 
+  // Cada baixa (total ou parcial) registrada contra esta despesa — achado A8
+  // da Parte 4. Ver model PagamentoDespesa abaixo e saldoDespesa em
+  // src/lib/baixa-financeira.ts pra como o saldo em aberto é sempre
+  // recalculado a partir daqui, nunca armazenado.
+  pagamentosDespesa PagamentoDespesa[]
+
   // Trava contra duplicata em `gerarDespesasRecorrentesPendentes`: duas
   // requisições concorrentes (duas abas, dois usuários abrindo /financeiro
   // ao mesmo tempo) podem ambas decidir gerar a ocorrência do mesmo mês
@@ -2549,6 +2710,35 @@ model Despesa {
   @@index([graficaId, status, vencimento])
   @@index([graficaId, serieRecorrenciaId])
   @@map("despesas")
+}
+
+// Uma baixa (pagamento total ou parcial) contra uma Despesa — achado A8 da
+// Parte 4 da auditoria de abrangência (2026-08-29). Despesa nunca teve um
+// model de "pagamento" próprio como Orcamento tem (Pagamento): status/pagoEm/
+// formaPagamento viviam direto nela, tudo-ou-nada. Esta tabela passa a ser a
+// fonte de verdade de CADA pagamento registrado (1:N simples — diferente de
+// BaixaContaReceber, que é N:N porque ali Pagamento já existe como entidade
+// própria e uma linha pode em tese quitar mais de uma ContaReceber). Os
+// campos status/pagoEm/formaPagamento/formaPagamentoDetalhe em Despesa
+// continuam existindo e refletem o estado mais recente (pra não quebrar
+// nenhuma tela que já lê direto de lá), mas o saldo em aberto é sempre
+// recalculado a partir da soma destas linhas — ver saldoDespesa em
+// src/lib/baixa-financeira.ts. Criada só por marcarComoPaga (mesmo cuidado
+// de status/pagoEm de Despesa: nunca editada por form genérico).
+model PagamentoDespesa {
+  id           String         @id @default(cuid())
+  despesaId    String
+  valor        Decimal        @db.Decimal(12, 2)
+  forma        FormaPagamento
+  // Só usado quando forma = OUTRO — mesmo par de Pagamento.formaDetalhe.
+  formaDetalhe String?
+  observacao   String?
+  createdAt    DateTime       @default(now())
+
+  despesa Despesa @relation(fields: [despesaId], references: [id], onDelete: Cascade)
+
+  @@index([despesaId])
+  @@map("pagamentos_despesa")
 }
 
 // Saldo prepago tipo "vale" (ex: carteira de um serviço de entrega como
@@ -2683,8 +2873,15 @@ model MovimentacaoCreditoCliente {
   @@map("movimentacoes_credito_cliente")
 }
 
+// PARCIAL — achado A8 da Parte 4 da auditoria de abrangência (2026-08-29):
+// até então PENDENTE/RECEBIDO era tudo-ou-nada, e a reconciliação com
+// Pagamento só casava em valor EXATO (ver comentário em registrarPagamento
+// em src/app/orcamento/[id]/actions.ts) — um pagamento parcial ou com sobra
+// não mexia em nada, deixando o sistema contar como recebido dinheiro que
+// nunca entrou. Ver model BaixaContaReceber abaixo.
 enum StatusContaReceber {
   PENDENTE
+  PARCIAL
   RECEBIDO
   CANCELADO
 }
@@ -2712,7 +2909,7 @@ enum StatusContaReceber {
 // marcarComoRecebido cria o Pagamento espelhado — ver pagamentoId abaixo.
 //
 // status/recebidoEm nunca são editados por um form genérico — só pelas
-// actions marcarComoRecebido/cancelarContaReceber (ver
+// actions registrarBaixaContaReceber/cancelarContaReceber (ver
 // src/app/financeiro/contas-receber/actions.ts), mesmo cuidado de Despesa
 // pra nunca existir "recebido sem data de recebimento".
 model ContaReceber {
@@ -2727,17 +2924,60 @@ model ContaReceber {
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
 
-  // Pagamento gerado quando marcada como recebida (opcional — só existe
-  // depois do recebimento) — ver comentário em Pagamento.contaReceber acima.
+  // Pagamento gerado quando a conta é quitada NUM SÓ pagamento de valor
+  // EXATO (caminho antigo, preservado 100% — ver registrarPagamento em
+  // src/app/orcamento/[id]/actions.ts e registrarBaixaContaReceber). Quando a
+  // conta é fechada por uma ou mais baixas parciais (ver BaixaContaReceber
+  // abaixo), este campo continua null mesmo com status RECEBIDO — o(s)
+  // pagamento(s) responsável(is) fica(m) só nas linhas de `baixas`. Os dois
+  // caminhos nunca coexistem na mesma conta (ver saldoContaReceber em
+  // src/lib/baixa-financeira.ts).
   pagamentoId String? @unique
 
   grafica   Grafica    @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   orcamento Orcamento  @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
   pagamento Pagamento? @relation(fields: [pagamentoId], references: [id], onDelete: SetNull)
 
+  // Baixas parciais (ou o fechamento final de uma conta que já teve baixas
+  // parciais) — achado A8 da Parte 4. Vazio pra toda conta fechada pelo
+  // caminho antigo (pagamentoId acima) ou ainda PENDENTE.
+  baixas BaixaContaReceber[]
+
   @@index([graficaId, status, vencimento])
   @@index([orcamentoId])
   @@map("contas_a_receber")
+}
+
+// Uma baixa (recebimento total ou parcial) de uma ContaReceber financiada
+// por um Pagamento — achado A8 da Parte 4 da auditoria de abrangência
+// (2026-08-29). N:N com valor (não um FK direto em nenhum dos dois lados)
+// porque uma parcela pode levar mais de um pagamento pra fechar (recebimento
+// parcial, o motivo desta tabela existir) e, em tese, um mesmo Pagamento
+// poderia financiar baixas em mais de uma ContaReceber — não construído hoje
+// (nenhuma tela oferece isso), mas o modelo não impede.
+//
+// Só existe pro caminho NOVO: pagamento em valor EXATO continua fechando a
+// conta direto via ContaReceber.pagamentoId, sem nenhuma linha aqui (ver
+// comentário lá). Criada por registrarBaixaContaReceber (escolha explícita
+// de qual conta) e pelo fechamento automático em registrarPagamento quando o
+// valor bate exato com o SALDO REMANESCENTE de uma conta já PARCIAL — nunca
+// em silêncio numa situação ambígua (ver comentários nas duas actions).
+// Saldo em aberto sempre recalculado somando estas linhas — nunca
+// armazenado, mesma disciplina de CreditoCliente — ver saldoContaReceber em
+// src/lib/baixa-financeira.ts.
+model BaixaContaReceber {
+  id             String   @id @default(cuid())
+  contaReceberId String
+  pagamentoId    String
+  valor          Decimal  @db.Decimal(12, 2)
+  createdAt      DateTime @default(now())
+
+  contaReceber ContaReceber @relation(fields: [contaReceberId], references: [id], onDelete: Cascade)
+  pagamento    Pagamento    @relation(fields: [pagamentoId], references: [id], onDelete: Cascade)
+
+  @@index([contaReceberId])
+  @@index([pagamentoId])
+  @@map("baixas_conta_receber")
 }
 
 // Quando o relógio da parcela começa a contar — pesquisa de mercado (achado
@@ -3359,11 +3599,15 @@ model Pedido {
   grafica   Grafica   @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   orcamento Orcamento @relation(fields: [orcamentoId], references: [id])
 
-  movimentacoes  MovimentacaoEstoque[]
-  custos         CustoPedido[]
-  custosPrevisto PedidoCustoPrevisto[]
-  entrega        Entrega?
-  filaGangRun    FilaGangRun[]
+  movimentacoes      MovimentacaoEstoque[]
+  custos             CustoPedido[]
+  custosPrevisto     PedidoCustoPrevisto[]
+  entrega            Entrega?
+  filaGangRun        FilaGangRun[]
+  // Lado inverso de SolicitacaoCompra.pedidoId — compras feitas
+  // especificamente pra este pedido (origem=PEDIDO_ESPECIFICO, achado A3 da
+  // auditoria de abrangência, Parte 3/Compras).
+  solicitacoesCompra SolicitacaoCompra[]
 
   @@index([graficaId])
   @@map("pedidos")
@@ -3456,6 +3700,11 @@ enum OrigemCusto {
   // dividiram uma mesma chapa no gang run (ver GrupoGangRun/FilaGangRun
   // abaixo e combinarGrupoGangRun em src/lib/gang-run-servico.ts).
   GANG_RUN
+  // Compra feita especificamente pra este pedido (SolicitacaoCompra
+  // origem=PEDIDO_ESPECIFICO), gerado ao confirmar RECEBIDO — achado A3 da
+  // auditoria de abrangência (Parte 3/Compras). Ver criarCustoAutomaticoCompra
+  // em src/lib/custo-pedido.ts.
+  COMPRA
 }
 
 // Um lançamento de custo REAL incorrido num pedido específico — diferente do
@@ -3483,6 +3732,12 @@ model CustoPedido {
   // possivelDuplicidade=true em vez de somar calado.
   origem                OrigemCusto @default(MANUAL)
   movimentacaoEstoqueId String?     @unique
+  // Mesmo padrão de movimentacaoEstoqueId acima, agora pro achado A3 (Parte
+  // 3/Compras): qual SolicitacaoCompra origem=PEDIDO_ESPECIFICO gerou este
+  // lançamento origem=COMPRA ao confirmar RECEBIDO — único porque uma
+  // solicitação nunca gera dois CustoPedido (dedup, mesmo raciocínio de uma
+  // solicitação gerar no máximo uma MovimentacaoEstoque).
+  solicitacaoCompraId   String?     @unique
   valorCalculado        Decimal?    @db.Decimal(12, 2) // o que o sistema apurou, antes de qualquer edição manual
   editadoManualmente    Boolean     @default(false)
   possivelDuplicidade   Boolean     @default(false)
@@ -3501,6 +3756,10 @@ model CustoPedido {
   // de excluir, preservando o histórico de custos já lançados.
   categoriaCusto      CategoriaCusto       @relation(fields: [categoriaCustoId], references: [id], onDelete: Restrict)
   movimentacaoEstoque MovimentacaoEstoque? @relation(fields: [movimentacaoEstoqueId], references: [id], onDelete: SetNull)
+  // SetNull, mesmo raciocínio de movimentacaoEstoque acima: apagar a
+  // solicitação (hoje não existe fluxo que apague) não pode apagar o custo
+  // já lançado, só perde a referência de qual solicitação o gerou.
+  solicitacaoCompra   SolicitacaoCompra?   @relation(fields: [solicitacaoCompraId], references: [id], onDelete: SetNull)
 
   @@index([graficaId])
   @@index([pedidoId])

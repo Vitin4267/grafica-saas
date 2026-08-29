@@ -10,7 +10,13 @@ import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { registrarAuditoria } from "@/lib/auditoria";
-import { ROTULOS_STATUS_SOLICITACAO_COMPRA, TRANSICOES_VALIDAS, type StatusSolicitacaoCompra } from "@/lib/compras-status";
+import {
+  ROTULOS_STATUS_SOLICITACAO_COMPRA,
+  TRANSICOES_VALIDAS,
+  ORIGENS_SOLICITACAO_COMPRA,
+  type StatusSolicitacaoCompra,
+  type OrigemSolicitacaoCompra,
+} from "@/lib/compras-status";
 import { dataInputParaUTC } from "@/lib/data";
 import { formatoMoeda } from "@/lib/moeda";
 import { avancarStatusCompra, type SolicitacaoParaTransicao } from "./status-transicao";
@@ -60,6 +66,25 @@ const criarSchema = z.object({
     .max(500)
     .optional()
     .transform((v) => (v ? v : undefined)),
+  // Achado A3 da auditoria de abrangência (Parte 3/Compras) — origem default
+  // REPOSICAO_ESTOQUE preserva o comportamento de toda solicitação criada
+  // antes desta feature (formulário antigo não manda este campo).
+  origem: z
+    .enum(ORIGENS_SOLICITACAO_COMPRA as [OrigemSolicitacaoCompra, ...OrigemSolicitacaoCompra[]])
+    .optional()
+    .default("REPOSICAO_ESTOQUE"),
+  origemOutro: z
+    .string()
+    .trim()
+    .max(120)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+  pedidoId: z
+    .string()
+    .trim()
+    .min(1)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
 });
 
 // Cria uma nova SolicitacaoCompra em SOLICITADO — o começo do fluxo
@@ -86,11 +111,35 @@ export async function criarSolicitacaoCompra(
     quantidade: formData.get("quantidade"),
     valorEstimado: formData.get("valorEstimado") || undefined,
     observacao: formData.get("observacao") || undefined,
+    origem: formData.get("origem") || undefined,
+    origemOutro: formData.get("origemOutro") || undefined,
+    pedidoId: formData.get("pedidoId") || undefined,
   });
   if (!parsed.success) {
     return { ok: false, mensagem: parsed.error.issues[0].message };
   }
-  const { itemGraficaId, varianteId, fornecedorId, quantidade, valorEstimado, observacao } = parsed.data;
+  const { itemGraficaId, varianteId, fornecedorId, quantidade, valorEstimado, observacao, origem, origemOutro, pedidoId } =
+    parsed.data;
+
+  // Achado A3 da auditoria de abrangência (Parte 3/Compras): pedidoId é
+  // OBRIGATÓRIO na aplicação quando origem=PEDIDO_ESPECIFICO (nullable no
+  // schema — a obrigatoriedade é condicional, não constraint de banco).
+  // Pra qualquer outra origem, pedidoId enviado pelo client é ignorado —
+  // nunca confia em pedidoId vindo de fora sem a origem que o justifica.
+  let pedidoValidoId: string | null = null;
+  if (origem === "PEDIDO_ESPECIFICO") {
+    if (!pedidoId) {
+      return { ok: false, mensagem: "Selecione o pedido pra esta compra sob encomenda." };
+    }
+    const pedidoValido = await prisma.pedido.findFirst({
+      where: { id: pedidoId, graficaId: usuario.graficaId },
+      select: { id: true },
+    });
+    if (!pedidoValido) {
+      return { ok: false, mensagem: "Pedido selecionado é inválido." };
+    }
+    pedidoValidoId = pedidoValido.id;
+  }
 
   const resolvido = await resolverItemMateriaPrima(itemGraficaId, varianteId, usuario.graficaId);
   if (!resolvido) {
@@ -117,6 +166,9 @@ export async function criarSolicitacaoCompra(
       itemGraficaId: itemGrafica.id,
       varianteId: variante?.id ?? null,
       fornecedorId: fornecedorValidoId,
+      origem,
+      origemOutro: origem === "OUTRO" ? (origemOutro ?? null) : null,
+      pedidoId: pedidoValidoId,
       quantidade: quantidade.toFixed(4),
       valorEstimado: valorEstimado !== undefined ? valorEstimado.toFixed(2) : null,
       observacao: observacao ?? null,
@@ -236,6 +288,7 @@ export async function avancarSolicitacaoCompra(
     valorFinal: solicitacao.valorFinal,
     fornecedorId: solicitacao.fornecedorId,
     documento: solicitacao.documento,
+    pedidoId: solicitacao.pedidoId,
   };
 
   const resultado = await avancarStatusCompra(solicitacaoParaTransicao, proximoStatus, usuario, {

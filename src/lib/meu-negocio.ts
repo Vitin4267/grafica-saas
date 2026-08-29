@@ -160,7 +160,12 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
     prisma.itemGrafica.count({ where: { graficaId, ativo: true } }),
     prisma.orcamento.count({ where: { graficaId, createdAt: { gte: inicioDoMesReal } } }),
     prisma.despesa.aggregate({
-      where: { graficaId, status: "PENDENTE", vencimento: { gte: inicioDoMesVencimento } },
+      // PARCIAL incluído desde o achado A8 da Parte 4 (2026-08-29) — sem
+      // isso, uma despesa parcialmente paga sumia inteira desta soma (nem
+      // pendente nem paga), subestimando o que ainda falta pagar no mês.
+      // Soma o valor CHEIO (não o saldo restante) — mesma simplificação já
+      // existente aqui pra PENDENTE, não recalculada por conta desta mudança.
+      where: { graficaId, status: { in: ["PENDENTE", "PARCIAL"] }, vencimento: { gte: inicioDoMesVencimento } },
       _sum: { valor: true },
       _count: true,
     }),

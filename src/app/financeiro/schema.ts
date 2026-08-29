@@ -66,4 +66,16 @@ export const marcarComoPagaSchema = z.object({
     .max(160)
     .optional()
     .transform((v) => (v ? v : undefined)),
+  // Opcional (achado A8 da Parte 4, 2026-08-29): string vazia/ausente vira
+  // undefined e a action usa o SALDO em aberto inteiro — preserva o
+  // comportamento de sempre ("Marcar como paga" = valor cheio) pra quem não
+  // mexe no campo. Só quando preenchido com um valor MENOR que o saldo é
+  // que vira um pagamento parcial de verdade.
+  valor: z
+    .string()
+    .optional()
+    .transform((v) => (v ? Number(v) : undefined))
+    .refine((v) => v === undefined || (Number.isFinite(v) && v > 0), {
+      message: "Informe um valor maior que zero.",
+    }),
 });

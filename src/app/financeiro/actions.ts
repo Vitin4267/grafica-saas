@@ -10,8 +10,15 @@ import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { formatoMoeda } from "@/lib/moeda";
 import { despesaSchema, marcarComoPagaSchema } from "./schema";
+import { saldoDespesa } from "@/lib/baixa-financeira";
+import { paraDecimal } from "@/lib/pricing/decimal";
 
 export type DespesaResult = { ok: boolean; mensagem: string };
+
+// Sinaliza, de dentro da transação, que a despesa já mudou de status entre a
+// leitura inicial e a escrita — mesmo padrão de ErroContaJaRecebida em
+// financeiro/contas-receber/actions.ts.
+class ErroDespesaJaPaga extends Error {}
 
 function revalidarFinanceiro(despesaId?: string) {
   revalidatePath("/financeiro");
@@ -251,6 +258,16 @@ export async function excluirDespesa(
 // status/pagoEm nunca são campos de formulário genérico — só essa action
 // (e marcarComoPendente, o desfazer) mexem neles, garantindo que nunca
 // existe uma despesa "paga" sem data de pagamento ou vice-versa.
+//
+// Achado A8 da Parte 4 (2026-08-29) — pagamento PARCIAL: TODO pagamento
+// registrado por aqui (mesmo o primeiro, em valor cheio) passa a virar uma
+// linha em PagamentoDespesa — ver model no schema.prisma. Quando o valor
+// enviado bate exato com o saldo em aberto (o comportamento de sempre, sem
+// mexer no campo "valor" do form), o resultado observável é IDÊNTICO a
+// antes: status PAGA, pagoEm/formaPagamento setados. Só quando o valor é
+// MENOR que o saldo é que vira PARCIAL. Valor MAIOR que o saldo é
+// rejeitado — nunca aplicado "com sobra" em silêncio (mesma trava de
+// registrarBaixaContaReceber em financeiro/contas-receber/actions.ts).
 export async function marcarComoPaga(
   _estadoAnterior: DespesaResult | null,
   formData: FormData
@@ -266,6 +283,7 @@ export async function marcarComoPaga(
     despesaId: formData.get("despesaId"),
     formaPagamento: formData.get("formaPagamento"),
     formaPagamentoDetalhe: formData.get("formaPagamentoDetalhe") ?? undefined,
+    valor: formData.get("valor") ?? undefined,
   });
   if (!parsed.success) {
     return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Dados inválidos." };
@@ -278,31 +296,67 @@ export async function marcarComoPaga(
   if (!despesa) {
     return { ok: false, mensagem: "Despesa não encontrada." };
   }
+  if (despesa.status !== "PENDENTE" && despesa.status !== "PARCIAL") {
+    return { ok: false, mensagem: "Essa despesa já está paga." };
+  }
 
-  await prisma.despesa.update({
-    where: { id: despesaId },
-    data: {
-      status: "PAGA",
-      pagoEm: new Date(),
-      formaPagamento,
-      // Só guarda o detalhe quando a forma é OUTRO — nunca deixa texto
-      // órfão de uma forma antiga sobrar se o usuário escolher outra forma.
-      formaPagamentoDetalhe: formaPagamento === "OUTRO" ? (formaPagamentoDetalhe ?? null) : null,
-    },
-  });
+  const saldoAtual = await saldoDespesa(prisma, despesa);
+  const valorNovo = paraDecimal(parsed.data.valor ?? saldoAtual.toFixed(2));
+  if (valorNovo.gt(saldoAtual)) {
+    return {
+      ok: false,
+      mensagem: `Valor informado (${formatoMoeda.format(valorNovo.toNumber())}) é maior que o saldo em aberto desta despesa (${formatoMoeda.format(saldoAtual.toNumber())}). Ajuste o valor.`,
+    };
+  }
+
+  const statusLido = despesa.status;
+  const fecha = valorNovo.eq(saldoAtual);
+  const agora = new Date();
+  // Só guarda o detalhe quando a forma é OUTRO — nunca deixa texto
+  // órfão de uma forma antiga sobrar se o usuário escolher outra forma.
+  const formaDetalheFinal = formaPagamento === "OUTRO" ? (formaPagamentoDetalhe ?? null) : null;
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const cas = await tx.despesa.updateMany({
+        where: { id: despesaId, status: statusLido },
+        data: fecha
+          ? { status: "PAGA", pagoEm: agora, formaPagamento, formaPagamentoDetalhe: formaDetalheFinal }
+          : { status: "PARCIAL", formaPagamento, formaPagamentoDetalhe: formaDetalheFinal },
+      });
+      if (cas.count === 0) throw new ErroDespesaJaPaga();
+
+      await tx.pagamentoDespesa.create({
+        data: {
+          despesaId,
+          valor: valorNovo.toFixed(2),
+          forma: formaPagamento,
+          formaDetalhe: formaDetalheFinal,
+          observacao: fecha ? null : "Baixa parcial",
+        },
+      });
+    });
+  } catch (erro) {
+    if (erro instanceof ErroDespesaJaPaga) {
+      return { ok: false, mensagem: "Essa despesa já mudou de status por outra requisição." };
+    }
+    throw erro;
+  }
 
   await registrarAuditoria({
     graficaId: usuario.graficaId,
     usuarioId: usuario.id,
     usuarioNome: usuario.nome,
-    acao: "despesa.marcar_paga",
+    acao: fecha ? "despesa.marcar_paga" : "despesa.baixa_parcial",
     entidade: "Despesa",
     entidadeId: despesaId,
-    descricao: `Despesa "${despesa.descricao}" marcada como paga (${formatoMoeda.format(Number(despesa.valor))})`,
+    descricao: fecha
+      ? `Despesa "${despesa.descricao}" marcada como paga (${formatoMoeda.format(valorNovo.toNumber())})`
+      : `Baixa parcial de ${formatoMoeda.format(valorNovo.toNumber())} registrada na despesa "${despesa.descricao}" (saldo restante: ${formatoMoeda.format(saldoAtual.minus(valorNovo).toNumber())})`,
   });
 
   revalidarFinanceiro(despesaId);
-  return { ok: true, mensagem: "Despesa marcada como paga." };
+  return { ok: true, mensagem: fecha ? "Despesa marcada como paga." : "Baixa parcial registrada." };
 }
 
 export async function marcarComoPendente(
@@ -331,10 +385,19 @@ export async function marcarComoPendente(
     };
   }
 
-  await prisma.despesa.update({
-    where: { id: despesaId },
-    data: { status: "PENDENTE", pagoEm: null, formaPagamento: null, formaPagamentoDetalhe: null },
-  });
+  // Desfazer volta a despesa pro estado "nenhum pagamento registrado" —
+  // achado A8 da Parte 4 (2026-08-29): inclui apagar as linhas de
+  // PagamentoDespesa (total ou parciais) acumuladas, senão o saldo calculado
+  // ficaria inconsistente com status PENDENTE (que pressupõe saldo == valor
+  // cheio). Mesmo espírito "desfazer é desfazer tudo" que já existia aqui
+  // pros campos flat.
+  await prisma.$transaction([
+    prisma.pagamentoDespesa.deleteMany({ where: { despesaId } }),
+    prisma.despesa.update({
+      where: { id: despesaId },
+      data: { status: "PENDENTE", pagoEm: null, formaPagamento: null, formaPagamentoDetalhe: null },
+    }),
+  ]);
 
   await registrarAuditoria({
     graficaId: usuario.graficaId,

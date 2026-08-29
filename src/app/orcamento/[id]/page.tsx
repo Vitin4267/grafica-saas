@@ -59,6 +59,7 @@ import { verificarRecursoPago } from "@/lib/auth/recurso-pago";
 import { urlAssinadaLeitura } from "@/lib/blob-assinado";
 import { converterDeCm, ROTULO_UNIDADE_DIMENSAO } from "@/lib/unidade-dimensao";
 import type { AvisoPreflight } from "@/lib/preflight";
+import { saldoContaReceber } from "@/lib/baixa-financeira";
 
 // Server Action herda o maxDuration da página (Vercel) — analisarTintaItem
 // espera até 40s do webhook n8n + upload da imagem + margem (ver
@@ -176,6 +177,19 @@ export default async function OrcamentoDetalhePage({
   if (!orcamento) {
     notFound();
   }
+
+  // Saldo em aberto de cada ContaReceber PARCIAL — sempre calculado (achado
+  // A8 da Parte 4), nunca armazenado. PENDENTE tem saldo igual ao valor
+  // total (nenhuma baixa ainda), por isso só busca pras PARCIAL.
+  const saldosContaReceberPorConta = new Map<string, string>();
+  await Promise.all(
+    orcamento.contasReceber
+      .filter((c) => c.status === "PARCIAL")
+      .map(async (c) => {
+        const saldo = await saldoContaReceber(prisma, c);
+        saldosContaReceberPorConta.set(c.id, saldo.toFixed(2));
+      })
+  );
 
   // Achado A4 da Parte 5 da auditoria de abrangência — contatos cadastrados
   // do cliente deste orçamento, pra popular o <select> opcional em
@@ -719,6 +733,7 @@ export default async function OrcamentoDetalhePage({
               id: c.id,
               descricao: c.descricao,
               valor: c.valor.toString(),
+              saldo: saldosContaReceberPorConta.get(c.id) ?? c.valor.toString(),
               vencimento: c.vencimento.toISOString(),
               status: c.status,
               recebidoEm: c.recebidoEm ? c.recebidoEm.toISOString() : null,

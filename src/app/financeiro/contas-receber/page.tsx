@@ -15,6 +15,7 @@ import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { ArrowLeftIcon } from "@/components/icons";
 import { ContaReceberLinha } from "./ContaReceberLinha";
+import { saldoContaReceber } from "@/lib/baixa-financeira";
 
 export default async function ContasReceberPage() {
   const usuario = await exigirUsuarioAutenticado();
@@ -23,22 +24,45 @@ export default async function ContasReceberPage() {
   await exigirVerModulo(usuario, "FINANCEIRO");
   const podeEditar = await podeEditarModulo(usuario, "FINANCEIRO");
 
-  // Ordem: PENDENTE antes de RECEBIDO antes de CANCELADO (mesma ideia de
-  // /financeiro pra Despesa — a ordem do enum já coloca o que precisa de
-  // atenção primeiro), e dentro de cada status, vencimento mais antigo
-  // primeiro — então uma parcela vencida há mais tempo aparece no topo.
+  // Ordem: PENDENTE/PARCIAL antes de RECEBIDO antes de CANCELADO (mesma
+  // ideia de /financeiro pra Despesa — a ordem do enum já coloca o que
+  // precisa de atenção primeiro), e dentro de cada status, vencimento mais
+  // antigo primeiro — então uma parcela vencida há mais tempo aparece no topo.
   const contas = await prisma.contaReceber.findMany({
     where: { graficaId: usuario.graficaId },
     include: { orcamento: { include: { cliente: { select: { nome: true } } } } },
     orderBy: [{ status: "asc" }, { vencimento: "asc" }],
   });
 
-  const pendentes = contas.filter((c) => c.status === "PENDENTE");
+  // Saldo em aberto é sempre calculado (achado A8 da Parte 4) — só precisa
+  // ser buscado pras contas PARCIAL (PENDENTE sem baixa nenhuma tem saldo
+  // igual ao valor total, RECEBIDO/CANCELADO não aparecem no formulário de
+  // baixa).
+  const saldosPorConta = new Map<string, string>();
+  await Promise.all(
+    contas
+      .filter((c) => c.status === "PARCIAL")
+      .map(async (c) => {
+        const saldo = await saldoContaReceber(prisma, c);
+        saldosPorConta.set(c.id, saldo.toFixed(2));
+      })
+  );
+
+  const pendentes = contas.filter((c) => c.status === "PENDENTE" || c.status === "PARCIAL");
   const vencidas = pendentes.filter((c) => dataEhPassado(c.vencimento));
   const recebidas = contas.filter((c) => c.status === "RECEBIDO");
 
-  const totalPendente = pendentes.reduce((soma, c) => soma + Number(c.valor), 0);
-  const totalVencido = vencidas.reduce((soma, c) => soma + Number(c.valor), 0);
+  // Total pendente/vencido soma o SALDO em aberto (não o valor cheio da
+  // parcela) pra uma conta PARCIAL não continuar contando o pedaço que já
+  // foi recebido — exatamente o bug que o achado A8 corrige.
+  const totalPendente = pendentes.reduce(
+    (soma, c) => soma + Number(saldosPorConta.get(c.id) ?? c.valor),
+    0
+  );
+  const totalVencido = vencidas.reduce(
+    (soma, c) => soma + Number(saldosPorConta.get(c.id) ?? c.valor),
+    0
+  );
   const totalRecebido = recebidas.reduce((soma, c) => soma + Number(c.valor), 0);
 
   return (
@@ -109,6 +133,7 @@ export default async function ContasReceberPage() {
                 id: conta.id,
                 descricao: conta.descricao,
                 valor: conta.valor.toString(),
+                saldo: saldosPorConta.get(conta.id) ?? conta.valor.toString(),
                 vencimento: conta.vencimento.toISOString(),
                 status: conta.status,
                 recebidoEm: conta.recebidoEm ? conta.recebidoEm.toISOString() : null,

@@ -71,7 +71,16 @@ export async function GET(request: NextRequest) {
       orderBy: { pagoEm: "asc" },
     }),
     prisma.despesa.findMany({
-      where: { graficaId: usuario.graficaId, status: "PENDENTE", vencimento: { gte: inicioLiteral, lt: fimLiteral } },
+      // PARCIAL incluído desde o achado A8 da Parte 4 (2026-08-29) — sem
+      // isso, uma despesa parcialmente paga sumia inteira deste relatório
+      // (nem paga nem pendente). Segue mostrando o valor CHEIO da despesa,
+      // não o saldo restante — este relatório de "pendentes" já era assim
+      // antes desta mudança, não precisão nova.
+      where: {
+        graficaId: usuario.graficaId,
+        status: { in: ["PENDENTE", "PARCIAL"] },
+        vencimento: { gte: inicioLiteral, lt: fimLiteral },
+      },
       orderBy: { vencimento: "asc" },
     }),
   ]);

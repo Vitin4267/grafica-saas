@@ -426,6 +426,51 @@ carga da suíte inteira (949 testes), não bug de lógica; suíte cheia rodada
 3× até estabilizar 949/949 verde antes do build. Verificação final: `tsc
 --noEmit` limpo, 949/949 testes (95 arquivos) passando, `npm run build` OK.
 
+**Atualização 2026-08-29 (rodada 14) — mais 3 achados CONSTRUÍDOS** (3
+subagentes em paralelo, um por módulo):
+- **A3 da Parte 3** (compra não distingue reposição × sob encomenda, nunca
+  vira custo do pedido) — `enum OrigemSolicitacaoCompra` +
+  `SolicitacaoCompra.pedidoId` (obrigatório na aplicação quando
+  `origem=PEDIDO_ESPECIFICO`), `COMPRA` adicionado a `OrigemCusto`. Ao
+  confirmar RECEBIDO com `pedidoId` preenchido, gera `CustoPedido` origem
+  `COMPRA` automaticamente (dedup via `solicitacaoCompraId @unique`, mesmo
+  padrão defensivo de `criarCustoAutomaticoConsumo`), marcando
+  `possivelDuplicidade` quando o material comprado também está na ficha
+  técnica de algum item do pedido. `REPOSICAO_ESTOQUE` (default) continua
+  sem gerar custo nenhum, comportamento de hoje preservado.
+- **A8 da Parte 4** (sem recebimento/pagamento parcial) — `BaixaContaReceber`
+  e `PagamentoDespesa` (N:N com valor), `StatusContaReceber`/`StatusDespesa`
+  ganham `PARCIAL`, saldo sempre calculado (nunca armazenado, mesma
+  disciplina de `CreditoCliente`). Caminho de valor EXATO preservado 100%
+  sem alteração; caminho novo só fecha (nunca cria) uma conta `PARCIAL` cujo
+  saldo bate exato, e rejeita explicitamente pagamento que não bate nem com
+  o total nem com o saldo remanescente (nunca aplica parcial "adivinhando").
+  UI mínima (campo de valor editável nas ações de pagamento existentes, em
+  vez de tela nova). Gap documentado: o CSV pro contador e o "saldo real" do
+  Meu Negócio continuam atribuindo o valor cheio ao mês do fechamento final,
+  não fracionado por mês de cada baixa parcial.
+- **A5 da Parte 5** (um único endereço por cliente) — `model EnderecoCliente`
+  (tipo PRINCIPAL/COBRANCA/ENTREGA, um `padrao` por tipo, soft-delete),
+  seguindo exatamente o padrão estrutural de `ContatoCliente` (achado A4,
+  rodada 12). `Orcamento.enderecoEntregaId` convivendo com o texto livre
+  `localEntrega` já existente (snapshot, mesmo precedente de
+  `contatoClienteId`). Campos fiscais inline do `Cliente` inalterados —
+  continuam sendo o endereço da nota fiscal.
+
+Achado extra na verificação: o teste do achado A5/Clientes
+(`actions.enderecos.test.ts`) tinha o mesmo bug de fixture recorrente — o
+helper de FormData da rodada não cobria TODOS os campos opcionais do
+`enderecoClienteSchema` (esqueceu especificamente `municipio`/`uf` na
+primeira correção, exigindo um segundo ajuste). Padrão se repetindo rodada
+após rodada (11, 12, 13, 14) — todo subagente que escreve teste de uma
+action com `formData.get()` direto precisa de uma base cobrindo 100% dos
+campos `.optional()` do schema, não só os que o caso de teste usa. As 3
+migrations aplicadas ao banco de dev com aprovação explícita (1 retry por
+cold-start do Neon; sem colisão real apesar de 2 pastas de migration
+compartilharem o mesmo timestamp de minuto). Verificação final: `tsc
+--noEmit` limpo, 977/977 testes (100 arquivos) passando 2× seguidas, `npm
+run build` OK.
+
 ## Como ler cada parte
 
 Cada uma das 6 partes abaixo cobre um módulo (ou par de módulos muito
@@ -911,7 +956,10 @@ Achado transversal importante: **`SolicitacaoCompra` não aparece em NENHUM arqu
 - **Rota curta (baixo risco):** manter 1 item por solicitação, adicionar `valorFrete Decimal?`, `valorIpi Decimal?`, `valorIcmsCreditavel Decimal?`, `valorDesconto Decimal?` + campo derivado `custoAquisicaoTotal` usado no lugar de `valorFinal` pra calcular `custoUnitario`.
 - **Rota completa:** promover `SolicitacaoCompra` a cabeçalho + `model SolicitacaoCompraItem` (itemGraficaId/varianteId/descricaoLivre, quantidade, unidadeCompra, precoUnitario, valorFrete rateado, valorIpi). RECEBIDO gera N `MovimentacaoEstoque`. Recomendo a rota curta agora, completa depois.
 
-### A3 — Compra não distingue reposição de estoque × compra sob encomenda pra um pedido, e nunca vira custo do pedido
+### A3 — Compra não distingue reposição de estoque × compra sob encomenda pra um pedido, e nunca vira custo do pedido — **CONSTRUÍDO 2026-08-29 (rodada 14)**
+
+**Status:** `enum OrigemSolicitacaoCompra` + `pedidoId` construídos conforme a proposta. `COMPRA` adicionado a `OrigemCusto`. Confirmar RECEBIDO com `pedidoId` gera `CustoPedido` automaticamente, com dedup e marcação de possível duplicidade quando o material também está na ficha técnica do pedido.
+
 **O que falta.** Não existe `pedidoId` em `SolicitacaoCompra`, nem marcação de origem. `enum OrigemCusto` (schema:2666) tem `MANUAL | CONSUMO_ESTOQUE | COMISSAO | SERVICO_INSUMO | GANG_RUN` — **não tem `COMPRA`**. Quando a gráfica compra material especificamente pra um pedido, o custo só chega depois, indiretamente, via baixa de ficha técnica — e nunca chega se o item não estiver na ficha técnica (clichê, faca, terceirização).
 
 **Pesquisa.** A distinção *make-to-stock × make-to-order* é o eixo central do planejamento de compras: na produção sob encomenda o MRP gera solicitações a partir do pedido de venda; no ressuprimento por ponto de encomenda a compra nasce do nível de estoque (TOTVS Datasul documenta os dois "tipos de ressuprimento" como caminhos distintos).
@@ -1064,7 +1112,10 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 
 **Proposta.** `model CondicaoPagamento { nome, ancora AncoraVencimento, acrescimoPercent, ativa }` + `CondicaoPagamentoParcela { ordem, percentual, diasAposAncora }`, `enum AncoraVencimento { APROVACAO, EMISSAO_NOTA, ENTREGA, OUTRO }`. `Orcamento.condicaoPagamentoId` convivendo com o texto atual (vira snapshot). Gerar `ContaReceber` automaticamente quando a âncora acontece. Bootstrap com as condições comuns da pesquisa.
 
-#### A8 — Não existe recebimento nem pagamento parcial
+#### A8 — Não existe recebimento nem pagamento parcial — **CONSTRUÍDO 2026-08-29 (rodada 14)**
+
+**Status:** `BaixaContaReceber`/`PagamentoDespesa` construídos conforme a proposta, saldo sempre calculado. Caminho de valor exato preservado sem alteração; caminho parcial rejeita explicitamente ambiguidade (nunca "adivinha"). UI mínima (campo de valor editável nas ações existentes). **Gap remanescente:** CSV pro contador e o "saldo real" do Meu Negócio continuam atribuindo o valor cheio ao mês do fechamento, não fracionado por baixa parcial.
+
 **O que falta.** `ContaReceber`/`Despesa` são tudo-ou-nada. Reconciliação só casa em valor exato (comentário admite: "pagamento parcial ou com sobra não mexe em nada"). Cliente paga R$3.000 de parcela de R$5.000: `Pagamento` criado, `ContaReceber` continua pendente, sistema conta R$8.000 onde há R$5.000. Mesmo vale pra juros (A5) e retenção (A9) — que por definição nunca batem exato.
 
 **Proposta.** `model BaixaContaReceber { contaReceberId, pagamentoId, valor, createdAt }` (N:N com valor). `StatusContaReceber.PARCIAL` + saldo sempre calculado, nunca armazenado (disciplina já declarada em `Pagamento`). Simétrico em `Despesa`: `StatusDespesa.PARCIAL` + `PagamentoDespesa`. Casar por valor exato **ou** saldo remanescente exato, nunca em silêncio quando houver ambiguidade.
@@ -1253,7 +1304,9 @@ model ContatoCliente {
 - Migração zero: cliente sem nenhum `ContatoCliente` continua usando `Cliente.email`/`telefone` como hoje. (Uma migração opcional pode criar 1 contato `principal` a partir do e-mail/telefone existente — mas não é necessária.)
 - Destrava coisas concretas que hoje não têm onde ir: mandar o link de aprovação de arte pro aprovador e o boleto/NF pro financeiro, sem a gráfica manter isso num caderno.
 
-### A5. Um único endereço por cliente — não há endereço de entrega, nem filiais, nem o grupo "local de entrega" da NF-e
+### A5. Um único endereço por cliente — não há endereço de entrega, nem filiais, nem o grupo "local de entrega" da NF-e — **CONSTRUÍDO 2026-08-29 (rodada 14)**
+
+**Status:** `model EnderecoCliente` (PRINCIPAL/COBRANCA/ENTREGA) construído seguindo o padrão de `ContatoCliente`. `Orcamento.enderecoEntregaId` convivendo com `localEntrega` texto livre. Campos fiscais inline do `Cliente` inalterados. `clientePaiId`/matriz-filial ficou fora de escopo (inferência sem fonte confirmada no próprio achado).
 
 **O que falta:** os 8 campos `endereco*` inline no `Cliente` são simultaneamente endereço de cadastro, de cobrança e de entrega. Não há como registrar que o faturamento vai pra matriz em São Paulo e a caixa de rótulos vai pra fábrica em Extrema. O sistema tem `Orcamento.localEntrega String?` (texto livre, digitado por pedido) e `model Entrega` (rastreamento pós-produção, sem endereço nenhum) — nenhum dos dois é cadastro reutilizável.
 
