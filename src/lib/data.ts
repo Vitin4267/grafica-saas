@@ -18,6 +18,18 @@ export function dataParaInputValue(data: Date): string {
   return data.toISOString().slice(0, 10);
 }
 
+// Soma `dias` a uma data no formato "AAAA-MM-DD", devolvendo o mesmo
+// formato — usado pra sugerir o vencimento de uma ContaReceber a partir de
+// Cliente.prazoPagamentoPadraoDias (achado A6 da Parte 5 da auditoria de
+// abrangência). Passa por dataInputParaUTC/dataParaInputValue (meia-noite
+// UTC) em vez de aritmética direta de string pra herdar de graça o
+// tratamento correto de virada de mês/ano.
+export function somarDiasInputValue(baseInputValue: string, dias: number): string {
+  const base = dataInputParaUTC(baseInputValue);
+  base.setUTCDate(base.getUTCDate() + dias);
+  return dataParaInputValue(base);
+}
+
 // Converte o valor de um <input type="datetime-local"> ("2026-07-15T14:30")
 // pra Date — mesma filosofia de dataInputParaUTC: trata o horário digitado
 // como literal (nunca reinterpreta por fuso de servidor/navegador), só que

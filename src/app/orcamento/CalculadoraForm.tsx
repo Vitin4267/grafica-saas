@@ -16,7 +16,7 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { ReceiptIcon, RulerIcon, SparklesIcon } from "@/components/icons";
-import { criarOrcamento, precificarItem } from "./actions";
+import { criarOrcamento, precificarItem, buscarCondicoesComerciaisCliente } from "./actions";
 import {
   SeletorItemOrcamento,
   camposIniciais,
@@ -199,6 +199,26 @@ export function CalculadoraForm({
 
   const setDadoGeral = (campo: keyof DadosGerais) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setDadosGerais((atual) => ({ ...atual, [campo]: e.target.value }));
+
+  // Achado A6 da Parte 5 da auditoria de abrangência — ao selecionar um
+  // cliente, busca (via RPC escopada, ver buscarCondicoesComerciaisCliente)
+  // a condição de pagamento sugerida a partir do cadastro dele
+  // (prazoPagamentoPadraoDias/formaPagamentoPreferida) e pré-preenche o
+  // campo abaixo. Checa "está vazio" só quando a resposta chega (não antes)
+  // pra nunca sobrescrever o que o vendedor já tiver digitado nesse meio
+  // tempo — é só um atalho de preenchimento, nunca autoritativo.
+  function selecionarCliente(novoClienteId: string) {
+    setClienteId(novoClienteId);
+    if (!novoClienteId) return;
+    buscarCondicoesComerciaisCliente(novoClienteId).then((sugestao) => {
+      if (!sugestao.condicoesPagamento) return;
+      setDadosGerais((atual) =>
+        atual.condicoesPagamento.trim() === ""
+          ? { ...atual, condicoesPagamento: sugestao.condicoesPagamento! }
+          : atual
+      );
+    });
+  }
 
   const itemSelecionado = itens.find((i) => i.id === campos.itemGraficaId);
   const usaMotorAvancado =
@@ -389,7 +409,7 @@ export function CalculadoraForm({
           <Select
             label="Cliente"
             value={clienteId}
-            onChange={(e) => setClienteId(e.target.value)}
+            onChange={(e) => selecionarCliente(e.target.value)}
             required
           >
             <option value="" disabled>

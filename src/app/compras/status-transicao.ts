@@ -93,7 +93,31 @@ export async function avancarStatusCompra(
     };
   }
 
-  const fornecedorIdFinal = dados.fornecedorId !== undefined ? dados.fornecedorId : solicitacao.fornecedorId;
+  // COTANDO→APROVADO precisa de uma cotação vencedora escolhida (achado A4
+  // da auditoria de abrangência, Parte 3/Compras) — sem isso a aprovação
+  // nasceria sem nenhuma cotação de fato registrada por trás. Só se aplica
+  // quando a solicitação passou por COTANDO de verdade; SOLICITADO→APROVADO
+  // direto (pulando cotação, já era permitido) continua funcionando do jeito
+  // que sempre funcionou, sem exigir nada disto.
+  let cotacaoVencedora: { fornecedorId: string; valorTotal: Prisma.Decimal } | null = null;
+  if (statusAnterior === "COTANDO" && proximoStatus === "APROVADO") {
+    cotacaoVencedora = await prisma.cotacaoFornecedor.findFirst({
+      where: { solicitacaoCompraId: solicitacao.id, vencedora: true },
+      select: { fornecedorId: true, valorTotal: true },
+    });
+    if (!cotacaoVencedora) {
+      return { ok: false, mensagem: "Escolha a cotação vencedora antes de aprovar esta solicitação." };
+    }
+  }
+
+  // A cotação vencedora, quando existe, tem prioridade sobre qualquer
+  // fornecedorId/valorEstimado manual enviado pelo formulário — ela é a
+  // fonte da verdade da decisão (achado A4: "copiar pra solicitação").
+  const fornecedorIdFinal = cotacaoVencedora
+    ? cotacaoVencedora.fornecedorId
+    : dados.fornecedorId !== undefined
+      ? dados.fornecedorId
+      : solicitacao.fornecedorId;
   const documentoFinal = dados.documento !== undefined ? dados.documento : solicitacao.documento;
   const valorFinalFinal =
     dados.valorFinal !== undefined && dados.valorFinal !== null
@@ -114,7 +138,17 @@ export async function avancarStatusCompra(
   const campoData = CAMPO_DATA_POR_STATUS[proximoStatus];
   if (campoData) dadosUpdate[campoData] = new Date();
   if (proximoStatus === "APROVADO") dadosUpdate.usuarioAprovadorId = usuario.id;
-  if (dados.fornecedorId !== undefined) dadosUpdate.fornecedorId = fornecedorIdFinal;
+  if (cotacaoVencedora) {
+    // Copia da cotação vencedora pra solicitação — fornecedorId e
+    // valorEstimado (a estimativa passa a refletir o total de fato cotado,
+    // mais preciso que o palpite original da criação da solicitação).
+    // valorFinal (o que de fato foi pago) continua intocado, só é definido
+    // depois em COMPRADO.
+    dadosUpdate.fornecedorId = cotacaoVencedora.fornecedorId;
+    dadosUpdate.valorEstimado = cotacaoVencedora.valorTotal;
+  } else if (dados.fornecedorId !== undefined) {
+    dadosUpdate.fornecedorId = fornecedorIdFinal;
+  }
   if (dados.documento !== undefined) dadosUpdate.documento = documentoFinal;
   if (proximoStatus === "COMPRADO") dadosUpdate.valorFinal = valorFinalFinal;
 

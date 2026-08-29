@@ -13,9 +13,16 @@ import { ROTULOS_STATUS_SOLICITACAO_COMPRA, type StatusSolicitacaoCompra } from 
 // escolhido (ver DadosTransicaoCompra em ../status-transicao.ts) — um
 // campo que não aparece no DOM não entra na FormData, e a action trata
 // isso como "não mexer" nesse campo.
-function camposContextuais(status: StatusSolicitacaoCompra) {
+//
+// fornecedor: escondido quando vem de COTANDO→APROVADO — nesse caso o
+// fornecedor é decidido pela cotação vencedora marcada no card de Cotações
+// acima (ver avancarStatusCompra em ../status-transicao.ts, achado A4 da
+// auditoria de abrangência), não faz mais sentido escolher de novo aqui.
+// SOLICITADO→APROVADO direto (pulando cotação) continua mostrando o campo
+// normalmente, do jeito que sempre funcionou.
+function camposContextuais(status: StatusSolicitacaoCompra, statusAtual: StatusSolicitacaoCompra) {
   return {
-    fornecedor: status === "APROVADO",
+    fornecedor: status === "APROVADO" && statusAtual !== "COTANDO",
     valorFinal: status === "COMPRADO",
     documento: status === "COMPRADO" || status === "RECEBIDO",
   };
@@ -23,6 +30,7 @@ function camposContextuais(status: StatusSolicitacaoCompra) {
 
 export function AcoesSolicitacaoForm({
   solicitacaoId,
+  statusAtual,
   proximosStatus,
   podeCancelar,
   fornecedorAtualId,
@@ -31,6 +39,7 @@ export function AcoesSolicitacaoForm({
   fornecedores,
 }: {
   solicitacaoId: string;
+  statusAtual: StatusSolicitacaoCompra;
   // Transições válidas a partir do status atual, já sem CANCELADO (ver
   // TRANSICOES_VALIDAS em src/lib/compras-status.ts) — CANCELADO ganha seu
   // próprio botão/formulário separado abaixo, de propósito (ação
@@ -46,7 +55,8 @@ export function AcoesSolicitacaoForm({
   const [stateCancelar, formActionCancelar, pendingCancelar] = useActionState(avancarSolicitacaoCompra, null);
   const [proximoStatus, setProximoStatus] = useState<StatusSolicitacaoCompra | null>(proximosStatus[0] ?? null);
 
-  const campos = proximoStatus ? camposContextuais(proximoStatus) : null;
+  const campos = proximoStatus ? camposContextuais(proximoStatus, statusAtual) : null;
+  const vindoDeCotacao = statusAtual === "COTANDO" && proximoStatus === "APROVADO";
 
   return (
     <Card className="flex flex-col gap-6 p-6">
@@ -82,6 +92,13 @@ export function AcoesSolicitacaoForm({
                   </option>
                 ))}
               </Select>
+            )}
+
+            {vindoDeCotacao && (
+              <p className="text-xs text-slate-500">
+                O fornecedor e o valor serão preenchidos pela cotação marcada como vencedora acima — escolha uma
+                antes de aprovar.
+              </p>
             )}
 
             {campos?.valorFinal && (

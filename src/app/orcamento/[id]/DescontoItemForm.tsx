@@ -32,6 +32,14 @@ export function DescontoItemForm({
   descontoValor,
   motivoDesconto,
   aprovadoPorId,
+  // Achado A6 da Parte 5 da auditoria de abrangência —
+  // Cliente.descontoPadraoPercent, já convertido pro pai pra escala 0-100
+  // (mesma escala do campo "Valor (%)" abaixo). Só uma SUGESTÃO de
+  // preenchimento: pré-preenche o campo quando o usuário abre o form pela
+  // primeira vez (sem desconto ativo ainda), nunca é aplicado sozinho — quem
+  // manda é sempre "Aplicar desconto", que passa pela mesma trava de
+  // descontoMaxSemAprovacao de sempre.
+  descontoPadraoPercentSugerido = null,
 }: {
   orcamentoItemId: string;
   precoSugeridoUnitario: string | null;
@@ -40,6 +48,7 @@ export function DescontoItemForm({
   descontoValor: string | null;
   motivoDesconto: string | null;
   aprovadoPorId: string | null;
+  descontoPadraoPercentSugerido?: number | null;
 }) {
   const [state, formAction, isPending] = useActionState(aplicarDescontoItemOrcamento, null);
   const [estadoRemocao, acaoRemover, removendoPending] = useActionState(
@@ -146,7 +155,16 @@ export function DescontoItemForm({
               min={0}
               required
               defaultValue={
-                descontoTipo === tipo && descontoValor ? Number(descontoValor).toString() : undefined
+                descontoTipo === tipo && descontoValor
+                  ? Number(descontoValor).toString()
+                  : tipo === "PERCENTUAL" && descontoPadraoPercentSugerido !== null
+                    ? descontoPadraoPercentSugerido.toString()
+                    : undefined
+              }
+              hint={
+                descontoTipo !== tipo && tipo === "PERCENTUAL" && descontoPadraoPercentSugerido !== null
+                  ? "Pré-preenchido com o desconto padrão cadastrado no cliente"
+                  : undefined
               }
             />
           </div>

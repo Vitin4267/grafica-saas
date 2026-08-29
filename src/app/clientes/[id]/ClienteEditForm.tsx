@@ -27,8 +27,16 @@ import {
   ROTULO_TIPO_PESSOA,
   ORDEM_INDICADOR_INSCRICAO_ESTADUAL,
   ROTULO_INDICADOR_INSCRICAO_ESTADUAL,
+  ORDEM_FORMA_PAGAMENTO_CLIENTE,
+  ROTULO_FORMA_PAGAMENTO_CLIENTE,
 } from "@/lib/tipos-cliente";
-import type { OrigemCliente, SegmentoCliente, TipoPessoa, IndicadorInscricaoEstadual } from "@/generated/prisma/enums";
+import type {
+  OrigemCliente,
+  SegmentoCliente,
+  TipoPessoa,
+  IndicadorInscricaoEstadual,
+  FormaPagamento,
+} from "@/generated/prisma/enums";
 
 type ValoresCliente = {
   nome: string;
@@ -58,6 +66,13 @@ type ValoresCliente = {
   prazoPagamentoPadraoDias: string;
   bloqueadoParaFaturamento: boolean;
   motivoBloqueioFaturamento: string;
+  // Achado A6 da Parte 5 — "" = sem preferência cadastrada.
+  formaPagamentoPreferida: FormaPagamento | "";
+  // string vazia = sem sugestão cadastrada — mesmo padrão de
+  // margemPadraoOverride abaixo (Decimal não atravessa a fronteira
+  // Server→Client, valor cru da coluna já é a fração 0-1).
+  descontoPadraoPercent: string;
+  observacaoFinanceira: string;
   observacoes: string;
   preferenciasProducao: string;
   origem: OrigemCliente | "";
@@ -274,7 +289,40 @@ export function ClienteEditForm({
               defaultValue={valoresIniciais.prazoPagamentoPadraoDias}
               placeholder="ex: 30"
             />
+            <Select
+              label="Forma de pagamento preferida"
+              name="formaPagamentoPreferida"
+              defaultValue={valoresIniciais.formaPagamentoPreferida}
+            >
+              <option value="">Não informado</option>
+              {ORDEM_FORMA_PAGAMENTO_CLIENTE.map((valor) => (
+                <option key={valor} value={valor}>
+                  {ROTULO_FORMA_PAGAMENTO_CLIENTE[valor]}
+                </option>
+              ))}
+            </Select>
+            <Input
+              label="Desconto padrão negociado (%)"
+              name="descontoPadraoPercent"
+              type="number"
+              step="0.0001"
+              min="0"
+              max="1"
+              defaultValue={valoresIniciais.descontoPadraoPercent}
+              placeholder="ex: 0.1"
+              hint="Sugestão de preenchimento ao negociar preço de item — ainda passa pelo limite de desconto sem aprovação de Configurações"
+            />
           </div>
+          <Textarea
+            label="Observação financeira"
+            name="observacaoFinanceira"
+            defaultValue={valoresIniciais.observacaoFinanceira}
+            placeholder='Ex: "só paga com nota + boleto, portal da prefeitura"'
+            hint="Nota sobre como cobrar este cliente — separada das observações comerciais gerais abaixo"
+            rows={2}
+            className="mt-4"
+            maxLength={2000}
+          />
           <label className="mt-4 flex items-start gap-2 text-sm">
             <input
               type="checkbox"

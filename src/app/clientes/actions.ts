@@ -17,6 +17,7 @@ import {
   ORDEM_SEGMENTO_CLIENTE,
   ORDEM_TIPO_PESSOA,
   ORDEM_INDICADOR_INSCRICAO_ESTADUAL,
+  ORDEM_FORMA_PAGAMENTO_CLIENTE,
 } from "@/lib/tipos-cliente";
 import type {
   OrigemCliente,
@@ -24,6 +25,7 @@ import type {
   TipoPessoa,
   IndicadorInscricaoEstadual,
   FuncaoContatoCliente,
+  FormaPagamento,
 } from "@/generated/prisma/enums";
 
 // Mesmo padrão do resto do schema (UnidadeMedida, CategoriaEquipamento etc.):
@@ -187,6 +189,44 @@ function validarPrazoPagamentoPadraoDias(
   const valor = Number(bruto);
   if (!Number.isInteger(valor) || valor < 0) {
     return { ok: false, mensagem: "Prazo de pagamento padrão inválido — use um número inteiro de dias." };
+  }
+  return { ok: true, valor };
+}
+
+// Achado A6 da Parte 5 da auditoria de abrangência — mesmo padrão de
+// validarTipoPessoa acima (enum-fechado, campo em si opcional). Sem *Outro
+// de escape (ver comentário em ORDEM_FORMA_PAGAMENTO_CLIENTE no
+// tipos-cliente.ts pra por quê).
+function validarFormaPagamentoPreferida(
+  formData: FormData
+): { ok: true; forma: FormaPagamento | null } | { ok: false; mensagem: string } {
+  const forma = String(formData.get("formaPagamentoPreferida") ?? "").trim();
+  if (!forma) {
+    return { ok: true, forma: null };
+  }
+  if (!ORDEM_FORMA_PAGAMENTO_CLIENTE.includes(forma as FormaPagamento)) {
+    return { ok: false, mensagem: "Forma de pagamento preferida inválida." };
+  }
+  return { ok: true, forma: forma as FormaPagamento };
+}
+
+// Achado A6 da Parte 5 — mesmo padrão de validarMargemPadraoOverride acima
+// (fração 0-1, guarda de presença-antes-de-Number()), mas com teto de 1
+// (100%): diferente de margem, desconto acima de 100% não faz sentido em
+// nenhum cenário. Só uma SUGESTÃO de preenchimento (ver comentário no
+// schema) — quem aplica ainda passa pela trava de descontoMaxSemAprovacao no
+// momento de aplicar, então isto aqui não precisa (nem deveria) repetir
+// aquela regra.
+function validarDescontoPadraoPercent(
+  formData: FormData
+): { ok: true; valor: number | null } | { ok: false; mensagem: string } {
+  const bruto = formData.get("descontoPadraoPercent");
+  if (typeof bruto !== "string" || bruto.trim() === "") {
+    return { ok: true, valor: null };
+  }
+  const valor = Number(bruto);
+  if (!Number.isFinite(valor) || valor < 0 || valor > 1) {
+    return { ok: false, mensagem: "Desconto padrão inválido — use uma fração entre 0 e 1 (ex: 0.1 para 10%)." };
   }
   return { ok: true, valor };
 }
@@ -361,6 +401,7 @@ export async function atualizarCliente(
     nomeFantasia: formData.get("nomeFantasia"),
     inscricaoEstadual: formData.get("inscricaoEstadual"),
     inscricaoMunicipal: formData.get("inscricaoMunicipal"),
+    observacaoFinanceira: formData.get("observacaoFinanceira"),
   });
 
   if (!parsed.success) {
@@ -399,6 +440,14 @@ export async function atualizarCliente(
   if (!validacaoPrazoPagamento.ok) {
     return validacaoPrazoPagamento;
   }
+  const validacaoFormaPagamento = validarFormaPagamentoPreferida(formData);
+  if (!validacaoFormaPagamento.ok) {
+    return validacaoFormaPagamento;
+  }
+  const validacaoDescontoPadrao = validarDescontoPadraoPercent(formData);
+  if (!validacaoDescontoPadrao.ok) {
+    return validacaoDescontoPadrao;
+  }
 
   const {
     nome,
@@ -419,6 +468,7 @@ export async function atualizarCliente(
     nomeFantasia,
     inscricaoEstadual,
     inscricaoMunicipal,
+    observacaoFinanceira,
   } = parsed.data;
 
   // bloqueadoParaVenda/motivoBloqueio e bloqueadoParaFaturamento/
@@ -476,6 +526,9 @@ export async function atualizarCliente(
         prazoPagamentoPadraoDias: validacaoPrazoPagamento.valor,
         bloqueadoParaFaturamento,
         motivoBloqueioFaturamento,
+        formaPagamentoPreferida: validacaoFormaPagamento.forma,
+        descontoPadraoPercent: validacaoDescontoPadrao.valor,
+        observacaoFinanceira: observacaoFinanceira || null,
       },
     });
   } catch (erro) {

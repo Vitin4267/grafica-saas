@@ -176,6 +176,64 @@ export async function precificarItem(input: {
   };
 }
 
+export type CondicoesComerciaisSugeridas = { condicoesPagamento: string | null };
+
+// Achado A6 da Parte 5 da auditoria de abrangência — pré-preenche
+// "Condições de pagamento" na Calculadora a partir de
+// Cliente.prazoPagamentoPadraoDias/formaPagamentoPreferida. Chamado do
+// client component (mesmo padrão RPC de precificarItem acima) só quando o
+// vendedor SELECIONA um cliente, nunca embutido na lista de clientes que a
+// página já manda pro browser — aquela lista é deliberadamente {id, nome}
+// só (ver comentário em src/app/orcamento/page.tsx), pra não vazar dado
+// comercial de todo mundo no HTML só pra alimentar um <select>. Aqui o
+// retorno é escopado a UM cliente, já autenticado e validado contra
+// graficaId, então não repete aquele vazamento.
+export async function buscarCondicoesComerciaisCliente(
+  clienteId: string
+): Promise<CondicoesComerciaisSugeridas> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
+    return { condicoesPagamento: null };
+  }
+
+  if (!clienteId) {
+    return { condicoesPagamento: null };
+  }
+
+  const cliente = await prisma.cliente.findFirst({
+    where: { id: clienteId, graficaId: usuario.graficaId },
+    select: { prazoPagamentoPadraoDias: true, formaPagamentoPreferida: true },
+  });
+  if (!cliente) {
+    return { condicoesPagamento: null };
+  }
+
+  const ROTULO_FORMA: Record<string, string> = {
+    DINHEIRO: "Dinheiro",
+    PIX: "Pix",
+    CARTAO: "Cartão",
+    BOLETO: "Boleto",
+    TRANSFERENCIA: "Transferência",
+    OUTRO: "Outro",
+  };
+
+  const partes: string[] = [];
+  if (cliente.formaPagamentoPreferida) {
+    partes.push(ROTULO_FORMA[cliente.formaPagamentoPreferida] ?? cliente.formaPagamentoPreferida);
+  }
+  if (cliente.prazoPagamentoPadraoDias !== null) {
+    partes.push(
+      cliente.prazoPagamentoPadraoDias === 0
+        ? "à vista"
+        : `${cliente.prazoPagamentoPadraoDias} dias`
+    );
+  }
+
+  return { condicoesPagamento: partes.length > 0 ? partes.join(", ") : null };
+}
+
 export type CriarOrcamentoResult = { ok: boolean; mensagem: string };
 
 export async function criarOrcamento(

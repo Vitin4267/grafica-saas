@@ -11,6 +11,7 @@ import {
   formatoInstanteReal,
   formatoInstanteRealComHora,
   hojeBrasiliaInputValue,
+  somarDiasInputValue,
 } from "./data";
 
 describe("dataInputParaUTC", () => {
@@ -139,5 +140,30 @@ describe("hojeBrasiliaInputValue", () => {
 
   it("formato bate com o que dataInputParaUTC/dataParaInputValue esperam (AAAA-MM-DD)", () => {
     expect(hojeBrasiliaInputValue(new Date("2026-12-31T14:00:00.000Z"))).toBe("2026-12-31");
+  });
+});
+
+// Achado A6 da Parte 5 da auditoria de abrangência — usado pra sugerir o
+// vencimento de uma ContaReceber a partir de
+// Cliente.prazoPagamentoPadraoDias (hoje + N dias).
+describe("somarDiasInputValue", () => {
+  it("soma dias dentro do mesmo mês", () => {
+    expect(somarDiasInputValue("2026-08-01", 10)).toBe("2026-08-11");
+  });
+
+  it("0 dias devolve a mesma data (prazo à vista)", () => {
+    expect(somarDiasInputValue("2026-08-15", 0)).toBe("2026-08-15");
+  });
+
+  it("estoura o mês corretamente", () => {
+    expect(somarDiasInputValue("2026-08-25", 10)).toBe("2026-09-04");
+  });
+
+  it("estoura o ano corretamente", () => {
+    expect(somarDiasInputValue("2026-12-28", 10)).toBe("2027-01-07");
+  });
+
+  it("prazo longo (ex: 90 dias) atravessa vários meses sem erro", () => {
+    expect(somarDiasInputValue("2026-01-01", 90)).toBe("2026-04-01");
   });
 });

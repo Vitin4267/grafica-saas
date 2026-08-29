@@ -107,6 +107,7 @@ model Grafica {
   fornecedores          Fornecedor[]
   contasPrepagas        ContaPrepaga[]
   contasReceber         ContaReceber[]
+  condicoesPagamento    CondicaoPagamento[]
   importacoesPlanilha   ImportacaoPlanilha[]
   solicitacoesCompra    SolicitacaoCompra[]
   entregas              Entrega[]
@@ -925,19 +926,22 @@ model Usuario {
   // reativa.
   desativadoEm DateTime?
 
-  grafica                     Grafica                     @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  orcamentos                  Orcamento[]
-  sessoes                     Sessao[]
-  permissoes                  PermissaoUsuario[]
-  tokensResetSenha            TokenResetSenha[]
-  tokensVerificacaoEmail      TokenVerificacaoEmail[]
-  comissoes                   Comissao[]
-  responsaveisEstagio         ResponsavelEstagio[]
-  responsaveisAdministrativo  ResponsavelAdministrativo[]
-  solicitacoesCompraFeitas    SolicitacaoCompra[]         @relation("SolicitacoesCompraSolicitadas")
-  solicitacoesCompraAprovadas SolicitacaoCompra[]         @relation("SolicitacoesCompraAprovadas")
+  grafica                       Grafica                     @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamentos                    Orcamento[]
+  sessoes                       Sessao[]
+  permissoes                    PermissaoUsuario[]
+  tokensResetSenha              TokenResetSenha[]
+  tokensVerificacaoEmail        TokenVerificacaoEmail[]
+  comissoes                     Comissao[]
+  responsaveisEstagio           ResponsavelEstagio[]
+  responsaveisAdministrativo    ResponsavelAdministrativo[]
+  solicitacoesCompraFeitas      SolicitacaoCompra[]         @relation("SolicitacoesCompraSolicitadas")
+  solicitacoesCompraAprovadas   SolicitacaoCompra[]         @relation("SolicitacoesCompraAprovadas")
   // Achado A8 da auditoria de abrangência — ver Cliente.vendedorId.
-  clientesVendedor            Cliente[]
+  clientesVendedor              Cliente[]
+  // Achado A4 da auditoria de abrangência (Parte 3/Compras) — ver model
+  // CotacaoFornecedor.
+  cotacoesFornecedorRegistradas CotacaoFornecedor[]
 
   @@index([graficaId])
   @@map("usuarios")
@@ -1183,6 +1187,35 @@ model Cliente {
   bloqueadoParaFaturamento  Boolean @default(false)
   motivoBloqueioFaturamento String?
 
+  // Achado A6 da Parte 5 da auditoria de abrangência (2026-08-28) — completa
+  // o achado A6 da Parte 4 acima (limiteCredito/prazoPagamentoPadraoDias, já
+  // existentes): faltava como o cliente PAGA, não só quanto/quando. Mesmo
+  // padrão null=comportamento de hoje dos campos acima.
+  //
+  // Reusa o enum FormaPagamento que já existe em Pagamento.forma — zero
+  // conceito novo. Sem *Outro de escape (diferente de origem/segmento): é só
+  // um valor sugerido pra pré-preencher (ver condicoesPagamento no
+  // orçamento), nunca gravado como valor final em nenhum lugar, então não
+  // precisa do mesmo rigor de um dado fiscal/enum estruturado.
+  formaPagamentoPreferida FormaPagamento?
+
+  // Fração 0-1 (mesma representação de margemPadraoOverride abaixo, nunca
+  // 0-100) — desconto negociado que costuma valer pra este cliente. Só uma
+  // SUGESTÃO de preenchimento (ver defaultValue em DescontoItemForm.tsx):
+  // quem aplica ainda passa pela mesma trava de
+  // ParametrosGrafica.descontoMaxSemAprovacao no momento de aplicar (ver
+  // aplicarDescontoItemOrcamento), então guardar aqui um valor acima do
+  // limite não é uma brecha de aprovação — só adianta o preenchimento.
+  descontoPadraoPercent Decimal? @db.Decimal(5, 4)
+
+  // Nota financeira livre (ex: "só paga com nota + boleto, portal da
+  // prefeitura"). Deliberadamente separado de `observacoes` abaixo (nota
+  // comercial genérica de atendimento): este campo é especificamente sobre
+  // COMO cobrar este cliente — mesmo precedente de preferenciasProducao ser
+  // separado de observacoes por AUDIÊNCIA (produção vs. comercial), aqui é
+  // financeiro vs. comercial.
+  observacaoFinanceira String? @db.Text
+
   // Endereço — opcional pra cadastro comum, mas exigido pra emitir nota fiscal
   // (ver DadosFiscaisGrafica / NotaFiscal). enderecoCodigoIbge é nullable e não
   // bloqueia emissão: o exemplo oficial da Focus NFe envia só município+UF.
@@ -1385,7 +1418,7 @@ model ContatoCliente {
   telefone     String?
   whatsapp     String?
 
-  funcao FuncaoContatoCliente @default(COMPRADOR)
+  funcao      FuncaoContatoCliente @default(COMPRADOR)
   // Só preenchido (e obrigatório, validado na action) quando funcao=OUTRO —
   // mesmo padrão de Cliente.origemOutro/segmentoOutro.
   funcaoOutro String?
@@ -1984,6 +2017,7 @@ model Fornecedor {
   grafica            Grafica               @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   movimentacoes      MovimentacaoEstoque[]
   solicitacoesCompra SolicitacaoCompra[]
+  cotacoes           CotacaoFornecedor[]
 
   @@unique([graficaId, nome])
   @@index([graficaId])
@@ -2073,6 +2107,9 @@ model SolicitacaoCompra {
   // Lado inverso de MovimentacaoEstoque.solicitacaoCompraId (FK mora lá, não
   // aqui) — a entrada de estoque gerada ao confirmar RECEBIDO.
   movimentacaoEstoque MovimentacaoEstoque?
+  // Cotações registradas de cada fornecedor consultado (ver model
+  // CotacaoFornecedor abaixo) — achado A4 da auditoria de abrangência.
+  cotacoes            CotacaoFornecedor[]
 
   @@index([graficaId, status])
   @@index([itemGraficaId])
@@ -2080,6 +2117,62 @@ model SolicitacaoCompra {
   @@index([fornecedorId])
   @@index([usuarioSolicitanteId])
   @@map("solicitacoes_compra")
+}
+
+// Uma cotação de um fornecedor específico pra uma SolicitacaoCompra — "mapa
+// de cotação" padrão dos ERPs brasileiros (achado A4 da auditoria de
+// abrangência, Parte 3/Compras): antes disso, a transição SOLICITADO/
+// COTANDO→APROVADO só guardava um único fornecedorId+valorEstimado, sem
+// forma de registrar "Suzano cotou R$5,20/kg em 10 dias, boleto 30; Ibema
+// R$5,45 em 3 dias, à vista" e depois escolher entre eles. Diferente de
+// ComparativoFornecedoresCard (src/lib/comparativo-fornecedores.ts), que é
+// histórico RETROSPECTIVO derivado de compras já recebidas — este model é
+// cotação ATIVA, criada durante o fluxo de uma solicitação específica, antes
+// de qualquer compra de fato acontecer.
+//
+// condicaoPagamento é texto livre de propósito: não existe no schema um
+// enum que sirva pra condição de COMPRA ("à vista", "boleto 30/60/90",
+// "antecipado") — FormaPagamento (usado em Pagamento/Despesa) é sobre o
+// MEIO de pagamento de uma venda (PIX/cartão/boleto como forma), conceito
+// diferente. Fechar um enum agora sem uso real validado seria hardcode
+// prematuro (ver princípio "configurabilidade em vez de hardcode").
+//
+// @@unique([solicitacaoCompraId, fornecedorId]): um fornecedor tem NO MÁXIMO
+// uma cotação vigente por solicitação — recotar o mesmo fornecedor
+// atualiza a linha existente (upsert), nunca duplica.
+model CotacaoFornecedor {
+  id                  String @id @default(cuid())
+  solicitacaoCompraId String
+  fornecedorId        String
+
+  precoUnitario     Decimal   @db.Decimal(12, 4)
+  valorTotal        Decimal   @db.Decimal(12, 2)
+  prazoEntregaDias  Int?
+  condicaoPagamento String?
+  validaAte         DateTime?
+  frete             Decimal?  @db.Decimal(12, 2)
+  observacao        String?
+
+  // Só uma cotação por solicitação pode ser vencedora — garantido em
+  // código (definirCotacaoVencedora zera as demais na mesma transação),
+  // não em constraint de banco (um índice único parcial "por
+  // solicitacaoCompraId onde vencedora=true" exigiria SQL específico do
+  // Postgres fora do que o Prisma schema expressa direto; a rota de
+  // escrita é única — sempre via essa mesma action — então o risco de
+  // divergência é baixo).
+  vencedora Boolean @default(false)
+
+  registradaPorId String
+  createdAt       DateTime @default(now())
+
+  solicitacaoCompra SolicitacaoCompra @relation(fields: [solicitacaoCompraId], references: [id], onDelete: Cascade)
+  fornecedor        Fornecedor        @relation(fields: [fornecedorId], references: [id], onDelete: Cascade)
+  registradaPor     Usuario           @relation(fields: [registradaPorId], references: [id])
+
+  @@unique([solicitacaoCompraId, fornecedorId])
+  @@index([solicitacaoCompraId])
+  @@index([fornecedorId])
+  @@map("cotacoes_fornecedor")
 }
 
 enum StatusOrcamento {
@@ -2174,6 +2267,19 @@ model Orcamento {
   // ContatoCliente.ativo) não pode travar nada, só perde o vínculo.
   contatoClienteId         String?
   condicoesPagamento       String?
+  // Achado A7 da Parte 4 da auditoria de abrangência (2026-08-28) — FK
+  // opcional pra CondicaoPagamento (parcelas ESTRUTURADAS, com âncora e
+  // percentuais), convivendo lado a lado com `condicoesPagamento` acima
+  // (texto livre, exibido no PDF, continua existindo pra quem prefere
+  // digitar). Só usado hoje pra gerar ContaReceber automaticamente na
+  // aprovação (âncora APROVACAO — ver atualizarStatusOrcamento em
+  // src/app/orcamento/[id]/actions.ts e responderOrcamentoPublico em
+  // src/app/o/[token]/actions.ts); âncoras EMISSAO_NOTA/ENTREGA ainda não
+  // têm gatilho automático plumbado (ver comentário em AncoraVencimento).
+  // SetNull: apagar a condição de pagamento (nunca acontece de verdade, é
+  // soft-delete via CondicaoPagamento.ativa) não pode travar o orçamento,
+  // só perde o vínculo — o texto livre continua valendo.
+  condicaoPagamentoId      String?
   frete                    TipoFrete?
   transportadora           String?
   localEntrega             String?
@@ -2261,18 +2367,19 @@ model Orcamento {
   // src/lib/orcamento-opcoes.ts), mesmo princípio de Comissao.baseCalculo.
   opcaoEscolhidaNome String?
 
-  grafica        Grafica          @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  cliente        Cliente          @relation(fields: [clienteId], references: [id])
-  usuario        Usuario          @relation(fields: [usuarioId], references: [id])
-  filial         Filial?          @relation(fields: [filialId], references: [id], onDelete: SetNull)
-  contatoCliente ContatoCliente?  @relation(fields: [contatoClienteId], references: [id], onDelete: SetNull)
-  itens          OrcamentoItem[]
-  opcoes         OrcamentoOpcao[]
-  pedido         Pedido?
-  notaFiscal     NotaFiscal?
-  comissao       Comissao?
-  duplicadoDe    Orcamento?       @relation("DuplicacaoOrcamento", fields: [duplicadoDeId], references: [id], onDelete: SetNull)
-  duplicados     Orcamento[]      @relation("DuplicacaoOrcamento")
+  grafica           Grafica            @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  cliente           Cliente            @relation(fields: [clienteId], references: [id])
+  usuario           Usuario            @relation(fields: [usuarioId], references: [id])
+  filial            Filial?            @relation(fields: [filialId], references: [id], onDelete: SetNull)
+  contatoCliente    ContatoCliente?    @relation(fields: [contatoClienteId], references: [id], onDelete: SetNull)
+  condicaoPagamento CondicaoPagamento? @relation(fields: [condicaoPagamentoId], references: [id], onDelete: SetNull)
+  itens             OrcamentoItem[]
+  opcoes            OrcamentoOpcao[]
+  pedido            Pedido?
+  notaFiscal        NotaFiscal?
+  comissao          Comissao?
+  duplicadoDe       Orcamento?         @relation("DuplicacaoOrcamento", fields: [duplicadoDeId], references: [id], onDelete: SetNull)
+  duplicados        Orcamento[]        @relation("DuplicacaoOrcamento")
 
   pagamentos                  Pagamento[]
   contasReceber               ContaReceber[]
@@ -2282,6 +2389,7 @@ model Orcamento {
   @@index([filialId])
   @@index([duplicadoDeId])
   @@index([contatoClienteId])
+  @@index([condicaoPagamentoId])
   // Query da lista de "orçamentos parados" (ver /orcamento/parados) —
   // filtra por graficaId+status=ENVIADO e ordena por enviadoEm.
   @@index([graficaId, status, enviadoEm])
@@ -2583,10 +2691,16 @@ enum StatusContaReceber {
 
 // Uma parcela/pagamento esperado de um Orcamento aprovado — o par simétrico
 // de Despesa (que é dinheiro SAINDO), mas pro dinheiro que o CLIENTE ainda
-// deve. Pode haver várias linhas por orçamento (parcelamento). Não gerado
-// automaticamente na aprovação — o vendedor/financeiro cadastra as parcelas
-// manualmente na tela do orçamento aprovado (condicoesPagamento já é texto
-// livre, isso aqui é o registro estruturado equivalente).
+// deve. Pode haver várias linhas por orçamento (parcelamento). Até
+// 2026-08-28 nunca era gerado automaticamente — o vendedor/financeiro
+// cadastrava as parcelas manualmente na tela do orçamento aprovado (ver
+// criarContaReceber em src/app/financeiro/contas-receber/actions.ts, que
+// continua sendo o único caminho MANUAL). Achado A7 da Parte 4 da auditoria
+// de abrangência: quando Orcamento.condicaoPagamentoId aponta pra uma
+// CondicaoPagamento (parcelas estruturadas — ver model abaixo), as linhas
+// daqui nascem automaticamente na aprovação, uma vez, como SNAPSHOT — nunca
+// recalculadas/regeneradas se a condição mudar depois (mesma disciplina de
+// Comissao).
 //
 // Diferente de Pagamento (que registra dinheiro JÁ recebido, sem noção de
 // "esperado"/"vencimento"): ContaReceber é o lado da EXPECTATIVA — o que
@@ -2624,6 +2738,78 @@ model ContaReceber {
   @@index([graficaId, status, vencimento])
   @@index([orcamentoId])
   @@map("contas_a_receber")
+}
+
+// Quando o relógio da parcela começa a contar — pesquisa de mercado (achado
+// A7 da Parte 4) mostrou 4 âncoras cobrindo a esmagadora maioria das
+// condições praticadas por gráfica brasileira: da aprovação do orçamento,
+// da emissão da nota fiscal, da entrega do pedido, ou "outro" (prazo digitado
+// manualmente, sem gatilho automático — cai no mesmo cadastro manual de
+// sempre). Hoje só APROVACAO dispara geração automática de ContaReceber (ver
+// atualizarStatusOrcamento em src/app/orcamento/[id]/actions.ts e
+// responderOrcamentoPublico em src/app/o/[token]/actions.ts) — EMISSAO_NOTA
+// e ENTREGA ficam com o enum pronto mas SEM gatilho plumbado ainda (gap
+// remanescente documentado na auditoria): a condição pode ser cadastrada e
+// vinculada ao orçamento normalmente, mas gerarContasReceberDaAprovacao (ver
+// src/lib/condicao-pagamento.ts) só age quando ancora === APROVACAO — pra
+// qualquer outra âncora, hoje o comportamento é o mesmo de não ter condição
+// nenhuma vinculada (a gráfica ainda cadastra a parcela à mão).
+enum AncoraVencimento {
+  APROVACAO
+  EMISSAO_NOTA
+  ENTREGA
+  OUTRO
+}
+
+// Um "jeito de cobrar" que a gráfica pratica com frequência — bootstrap lazy
+// com as condições mais comuns do mercado (1x faturado 30 dias; 50%+50% na
+// entrega; 30/60/90 com 2% de acréscimo; 28/42/56 dias da emissão da nota),
+// mesma disciplina de CATEGORIAS_CUSTO_SUGERIDAS/garantirCategoriasCustoPadrao
+// em src/lib/custo-pedido.ts — ver garantirCondicoesPagamentoPadrao em
+// src/lib/condicao-pagamento.ts. Vinculada a um Orcamento via
+// Orcamento.condicaoPagamentoId (FK opcional, convive com o texto livre
+// condicoesPagamento) e usada, na aprovação, pra gerar ContaReceber (ver
+// comentário em AncoraVencimento acima e no model ContaReceber). Soft-delete
+// via `ativa` (nunca hard-delete — orçamentos já aprovados continuam
+// referenciando a condição usada, mesmo desativada).
+model CondicaoPagamento {
+  id               String           @id @default(cuid())
+  graficaId        String
+  nome             String
+  ancora           AncoraVencimento @default(APROVACAO)
+  // % somado ao total antes de dividir nas parcelas (ex: 30/60/90 com 2% —
+  // condição praticada como "acréscimo pra prazo maior"). null/0 = sem
+  // acréscimo, a maioria das condições (1x faturado, 50%+50%).
+  acrescimoPercent Decimal?         @db.Decimal(5, 2)
+  ativa            Boolean          @default(true)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  grafica    Grafica                    @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  parcelas   CondicaoPagamentoParcela[]
+  orcamentos Orcamento[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId, ativa])
+  @@map("condicoes_pagamento")
+}
+
+// Uma linha do parcelamento de uma CondicaoPagamento — ex: "30/60/90" tem 3
+// linhas (ordem 1/2/3), cada uma com 1/3 (~33.33%) do total e
+// diasAposAncora 30/60/90. `percentual` de todas as linhas de uma mesma
+// condição deveria somar 100 (validado no server ao salvar, não no banco —
+// mesmo princípio de outras validações de composição deste projeto).
+model CondicaoPagamentoParcela {
+  id                  String  @id @default(cuid())
+  condicaoPagamentoId String
+  ordem               Int
+  percentual          Decimal @db.Decimal(5, 2)
+  diasAposAncora      Int
+
+  condicaoPagamento CondicaoPagamento @relation(fields: [condicaoPagamentoId], references: [id], onDelete: Cascade)
+
+  @@index([condicaoPagamentoId])
+  @@map("condicao_pagamento_parcelas")
 }
 
 enum StatusComissao {

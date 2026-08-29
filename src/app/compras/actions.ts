@@ -4,12 +4,15 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/generated/prisma/client";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { ROTULOS_STATUS_SOLICITACAO_COMPRA, TRANSICOES_VALIDAS, type StatusSolicitacaoCompra } from "@/lib/compras-status";
+import { dataInputParaUTC } from "@/lib/data";
+import { formatoMoeda } from "@/lib/moeda";
 import { avancarStatusCompra, type SolicitacaoParaTransicao } from "./status-transicao";
 
 const MENSAGEM_SEM_PERMISSAO = "Você não tem permissão pra editar compras.";
@@ -256,4 +259,286 @@ export async function avancarSolicitacaoCompra(
   }
 
   return resultado;
+}
+
+// Status em que ainda faz sentido registrar/editar/excluir uma cotação, ou
+// marcar uma vencedora — a decisão é travada a partir de APROVADO em diante
+// (achado A4 da auditoria de abrangência, Parte 3/Compras): depois que a
+// solicitação avança, a cotação vencedora já foi copiada pros campos da
+// solicitação (ver status-transicao.ts) e reabrir cotação viraria histórico
+// incoerente com o que já foi decidido.
+const STATUS_PERMITE_COTACAO = new Set<StatusSolicitacaoCompra>(["SOLICITADO", "COTANDO"]);
+
+type CarregarSolicitacaoParaCotacaoResultado =
+  | { ok: true; solicitacao: Prisma.SolicitacaoCompraGetPayload<{ include: { itemGrafica: { include: { itemCatalogo: true } }; variante: true } }> }
+  | { ok: false; mensagem: string };
+
+async function carregarSolicitacaoParaCotacao(
+  solicitacaoId: string,
+  graficaId: string
+): Promise<CarregarSolicitacaoParaCotacaoResultado> {
+  const solicitacao = await prisma.solicitacaoCompra.findFirst({
+    where: { id: solicitacaoId, graficaId },
+    include: { itemGrafica: { include: { itemCatalogo: true } }, variante: true },
+  });
+  if (!solicitacao) return { ok: false, mensagem: "Solicitação não encontrada." };
+  if (!STATUS_PERMITE_COTACAO.has(solicitacao.status)) {
+    return {
+      ok: false,
+      mensagem: `Não é possível mexer em cotações com a solicitação em "${ROTULOS_STATUS_SOLICITACAO_COMPRA[solicitacao.status]}".`,
+    };
+  }
+  return { ok: true, solicitacao };
+}
+
+export type CotacaoFornecedorResult = { ok: boolean; mensagem: string };
+
+const registrarCotacaoSchema = z.object({
+  solicitacaoId: z.string().min(1),
+  fornecedorId: z.string().min(1, "Selecione um fornecedor."),
+  precoUnitario: z.coerce.number().positive("Preço unitário deve ser maior que zero."),
+  valorTotal: z.coerce.number().positive("Valor total deve ser maior que zero."),
+  prazoEntregaDias: z.coerce.number().int().min(0).optional(),
+  condicaoPagamento: z
+    .string()
+    .trim()
+    .max(120)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+  validaAte: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+  frete: z.coerce.number().min(0).optional(),
+  observacao: z
+    .string()
+    .trim()
+    .max(500)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+});
+
+// Cria ou atualiza (upsert, ver @@unique([solicitacaoCompraId, fornecedorId])
+// em CotacaoFornecedor) a cotação de um fornecedor pra esta solicitação —
+// "mapa de cotação": preço, prazo de entrega e condição de pagamento lado a
+// lado de cada fornecedor consultado, antes de escolher com quem comprar
+// (achado A4 da auditoria de abrangência, Parte 3/Compras).
+export async function registrarCotacaoFornecedor(
+  _estadoAnterior: CotacaoFornecedorResult | null,
+  formData: FormData
+): Promise<CotacaoFornecedorResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "COMPRAS"))) {
+    return { ok: false, mensagem: MENSAGEM_SEM_PERMISSAO };
+  }
+
+  const parsed = registrarCotacaoSchema.safeParse({
+    solicitacaoId: formData.get("solicitacaoId"),
+    fornecedorId: formData.get("fornecedorId"),
+    precoUnitario: formData.get("precoUnitario"),
+    valorTotal: formData.get("valorTotal"),
+    prazoEntregaDias: formData.get("prazoEntregaDias") || undefined,
+    condicaoPagamento: formData.get("condicaoPagamento") || undefined,
+    validaAte: formData.get("validaAte") || undefined,
+    frete: formData.get("frete") || undefined,
+    observacao: formData.get("observacao") || undefined,
+  });
+  if (!parsed.success) {
+    return { ok: false, mensagem: parsed.error.issues[0].message };
+  }
+  const {
+    solicitacaoId,
+    fornecedorId,
+    precoUnitario,
+    valorTotal,
+    prazoEntregaDias,
+    condicaoPagamento,
+    validaAte,
+    frete,
+    observacao,
+  } = parsed.data;
+
+  const carregado = await carregarSolicitacaoParaCotacao(solicitacaoId, usuario.graficaId);
+  if (!carregado.ok) {
+    return { ok: false, mensagem: carregado.mensagem };
+  }
+  const { solicitacao } = carregado;
+
+  const fornecedor = await prisma.fornecedor.findFirst({
+    where: { id: fornecedorId, graficaId: usuario.graficaId },
+    select: { id: true, nome: true },
+  });
+  if (!fornecedor) {
+    return { ok: false, mensagem: "Fornecedor selecionado é inválido." };
+  }
+
+  await prisma.cotacaoFornecedor.upsert({
+    where: { solicitacaoCompraId_fornecedorId: { solicitacaoCompraId: solicitacaoId, fornecedorId } },
+    create: {
+      solicitacaoCompraId: solicitacaoId,
+      fornecedorId,
+      precoUnitario: precoUnitario.toFixed(4),
+      valorTotal: valorTotal.toFixed(2),
+      prazoEntregaDias: prazoEntregaDias ?? null,
+      condicaoPagamento: condicaoPagamento ?? null,
+      validaAte: validaAte ? dataInputParaUTC(validaAte) : null,
+      frete: frete !== undefined ? frete.toFixed(2) : null,
+      observacao: observacao ?? null,
+      registradaPorId: usuario.id,
+    },
+    update: {
+      precoUnitario: precoUnitario.toFixed(4),
+      valorTotal: valorTotal.toFixed(2),
+      prazoEntregaDias: prazoEntregaDias ?? null,
+      condicaoPagamento: condicaoPagamento ?? null,
+      validaAte: validaAte ? dataInputParaUTC(validaAte) : null,
+      frete: frete !== undefined ? frete.toFixed(2) : null,
+      observacao: observacao ?? null,
+      registradaPorId: usuario.id,
+      // Recotar um fornecedor que já era vencedor não derruba a escolha
+      // automaticamente — só atualiza os números; se o preço mudou o
+      // suficiente pra mudar a decisão, quem está cotando escolhe outra
+      // vencedora explicitamente (ver definirCotacaoVencedora).
+    },
+  });
+
+  const nomeItem = `${solicitacao.itemGrafica.itemCatalogo.nome}${solicitacao.variante ? ` (${solicitacao.variante.rotulo})` : ""}`;
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "compras.cotacao_registrada",
+    entidade: "SolicitacaoCompra",
+    entidadeId: solicitacao.id,
+    descricao: `Cotação de "${fornecedor.nome}" registrada pra "${nomeItem}" (${formatoMoeda.format(valorTotal)})`,
+  });
+
+  revalidatePath(`/compras/${solicitacaoId}`);
+  return { ok: true, mensagem: `Cotação de "${fornecedor.nome}" registrada.` };
+}
+
+const definirVencedoraSchema = z.object({
+  solicitacaoId: z.string().min(1),
+  cotacaoId: z.string().min(1),
+});
+
+// Marca UMA cotação como vencedora e desmarca todas as outras da mesma
+// solicitação, na mesma transação — nunca duas vencedoras ao mesmo tempo
+// (ver comentário de CotacaoFornecedor.vencedora no schema sobre por que
+// essa exclusividade é garantida em código, não em constraint de banco).
+export async function definirCotacaoVencedora(
+  _estadoAnterior: CotacaoFornecedorResult | null,
+  formData: FormData
+): Promise<CotacaoFornecedorResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "COMPRAS"))) {
+    return { ok: false, mensagem: MENSAGEM_SEM_PERMISSAO };
+  }
+
+  const parsed = definirVencedoraSchema.safeParse({
+    solicitacaoId: formData.get("solicitacaoId"),
+    cotacaoId: formData.get("cotacaoId"),
+  });
+  if (!parsed.success) {
+    return { ok: false, mensagem: "Dados inválidos." };
+  }
+  const { solicitacaoId, cotacaoId } = parsed.data;
+
+  const carregado = await carregarSolicitacaoParaCotacao(solicitacaoId, usuario.graficaId);
+  if (!carregado.ok) {
+    return { ok: false, mensagem: carregado.mensagem };
+  }
+
+  const cotacao = await prisma.cotacaoFornecedor.findFirst({
+    where: { id: cotacaoId, solicitacaoCompraId: solicitacaoId },
+    include: { fornecedor: { select: { nome: true } } },
+  });
+  if (!cotacao) {
+    return { ok: false, mensagem: "Cotação não encontrada." };
+  }
+
+  await prisma.$transaction([
+    prisma.cotacaoFornecedor.updateMany({
+      where: { solicitacaoCompraId: solicitacaoId, id: { not: cotacaoId } },
+      data: { vencedora: false },
+    }),
+    prisma.cotacaoFornecedor.update({ where: { id: cotacaoId }, data: { vencedora: true } }),
+  ]);
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "compras.cotacao_vencedora",
+    entidade: "SolicitacaoCompra",
+    entidadeId: solicitacaoId,
+    descricao: `Cotação de "${cotacao.fornecedor.nome}" escolhida como vencedora`,
+  });
+
+  revalidatePath(`/compras/${solicitacaoId}`);
+  return { ok: true, mensagem: `"${cotacao.fornecedor.nome}" marcada como vencedora.` };
+}
+
+const excluirCotacaoSchema = z.object({
+  solicitacaoId: z.string().min(1),
+  cotacaoId: z.string().min(1),
+});
+
+// Remove uma cotação registrada por engano — só permitido enquanto a
+// decisão ainda não foi travada (ver STATUS_PERMITE_COTACAO). Se a cotação
+// removida era a vencedora, a solicitação simplesmente volta a não ter
+// vencedora nenhuma (avancarStatusCompra vai barrar a aprovação até alguém
+// marcar outra).
+export async function excluirCotacaoFornecedor(
+  _estadoAnterior: CotacaoFornecedorResult | null,
+  formData: FormData
+): Promise<CotacaoFornecedorResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "COMPRAS"))) {
+    return { ok: false, mensagem: MENSAGEM_SEM_PERMISSAO };
+  }
+
+  const parsed = excluirCotacaoSchema.safeParse({
+    solicitacaoId: formData.get("solicitacaoId"),
+    cotacaoId: formData.get("cotacaoId"),
+  });
+  if (!parsed.success) {
+    return { ok: false, mensagem: "Dados inválidos." };
+  }
+  const { solicitacaoId, cotacaoId } = parsed.data;
+
+  const carregado = await carregarSolicitacaoParaCotacao(solicitacaoId, usuario.graficaId);
+  if (!carregado.ok) {
+    return { ok: false, mensagem: carregado.mensagem };
+  }
+
+  const cotacao = await prisma.cotacaoFornecedor.findFirst({
+    where: { id: cotacaoId, solicitacaoCompraId: solicitacaoId },
+    include: { fornecedor: { select: { nome: true } } },
+  });
+  if (!cotacao) {
+    return { ok: false, mensagem: "Cotação não encontrada." };
+  }
+
+  await prisma.cotacaoFornecedor.delete({ where: { id: cotacaoId } });
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "compras.cotacao_excluida",
+    entidade: "SolicitacaoCompra",
+    entidadeId: solicitacaoId,
+    descricao: `Cotação de "${cotacao.fornecedor.nome}" excluída`,
+  });
+
+  revalidatePath(`/compras/${solicitacaoId}`);
+  return { ok: true, mensagem: `Cotação de "${cotacao.fornecedor.nome}" excluída.` };
 }

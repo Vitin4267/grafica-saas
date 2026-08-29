@@ -40,6 +40,11 @@ export const clienteSchema = z.object({
   // validarCategoria em configuracoes/maquinas/equipamentos/actions.ts.
   observacoes: textoLongoOpcional,
   preferenciasProducao: textoLongoOpcional,
+  // Achado A6 da Parte 5 da auditoria de abrangência — nota financeira livre
+  // (COMO cobrar este cliente), mesmo teto/tratamento de observacoes acima,
+  // mas campo distinto (ver comentário em Cliente.observacaoFinanceira no
+  // schema pra por que não é reaproveitado).
+  observacaoFinanceira: textoLongoOpcional,
   origem: opcional,
   origemOutro: opcional,
   // segmento/segmentoOutro: achado A7 da auditoria de abrangência — mesmo

@@ -109,6 +109,10 @@ export default async function ClienteDetalhePage({
               cliente.prazoPagamentoPadraoDias !== null ? cliente.prazoPagamentoPadraoDias.toString() : "",
             bloqueadoParaFaturamento: cliente.bloqueadoParaFaturamento,
             motivoBloqueioFaturamento: cliente.motivoBloqueioFaturamento ?? "",
+            formaPagamentoPreferida: cliente.formaPagamentoPreferida ?? "",
+            descontoPadraoPercent:
+              cliente.descontoPadraoPercent !== null ? cliente.descontoPadraoPercent.toString() : "",
+            observacaoFinanceira: cliente.observacaoFinanceira ?? "",
             observacoes: cliente.observacoes ?? "",
             preferenciasProducao: cliente.preferenciasProducao ?? "",
             origem: cliente.origem ?? "",

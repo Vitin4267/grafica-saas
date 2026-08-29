@@ -3,6 +3,7 @@ import type {
   SegmentoCliente,
   TipoPessoa,
   IndicadorInscricaoEstadual,
+  FormaPagamento,
 } from "@/generated/prisma/enums";
 
 // Canal de aquisição do cliente (achado A11 da auditoria de abrangência,
@@ -77,4 +78,28 @@ export const ROTULO_INDICADOR_INSCRICAO_ESTADUAL: Record<IndicadorInscricaoEstad
   CONTRIBUINTE: "Contribuinte de ICMS",
   ISENTO: "Contribuinte isento de Inscrição Estadual",
   NAO_CONTRIBUINTE: "Não contribuinte",
+};
+
+// Forma de pagamento preferida do cliente (achado A6 da Parte 5 da auditoria
+// de abrangência) — reusa o enum FormaPagamento que já existe em
+// Pagamento.forma/ContaReceber, zero conceito novo. Sem OUTRO de propósito:
+// diferente de origem/segmento, este valor é só uma sugestão de
+// preenchimento (condicoesPagamento do orçamento), nunca gravado como valor
+// final em lugar nenhum — não vale a pena o campo extra "*Outro" pra isso.
+export const ORDEM_FORMA_PAGAMENTO_CLIENTE: FormaPagamento[] = [
+  "PIX",
+  "BOLETO",
+  "CARTAO",
+  "TRANSFERENCIA",
+  "DINHEIRO",
+  "OUTRO",
+];
+
+export const ROTULO_FORMA_PAGAMENTO_CLIENTE: Record<FormaPagamento, string> = {
+  DINHEIRO: "Dinheiro",
+  PIX: "Pix",
+  CARTAO: "Cartão",
+  BOLETO: "Boleto",
+  TRANSFERENCIA: "Transferência",
+  OUTRO: "Outro",
 };

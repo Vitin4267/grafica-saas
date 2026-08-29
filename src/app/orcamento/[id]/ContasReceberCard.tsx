@@ -142,10 +142,17 @@ export function ContasReceberCard({
   orcamentoId,
   contas,
   podeEditar,
+  vencimentoSugerido = null,
 }: {
   orcamentoId: string;
   contas: ContaReceber[];
   podeEditar: boolean;
+  // Achado A6 da Parte 5 da auditoria de abrangência — "AAAA-MM-DD" sugerido
+  // a partir de Cliente.prazoPagamentoPadraoDias (hoje + N dias), ou null se
+  // o cliente não tem prazo cadastrado (campo nasce em branco, comportamento
+  // de hoje). Só um defaultValue — o campo continua editável e obrigatório
+  // como sempre.
+  vencimentoSugerido?: string | null;
 }) {
   const [state, formAction, isPending] = useActionState(criarContaReceber, null);
 
@@ -205,7 +212,13 @@ export function ContasReceberCard({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Input label="Descrição" name="descricao" placeholder="Ex: Parcela 1/3" required />
             <Input label="Valor" name="valor" type="number" step="0.01" min="0.01" required />
-            <Input label="Vencimento" name="vencimento" type="date" required />
+            <Input
+              label="Vencimento"
+              name="vencimento"
+              type="date"
+              required
+              defaultValue={vencimentoSugerido ?? undefined}
+            />
           </div>
           {state && !state.ok && <Alert variant="error">{state.mensagem}</Alert>}
           <Button type="submit" loading={isPending} className="self-start">

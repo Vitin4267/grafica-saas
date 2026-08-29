@@ -21,6 +21,7 @@ import {
 import { assinaturaEstaLiberada } from "@/lib/billing/status";
 import { calcularPrevisaoAprovacaoPedido, gravarPrevisaoAprovacaoPedido } from "@/lib/pedido-aprovacao";
 import { criarCustoAutomaticoComissao } from "@/lib/custo-pedido";
+import { gerarContasReceberDaAprovacao } from "@/lib/condicao-pagamento";
 import { calcularExposicaoCreditoCliente } from "@/lib/exposicao-credito-cliente";
 import { registrarCandidatosGangRun } from "@/lib/gang-run-servico";
 import { resolverOpcoesNaAprovacao, descartarOpcoesAlternativas } from "@/lib/orcamento-opcoes";
@@ -326,6 +327,16 @@ export async function responderOrcamentoPublico(
       await tx.orcamento.update({
         where: { id: orcamento.id },
         data: { total: resolucaoOpcoes.total, opcaoEscolhidaNome: resolucaoOpcoes.opcaoEscolhidaNome },
+      });
+
+      // Achado A7 da Parte 4 — mesmo comportamento do caminho autenticado
+      // (src/app/orcamento/[id]/actions.ts) — ver src/lib/condicao-pagamento.ts.
+      await gerarContasReceberDaAprovacao(tx, {
+        graficaId: orcamento.graficaId,
+        orcamentoId: orcamento.id,
+        condicaoPagamentoId: orcamento.condicaoPagamentoId,
+        total: Number(resolucaoOpcoes.total),
+        aprovadoEm: agora,
       });
 
       const pedido = await tx.pedido.upsert({

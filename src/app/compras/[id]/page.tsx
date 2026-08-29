@@ -18,7 +18,9 @@ import { formatoMoeda } from "@/lib/moeda";
 import { formatoInstanteRealComHora } from "@/lib/data";
 import { rotuloUnidade } from "@/lib/unidade";
 import { TRANSICOES_VALIDAS, ROTULOS_STATUS_SOLICITACAO_COMPRA } from "@/lib/compras-status";
+import { buscarUltimasCotacoesPorItem } from "@/lib/cotacao-fornecedor-db";
 import { AcoesSolicitacaoForm } from "./AcoesSolicitacaoForm";
+import { CotacoesFornecedorCard } from "./CotacoesFornecedorCard";
 
 const formatoQuantidade = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 4 });
 
@@ -39,7 +41,7 @@ export default async function DetalheSolicitacaoCompraPage({
 
   const { id } = await params;
 
-  const [solicitacao, fornecedores, movimentacaoGerada] = await Promise.all([
+  const [solicitacao, fornecedores, movimentacaoGerada, cotacoes] = await Promise.all([
     prisma.solicitacaoCompra.findFirst({
       where: { id, graficaId: usuario.graficaId },
       include: {
@@ -59,6 +61,11 @@ export default async function DetalheSolicitacaoCompraPage({
       where: { solicitacaoCompraId: id },
       select: { quantidade: true, custoUnitario: true, custoTotal: true, createdAt: true },
     }),
+    prisma.cotacaoFornecedor.findMany({
+      where: { solicitacaoCompraId: id, solicitacaoCompra: { graficaId: usuario.graficaId } },
+      include: { fornecedor: { select: { nome: true } }, registradaPor: { select: { nome: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
   ]);
 
   if (!solicitacao) {
@@ -67,6 +74,32 @@ export default async function DetalheSolicitacaoCompraPage({
 
   const nomeItem = `${solicitacao.itemGrafica.itemCatalogo.nome}${solicitacao.variante ? ` (${solicitacao.variante.rotulo})` : ""}`;
   const unidade = rotuloUnidade(solicitacao.itemGrafica.itemCatalogo.unidade, solicitacao.itemGrafica.itemCatalogo.unidadeOutro);
+
+  // Cotações mudam de figura conforme o status: enquanto SOLICITADO/COTANDO
+  // ainda dá pra registrar/editar/marcar vencedora (ver STATUS_PERMITE_COTACAO
+  // em ../actions.ts); a partir de APROVADO a decisão já foi copiada pra
+  // solicitação e a lista vira só histórico de leitura (achado A4 da
+  // auditoria de abrangência, Parte 3/Compras).
+  const statusPermiteCotacao = solicitacao.status === "SOLICITADO" || solicitacao.status === "COTANDO";
+  const cotacaoEditavel = podeEditar && statusPermiteCotacao;
+
+  // "Última cotação conhecida" de cada fornecedor pra ESTE item/variante —
+  // só vale a pena buscar quando o formulário de nova cotação vai de fato
+  // aparecer (evita um round-trip extra ao banco em status posteriores).
+  const ultimasCotacoesConhecidas = cotacaoEditavel
+    ? await buscarUltimasCotacoesPorItem(usuario.graficaId, solicitacao.itemGraficaId, solicitacao.varianteId)
+    : [];
+  const ultimasPorFornecedor = Object.fromEntries(
+    ultimasCotacoesConhecidas.map((c) => [
+      c.fornecedorId,
+      {
+        precoUnitario: c.precoUnitario,
+        condicaoPagamento: c.condicaoPagamento,
+        prazoEntregaDias: c.prazoEntregaDias,
+        frete: c.frete,
+      },
+    ])
+  );
 
   const timeline: { rotulo: string; data: Date }[] = [
     { rotulo: "Solicitado", data: solicitacao.solicitadoEm },
@@ -172,9 +205,35 @@ export default async function DetalheSolicitacaoCompraPage({
             </ol>
           </Card>
 
+          {(cotacoes.length > 0 || cotacaoEditavel) && (
+            <CotacoesFornecedorCard
+              solicitacaoId={solicitacao.id}
+              editavel={cotacaoEditavel}
+              fornecedores={fornecedores}
+              cotacoes={cotacoes.map((c) => ({
+                id: c.id,
+                fornecedorId: c.fornecedorId,
+                fornecedorNome: c.fornecedor.nome,
+                precoUnitario: Number(c.precoUnitario),
+                valorTotal: Number(c.valorTotal),
+                prazoEntregaDias: c.prazoEntregaDias,
+                condicaoPagamento: c.condicaoPagamento,
+                validaAte: c.validaAte ? c.validaAte.toISOString() : null,
+                frete: c.frete !== null ? Number(c.frete) : null,
+                observacao: c.observacao,
+                vencedora: c.vencedora,
+                registradaPorNome: c.registradaPor.nome,
+              }))}
+              ultimasPorFornecedor={ultimasPorFornecedor}
+              quantidadeSolicitada={Number(solicitacao.quantidade)}
+              unidade={unidade}
+            />
+          )}
+
           {podeEditar && (proximosStatus.length > 0 || podeCancelar) && (
             <AcoesSolicitacaoForm
               solicitacaoId={solicitacao.id}
+              statusAtual={solicitacao.status}
               proximosStatus={proximosStatus}
               podeCancelar={podeCancelar}
               fornecedorAtualId={solicitacao.fornecedorId}

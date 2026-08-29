@@ -373,6 +373,59 @@ a mesma instabilidade intermitente de conexão ao Neon de sempre (1 retry
 resolveu). Verificação: `tsc --noEmit` limpo, 916/916 testes (89 arquivos)
 passando, `npm run build` OK.
 
+**Atualização 2026-08-28 (rodada 13) — mais 3 achados CONSTRUÍDOS** (3
+subagentes em paralelo, um por módulo, pra minimizar conflito de arquivo):
+- **A6 da Parte 5** (zero dados comerciais do cliente) — completa o A6 da
+  Parte 4 (rodada 12: `limiteCredito`/`prazoPagamentoPadraoDias`) com
+  `formaPagamentoPreferida` (reusa o enum `FormaPagamento` já existente),
+  `descontoPadraoPercent` e `observacaoFinanceira`. O valor real não é só o
+  cadastro: `Orcamento.condicoesPagamento` é sugerido a partir do cliente
+  selecionado na Calculadora (nova RPC `buscarCondicoesComerciaisCliente`),
+  o campo Vencimento de `ContaReceber` vem pré-calculado a partir de
+  `prazoPagamentoPadraoDias`, e `descontoPadraoPercent` pré-preenche o
+  desconto por item — sempre como sugestão editável, nunca travando nada,
+  e sempre passando pela trava de `descontoMaxSemAprovacao` que já existe.
+- **A4 da Parte 3** (mapa de cotação de fornecedor) — `model
+  CotacaoFornecedor` (preço, prazo, condição de pagamento, frete, validade,
+  vencedora) por par (solicitação, fornecedor). A transição COTANDO→APROVADO
+  agora exige uma vencedora marcada e copia os dados dela pra solicitação
+  (sobrepondo qualquer valor manual). Nova UI `CotacoesFornecedorCard.tsx`
+  no detalhe da solicitação, pré-preenchendo com o último preço conhecido do
+  fornecedor. Caminho antigo (SOLICITADO→APROVADO direto, pulando cotação)
+  preservado e testado intacto.
+- **A7 da Parte 4** (condição de pagamento estruturada) — `model
+  CondicaoPagamento`/`CondicaoPagamentoParcela` (âncora + parcelas com
+  percentual/dias), bootstrap lazy com as 4 condições mais comuns do mercado
+  brasileiro (pesquisa do próprio achado). `ContaReceber` é gerada
+  automaticamente (snapshot, nunca recalculada depois — mesma disciplina de
+  `Comissao`) na aprovação do orçamento, nos dois caminhos (painel
+  autenticado e link público). **Escopo restrito de propósito**: só a âncora
+  `APROVACAO` dispara geração automática nesta rodada — `EMISSAO_NOTA` e
+  `ENTREGA` ficam com enum/campo prontos mas sem gatilho (plumbar em
+  `emitirNfe`/transição pra ENTREGUE fica pra rodada futura). **Gap real
+  maior**: nenhuma UI foi construída — hoje `condicaoPagamentoId` só é
+  setável via Prisma direto (usado assim nos testes); falta tela de
+  configuração de condições e um seletor no formulário de orçamento pra
+  esta feature virar utilizável em produção. Por isso fica como
+  **PARCIALMENTE CONSTRUÍDO**, diferente dos outros 2 achados da rodada.
+
+Achado extra na verificação: um teste do achado A6/Clientes
+(`actions.dados-comerciais.test.ts`) tinha o mesmo bug de fixture já visto
+nas rodadas 11/12 — o helper `formDataBase` só setava `clienteId`/`nome`,
+então os outros campos opcionais do `clienteSchema` chegavam como `null`
+(não `undefined`) e quebravam o zod antes mesmo de rodar os validadores
+novos. Corrigido preenchendo a base com `""` explícito pra todo campo
+opcional do schema (mesma correção de sempre). Também 1 assert frágil
+comparando `Decimal.toString()` contra `"0.1000"` — trocado por comparação
+numérica. As 3 migrations aplicadas ao banco de dev com aprovação explícita
+(1 retry por cold-start do Neon). Dois testes de integração (`o/[token]`,
+um do A6/Financeiro rodada 12 e outro do A7/Financeiro desta rodada)
+falharam de forma isolada e não-reprodutível na suíte cheia mas passaram
+100% quando rodados sozinhos — contenção de conexão no Postgres de dev sob
+carga da suíte inteira (949 testes), não bug de lógica; suíte cheia rodada
+3× até estabilizar 949/949 verde antes do build. Verificação final: `tsc
+--noEmit` limpo, 949/949 testes (95 arquivos) passando, `npm run build` OK.
+
 ## Como ler cada parte
 
 Cada uma das 6 partes abaixo cobre um módulo (ou par de módulos muito
@@ -865,7 +918,10 @@ Achado transversal importante: **`SolicitacaoCompra` não aparece em NENHUM arqu
 
 **Proposta.** `enum OrigemSolicitacaoCompra { REPOSICAO_ESTOQUE PEDIDO_ESPECIFICO MANUTENCAO CONSUMO_INTERNO CONTRATO_PROGRAMADO OUTRO }` + `origemOutro` + `pedidoId String?` (obrigatório na aplicação quando `origem = PEDIDO_ESPECIFICO`). Adicionar `COMPRA` a `OrigemCusto` e, ao chegar em RECEBIDO com `pedidoId`, gerar `CustoPedido` (origem `COMPRA`, `solicitacaoCompraId` único pra dedup — mesmo padrão de `movimentacaoEstoqueId @unique`). Cuidado: compra sob encomenda que também entra no estoque pode duplicar custo — reusar `CustoPedido.possivelDuplicidade`, que já existe pra isso.
 
-### A4 — O status COTANDO não guarda nenhuma cotação
+### A4 — O status COTANDO não guarda nenhuma cotação — **CONSTRUÍDO 2026-08-28 (rodada 13)**
+
+**Status:** `model CotacaoFornecedor` construído conforme a proposta. Transição COTANDO→APROVADO exige vencedora marcada e copia os dados dela pra solicitação. UI de comparação no detalhe da solicitação, pré-preenchida com o último preço conhecido do fornecedor. `condicaoPagamento` ficou como texto livre (não havia enum adequado ao contexto de compra no schema).
+
 **O que falta.** A transição para COTANDO não captura nada — só grava `cotandoEm`. Um único `fornecedorId` e um único `valorEstimado` por solicitação. Não existe forma de registrar "Suzano cotou R$5,20/kg em 10 dias, boleto 30; Ibema R$5,45 em 3 dias, à vista" e depois escolher. O `ComparativoFornecedoresCard` existente é bom, mas é histórico retrospectivo (deriva de compras já recebidas), não cotação ativa.
 
 **Pesquisa.** "Mapa de cotação" é funcionalidade padrão dos ERPs brasileiros: envia pra múltiplos fornecedores, consolida numa tela comparativa de preço **e condições**, gera o pedido a partir da vencedora (Everflow, MXM, TOTVS Protheus). A decisão nunca é só preço — prazo de entrega e condição de pagamento entram no mesmo mapa.
@@ -998,7 +1054,10 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 
 **Proposta.** `Cliente.limiteCredito Decimal?` (null = sem limite), `prazoPagamentoPadraoDias Int?`, `bloqueadoParaFaturamento Boolean @default(false)` + motivo. Aviso não-bloqueante por padrão na aprovação (flag em `ParametrosGrafica` decide se vira trava, mesmo espírito de `descontoMaxSemAprovacao`).
 
-#### A7 — Parcelas de contas a receber são 100% manuais; `condicoesPagamento` é texto livre morto
+#### A7 — Parcelas de contas a receber são 100% manuais; `condicoesPagamento` é texto livre morto — **PARCIALMENTE CONSTRUÍDO 2026-08-28 (rodada 13)**
+
+**Status:** `model CondicaoPagamento`/`CondicaoPagamentoParcela` construídos, com bootstrap lazy das 4 condições comuns da pesquisa. `ContaReceber` gerada automaticamente (snapshot) na aprovação do orçamento, nos dois caminhos (painel e link público) — mas só pra âncora `APROVACAO`; `EMISSAO_NOTA`/`ENTREGA` ficam com enum pronto e sem gatilho. **Gap real: nenhuma UI foi construída** — hoje só é possível vincular uma condição ao orçamento via Prisma direto. Fica pra uma rodada futura: tela de configuração de condições + seletor no formulário de orçamento.
+
 **O que falta.** `Orcamento.condicoesPagamento` é texto livre exibido no PDF e não gera nada. Parcelas são cadastradas à mão — metade não será cadastrada, e o fluxo de caixa (A4) fica cego proporcionalmente.
 
 **Pesquisa.** Condições praticadas por gráficas brasileiras são padronizadas e poucas: 1x faturado 30 dias; 50%+50% na entrega; 30/60/90 com 2% de acréscimo; 28/42/56 dias da emissão da nota.
@@ -1222,7 +1281,9 @@ model EnderecoCliente {
 - `Orcamento.enderecoEntregaId String?` (FK opcional) convivendo com `localEntrega` texto livre, mesmo padrão de snapshot de A4. Alimenta a Ordem de Produção e, no futuro, o grupo "local de entrega" da NF-e.
 - Grupos econômicos / matriz-filial do cliente (mesma empresa, CNPJs diferentes) resolveriam com `Cliente.clientePaiId String?` auto-relacional — **(inferência minha)**, não vi fonte que prove que gráfica pequena precisa disso; só vale se aparecer pedido real, porque bagunça todos os relatórios "por cliente".
 
-### A6. Zero dados comerciais: sem limite de crédito, prazo de pagamento padrão, forma de pagamento preferida ou desconto negociado
+### A6. Zero dados comerciais: sem limite de crédito, prazo de pagamento padrão, forma de pagamento preferida ou desconto negociado — **CONSTRUÍDO 2026-08-28 (rodada 13)** (`limiteCredito`/`prazoPagamentoPadraoDias` já vieram do A6 da Parte 4, rodada 12)
+
+**Status:** `formaPagamentoPreferida`, `descontoPadraoPercent` e `observacaoFinanceira` completam o cadastro. Pré-preenchimento real implementado nos 3 pontos: `Orcamento.condicoesPagamento` sugerido ao escolher cliente na Calculadora, `ContaReceber.vencimento` pré-calculado a partir do prazo padrão, desconto por item sugerido a partir do `descontoPadraoPercent` (sempre passando pela trava de `descontoMaxSemAprovacao`).
 
 **O que falta:** nada em `Cliente` diz como aquele cliente compra. `Orcamento.condicoesPagamento` é texto livre redigitado a cada orçamento; `FormaPagamento` (enum) só existe em `Pagamento`, depois do dinheiro entrar; `ContaReceber` é cadastrada parcela a parcela na mão. Não há como responder "esse cliente é faturado 28 dias" nem "esse cliente já estourou o limite".
 

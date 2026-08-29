@@ -71,6 +71,7 @@ import {
 } from "@/lib/billing/armazenamento";
 import { calcularPrevisaoAprovacaoPedido, gravarPrevisaoAprovacaoPedido } from "@/lib/pedido-aprovacao";
 import { criarCustoAutomaticoComissao } from "@/lib/custo-pedido";
+import { gerarContasReceberDaAprovacao } from "@/lib/condicao-pagamento";
 import { calcularExposicaoCreditoCliente } from "@/lib/exposicao-credito-cliente";
 import { lancarConsumoCreditoCliente } from "@/lib/credito-cliente";
 import { registrarCandidatosGangRun } from "@/lib/gang-run-servico";
@@ -334,6 +335,18 @@ export async function atualizarStatusOrcamento(
       await tx.orcamento.update({
         where: { id: orcamentoId },
         data: { total: resolucaoOpcoes.total, opcaoEscolhidaNome: resolucaoOpcoes.opcaoEscolhidaNome },
+      });
+
+      // Achado A7 da Parte 4 — só gera algo quando o orçamento tem uma
+      // CondicaoPagamento vinculada E ela usa âncora APROVACAO (ver
+      // src/lib/condicao-pagamento.ts pro resto do escopo/gap). Total já
+      // resolvido acima (pós-promoção de opção), nunca orcamento.total cru.
+      await gerarContasReceberDaAprovacao(tx, {
+        graficaId: usuario.graficaId,
+        orcamentoId,
+        condicaoPagamentoId: orcamento.condicaoPagamentoId,
+        total: Number(resolucaoOpcoes.total),
+        aprovadoEm: new Date(),
       });
 
       const pedido = await tx.pedido.upsert({

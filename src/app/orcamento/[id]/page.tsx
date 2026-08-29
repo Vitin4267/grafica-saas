@@ -20,6 +20,7 @@ import {
   dataInputParaUTC,
   dataParaInputValue,
   hojeBrasiliaInputValue,
+  somarDiasInputValue,
 } from "@/lib/data";
 import { somarDiasUteis } from "@/lib/dias-uteis";
 import { saldoCreditoCliente } from "@/lib/credito-cliente";
@@ -489,6 +490,13 @@ export default async function OrcamentoDetalhePage({
                   descontoValor={item.descontoValor?.toString() ?? null}
                   motivoDesconto={item.motivoDesconto}
                   aprovadoPorId={item.aprovadoPorId}
+                  // Achado A6 da Parte 5 — Cliente.descontoPadraoPercent é
+                  // fração 0-1, o campo "Valor (%)" do form é 0-100.
+                  descontoPadraoPercentSugerido={
+                    orcamento.cliente.descontoPadraoPercent !== null
+                      ? Number(orcamento.cliente.descontoPadraoPercent) * 100
+                      : null
+                  }
                 />
                 {margensPorItemId?.get(item.id) && (
                   <Card className="mb-4 -mt-2 p-5">
@@ -698,6 +706,15 @@ export default async function OrcamentoDetalhePage({
           <ContasReceberCard
             orcamentoId={orcamento.id}
             podeEditar={podeEditarFinanceiro}
+            // Achado A6 da Parte 5 — pré-calcula o vencimento sugerido a
+            // partir de Cliente.prazoPagamentoPadraoDias (hoje + N dias).
+            // null = cliente sem prazo cadastrado, campo nasce em branco
+            // (comportamento de hoje, sem regressão).
+            vencimentoSugerido={
+              orcamento.cliente.prazoPagamentoPadraoDias !== null
+                ? somarDiasInputValue(hojeBrasiliaInputValue(), orcamento.cliente.prazoPagamentoPadraoDias)
+                : null
+            }
             contas={orcamento.contasReceber.map((c) => ({
               id: c.id,
               descricao: c.descricao,

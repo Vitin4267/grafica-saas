@@ -39,11 +39,17 @@ const criarSchema = z.object({
     .transform((v) => dataInputParaUTC(v)),
 });
 
-// Cria uma parcela/pagamento esperado pra um orçamento já aprovado — sempre
-// lançamento MANUAL (ver comentário no model ContaReceber no schema), nunca
-// gerado automaticamente na aprovação. Isolamento de tenant: o orçamento
-// precisa pertencer à gráfica do usuário logado E estar APROVADO, nunca
-// confiar só no orcamentoId vindo do form.
+// Cria uma parcela/pagamento esperado pra um orçamento já aprovado — o
+// caminho MANUAL (ver comentário no model ContaReceber no schema). Desde o
+// achado A7 da Parte 4 (2026-08-28) existe também um caminho AUTOMÁTICO —
+// gerarContasReceberDaAprovacao em src/lib/condicao-pagamento.ts, disparado
+// dentro da própria aprovação quando o orçamento tem uma CondicaoPagamento
+// vinculada com âncora APROVACAO — mas este aqui continua sendo o único
+// jeito de lançar uma parcela À MÃO, e nunca é substituído por ele: um
+// orçamento sem condição vinculada (ou com condição de âncora ainda não
+// plumbada) continua dependendo só deste formulário, como sempre. Isolamento
+// de tenant: o orçamento precisa pertencer à gráfica do usuário logado E
+// estar APROVADO, nunca confiar só no orcamentoId vindo do form.
 export async function criarContaReceber(
   _estadoAnterior: ContaReceberResult | null,
   formData: FormData
