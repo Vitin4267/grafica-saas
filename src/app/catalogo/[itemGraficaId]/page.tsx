@@ -15,6 +15,7 @@ import { ArrowLeftIcon } from "@/components/icons";
 import { ConfiguracaoProdutoForm } from "./ConfiguracaoProdutoForm";
 import { ConfiguracaoAcabamentoForm } from "./ConfiguracaoAcabamentoForm";
 import { ConfiguracaoClicheEtiquetaForm } from "./ConfiguracaoClicheEtiquetaForm";
+import { ConfiguracaoEmendaForm } from "./ConfiguracaoEmendaForm";
 import { FichaTecnicaForm } from "./FichaTecnicaForm";
 import { TabelaGramaturaForm } from "./TabelaGramaturaForm";
 import { VariantesMateriaPrimaForm } from "./VariantesMateriaPrimaForm";
@@ -80,6 +81,7 @@ export default async function ConfiguracaoItemPage({
           formatosFolha: { orderBy: { nome: "asc" } },
           configuracaoAcabamento: true,
           configuracaoClicheEtiqueta: true,
+          configuracaoEmenda: true,
           configuracaoClicheFlexografia: true,
           fichaTecnica: true,
           tabelaPrecoPapel: { orderBy: { gramatura: "asc" } },
@@ -299,6 +301,19 @@ export default async function ConfiguracaoItemPage({
                     ? {
                         custoClichePorCm2:
                           itemGrafica.configuracaoClicheEtiqueta.custoClichePorCm2.toString(),
+                      }
+                    : null
+                }
+              />
+            )}
+            {itemGrafica.modeloCalculo === "M2" && (
+              <ConfiguracaoEmendaForm
+                itemGraficaId={itemGrafica.id}
+                configuracao={
+                  itemGrafica.configuracaoEmenda
+                    ? {
+                        custoPorMetroLinear: itemGrafica.configuracaoEmenda.custoPorMetroLinear.toString(),
+                        sobreposicaoM: itemGrafica.configuracaoEmenda.sobreposicaoM.toString(),
                       }
                     : null
                 }

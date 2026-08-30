@@ -18,6 +18,7 @@ import {
   validarEstoqueSuficiente,
   chaveFisicaMaterial,
 } from "@/lib/perda-fixa-producao";
+import { fecharEAbrirApontamento, type ContextoOrigemAvanco } from "@/lib/apontamento-etapa";
 import { SEQUENCIA_STATUS_PEDIDO, ROTULOS_STATUS_PEDIDO, ESTAGIOS_ATRIBUIVEIS } from "@/lib/producao-estagios";
 import { resolverOrigemPublica } from "@/lib/url-publica";
 import { dispararEventoEmail } from "@/lib/email/webhook-email";
@@ -230,9 +231,17 @@ const linhaPerdaSchema = z.object({
     .max(PERDA_MAXIMA, `Perda aplicada não pode passar de ${PERDA_MAXIMA.toLocaleString("pt-BR")}.`),
 });
 
+// contexto tem default (canal APP, sem operador/máquina) só pra não quebrar
+// os call-sites de teste já existentes que chamavam esta função com 2
+// argumentos antes do achado B1/B2 (histórico de ApontamentoEtapa) — os 3
+// canais de verdade (avancarPedido/confirmarEstagioPublico/avancarStatusQr)
+// sempre passam o contexto explicitamente.
+const CONTEXTO_PADRAO: ContextoOrigemAvanco = { origemConfirmacao: "APP", operadorId: null };
+
 export async function avancarStatusPedido(
   pedido: PedidoParaAvanco,
-  perdasJsonBruto: FormDataEntryValue | null
+  perdasJsonBruto: FormDataEntryValue | null,
+  contexto: ContextoOrigemAvanco = CONTEXTO_PADRAO
 ): Promise<AvancarStatusResult> {
   // Gate opt-in: só bloqueia se ESTA gráfica enviou uma arte pra este
   // pedido (arteUrl preenchido) — pedidos sem arte enviada avançam
@@ -408,6 +417,19 @@ export async function avancarStatusPedido(
           if (resultado.count === 0) {
             throw new ErroPedidoJaAvancado();
           }
+
+          // Achado B1/B2 (histórico de etapa + máquina): fecha o apontamento
+          // da etapa que o pedido está SAINDO (CLICHE_FACA) e abre o da que
+          // está ENTRANDO (PRODUCAO), dentro da MESMA transação do CAS acima
+          // — nunca depois, senão uma corrida entre esta baixa de estoque e
+          // outra transição do mesmo pedido poderia confirmar o status sem
+          // o histórico correspondente.
+          await fecharEAbrirApontamento(tx, {
+            graficaId: pedido.graficaId,
+            pedidoId: pedido.id,
+            proximoStatus,
+            ...contexto,
+          });
 
           // Acumula o decremento TOTAL por material FÍSICO (varianteId ??
           // materiaPrimaId, ver chaveFisicaMaterial) enquanto o loop roda —
@@ -677,14 +699,26 @@ export async function avancarStatusPedido(
       // Mesmo guard de "só avança se o status ainda for o que a gente leu"
       // — aqui não é cumulativo como o desconto de estoque acima, mas sem
       // isso um duplo clique simplesmente re-confirmaria sucesso silencioso
-      // numa transição que a outra requisição já tinha feito.
-      const resultado = await prisma.pedido.updateMany({
-        where: { id: pedido.id, status: statusAnterior },
-        data: { status: proximoStatus },
+      // numa transição que a outra requisição já tinha feito. Envolvido numa
+      // transação (achado B1/B2) só pra garantir que o CAS e o abrir/fechar
+      // de ApontamentoEtapa sejam atômicos — nível de isolamento padrão
+      // basta aqui, não há leitura prévia de estoque compartilhado como no
+      // branch acima que justificasse Serializable.
+      await prisma.$transaction(async (tx) => {
+        const resultado = await tx.pedido.updateMany({
+          where: { id: pedido.id, status: statusAnterior },
+          data: { status: proximoStatus },
+        });
+        if (resultado.count === 0) {
+          throw new ErroPedidoJaAvancado();
+        }
+        await fecharEAbrirApontamento(tx, {
+          graficaId: pedido.graficaId,
+          pedidoId: pedido.id,
+          proximoStatus,
+          ...contexto,
+        });
       });
-      if (resultado.count === 0) {
-        throw new ErroPedidoJaAvancado();
-      }
     }
   } catch (erro) {
     if (erro instanceof ErroPedidoJaAvancado) {

@@ -14,6 +14,8 @@ import { calcularPrevisaoAprovacaoPedido } from "@/lib/pedido-aprovacao";
 import { lucroDoPedido } from "@/lib/custo-pedido";
 import { formatoMoeda } from "@/lib/moeda";
 import { formatoInstanteRealComHora } from "@/lib/data";
+import { ROTULOS_STATUS_PEDIDO } from "@/lib/producao-estagios";
+import { sugerirMaquinaPedido, apontamentoDivergeDaSugestao, type SelecaoMaquina } from "@/lib/apontamento-etapa";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/Badge";
@@ -22,6 +24,14 @@ import { MedidorMargem } from "@/components/ui/MedidorMargem";
 import { ArrowLeftIcon, InfoIcon, AlertTriangleIcon } from "@/components/icons";
 import { CustosPedidoSecao } from "../../CustosPedidoSecao";
 import { FecharPedidoBotao, ReabrirPedidoBotao } from "./FecharReabrirAcoes";
+
+// Rótulos de exibição pro canal que confirmou cada etapa (ver
+// OrigemConfirmacaoEtapa no schema) — mesmo enum usado em ApontamentoEtapa.
+const ROTULO_ORIGEM_CONFIRMACAO: Record<"APP" | "LINK_PUBLICO" | "QR_ETIQUETA", string> = {
+  APP: "painel",
+  LINK_PUBLICO: "link público",
+  QR_ETIQUETA: "QR de chão de fábrica",
+};
 
 function SecaoHeader({ titulo, nota }: { titulo: string; nota?: string }) {
   return (
@@ -151,6 +161,60 @@ export default async function FechamentoPedidoPage({
   if (!pedido) {
     notFound();
   }
+
+  // Achado B1/B2 — histórico de etapa (rastro de quem/quando/em qual
+  // máquina), buscado por pedidoId (já garantido pertencer à gráfica do
+  // usuário logado pelo findFirst acima). Includes resolvem o NOME de cada
+  // máquina direto (evita 5 lookups por linha); operadorId é resolvido à
+  // parte (sem FK pro Usuario, ver comentário no schema — pode apontar pra
+  // um usuário já removido).
+  const apontamentos = await prisma.apontamentoEtapa.findMany({
+    where: { pedidoId: pedido.id },
+    include: {
+      prensa: { select: { nome: true } },
+      maquinaFlexografia: { select: { nome: true } },
+      equipamento: { select: { nome: true } },
+      impressoraDigital: { select: { nome: true } },
+      maquinaSetupPorPeca: { select: { nome: true } },
+    },
+    orderBy: { iniciadoEm: "asc" },
+  });
+  const operadorIds = [...new Set(apontamentos.map((a) => a.operadorId).filter((id): id is string => id !== null))];
+  const operadores = operadorIds.length
+    ? await prisma.usuario.findMany({ where: { id: { in: operadorIds } }, select: { id: true, nome: true } })
+    : [];
+  const nomePorOperadorId = new Map(operadores.map((u) => [u.id, u.nome]));
+
+  // Sugestão calculada a partir dos itens do pedido (mesma fórmula de
+  // producao/page.tsx) — usada só pra decidir se cada apontamento DIVERGE
+  // (achado B2, item 4 do enunciado: aviso na tela de custos/fechamento).
+  const sugestaoMaquinaPedido = sugerirMaquinaPedido(pedido.orcamento.itens);
+  const linhasApontamento = apontamentos.map((a) => {
+    const nomeMaquina =
+      a.prensa?.nome ??
+      a.maquinaFlexografia?.nome ??
+      a.equipamento?.nome ??
+      a.impressoraDigital?.nome ??
+      a.maquinaSetupPorPeca?.nome ??
+      null;
+    const selecao: SelecaoMaquina = {
+      prensaId: a.prensaId,
+      maquinaFlexografiaId: a.maquinaFlexografiaId,
+      equipamentoId: a.equipamentoId,
+      impressoraDigitalId: a.impressoraDigitalId,
+      maquinaSetupPorPecaId: a.maquinaSetupPorPecaId,
+    };
+    return {
+      id: a.id,
+      status: a.status,
+      iniciadoEm: a.iniciadoEm,
+      finalizadoEm: a.finalizadoEm,
+      origemConfirmacao: a.origemConfirmacao,
+      nomeMaquina,
+      operadorNome: a.operadorId ? (nomePorOperadorId.get(a.operadorId) ?? null) : a.operadorNomeDeclarado,
+      diverge: apontamentoDivergeDaSugestao(selecao, sugestaoMaquinaPedido),
+    };
+  });
 
   const [previsaoAtual, lucro, fechadoPorUsuario] = await Promise.all([
     // Recalculado NA HORA, não lido de PedidoCustoPrevisto — o que faltava
@@ -441,6 +505,53 @@ export default async function FechamentoPedidoPage({
                   </li>
                 ))}
               </ul>
+            )}
+          </Card>
+        </div>
+
+        {/* Achado B1/B2 — histórico de etapa: quando entrou/saiu de cada
+            status, quem confirmou (canal) e em qual máquina rodou. Aviso de
+            divergência quando a máquina selecionada difere da que os itens
+            do pedido usaram na precificação (ver sugerirMaquinaPedido). */}
+        <div className="mt-6">
+          <SecaoHeader titulo="Etapas e máquinas" />
+          <Card className="p-6">
+            {linhasApontamento.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                Nenhum apontamento de etapa registrado ainda para este pedido.
+              </p>
+            ) : (
+              <div className="flex flex-col divide-y divide-slate-50 dark:divide-slate-800/60">
+                {linhasApontamento.map((linha) => (
+                  <div key={linha.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                    <div>
+                      <p className="font-medium text-slate-800 dark:text-slate-100">
+                        {ROTULOS_STATUS_PEDIDO[linha.status]}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {formatoInstanteRealComHora.format(linha.iniciadoEm)}
+                        {linha.finalizadoEm
+                          ? ` até ${formatoInstanteRealComHora.format(linha.finalizadoEm)}`
+                          : " · em andamento"}
+                        {" · "}
+                        {ROTULO_ORIGEM_CONFIRMACAO[linha.origemConfirmacao]}
+                        {linha.operadorNome ? ` · ${linha.operadorNome}` : ""}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm text-slate-700 dark:text-slate-300">
+                        {linha.nomeMaquina ?? "Sem máquina informada"}
+                      </p>
+                      {linha.diverge && (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 dark:text-amber-400">
+                          <AlertTriangleIcon className="h-3.5 w-3.5" />
+                          rodou em máquina diferente da orçada
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </Card>
         </div>

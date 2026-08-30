@@ -27,6 +27,7 @@ import { registrarCandidatosGangRun } from "@/lib/gang-run-servico";
 import { resolverOpcoesNaAprovacao, descartarOpcoesAlternativas } from "@/lib/orcamento-opcoes";
 import { prepararNotificacaoNotaFiscal } from "@/lib/nota-fiscal";
 import { registrarAuditoria } from "@/lib/auditoria";
+import { abrirApontamentoInicialSeNecessario } from "@/lib/apontamento-etapa";
 
 export type ResponderPublicoResult = { ok: boolean; mensagem: string };
 export type SolicitarAjusteResult = { ok: boolean; mensagem: string };
@@ -357,6 +358,15 @@ export async function responderOrcamentoPublico(
           // no schema.prisma).
           preflightAvisos: orcamento.preflightAvisos ?? undefined,
         },
+      });
+
+      // Achado B1 — mesmo comportamento do caminho autenticado
+      // (src/app/orcamento/[id]/actions.ts), só que origemConfirmacao
+      // LINK_PUBLICO (cliente aprovando sem login pelo próprio token).
+      await abrirApontamentoInicialSeNecessario(tx, {
+        graficaId: orcamento.graficaId,
+        pedidoId: pedido.id,
+        origemConfirmacao: "LINK_PUBLICO",
       });
 
       // Congela aprovadoEm + os três snapshots + a previsão de custo por

@@ -45,6 +45,7 @@ import {
 import { dispararEventoEmail } from "@/lib/email/webhook-email";
 import { templateResponsavelNotaFiscal } from "@/lib/email/templates";
 import { registrarAuditoria } from "@/lib/auditoria";
+import { abrirApontamentoInicialSeNecessario } from "@/lib/apontamento-etapa";
 import { formatoMoeda } from "@/lib/moeda";
 import { dataInputParaUTC, dataHoraInputParaUTC, formatoInstanteReal } from "@/lib/data";
 import {
@@ -372,6 +373,15 @@ export async function atualizarStatusOrcamento(
           // no schema.prisma).
           preflightAvisos: orcamento.preflightAvisos ?? undefined,
         },
+      });
+
+      // Achado B1 — abre o apontamento da 1ª etapa (ARTE) na criação do
+      // Pedido. Idempotente (ver comentário na função): necessário porque
+      // este upsert roda de novo em toda re-submissão (duplo clique, retry).
+      await abrirApontamentoInicialSeNecessario(tx, {
+        graficaId: usuario.graficaId,
+        pedidoId: pedido.id,
+        origemConfirmacao: "APP",
       });
 
       // Congela aprovadoEm + os três snapshots + a previsão de custo por

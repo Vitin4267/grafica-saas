@@ -41,6 +41,12 @@ export type ContextoM2 = {
   custoM2Material: number; // ItemGrafica.precoCompra do material em bobina
   custoImpressaoM2: number; // ItemGrafica.custoImpressaoM2 do produto
   areaMinimaFaturavel: number; // ItemGrafica.areaMinimaFaturavel do produto (m², métrica de auditoria)
+  // Achado A9 da auditoria de abrangência — config OPCIONAL do item
+  // (ConfiguracaoEmenda). Ausente = comportamento de hoje inalterado
+  // (calcularM2 lança PECA_EXCEDE_BOBINA quando a peça não cabe em nenhuma
+  // bobina). Presente = peça maior que toda bobina cadastrada vira painéis
+  // emendados em vez de erro (ver calcularM2 em m2.ts).
+  configuracaoEmenda?: { custoPorMetroLinear: number; sobreposicaoM: number };
 };
 
 // ---------- Cenário 2 (offset / folha) ----------

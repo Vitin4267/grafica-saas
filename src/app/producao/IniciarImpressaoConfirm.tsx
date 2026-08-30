@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { formatoMoeda } from "@/lib/moeda";
 import { previsaoBaixaEstoque, type PrevisaoBaixaEstoqueResult } from "./actions";
+import { SeletorMaquina, type MaquinaOpcaoUI } from "./SeletorMaquina";
 
 type ItemPrevisao = Extract<PrevisaoBaixaEstoqueResult, { ok: true }>["itens"][number];
 
@@ -62,6 +63,8 @@ export function PainelConfirmacaoImpressao({
   isPending,
   erroSubmit,
   onCancelar,
+  maquinas = [],
+  sugestaoValor = "",
 }: {
   pedidoId: string;
   itens: ItemPrevisao[];
@@ -69,10 +72,16 @@ export function PainelConfirmacaoImpressao({
   isPending: boolean;
   erroSubmit?: string;
   onCancelar: () => void;
+  // Achado B2 — CLICHE_FACA→PRODUCAO é a transição que de fato liga o
+  // "motor" (a etapa PRODUCAO é uma das que têm máquina associada), então
+  // este painel (não só AvancarPedidoButton) também ganha o seletor.
+  maquinas?: MaquinaOpcaoUI[];
+  sugestaoValor?: string;
 }) {
   const [perdas, setPerdas] = useState<Record<string, string>>(() =>
     Object.fromEntries(itens.map((i) => [i.chave, String(i.perdaPadrao)]))
   );
+  const [maquinaEscolhida, setMaquinaEscolhida] = useState(sugestaoValor);
 
   // Só pra destacar visualmente quando o mesmo material aparece em mais de um
   // produto do pedido — cada linha continua editável e independente, o
@@ -188,6 +197,9 @@ export function PainelConfirmacaoImpressao({
             }))
           )}
         />
+        {maquinas.length > 0 && (
+          <SeletorMaquina maquinas={maquinas} valor={maquinaEscolhida} onChange={setMaquinaEscolhida} />
+        )}
         <Button type="submit" loading={isPending}>
           {isPending ? "Iniciando..." : "Confirmar e iniciar impressão"}
         </Button>

@@ -96,7 +96,14 @@ export async function confirmarEstagioPublico(
     return { ok: false, mensagem: "Muitas tentativas — aguarde alguns minutos e tente de novo." };
   }
 
-  const resultado = await avancarStatusPedido(pedido, null);
+  // Achado B1 — canal LINK_PUBLICO (e-mail sem login pro responsável da
+  // etapa). Sem operadorId (não há sessão) e sem selecaoMaquina (decisão de
+  // escopo: este canal fica rápido/simples, sem coletar máquina — ver
+  // relatório da tarefa B1/B2).
+  const resultado = await avancarStatusPedido(pedido, null, {
+    origemConfirmacao: "LINK_PUBLICO",
+    operadorId: null,
+  });
   if (!resultado.ok) {
     return { ok: false, mensagem: resultado.mensagem };
   }

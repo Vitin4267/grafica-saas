@@ -471,6 +471,58 @@ compartilharem o mesmo timestamp de minuto). Verificação final: `tsc
 --noEmit` limpo, 977/977 testes (100 arquivos) passando 2× seguidas, `npm
 run build` OK.
 
+**Atualização 2026-08-29 (rodada 15) — mais 3 achados CONSTRUÍDOS**
+(B1+B2 da Parte 2 construídos juntos por um subagente só, já que B2 é
+literalmente um campo a mais no model que B1 cria; A9 da Parte 1 por
+outro subagente em paralelo). Rodada interrompida no meio por ter batido
+no limite de gasto mensal da conta e retomada depois — ver nota de
+processo abaixo:
+- **B1 da Parte 2** (transição de etapa sem rastro) — `model
+  ApontamentoEtapa` (status, iniciadoEm/finalizadoEm, operador,
+  `origemConfirmacao` APP/LINK_PUBLICO/QR_ETIQUETA), aberto/fechado dentro
+  da MESMA transação do CAS que já protege `avancarStatusPedido` — o
+  branch sem baixa de estoque não era transacional antes e precisou virar
+  `$transaction` pra garantir atomicidade. Os 3 canais (painel, link
+  público, QR) gravam a origem correta. **Escopo restrito de propósito:**
+  `quantidadeBoa`/`quantidadeRefugo`/`motivoRefugo` (achado B3) ficaram de
+  fora deliberadamente — é o próximo passo natural, mesmo model.
+- **B2 da Parte 2** (não registra em qual máquina o pedido rodou) — as 5
+  FKs opcionais de máquina em `ApontamentoEtapa`, mesmo padrão de
+  `RegistroManutencao` ("no máximo 1 preenchida", 0 também válido).
+  Sugestão pré-preenchida a partir da máquina usada na precificação,
+  editável pelo operador; aviso de divergência na tela de fechamento do
+  pedido. Só o canal do painel autenticado coleta máquina — link público e
+  QR ficam rápidos/simples, decisão consciente.
+- **A9 da Parte 1** (peça maior que a bobina é erro fatal) — `model
+  ConfiguracaoEmenda` opcional por `ItemGrafica` (custo por metro linear +
+  sobreposição). Sem cadastro, `calcularM2` continua lançando
+  `PECA_EXCEDE_BOBINA` como sempre; com cadastro, calcula nºPainéis, soma
+  o custo de emenda ao `custoBase` e devolve aviso no breakdown em vez de
+  erro.
+
+**Nota de processo (corte de orçamento, 2026-08-29):** os 2 subagentes
+originais desta rodada foram cortados no meio da tarefa por limite de
+gasto mensal da conta Anthropic (HTTP 429) — não foi bug, foi orçamento.
+Retomados depois com `model: "sonnet"` explícito (esquecido nas rodadas
+11-15 até este ponto — corrigido daqui pra frente, ver
+[[feedback-orquestracao-modelo]] na memória), revisando o que já existia
+em vez de recomeçar do zero — nenhum trabalho foi perdido, só terminado.
+
+**Achados extras notados pelos subagentes, fora do escopo desta rodada**
+(a pedido do usuário, subagentes agora reportam bug de lógica real que
+notarem na área tocada, mesmo fora do achado):
+- `cancelarPedido` nunca fecha o `ApontamentoEtapa` aberto ao cancelar um
+  pedido — fica com `finalizadoEm: null` pra sempre, linha do tempo
+  "pendurada" pra pedidos cancelados. Não corrigido (fora de B1/B2),
+  registrado pra rodada futura.
+- `custoImpressao` no caminho de emenda continua calculado sobre a área
+  nominal da peça inteira, não por painel — comportamento pretendido
+  (impressão cobre a arte inteira, sobreposição é só informativa), mas
+  vale confirmar a intenção de negócio antes de considerar 100% fechado.
+
+Verificação: `tsc --noEmit` limpo, 999/999 testes (102 arquivos) passando
+2× seguidas, `npm run build` OK.
+
 ## Como ler cada parte
 
 Cada uma das 6 partes abaixo cobre um módulo (ou par de módulos muito
@@ -581,7 +633,10 @@ Três limitações que andam juntas, todas em `carregar.ts:162-204`:
 - `ItemGrafica.materialId String?` (FK pra outro `ItemGrafica` MATERIA_PRIMA, exatamente como `papelId`), com sobrescrita opcional no orçamento — generalizando `OrcamentoItemPrecificacaoEtiqueta.papelId`, que já provou o padrão.
 - `model ModoImpressao { maquinaId, nome, custoM2Adicional, multiplicadorTempo }` OU, mínimo viável, `OrcamentoItem.numeroCamadas Int? @default(1)` multiplicando `custoImpressaoM2`.
 
-### A9. Peça maior que a bobina é erro fatal, não custo de emenda
+### A9. Peça maior que a bobina é erro fatal, não custo de emenda — **CONSTRUÍDO 2026-08-29 (rodada 15)**
+
+**Status:** `model ConfiguracaoEmenda` opcional por item, exatamente como a proposta. Sem cadastro, comportamento de hoje preservado (`PECA_EXCEDE_BOBINA`); com cadastro, calcula nºPainéis + custo de emenda e devolve aviso no breakdown.
+
 **O que falta:** `calcularM2` (`m2.ts:84-90`) lança `PECA_EXCEDE_BOBINA` com "É necessário emendar (solda/costura) — intervenção manual necessária". Em comunicação visual, **backdrop, fachada, outdoor e painel de evento emendados são rotina**, não exceção — e o catálogo mestre já vende os quatro. Hoje esses produtos simplesmente não passam pelo motor.
 
 **Proposta:** quando nenhuma orientação couber, calcular `nºPainéis = ceil(w / wUtil)` e adicionar `custoEmendaPorMetroLinear × comprimento da emenda × (nºPainéis − 1)` — com `ConfiguracaoEmenda { itemGraficaId, custoPorMetroLinear, sobreposicaoM }` — devolvendo **aviso** no breakdown em vez de erro. Depende de A1 estar resolvido se for implementado via acabamento METRO_LINEAR.
@@ -750,7 +805,10 @@ enum TipoEtapaProducao {
 
 ### B. Rastreamento operacional (o buraco maior)
 
-#### B1 — Nenhum registro de quem, quando e quanto: transição de etapa não deixa rastro nenhum
+#### B1 — Nenhum registro de quem, quando e quanto: transição de etapa não deixa rastro nenhum — **CONSTRUÍDO 2026-08-29 (rodada 15)**
+
+**Status:** `model ApontamentoEtapa` construído, aberto/fechado dentro da transação do CAS de `avancarStatusPedido`, nos 3 canais (painel, link público, QR). **Escopo restrito:** campos de refugo (B3) ficaram de fora de propósito.
+
 **O que falta.** Confirmado no código: `avancarStatusPedido` faz `prisma.pedido.updateMany({ data: { status: proximoStatus } })` e nada mais. **Não chama `registrarAuditoria`** (grep confirma: auditoria existe em `custos`, `entrega` e `fechamento`, nunca na transição de status) e não existe nenhum model `Historico*` no schema. Nem pelo link público (`/p/[token]`), nem pelo QR de chão de fábrica (`/q/[token]`). O resultado prático: **não dá pra saber quando um pedido entrou em Acabamento, quanto tempo ficou lá, nem quem o moveu.** Não há como calcular lead time por etapa, gargalo, nem produtividade.
 
 O contraste dentro do próprio schema é gritante: `SolicitacaoCompra` tem `solicitadoEm / cotandoEm / aprovadoEm / compradoEm / recebidoEm / conferidoEm / canceladoEm` — datas dedicadas por transição, com comentário explicando exatamente por que ("a tela de detalhe precisa montar sua própria linha do tempo sem depender de outra tabela"). O Pedido, que é o objeto central do produto, não tem nenhuma.
@@ -781,7 +839,10 @@ model ApontamentoEtapa {
 
 Esse único model destrava: lead time por etapa, gargalo por coluna do Kanban, produtividade por operador, e é a base de B2/B3/C1.
 
-#### B2 — Não se registra em QUAL máquina o pedido rodou
+#### B2 — Não se registra em QUAL máquina o pedido rodou — **CONSTRUÍDO 2026-08-29 (rodada 15)**
+
+**Status:** as 5 FKs de máquina em `ApontamentoEtapa`, mesmo padrão de `RegistroManutencao`. Sugestão pré-preenchida a partir da precificação, aviso de divergência no fechamento do pedido. Só o canal autenticado coleta máquina (link público/QR ficam simples).
+
 **O que falta.** Confirmado por grep: `prensaId / maquinaFlexografiaId / impressoraDigitalId / maquinaSetupPorPecaId` existem em **`ItemGrafica`** (catálogo, fins de preço, `onDelete: Restrict`) e em **`RegistroManutencao`** (parada de máquina). Não existem em `Pedido` nem em lugar nenhum do fluxo de produção. Ou seja: a gráfica com duas prensas offset precifica o job na Prensa A e pode rodar na Prensa B — e o sistema nunca fica sabendo. Três consequências: (i) custo hora-máquina real ≠ custo orçado, e a diferença é invisível no lucro do pedido; (ii) impossível relatório de "quanto essa máquina produziu / quanto custou"; (iii) impossível fila por máquina (ver C1).
 
 **Pesquisa.** No apontamento padrão, "o operador ao iniciar a operação informará o código do cadastro, número da Ordem, operação **e máquina**" (Command Perfect). Print MIS roteia o job "to the most appropriate press based on substrate, run length, finishing requirements, and real-time machine availability" (Dalim/proofnation) — o vínculo job↔máquina é dado operacional de primeira classe.

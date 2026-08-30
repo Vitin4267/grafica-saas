@@ -13,6 +13,7 @@ import {
 import { verificarEDispararAlertasAtraso } from "@/lib/alerta-atraso";
 import { dataEhPassado, limitesDiaBrasilia } from "@/lib/data";
 import { resolverOrigemPublica } from "@/lib/url-publica";
+import { listarMaquinasSelecionaveis, sugerirMaquinaPedido } from "@/lib/apontamento-etapa";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -100,7 +101,7 @@ export default async function ProducaoPage({
   await verificarEDispararAlertasAtraso(usuario.graficaId, usuario.grafica.nome);
   const origem = await resolverOrigemPublica();
 
-  const [todosPedidos, clientes, responsaveisEstagio] = await Promise.all([
+  const [todosPedidos, clientes, responsaveisEstagio, maquinasSelecionaveis] = await Promise.all([
     prisma.pedido.findMany({
       where: {
         graficaId: usuario.graficaId,
@@ -140,6 +141,9 @@ export default async function ProducaoPage({
       where: { usuario: { graficaId: usuario.graficaId } },
       select: { status: true, usuario: { select: { nome: true } } },
     }),
+    // Achado B2 — buscada UMA VEZ (grafica-wide, não por pedido) pra
+    // alimentar o seletor de máquina de cada linha (ver SeletorMaquina.tsx).
+    listarMaquinasSelecionaveis(usuario.graficaId),
   ]);
 
   const responsaveisPorEtapa: Partial<Record<StatusPedido, string[]>> = {};
@@ -233,6 +237,16 @@ export default async function ProducaoPage({
           // no topo, mesmo se a lista inteira for só finalizados).
           const inicioFinalizados = indice === pedidosAtivos.length && pedidosAtivos.length > 0;
 
+          // Achado B2 — sugestão pré-preenchida a partir da máquina que os
+          // ITENS deste pedido usaram na precificação (ver
+          // sugerirMaquinaPedido); "campo:id" codificado ou "" quando não há
+          // sugestão (nenhum item com máquina configurada, ou ambígua entre
+          // eles). Calculado aqui (não numa query própria) porque
+          // pedido.orcamento.itens já veio com o itemGrafica inteiro (todos
+          // os scalars, ver `include` acima) — nenhuma query extra por pedido.
+          const sugestao = sugerirMaquinaPedido(pedido.orcamento.itens);
+          const sugestaoMaquinaValor = sugestao ? `${sugestao.campo}:${sugestao.id}` : "";
+
           return (
             <div key={pedido.id}>
               {inicioFinalizados && (
@@ -273,6 +287,8 @@ export default async function ProducaoPage({
                   createdAt: custo.createdAt.toISOString(),
                 }))}
                 lucro={podeVerCustos ? lucroDoPedidoListado(pedido) : null}
+                maquinas={maquinasSelecionaveis}
+                sugestaoMaquinaValor={sugestaoMaquinaValor}
                 entrega={
                   pedido.entrega
                     ? {

@@ -20,6 +20,7 @@ import {
 import { EnviarArteForm } from "./EnviarArteForm";
 import { CustosPedidoSecao } from "./CustosPedidoSecao";
 import { EntregaPedidoSecao, type EntregaResumo } from "./EntregaPedidoSecao";
+import type { MaquinaOpcaoUI } from "./SeletorMaquina";
 import { cancelarPedido, avancarPedido } from "./actions";
 
 type Custo = {
@@ -58,6 +59,8 @@ export function PedidoLinha({
   custos,
   lucro,
   entrega,
+  maquinas = [],
+  sugestaoMaquinaValor = "",
 }: {
   pedidoId: string;
   orcamentoId: string;
@@ -106,6 +109,15 @@ export function PedidoLinha({
   // nem é renderizada nesse caso, mesmo critério de "ainda não construído"
   // que o resto da tela usa.
   entrega: EntregaResumo | null;
+  // Achado B2 — máquinas ATIVAS da gráfica (grafica-wide, buscada uma vez em
+  // producao/page.tsx) e a sugestão pré-calculada a partir da máquina que os
+  // ITENS deste pedido usaram na precificação (ver sugerirMaquinaPedido em
+  // src/lib/apontamento-etapa.ts), codificada como "campo:id" ou "".
+  // Default [] / "" pra qualquer chamador que ainda não passe (não deveria
+  // existir nenhum fora de producao/page.tsx, mas evita quebrar em teste/
+  // storybook que só monte o componente com o mínimo).
+  maquinas?: MaquinaOpcaoUI[];
+  sugestaoMaquinaValor?: string;
 }) {
   const [state, formAction, isPending] = useActionState(cancelarPedido, null);
   const [confirmando, setConfirmando] = useState(false);
@@ -191,7 +203,12 @@ export function PedidoLinha({
                 <IniciarImpressaoBotao estado={iniciarImpressao.estado} onIniciar={iniciarImpressao.iniciar} />
               )
             : (podeEditar || souResponsavelDesteStatus) && (
-                <AvancarPedidoButton pedidoId={pedidoId} status={status} />
+                <AvancarPedidoButton
+                  pedidoId={pedidoId}
+                  status={status}
+                  maquinas={maquinas}
+                  sugestaoValor={sugestaoMaquinaValor}
+                />
               )}
           {podeEditar && podeCancelar && (
             <Button
@@ -264,6 +281,8 @@ export function PedidoLinha({
           isPending={avancarPending}
           erroSubmit={avancarState && !avancarState.ok ? avancarState.mensagem : undefined}
           onCancelar={iniciarImpressao.cancelar}
+          maquinas={maquinas}
+          sugestaoValor={sugestaoMaquinaValor}
         />
       )}
 

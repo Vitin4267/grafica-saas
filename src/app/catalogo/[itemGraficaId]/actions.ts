@@ -803,6 +803,69 @@ export async function salvarConfiguracaoClicheEtiqueta(
   return { ok: true, mensagem: "Configuração salva com sucesso!" };
 }
 
+// Achado A9 da auditoria de abrangência — mesmo padrão de
+// salvarConfiguracaoClicheEtiqueta acima (presença da linha = motor ligado).
+export async function salvarConfiguracaoEmenda(
+  _estadoAnterior: SalvarConfigResult | null,
+  formData: FormData
+): Promise<SalvarConfigResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CATALOGO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar o catálogo." };
+  }
+  const itemGraficaId = String(formData.get("itemGraficaId"));
+
+  const itemGrafica = await prisma.itemGrafica.findFirst({
+    where: { id: itemGraficaId, graficaId: usuario.graficaId },
+  });
+  if (!itemGrafica) {
+    return { ok: false, mensagem: "Item não encontrado." };
+  }
+
+  const custoPorMetroLinear = Number(formData.get("custoPorMetroLinear"));
+  if (!Number.isFinite(custoPorMetroLinear) || custoPorMetroLinear < 0) {
+    return { ok: false, mensagem: "Custo da emenda inválido." };
+  }
+  const sobreposicaoM = Number(formData.get("sobreposicaoM"));
+  if (!Number.isFinite(sobreposicaoM) || sobreposicaoM < 0) {
+    return { ok: false, mensagem: "Sobreposição inválida." };
+  }
+
+  const configAntes = await prisma.configuracaoEmenda.findUnique({
+    where: { itemGraficaId },
+  });
+
+  await prisma.configuracaoEmenda.upsert({
+    where: { itemGraficaId },
+    update: { custoPorMetroLinear, sobreposicaoM },
+    create: { itemGraficaId, custoPorMetroLinear, sobreposicaoM },
+  });
+
+  const textoAntes = configAntes
+    ? `${formatarPreco(configAntes.custoPorMetroLinear)}/m linear, sobreposição ${formatarQuantidade(configAntes.sobreposicaoM)}m`
+    : "—";
+  const textoDepois = `${formatarPreco(custoPorMetroLinear)}/m linear, sobreposição ${formatarQuantidade(sobreposicaoM)}m`;
+  if (textoAntes !== textoDepois) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "catalogo.salvar_config_emenda",
+      entidade: "ItemGrafica",
+      entidadeId: itemGraficaId,
+      descricao: "Configuração de emenda de painéis do item atualizada",
+      valorAnterior: `Emenda: ${textoAntes}`,
+      valorNovo: `Emenda: ${textoDepois}`,
+    });
+  }
+
+  revalidatePath(`/catalogo/${itemGraficaId}`);
+  revalidatePath("/catalogo");
+  return { ok: true, mensagem: "Configuração salva com sucesso!" };
+}
+
 export async function salvarFichaTecnica(
   _estadoAnterior: SalvarConfigResult | null,
   formData: FormData

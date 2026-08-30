@@ -1,4 +1,4 @@
-import { type Dec, paraDecimal, maiorDec } from "./decimal";
+import { type Dec, paraDecimal, maiorDec, tetoInteiro } from "./decimal";
 import { ErroPrecificacao } from "./erros";
 import { validarPedidoM2 } from "./validar";
 import type { Bobina, ContextoM2, PedidoM2 } from "./tipos";
@@ -6,7 +6,7 @@ import type { Bobina, ContextoM2, PedidoM2 } from "./tipos";
 export type ResultadoM2 = {
   custoMaterial: Dec;
   custoImpressao: Dec;
-  custoBase: Dec; // custoMaterial + custoImpressao — NÃO é o custoDireto final (ver compor.ts)
+  custoBase: Dec; // custoMaterial + custoImpressao (+ custoEmenda, quando aplicável) — NÃO é o custoDireto final (ver compor.ts)
   areaFaturavel: Dec;
   areaCobrada: Dec; // métrica de auditoria/exibição; não realimenta o nesting
   eficiencia: Dec;
@@ -15,6 +15,13 @@ export type ResultadoM2 = {
   numFaixas: number;
   larguraEfetivaM: Dec; // w' — reaproveitado pelo cálculo de acabamento (base M2)
   alturaEfetivaM: Dec; // h'
+  // Achado A9 — presentes só quando a peça excedeu toda bobina cadastrada E
+  // o item tem ConfiguracaoEmenda: nºPainéis em que a peça foi dividida e o
+  // custo de emenda somado (já incluso em custoBase). undefined/0 em
+  // qualquer outro caso (comportamento de hoje, sem emenda).
+  numPaineis?: number;
+  custoEmenda: Dec;
+  avisos: string[];
 };
 
 type Candidato = {
@@ -81,21 +88,112 @@ export function calcularM2(
     }
   }
 
+  let escolhido: Candidato;
+  let custoEmenda = paraDecimal(0);
+  let numPaineis: number | undefined;
+  const avisos: string[] = [];
+
   if (candidatos.length === 0) {
-    throw new ErroPrecificacao(
-      "PECA_EXCEDE_BOBINA",
-      "Essa peça é maior que todas as bobinas cadastradas para este material. É necessário emendar (solda/costura) — intervenção manual necessária.",
-      { larguraM: pedido.larguraM, alturaM: pedido.alturaM }
+    if (!contexto.configuracaoEmenda) {
+      throw new ErroPrecificacao(
+        "PECA_EXCEDE_BOBINA",
+        "Essa peça é maior que todas as bobinas cadastradas para este material. É necessário emendar (solda/costura) — intervenção manual necessária.",
+        { larguraM: pedido.larguraM, alturaM: pedido.alturaM }
+      );
+    }
+
+    // Achado A9: nenhuma orientação coube inteira em nenhuma bobina (loop
+    // acima já tentou as 2 orientações × todas as bobinas) — mas o item tem
+    // ConfiguracaoEmenda, então em vez de abortar, divide a peça em painéis
+    // que cabem na bobina e soma o custo de emenda em vez de lançar erro.
+    const custoPorMetroLinear = paraDecimal(contexto.configuracaoEmenda.custoPorMetroLinear);
+    const sobreposicaoM = paraDecimal(contexto.configuracaoEmenda.sobreposicaoM);
+
+    type CandidatoEmenda = Candidato & {
+      numPaineis: number;
+      custoEmendaTotal: Dec;
+      custoTotal: Dec;
+    };
+    const candidatosEmenda: CandidatoEmenda[] = [];
+
+    for (const bobina of contexto.bobinas) {
+      const larguraNominal = paraDecimal(bobina.larguraNominal);
+      const refile = paraDecimal(bobina.refile);
+      const wUtil = larguraNominal.minus(refile.times(2));
+      if (wUtil.lte(0)) continue; // bobina sem largura útil positiva não serve nem pra painel
+
+      for (const { a, b, rotacionado } of orientacoes) {
+        // nºPainéis = ceil(a / wUtil) — a é a dimensão que corre ao longo da
+        // largura da bobina (achado propõe ceil(w/wUtil); usamos a dimensão
+        // JÁ ajustada pela margem de segurança, mesma base que o resto da
+        // função usa). Se candidatos ficou vazio, a > wUtil garantidamente
+        // pras 2 orientações em toda bobina (senão teria virado candidato
+        // normal acima) — nºPainéis sempre >= 2 aqui.
+        const numPaineisOrientacao = tetoInteiro(a.div(wUtil));
+        if (numPaineisOrientacao < 2) continue;
+
+        // Cada painel ocupa sua própria "faixa" ao longo do comprimento da
+        // bobina (um painel tem até wUtil de largura, então só 1 cabe por
+        // corte) — Q peças × nºPainéis painéis cada, cada painel com
+        // comprimento "b" (a dimensão perpendicular à que foi dividida).
+        const numFaixas = Q * numPaineisOrientacao;
+        const lConsumido = paraDecimal(numFaixas).times(b.plus(g));
+        const areaFaturavel = larguraNominal.times(lConsumido);
+        const custoMaterial = areaFaturavel.times(custoM2Material);
+
+        // "Comprimento da emenda" = b, a dimensão perpendicular à direção do
+        // corte/emenda (normalmente a altura da peça — ver comentário do
+        // achado). (nºPainéis - 1) emendas por peça × Q peças no pedido.
+        const custoEmendaTotal = custoPorMetroLinear
+          .times(b)
+          .times(numPaineisOrientacao - 1)
+          .times(Q);
+
+        candidatosEmenda.push({
+          bobina,
+          rotacionado,
+          pecasPorFaixa: 1, // 1 painel cabe por corte transversal da bobina
+          numFaixas,
+          areaFaturavel,
+          custoMaterial,
+          numPaineis: numPaineisOrientacao,
+          custoEmendaTotal,
+          custoTotal: custoMaterial.plus(custoEmendaTotal),
+        });
+      }
+    }
+
+    if (candidatosEmenda.length === 0) {
+      // Nenhuma bobina cadastrada tem largura útil positiva — emenda não
+      // ajuda aqui, mesmo erro de hoje.
+      throw new ErroPrecificacao(
+        "PECA_EXCEDE_BOBINA",
+        "Essa peça é maior que todas as bobinas cadastradas para este material. É necessário emendar (solda/costura) — intervenção manual necessária.",
+        { larguraM: pedido.larguraM, alturaM: pedido.alturaM }
+      );
+    }
+
+    const escolhidoEmenda = candidatosEmenda.reduce((melhor, atual) =>
+      atual.custoTotal.lt(melhor.custoTotal) ? atual : melhor
+    );
+
+    escolhido = escolhidoEmenda;
+    custoEmenda = escolhidoEmenda.custoEmendaTotal;
+    numPaineis = escolhidoEmenda.numPaineis;
+    avisos.push(
+      `Peça de ${w.toFixed(2)}m × ${h.toFixed(2)}m excede a largura útil de todas as bobinas cadastradas — ` +
+        `dividida em ${numPaineis} painéis com emenda (sobreposição recomendada de ${sobreposicaoM.toFixed(3)}m por emenda). ` +
+        `Custo de emenda somado ao orçamento: R$ ${custoEmenda.toFixed(2)}.`
+    );
+  } else {
+    escolhido = candidatos.reduce((melhor, atual) =>
+      atual.custoMaterial.lt(melhor.custoMaterial) ? atual : melhor
     );
   }
 
-  const escolhido = candidatos.reduce((melhor, atual) =>
-    atual.custoMaterial.lt(melhor.custoMaterial) ? atual : melhor
-  );
-
   const custoImpressaoM2 = paraDecimal(contexto.custoImpressaoM2);
   const custoImpressao = paraDecimal(Q).times(wLinha).times(hLinha).times(custoImpressaoM2);
-  const custoBase = escolhido.custoMaterial.plus(custoImpressao);
+  const custoBase = escolhido.custoMaterial.plus(custoImpressao).plus(custoEmenda);
 
   const areaMinimaFaturavel = paraDecimal(contexto.areaMinimaFaturavel);
   const areaCobrada = maiorDec(
@@ -121,5 +219,8 @@ export function calcularM2(
     numFaixas: escolhido.numFaixas,
     larguraEfetivaM: wLinha,
     alturaEfetivaM: hLinha,
+    numPaineis,
+    custoEmenda,
+    avisos,
   };
 }

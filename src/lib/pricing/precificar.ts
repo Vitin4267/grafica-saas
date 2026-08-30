@@ -188,6 +188,13 @@ export function precificar(
         numFaixas: resultado.numFaixas,
         custoMaterial: resultado.custoMaterial.toNumber(),
         custoImpressao: resultado.custoImpressao.toNumber(),
+        // Achado A9 — presentes só quando a peça excedeu toda bobina
+        // cadastrada e o item tem ConfiguracaoEmenda (ver calcularM2/m2.ts).
+        // avisos segue o mesmo array que outros achados desta auditoria
+        // usam pra devolver alerta sem bloquear o cálculo.
+        numPaineis: resultado.numPaineis ?? null,
+        custoEmenda: resultado.custoEmenda.toNumber(),
+        avisos: resultado.avisos,
       },
     };
   }

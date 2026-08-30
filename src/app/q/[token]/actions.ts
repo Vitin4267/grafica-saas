@@ -62,7 +62,14 @@ export async function avancarStatusQr(
     return { ok: false, mensagem: "Este pedido não tem nenhuma etapa pra avançar agora." };
   }
 
-  const resultado = await avancarStatusPedido(pedido, null);
+  // Achado B1 — canal QR_ETIQUETA (etiqueta física escaneada no chão de
+  // fábrica). Sem operadorId (sem login) e sem selecaoMaquina (mesma decisão
+  // de escopo do link público: este canal fica rápido/simples de propósito,
+  // ver relatório da tarefa B1/B2).
+  const resultado = await avancarStatusPedido(pedido, null, {
+    origemConfirmacao: "QR_ETIQUETA",
+    operadorId: null,
+  });
   if (!resultado.ok) {
     return { ok: false, mensagem: resultado.mensagem };
   }

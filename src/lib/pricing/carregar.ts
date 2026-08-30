@@ -143,6 +143,7 @@ export async function carregarContextoPrecificacao(
       prensa: true,
       papel: { include: { tabelaPrecoPapel: true } },
       configuracaoClicheEtiqueta: true,
+      configuracaoEmenda: true,
       maquinaFlexografia: true,
       configuracaoClicheFlexografia: true,
       impressoraDigital: true,
@@ -201,6 +202,16 @@ export async function carregarContextoPrecificacao(
       custoM2Material,
       custoImpressaoM2: Number(item.custoImpressaoM2 ?? 0),
       areaMinimaFaturavel: Number(item.areaMinimaFaturavel ?? 0),
+      // Achado A9 — ausente (undefined) quando a gráfica não cadastrou
+      // ConfiguracaoEmenda pra este item, mesmo padrão de
+      // configuracaoClicheEtiqueta acima: presença = motor liga o caminho
+      // opcional, ausência = comportamento de hoje inalterado.
+      configuracaoEmenda: item.configuracaoEmenda
+        ? {
+            custoPorMetroLinear: Number(item.configuracaoEmenda.custoPorMetroLinear),
+            sobreposicaoM: Number(item.configuracaoEmenda.sobreposicaoM),
+          }
+        : undefined,
     };
   } else if (item.modeloCalculo === "OFFSET") {
     if (!item.prensa) {

@@ -195,3 +195,66 @@ describe(
     );
   }
 );
+
+describe(
+  "carregarContextoPrecificacao — M2 / ConfiguracaoEmenda (achado A9)",
+  () => {
+    it(
+      "sem ConfiguracaoEmenda cadastrada: contexto.m2.configuracaoEmenda fica undefined (comportamento de hoje)",
+      async () => {
+        const { grafica, s } = await criarGrafica();
+        const catalogo = await prisma.itemCatalogo.create({
+          data: { graficaId: grafica.id, tipo: "PRODUTO", categoria: "Lona", nome: `Backdrop ${s}` },
+        });
+        const produto = await prisma.itemGrafica.create({
+          data: {
+            graficaId: grafica.id,
+            itemCatalogoId: catalogo.id,
+            modeloCalculo: "M2",
+            precoCompra: 20,
+            custoImpressaoM2: 8,
+            areaMinimaFaturavel: 0.5,
+            bobinas: { create: [{ larguraNominal: 1.5, refile: 0.02 }] },
+          },
+        });
+
+        const contexto = await carregarContextoPrecificacao(produto.id, grafica.id);
+
+        expect(contexto.m2?.configuracaoEmenda).toBeUndefined();
+      },
+      TIMEOUT_MS
+    );
+
+    it(
+      "com ConfiguracaoEmenda cadastrada: contexto.m2.configuracaoEmenda vem preenchido do banco",
+      async () => {
+        const { grafica, s } = await criarGrafica();
+        const catalogo = await prisma.itemCatalogo.create({
+          data: { graficaId: grafica.id, tipo: "PRODUTO", categoria: "Lona", nome: `Backdrop com emenda ${s}` },
+        });
+        const produto = await prisma.itemGrafica.create({
+          data: {
+            graficaId: grafica.id,
+            itemCatalogoId: catalogo.id,
+            modeloCalculo: "M2",
+            precoCompra: 20,
+            custoImpressaoM2: 8,
+            areaMinimaFaturavel: 0.5,
+            bobinas: { create: [{ larguraNominal: 1.5, refile: 0.02 }] },
+            configuracaoEmenda: {
+              create: { custoPorMetroLinear: 15, sobreposicaoM: 0.05 },
+            },
+          },
+        });
+
+        const contexto = await carregarContextoPrecificacao(produto.id, grafica.id);
+
+        expect(contexto.m2?.configuracaoEmenda).toMatchObject({
+          custoPorMetroLinear: 15,
+          sobreposicaoM: 0.05,
+        });
+      },
+      TIMEOUT_MS
+    );
+  }
+);

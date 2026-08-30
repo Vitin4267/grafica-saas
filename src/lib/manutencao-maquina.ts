@@ -57,3 +57,23 @@ export function validarSelecaoMaquina(
   }
   return { ok: true };
 }
+
+// Variante de validarSelecaoMaquina que aceita 0 preenchidos além de 1 —
+// usada por ApontamentoEtapa (achado B1/B2 da Parte 2/Produção da auditoria
+// de abrangência), aberto automaticamente em TODA transição de status,
+// mesmo em etapas sem máquina associada (ARTE, CONFERENCIA, EMBALAGEM,
+// EXPEDICAO, ENTREGUE não têm "motor" nenhum) e pelos canais público/QR,
+// que hoje não coletam essa informação. "Mais de uma preenchida" continua
+// sendo sempre erro, mesma regra de validarSelecaoMaquina.
+export function validarSelecaoMaquinaOpcional(
+  ids: string[]
+): { ok: true } | { ok: false; mensagem: string } {
+  const preenchidos = ids.filter((v) => v.trim().length > 0).length;
+  if (preenchidos > 1) {
+    return {
+      ok: false,
+      mensagem: "Selecione no máximo uma máquina, nunca mais de uma.",
+    };
+  }
+  return { ok: true };
+}

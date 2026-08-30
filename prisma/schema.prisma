@@ -92,6 +92,9 @@ model Grafica {
   impressorasDigitais   ImpressoraDigital[]
   maquinasSetupPorPeca  MaquinaSetupPorPeca[]
   registrosManutencao   RegistroManutencao[]
+  // Achado B1/B2 da Parte 2 (Produção) — histórico de transição de etapa
+  // por pedido, ver ApontamentoEtapa.
+  apontamentosEtapa     ApontamentoEtapa[]
   dadosFiscais          DadosFiscaisGrafica?
   notasFiscais          NotaFiscal[]
   automacao             AutomacaoGrafica?
@@ -320,6 +323,7 @@ model Prensa {
   grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   produtos            ItemGrafica[]
   registrosManutencao RegistroManutencao[]
+  apontamentosEtapa   ApontamentoEtapa[]
 
   @@unique([graficaId, nome])
   @@index([graficaId])
@@ -367,6 +371,7 @@ model MaquinaFlexografia {
   grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   produtos            ItemGrafica[]
   registrosManutencao RegistroManutencao[]
+  apontamentosEtapa   ApontamentoEtapa[]
 
   @@unique([graficaId, nome])
   @@index([graficaId])
@@ -394,6 +399,7 @@ model ImpressoraDigital {
   grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   produtos            ItemGrafica[]
   registrosManutencao RegistroManutencao[]
+  apontamentosEtapa   ApontamentoEtapa[]
 
   @@unique([graficaId, nome])
   @@index([graficaId])
@@ -448,6 +454,7 @@ model MaquinaSetupPorPeca {
   grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   produtos            ItemGrafica[]
   registrosManutencao RegistroManutencao[]
+  apontamentosEtapa   ApontamentoEtapa[]
 
   @@unique([graficaId, nome])
   @@index([graficaId])
@@ -504,6 +511,7 @@ model Equipamento {
 
   grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   registrosManutencao RegistroManutencao[]
+  apontamentosEtapa   ApontamentoEtapa[]
 
   @@unique([graficaId, nome])
   @@index([graficaId])
@@ -574,6 +582,91 @@ model RegistroManutencao {
   @@index([impressoraDigitalId])
   @@index([maquinaSetupPorPecaId])
   @@map("registros_manutencao")
+}
+
+// Como o Pedido soube da transição de etapa — achado B1/B2 da Parte 2
+// (Produção) da auditoria de abrangência. APP é o painel autenticado
+// (/producao, lista ou Kanban); LINK_PUBLICO é o e-mail sem login pro
+// responsável da etapa (/p/[token]); QR_ETIQUETA é a etiqueta física
+// escaneada no chão de fábrica (/q/[token]) — os mesmos 3 canais que já
+// chamavam avancarStatusPedido antes desta feature.
+enum OrigemConfirmacaoEtapa {
+  APP
+  LINK_PUBLICO
+  QR_ETIQUETA
+}
+
+// Um registro por ENTRADA numa etapa de um Pedido (StatusPedido) — o rastro
+// que faltava antes desta feature: só existia Pedido.status (o estado
+// ATUAL), sem nenhum histórico de quando cada etapa começou/terminou, quem
+// confirmou ou em qual máquina rodou. Aberto por avancarStatusPedido dentro
+// da MESMA transação do CAS que muda Pedido.status (nunca fora dela — uma
+// corrida que confirmasse o status sem abrir/fechar o apontamento junto
+// deixaria o histórico inconsistente com o status real) e fechado
+// (finalizadoEm) no mesmo instante em que o PRÓXIMO apontamento é aberto.
+// Backfill: pedidos que já existiam antes desta migração não ganham
+// histórico retroativo (aceitável, ver achado B1) — a linha do tempo
+// começa a partir de agora. Sem quantidadeBoa/quantidadeRefugo (achado B3,
+// rastreio de refugo) — deliberadamente fora de escopo desta rodada.
+model ApontamentoEtapa {
+  id        String @id @default(cuid())
+  graficaId String
+  pedidoId  String
+
+  status StatusPedido
+
+  iniciadoEm   DateTime  @default(now())
+  finalizadoEm DateTime?
+
+  // Quem apontou — sem FK direta pra Usuario (mesmo padrão de
+  // MovimentacaoEstoque.criadoPorId): não trava o apontamento se o usuário
+  // for removido depois. Só preenchido quando origemConfirmacao=APP.
+  operadorId String?
+  // Nome DECLARADO por quem confirmou pelo link público/QR sem login (mesmo
+  // padrão de Pedido.arteRespondidaPor) — não verificado, vale como
+  // registro. Hoje sempre null na prática: nem /p/[token] nem /q/[token]
+  // coletam nome ainda (ver relatório da tarefa B1/B2 — deliberadamente
+  // fora de escopo desta rodada, o campo só já nasce pronto pra quando
+  // alguém construir essa UI).
+  operadorNomeDeclarado String?
+
+  origemConfirmacao OrigemConfirmacaoEtapa
+
+  observacao String?
+
+  // 5 FKs opcionais, mesmo padrão de RegistroManutencao — mas AQUI 0
+  // preenchidas também é válido, diferente de lá (validado em app via
+  // validarSelecaoMaquinaOpcional, src/lib/manutencao-maquina.ts): nem toda
+  // etapa tem máquina associada (ARTE, CONFERENCIA, EMBALAGEM, EXPEDICAO,
+  // ENTREGUE não têm "motor" nenhum) e os canais público/QR não coletam
+  // essa informação ainda. "Mais de uma preenchida" continua sendo sempre
+  // erro. onDelete=SetNull (diferente do Cascade de RegistroManutencao):
+  // apagar uma máquina do cadastro não pode apagar o HISTÓRICO de produção
+  // que passou por ela.
+  prensaId              String?
+  maquinaFlexografiaId  String?
+  equipamentoId         String?
+  impressoraDigitalId   String?
+  maquinaSetupPorPecaId String?
+
+  createdAt DateTime @default(now())
+
+  grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  pedido              Pedido               @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  prensa              Prensa?              @relation(fields: [prensaId], references: [id], onDelete: SetNull)
+  maquinaFlexografia  MaquinaFlexografia?  @relation(fields: [maquinaFlexografiaId], references: [id], onDelete: SetNull)
+  equipamento         Equipamento?         @relation(fields: [equipamentoId], references: [id], onDelete: SetNull)
+  impressoraDigital   ImpressoraDigital?   @relation(fields: [impressoraDigitalId], references: [id], onDelete: SetNull)
+  maquinaSetupPorPeca MaquinaSetupPorPeca? @relation(fields: [maquinaSetupPorPecaId], references: [id], onDelete: SetNull)
+
+  @@index([graficaId])
+  @@index([pedidoId])
+  @@index([prensaId])
+  @@index([maquinaFlexografiaId])
+  @@index([equipamentoId])
+  @@index([impressoraDigitalId])
+  @@index([maquinaSetupPorPecaId])
+  @@map("apontamentos_etapa")
 }
 
 // Uma filial/unidade física da gráfica. COMPARTILHA catálogo, estoque e
@@ -1791,6 +1884,7 @@ model ItemGrafica {
   usadoComoAcabamento           OrcamentoItemAcabamento[]
   configuracaoClicheEtiqueta    ConfiguracaoClicheEtiqueta?
   configuracaoClicheFlexografia ConfiguracaoClicheFlexografia?
+  configuracaoEmenda            ConfiguracaoEmenda?
   usadoComoPapelEtiqueta        OrcamentoItemPrecificacaoEtiqueta[] @relation("PapelDoItemOrcamentoEtiqueta")
 
   // Ficha técnica (spec de baixa automática de estoque): só relevante quando
@@ -1988,6 +2082,29 @@ model ConfiguracaoClicheFlexografia {
   itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id], onDelete: Cascade)
 
   @@map("configuracoes_cliche_flexografia")
+}
+
+// Achado A9 da auditoria de abrangência — config OPCIONAL por produto M2:
+// presença da linha = "emenda liberada pra este item", mesmo padrão de
+// presença-liga/ausência-desliga de ConfiguracaoClicheEtiqueta. Sem esta
+// linha, calcularM2 continua lançando PECA_EXCEDE_BOBINA quando a peça não
+// cabe em nenhuma bobina — comunicação visual (backdrop/fachada/outdoor/
+// painel de evento) é onde emendar painéis é rotina, não exceção; ver
+// src/lib/pricing/m2.ts. sobreposicaoM é só informativo por ora (não entra
+// na fórmula de custo, que segue exatamente a proposta do achado) — fica
+// disponível pra produção/instalação saberem quanto de sobra deixar em cada
+// emenda.
+model ConfiguracaoEmenda {
+  id                  String   @id @default(cuid())
+  itemGraficaId       String   @unique
+  custoPorMetroLinear Decimal  @db.Decimal(12, 4)
+  sobreposicaoM       Decimal  @db.Decimal(6, 3)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id], onDelete: Cascade)
+
+  @@map("configuracoes_emenda")
 }
 
 // SAIDA_PRODUCAO e ESTORNO_CANCELAMENTO substituem os antigos valores
@@ -3602,6 +3719,9 @@ model Pedido {
   movimentacoes      MovimentacaoEstoque[]
   custos             CustoPedido[]
   custosPrevisto     PedidoCustoPrevisto[]
+  // Achado B1/B2 da Parte 2 (Produção) — histórico de transição de etapa,
+  // ver ApontamentoEtapa.
+  apontamentos       ApontamentoEtapa[]
   entrega            Entrega?
   filaGangRun        FilaGangRun[]
   // Lado inverso de SolicitacaoCompra.pedidoId — compras feitas

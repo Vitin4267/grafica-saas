@@ -19,6 +19,7 @@ import { D } from "@/lib/pricing/decimal";
 import { montarChavePerda } from "@/lib/perda-fixa-producao";
 import { analisarPreflight } from "@/lib/preflight";
 import { cancelarCandidatosDoPedido } from "@/lib/gang-run-servico";
+import { extrairEValidarSelecaoMaquina } from "@/lib/apontamento-etapa";
 import { avancarStatusPedido, buscarOrcamentoParaBaixa } from "./status-transicao";
 import {
   validarArquivoArte,
@@ -187,7 +188,22 @@ export async function avancarPedido(
     return { ok: false, mensagem: "Você não tem permissão pra confirmar esta etapa." };
   }
 
-  return avancarStatusPedido(pedido, formData.get("perdasJson"));
+  // Achado B2 — máquina opcional (0 ou 1, nunca mais de uma) que produziu a
+  // etapa que o pedido está ENTRANDO. Só o canal APP (este) coleta isso —
+  // ver relatório da tarefa sobre por que LINK_PUBLICO/QR_ETIQUETA ficam de
+  // fora. Validado ANTES de chamar avancarStatusPedido: um id de máquina de
+  // outra gráfica vindo direto do form (sem passar pela UI) é rejeitado
+  // aqui, nunca gravado.
+  const selecaoMaquina = await extrairEValidarSelecaoMaquina(formData, usuario.graficaId);
+  if (!selecaoMaquina.ok) {
+    return { ok: false, mensagem: selecaoMaquina.mensagem };
+  }
+
+  return avancarStatusPedido(pedido, formData.get("perdasJson"), {
+    origemConfirmacao: "APP",
+    operadorId: usuario.id,
+    selecaoMaquina: selecaoMaquina.selecao,
+  });
 }
 
 export type CancelarPedidoResult = { ok: boolean; mensagem: string };
