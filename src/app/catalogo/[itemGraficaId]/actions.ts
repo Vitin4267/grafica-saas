@@ -14,6 +14,7 @@ import { registrarAuditoria } from "@/lib/auditoria";
 import { formatoMoeda } from "@/lib/moeda";
 import { D } from "@/lib/pricing/decimal";
 import { calcularDeltaAjusteInventario } from "@/lib/estoque-manual";
+import { UNIDADES_COMPRA, type UnidadeCompra } from "@/lib/unidade-compra";
 
 const formatoQuantidade = new Intl.NumberFormat("pt-BR");
 
@@ -641,6 +642,77 @@ export async function salvarQuantidadePorEmbalagem(
   await prisma.itemGrafica.update({
     where: { id: itemGraficaId },
     data: { quantidadePorEmbalagem: parsed.data ?? null },
+  });
+
+  revalidatePath(`/catalogo/${itemGraficaId}`);
+  return { ok: true, mensagem: "Salvo." };
+}
+
+export type SalvarConfiguracaoCompraResult = SalvarConfigResult;
+
+const configuracaoCompraSchema = z.object({
+  unidadeCompraPadrao: z.enum(UNIDADES_COMPRA as [UnidadeCompra, ...UnidadeCompra[]]).optional(),
+  unidadeCompraPadraoOutro: z
+    .string()
+    .trim()
+    .max(60)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+  fatorConversaoCompraPadrao: z.coerce
+    .number()
+    .positive("Fator de conversão deve ser maior que zero.")
+    .optional(),
+  loteMinimoCompra: z.coerce.number().positive("Lote mínimo deve ser maior que zero.").optional(),
+  multiploCompra: z.coerce.number().positive("Múltiplo de compra deve ser maior que zero.").optional(),
+});
+
+// Achado A6 da auditoria de abrangência (Parte 3/Compras): configuração
+// padrão de unidade de compra deste item — só pré-preenche e avisa na tela
+// de nova solicitação de compra (ver src/app/compras/nova/NovaSolicitacaoForm.tsx),
+// nunca obrigatório e nunca muda como estoque é lançado (mesmo espírito
+// puramente informativo de salvarQuantidadePorEmbalagem acima). Qualquer
+// campo deixado em branco no formulário volta a null (limpa a configuração).
+export async function salvarConfiguracaoCompra(
+  _estadoAnterior: SalvarConfiguracaoCompraResult | null,
+  formData: FormData
+): Promise<SalvarConfiguracaoCompraResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CATALOGO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar o catálogo." };
+  }
+  const itemGraficaId = String(formData.get("itemGraficaId"));
+
+  const itemGrafica = await prisma.itemGrafica.findFirst({
+    where: { id: itemGraficaId, graficaId: usuario.graficaId },
+  });
+  if (!itemGrafica) {
+    return { ok: false, mensagem: "Item não encontrado." };
+  }
+
+  const parsed = configuracaoCompraSchema.safeParse({
+    unidadeCompraPadrao: formData.get("unidadeCompraPadrao") || undefined,
+    unidadeCompraPadraoOutro: formData.get("unidadeCompraPadraoOutro") || undefined,
+    fatorConversaoCompraPadrao: formData.get("fatorConversaoCompraPadrao") || undefined,
+    loteMinimoCompra: formData.get("loteMinimoCompra") || undefined,
+    multiploCompra: formData.get("multiploCompra") || undefined,
+  });
+  if (!parsed.success) {
+    return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Valor inválido." };
+  }
+  const { unidadeCompraPadrao, unidadeCompraPadraoOutro, fatorConversaoCompraPadrao, loteMinimoCompra, multiploCompra } =
+    parsed.data;
+
+  await prisma.itemGrafica.update({
+    where: { id: itemGraficaId },
+    data: {
+      unidadeCompraPadrao: unidadeCompraPadrao ?? null,
+      unidadeCompraPadraoOutro: unidadeCompraPadrao === "OUTRO" ? (unidadeCompraPadraoOutro ?? null) : null,
+      fatorConversaoCompraPadrao: fatorConversaoCompraPadrao !== undefined ? fatorConversaoCompraPadrao.toFixed(4) : null,
+      loteMinimoCompra: loteMinimoCompra !== undefined ? loteMinimoCompra.toFixed(4) : null,
+      multiploCompra: multiploCompra !== undefined ? multiploCompra.toFixed(4) : null,
+    },
   });
 
   revalidatePath(`/catalogo/${itemGraficaId}`);

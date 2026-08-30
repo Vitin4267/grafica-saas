@@ -30,6 +30,8 @@ export type DadosPdfPedido = {
   frete: string | null;
   transportadora: string | null;
   localEntrega: string | null;
+  notaEmpenho: string | null;
+  processoLicitatorio: string | null;
   prazoEntregaEstimadoDias: number | null;
 };
 
@@ -304,6 +306,8 @@ export function OrcamentoDocumento({ dados }: { dados: DadosPdfOrcamento }) {
                 ["Frete", dados.dadosPedido.frete],
                 ["Transportadora", dados.dadosPedido.transportadora],
                 ["Local de entrega", dados.dadosPedido.localEntrega],
+                ["Nota de empenho", dados.dadosPedido.notaEmpenho],
+                ["Processo licitatório", dados.dadosPedido.processoLicitatorio],
                 [
                   "Prazo estimado de entrega",
                   dados.dadosPedido.prazoEntregaEstimadoDias !== null
@@ -384,7 +388,10 @@ export function OrcamentoDocumento({ dados }: { dados: DadosPdfOrcamento }) {
 
         <View style={estilos.termosBox}>
           <Text style={estilos.termosTexto}>
-            {dados.termosCondicoesPdf || TERMOS_CONDICOES_PDF_PADRAO}
+            {dados.termosCondicoesPdf ||
+              ((dados.toleranciaTiragemPercent ?? 0) > 0
+                ? `${TERMOS_CONDICOES_PDF_PADRAO} Reservamo-nos o direito de variação de até ${dados.toleranciaTiragemPercent}% na quantidade final produzida, sem que isso seja motivo de disputa.`
+                : TERMOS_CONDICOES_PDF_PADRAO)}
           </Text>
         </View>
 

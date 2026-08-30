@@ -9,6 +9,7 @@ import { UserNav } from "@/components/UserNav";
 import { ArrowLeftIcon } from "@/components/icons";
 import { rotuloUnidade } from "@/lib/unidade";
 import { buscarComparativoFornecedores } from "@/lib/comparativo-fornecedores-db";
+import type { ContratoAtivoResumo } from "@/lib/contrato-fornecimento";
 import { NovaSolicitacaoForm } from "./NovaSolicitacaoForm";
 
 // alvoId vem do link "Solicitar compra" da sugestão de estoque baixo em
@@ -51,30 +52,45 @@ export default async function NovaSolicitacaoCompraPage({
   }
 
   const { alvoId } = await searchParams;
+  const agora = new Date();
 
-  const [materiais, fornecedores, alvoPreSelecionado, comparativoPorChave, pedidos] = await Promise.all([
-    prisma.itemGrafica.findMany({
-      where: { graficaId: usuario.graficaId, ativo: true, itemCatalogo: { tipo: "MATERIA_PRIMA" } },
-      include: { itemCatalogo: true, variantes: { where: { ativo: true }, orderBy: { rotulo: "asc" } } },
-      orderBy: { itemCatalogo: { nome: "asc" } },
-    }),
-    prisma.fornecedor.findMany({
-      where: { graficaId: usuario.graficaId, ativo: true },
-      orderBy: { nome: "asc" },
-      select: { id: true, nome: true },
-    }),
-    resolverAlvoPreSelecionado(alvoId, usuario.graficaId),
-    buscarComparativoFornecedores(usuario.graficaId),
-    // Pedidos elegíveis pra origem=PEDIDO_ESPECIFICO (achado A3 da auditoria
-    // de abrangência, Parte 3/Compras) — CANCELADO fica de fora, não faz
-    // sentido comprar material especificamente pra um pedido cancelado.
-    prisma.pedido.findMany({
-      where: { graficaId: usuario.graficaId, status: { not: "CANCELADO" } },
-      include: { orcamento: { include: { cliente: { select: { nome: true } } } } },
-      orderBy: { createdAt: "desc" },
-      take: 200,
-    }),
-  ]);
+  const [materiais, fornecedores, alvoPreSelecionado, comparativoPorChave, pedidos, contratosAtivos] =
+    await Promise.all([
+      prisma.itemGrafica.findMany({
+        where: { graficaId: usuario.graficaId, ativo: true, itemCatalogo: { tipo: "MATERIA_PRIMA" } },
+        include: { itemCatalogo: true, variantes: { where: { ativo: true }, orderBy: { rotulo: "asc" } } },
+        orderBy: { itemCatalogo: { nome: "asc" } },
+      }),
+      prisma.fornecedor.findMany({
+        where: { graficaId: usuario.graficaId, ativo: true },
+        orderBy: { nome: "asc" },
+        select: { id: true, nome: true },
+      }),
+      resolverAlvoPreSelecionado(alvoId, usuario.graficaId),
+      buscarComparativoFornecedores(usuario.graficaId),
+      // Pedidos elegíveis pra origem=PEDIDO_ESPECIFICO (achado A3 da auditoria
+      // de abrangência, Parte 3/Compras) — CANCELADO fica de fora, não faz
+      // sentido comprar material especificamente pra um pedido cancelado.
+      prisma.pedido.findMany({
+        where: { graficaId: usuario.graficaId, status: { not: "CANCELADO" } },
+        include: { orcamento: { include: { cliente: { select: { nome: true } } } } },
+        orderBy: { createdAt: "desc" },
+        take: 200,
+      }),
+      // Contratos de fornecimento ATIVOS e dentro da vigência (achado A9 da
+      // auditoria de abrangência, Parte 3/Compras) — o formulário mostra
+      // "Contrato ativo: R$X/unidade até DD/MM" quando a matéria-prima/
+      // variante escolhida bate com um destes (ver contratosAplicaveis).
+      prisma.contratoFornecimento.findMany({
+        where: {
+          graficaId: usuario.graficaId,
+          ativo: true,
+          vigenciaInicio: { lte: agora },
+          vigenciaFim: { gte: agora },
+        },
+        include: { fornecedor: { select: { nome: true } } },
+      }),
+    ]);
 
   // Serializa o Map pra objeto simples (chave = itemGraficaId ou varianteId,
   // ver chaveComparativo) e as datas pra ISO — o client component só
@@ -89,6 +105,18 @@ export default async function NovaSolicitacaoCompraPage({
       })),
     ])
   );
+
+  const contratosAtivosSerializados: ContratoAtivoResumo[] = contratosAtivos.map((c) => ({
+    id: c.id,
+    fornecedorId: c.fornecedorId,
+    fornecedorNome: c.fornecedor.nome,
+    itemGraficaId: c.itemGraficaId,
+    varianteId: c.varianteId,
+    precoUnitario: Number(c.precoUnitario),
+    unidadeCompra: c.unidadeCompra,
+    unidadeCompraOutro: c.unidadeCompraOutro,
+    vigenciaFim: c.vigenciaFim.toISOString(),
+  }));
 
   return (
     <div className="flex flex-1 flex-col">
@@ -132,12 +160,21 @@ export default async function NovaSolicitacaoCompraPage({
               nome: m.itemCatalogo.nome,
               unidade: rotuloUnidade(m.itemCatalogo.unidade, m.itemCatalogo.unidadeOutro),
               variantes: m.variantes.map((v) => ({ id: v.id, rotulo: v.rotulo })),
+              // Achado A6 da auditoria de abrangência (Parte 3/Compras) —
+              // pré-preenchimento da unidade/fator de compra padrão, ver
+              // NovaSolicitacaoForm.
+              unidadeCompraPadrao: m.unidadeCompraPadrao ?? "",
+              unidadeCompraPadraoOutro: m.unidadeCompraPadraoOutro ?? "",
+              fatorConversaoCompraPadrao: m.fatorConversaoCompraPadrao?.toString() ?? "",
+              loteMinimoCompra: m.loteMinimoCompra?.toString() ?? "",
+              multiploCompra: m.multiploCompra?.toString() ?? "",
             }))}
             fornecedores={fornecedores}
             itemGraficaIdInicial={alvoPreSelecionado.itemGraficaId}
             varianteIdInicial={alvoPreSelecionado.varianteId}
             comparativoPorChave={comparativoSerializado}
             pedidos={pedidos.map((p) => ({ id: p.id, clienteNome: p.orcamento.cliente.nome }))}
+            contratosAtivos={contratosAtivosSerializados}
           />
         )}
       </main>

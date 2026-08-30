@@ -111,12 +111,14 @@ const CAMPOS_PERCENTUAL_INTEIRO = [
   "margemFaixaBoa",
   "descontoMaxSemAprovacao",
   "toleranciaTiragemPadraoPercent",
+  "toleranciaTiragemPercent",
 ] as const;
 const ROTULO_PERCENTUAL_INTEIRO: Record<(typeof CAMPOS_PERCENTUAL_INTEIRO)[number], string> = {
   margemFaixaBaixa: "Margem faixa baixa",
   margemFaixaBoa: "Margem faixa boa",
   descontoMaxSemAprovacao: "Desconto máximo sem aprovação",
-  toleranciaTiragemPadraoPercent: "Tolerância de tiragem",
+  toleranciaTiragemPadraoPercent: "Tolerância de tiragem (padrão)",
+  toleranciaTiragemPercent: "Tolerância de tiragem",
 };
 
 export async function salvarParametros(
@@ -414,6 +416,7 @@ export async function salvarParametros(
       margemFaixaBoa: percentuaisInteiros.margemFaixaBoa,
       descontoMaxSemAprovacao: percentuaisInteiros.descontoMaxSemAprovacao,
       toleranciaTiragemPadraoPercent: percentuaisInteiros.toleranciaTiragemPadraoPercent,
+      toleranciaTiragemPercent: percentuaisInteiros.toleranciaTiragemPercent,
       diasPrecoInsumoDesatualizado,
       prazoEmDiasUteis,
       diasFuncionamento,

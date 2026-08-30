@@ -346,6 +346,7 @@ export async function atualizarStatusOrcamento(
       await gerarContasReceberDaAprovacao(tx, {
         graficaId: usuario.graficaId,
         orcamentoId,
+        clienteId: orcamento.clienteId,
         condicaoPagamentoId: orcamento.condicaoPagamentoId,
         total: Number(resolucaoOpcoes.total),
         aprovadoEm: new Date(),
@@ -1058,6 +1059,8 @@ export async function editarDadosGeraisOrcamento(
       transportadora: campoTexto("transportadora", 120),
       localEntrega: campoTexto("localEntrega", 500),
       enderecoEntregaId,
+      notaEmpenho: campoTexto("notaEmpenho", 100),
+      processoLicitatorio: campoTexto("processoLicitatorio", 100),
       observacoes: campoTexto("observacoes", 2000),
     },
   });

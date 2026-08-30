@@ -77,7 +77,7 @@ export async function criarContaReceber(
 
   const orcamento = await prisma.orcamento.findFirst({
     where: { id: orcamentoId, graficaId: usuario.graficaId },
-    select: { id: true, status: true },
+    select: { id: true, status: true, clienteId: true },
   });
   if (!orcamento) {
     return { ok: false, mensagem: "Orçamento não encontrado." };
@@ -89,8 +89,17 @@ export async function criarContaReceber(
     };
   }
 
+  // Achado A10 da Parte 5 — mesmo preenchimento do caminho automático
+  // (gerarContasReceberDaAprovacao, src/lib/condicao-pagamento.ts).
   const conta = await prisma.contaReceber.create({
-    data: { graficaId: usuario.graficaId, orcamentoId, descricao, valor, vencimento },
+    data: {
+      graficaId: usuario.graficaId,
+      orcamentoId,
+      clienteId: orcamento.clienteId,
+      descricao,
+      valor,
+      vencimento,
+    },
   });
 
   await registrarAuditoria({

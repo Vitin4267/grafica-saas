@@ -38,7 +38,7 @@ export async function GET(
       grafica: {
         include: {
           parametros: {
-            select: { termosCondicoesPdf: true, mostrarEspecificacoesTecnicas: true, prazoEmDiasUteis: true },
+            select: { termosCondicoesPdf: true, mostrarEspecificacoesTecnicas: true, prazoEmDiasUteis: true, toleranciaTiragemPercent: true },
           },
         },
       },

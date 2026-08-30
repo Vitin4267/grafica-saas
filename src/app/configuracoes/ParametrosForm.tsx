@@ -52,6 +52,7 @@ export function ParametrosForm({
   margemFaixaBoa,
   descontoMaxSemAprovacao,
   toleranciaTiragemPadraoPercent,
+  toleranciaTiragemPercent,
   diasPrecoInsumoDesatualizado,
   prazoEmDiasUteis,
   diasFuncionamento,
@@ -78,6 +79,7 @@ export function ParametrosForm({
   margemFaixaBoa: number;
   descontoMaxSemAprovacao: number;
   toleranciaTiragemPadraoPercent: number;
+  toleranciaTiragemPercent: number;
   diasPrecoInsumoDesatualizado: number;
   prazoEmDiasUteis: boolean;
   diasFuncionamento: number;
@@ -561,14 +563,25 @@ export function ParametrosForm({
           </p>
         </div>
         <Input
-          label="Tolerância de tiragem (%)"
+          label="Tolerância de tiragem padrão (%)"
           name="toleranciaTiragemPadraoPercent"
           type="number"
           step="0.1"
           min="0"
           max="100"
           defaultValue={toleranciaTiragemPadraoPercent}
-          hint="±% sobre a quantidade contratada"
+          hint="±% sobre a quantidade contratada (snapshot em Orcamento.toleranciaTiragemPercent)"
+          className="max-w-xs"
+        />
+        <Input
+          label="Tolerância de tiragem (%)"
+          name="toleranciaTiragemPercent"
+          type="number"
+          step="0.1"
+          min="0"
+          max="100"
+          defaultValue={toleranciaTiragemPercent}
+          hint="Exibida em documentos e Ordem de Produção (0 = sem tolerância)"
           className="max-w-xs"
         />
       </Card>

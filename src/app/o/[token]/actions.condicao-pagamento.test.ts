@@ -167,6 +167,12 @@ describe("aprovação pública de orçamento — geração automática de ContaR
       const contas = await prisma.contaReceber.findMany({ where: { orcamentoId: f.orcamentoId } });
       expect(contas).toHaveLength(1);
       expect(Number(contas[0].valor)).toBeCloseTo(250, 2);
+
+      // Achado A10 da Parte 5 (2026-08-30) — mesmo preenchimento de
+      // clienteId no caminho público, ver espelho em
+      // src/app/orcamento/[id]/actions.condicao-pagamento.test.ts.
+      const orcamento = await prisma.orcamento.findUniqueOrThrow({ where: { id: f.orcamentoId } });
+      expect(contas[0].clienteId).toBe(orcamento.clienteId);
     },
     TIMEOUT_MS
   );

@@ -23,6 +23,7 @@ import {
   type StatusSolicitacaoCompra,
 } from "@/lib/compras-status";
 import { rotuloUnidade } from "@/lib/unidade";
+import { listarContratosProximosDoLimite } from "@/lib/contrato-fornecimento-db";
 
 const formatoQuantidade = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 4 });
 
@@ -42,7 +43,7 @@ export default async function ComprasPage() {
   }
   const podeEditar = await podeEditarModulo(usuario, "COMPRAS");
 
-  const [solicitacoes, previsaoEstoque] = await Promise.all([
+  const [solicitacoes, previsaoEstoque, contratosProximosDoLimite] = await Promise.all([
     prisma.solicitacaoCompra.findMany({
       where: { graficaId: usuario.graficaId },
       include: {
@@ -53,6 +54,9 @@ export default async function ComprasPage() {
       orderBy: { createdAt: "desc" },
     }),
     calcularPrevisaoEstoque(usuario.graficaId),
+    // Achado A9 da auditoria de abrangência (Parte 3/Compras) — contratos de
+    // fornecimento com vigência ou quantidade contratada perto do fim.
+    listarContratosProximosDoLimite(usuario.graficaId),
   ]);
 
   // Sugestões de compra a partir do alerta de estoque que já existe (ver
@@ -93,12 +97,48 @@ export default async function ComprasPage() {
               Solicitado → Cotando → Aprovado → Comprado → Recebido → Conferido.
             </p>
           </div>
-          {podeEditar && (
-            <Link href="/compras/nova">
-              <Button>Nova solicitação</Button>
+          <div className="flex gap-2">
+            <Link href="/compras/contratos">
+              <Button variant="outline">Contratos de fornecimento</Button>
             </Link>
-          )}
+            {podeEditar && (
+              <Link href="/compras/nova">
+                <Button>Nova solicitação</Button>
+              </Link>
+            )}
+          </div>
         </div>
+
+        {contratosProximosDoLimite.length > 0 && (
+          <Card className="mb-8 divide-y divide-slate-100 dark:divide-slate-800">
+            <div className="flex items-center gap-2 p-5 pb-3">
+              <AlertTriangleIcon className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Contratos esgotando</h2>
+            </div>
+            {contratosProximosDoLimite.map((c) => (
+              <Link
+                key={c.id}
+                href="/compras/contratos"
+                className="flex items-center justify-between gap-4 p-5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+              >
+                <div>
+                  <p className="font-medium text-slate-900 dark:text-white">
+                    {c.fornecedorNome}
+                    {c.itemNome ? ` — ${c.itemNome}` : ""}
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {c.vigenciaProxima &&
+                      (c.diasRestantesVigencia >= 0
+                        ? `Vigência acaba em ${c.diasRestantesVigencia} dia${c.diasRestantesVigencia === 1 ? "" : "s"}`
+                        : "Vigência já venceu")}
+                    {c.vigenciaProxima && c.quantidadeProxima ? " · " : ""}
+                    {c.quantidadeProxima && `${Math.round((c.percentualConsumido ?? 0) * 100)}% consumido`}
+                  </p>
+                </div>
+              </Link>
+            ))}
+          </Card>
+        )}
 
         {sugestoes.length > 0 && (
           <Card className="mb-8 divide-y divide-slate-100 dark:divide-slate-800">

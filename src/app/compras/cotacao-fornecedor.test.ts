@@ -93,6 +93,7 @@ async function solicitacaoParaTransicao(solicitacaoId: string): Promise<Solicita
     fornecedorId: solicitacao.fornecedorId,
     documento: solicitacao.documento,
     pedidoId: solicitacao.pedidoId,
+    contratoFornecimentoId: solicitacao.contratoFornecimentoId,
   };
 }
 

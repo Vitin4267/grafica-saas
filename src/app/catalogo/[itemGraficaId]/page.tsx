@@ -22,6 +22,7 @@ import { VariantesMateriaPrimaForm } from "./VariantesMateriaPrimaForm";
 import { NcmForm } from "./NcmForm";
 import { LancarMovimentacaoForm } from "./LancarMovimentacaoForm";
 import { QuantidadePorEmbalagemForm } from "./QuantidadePorEmbalagemForm";
+import { ConfiguracaoCompraForm } from "./ConfiguracaoCompraForm";
 import { ROTULOS_TIPO_MOVIMENTACAO } from "@/lib/estoque-manual";
 import { rotuloUnidade } from "@/lib/unidade";
 import { formatoMoeda } from "@/lib/moeda";
@@ -369,6 +370,18 @@ export default async function ConfiguracaoItemPage({
                 ≈ {formatoQuantidadeAbs.format(conversaoEmbalagem)} unidades em estoque
               </p>
             )}
+
+            <ConfiguracaoCompraForm
+              itemGraficaId={itemGrafica.id}
+              unidadeEstoqueRotulo={unidadeRotulo}
+              valoresAtuais={{
+                unidadeCompraPadrao: itemGrafica.unidadeCompraPadrao ?? "",
+                unidadeCompraPadraoOutro: itemGrafica.unidadeCompraPadraoOutro ?? "",
+                fatorConversaoCompraPadrao: itemGrafica.fatorConversaoCompraPadrao?.toString() ?? "",
+                loteMinimoCompra: itemGrafica.loteMinimoCompra?.toString() ?? "",
+                multiploCompra: itemGrafica.multiploCompra?.toString() ?? "",
+              }}
+            />
 
             <LancarMovimentacaoForm
               itemGraficaId={itemGrafica.id}

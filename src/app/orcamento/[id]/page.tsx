@@ -442,6 +442,8 @@ export default async function OrcamentoDetalhePage({
               frete: orcamento.frete,
               transportadora: orcamento.transportadora,
               localEntrega: orcamento.localEntrega,
+              notaEmpenho: orcamento.notaEmpenho,
+              processoLicitatorio: orcamento.processoLicitatorio,
               observacoes: orcamento.observacoes,
             }}
             contatosCliente={contatosCliente}

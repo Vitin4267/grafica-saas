@@ -44,6 +44,7 @@ export default async function ConfiguracoesPage() {
     margemFaixaBoa,
     descontoMaxSemAprovacao,
     toleranciaTiragemPadraoPercent,
+    toleranciaTiragemPercent,
     diasPrecoInsumoDesatualizado,
     prazoEmDiasUteis,
     diasFuncionamento,
@@ -69,6 +70,7 @@ export default async function ConfiguracoesPage() {
       margemFaixaBoa: true,
       descontoMaxSemAprovacao: true,
       toleranciaTiragemPadraoPercent: true,
+      toleranciaTiragemPercent: true,
       diasPrecoInsumoDesatualizado: true,
       prazoEmDiasUteis: true,
       diasFuncionamento: true,
@@ -167,6 +169,7 @@ export default async function ConfiguracoesPage() {
           toleranciaTiragemPadraoPercent={
             toleranciaTiragemPadraoPercent ? Number(toleranciaTiragemPadraoPercent) : 10
           }
+          toleranciaTiragemPercent={toleranciaTiragemPercent ? Number(toleranciaTiragemPercent) : 0}
           diasPrecoInsumoDesatualizado={diasPrecoInsumoDesatualizado}
           prazoEmDiasUteis={prazoEmDiasUteis}
           diasFuncionamento={diasFuncionamento}

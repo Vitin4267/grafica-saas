@@ -41,6 +41,10 @@ export type DadosPdfOrdemProducao = {
   // "sempre mandar arte em RGB", "não aceita variação de tom entre
   // lotes") — diferente de `observacoes` acima, que é nota do PEDIDO.
   preferenciasProducaoCliente: string | null;
+  // Achado A13 da Parte 6 (auditoria de abrangência, 2026-08-29) —
+  // tolerância de tiragem para exibir faixa aceitável de quantidade.
+  // 0 = sem tolerância.
+  toleranciaTiragemPercent: number;
   itens: ItemPdfOrdemProducao[];
 };
 
@@ -233,7 +237,17 @@ export function OrdemProducaoDocumento({ dados }: { dados: DadosPdfOrdemProducao
             <View key={indice} style={estilos.itemBox} wrap={false}>
               <View style={estilos.itemCabecalho}>
                 <Text style={estilos.itemNome}>{item.nome}</Text>
-                <Text style={estilos.itemQtd}>{item.quantidade} un.</Text>
+                <Text style={estilos.itemQtd}>
+                  {item.quantidade} un.
+                  {dados.toleranciaTiragemPercent > 0 && (
+                    <>
+                      {" (aceita entre "}
+                      {Math.round(item.quantidade * (1 - dados.toleranciaTiragemPercent / 100))}{" e "}
+                      {Math.round(item.quantidade * (1 + dados.toleranciaTiragemPercent / 100))}
+                      {")"}
+                    </>
+                  )}
+                </Text>
               </View>
               <View style={estilos.itemCorpo}>
                 {detalhes.length > 0 && (

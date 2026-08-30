@@ -230,6 +230,11 @@ describe("aprovação de orçamento — geração automática de ContaReceber (a
       expect(contas[1].vencimento.getTime()).toBe(diaBase.getTime() + 30 * 86_400_000);
 
       expect(contas[0].descricao).toContain("Entrada + saldo em 30 dias");
+
+      // Achado A10 da Parte 5 (2026-08-30) — ContaReceber.clienteId nasce
+      // preenchido a partir do orçamento, sem precisar do join
+      // ContaReceber → Orcamento → clienteId.
+      expect(contas.every((c) => c.clienteId === cliente.id)).toBe(true);
     },
     TIMEOUT_MS
   );

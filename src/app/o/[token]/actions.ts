@@ -335,6 +335,7 @@ export async function responderOrcamentoPublico(
       await gerarContasReceberDaAprovacao(tx, {
         graficaId: orcamento.graficaId,
         orcamentoId: orcamento.id,
+        clienteId: orcamento.clienteId,
         condicaoPagamentoId: orcamento.condicaoPagamentoId,
         total: Number(resolucaoOpcoes.total),
         aprovadoEm: agora,

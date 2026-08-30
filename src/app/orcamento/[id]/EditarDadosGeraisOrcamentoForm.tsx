@@ -40,6 +40,10 @@ type DadosGerais = {
   frete: string | null;
   transportadora: string | null;
   localEntrega: string | null;
+  // Achado A12 da Parte 5 da auditoria de abrangência — campos opcionais
+  // pra cliente órgão público.
+  notaEmpenho: string | null;
+  processoLicitatorio: string | null;
   observacoes: string | null;
 };
 
@@ -104,6 +108,8 @@ export function EditarDadosGeraisOrcamentoForm({
     dados.frete ? (["Frete", ROTULO_FRETE[dados.frete] ?? dados.frete] as [string, string]) : null,
     dados.transportadora ? (["Transportadora", dados.transportadora] as [string, string]) : null,
     dados.localEntrega ? (["Local de entrega", dados.localEntrega] as [string, string]) : null,
+    dados.notaEmpenho ? (["Nota de empenho", dados.notaEmpenho] as [string, string]) : null,
+    dados.processoLicitatorio ? (["Processo licitatório", dados.processoLicitatorio] as [string, string]) : null,
     dados.observacoes ? (["Observações internas", dados.observacoes] as [string, string]) : null,
   ].filter((l): l is [string, string] => l !== null);
 
@@ -196,6 +202,8 @@ export function EditarDadosGeraisOrcamentoForm({
         </Select>
         <Input label="Transportadora" name="transportadora" defaultValue={dados.transportadora ?? ""} />
         <Input label="Local de entrega" name="localEntrega" defaultValue={dados.localEntrega ?? ""} />
+        <Input label="Nota de empenho" name="notaEmpenho" defaultValue={dados.notaEmpenho ?? ""} />
+        <Input label="Processo licitatório" name="processoLicitatorio" defaultValue={dados.processoLicitatorio ?? ""} />
       </div>
       <Textarea
         label="Observações internas"

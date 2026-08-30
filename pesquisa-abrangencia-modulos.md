@@ -523,6 +523,63 @@ notarem na área tocada, mesmo fora do achado):
 Verificação: `tsc --noEmit` limpo, 999/999 testes (102 arquivos) passando
 2× seguidas, `npm run build` OK.
 
+**Atualização 2026-08-30 (rodada 16) — mais 5 achados CONSTRUÍDOS** (5
+subagentes em paralelo — primeira rodada usando `model: "haiku"` pros 2
+achados mais mecânicos, `sonnet` pros outros 3, ver
+[[feedback-orquestracao-modelo]] na memória):
+- **A12 da Parte 5** (haiku) — cliente órgão público: `Orcamento.
+  notaEmpenho`/`processoLicitatorio`, texto livre, exibidos no PDF quando
+  preenchidos. Deliberadamente sempre visíveis no form (não condicionado a
+  `segmento === ORGAO_PUBLICO`) — decisão de simplicidade aceita.
+- **A13 da Parte 6** (haiku) — `ParametrosGrafica.toleranciaTiragemPercent`
+  (default 0, comportamento de hoje preservado), interpolado no texto
+  padrão de termos e exibido como faixa aceitável na Ordem de Produção.
+- **A6 da Parte 3** (sonnet) — unidade de compra ≠ unidade de estoque:
+  `enum UnidadeCompra`, campos de conversão em `SolicitacaoCompra` e
+  configuração padrão (`unidadeCompraPadrao`/`fatorConversaoCompraPadrao`/
+  `loteMinimoCompra`/`multiploCompra`) em `ItemGrafica`. `quantidade`
+  (estoque) continua a única fonte de verdade lida pelo resto do sistema,
+  sempre recalculada no servidor a partir da quantidade de compra (nunca
+  confia no valor cru enviado pelo cliente). Aviso de múltiplo é só aviso,
+  nunca bloqueia.
+- **A10 da Parte 5** (sonnet) — visão financeira/histórico do cliente:
+  `@@index([graficaId, clienteId])` em `Orcamento`, `ContaReceber.
+  clienteId` (com backfill do histórico existente via join na própria
+  migration), novo card na ficha do cliente com últimos orçamentos, total
+  faturado no período e contas a receber em aberto/vencidas — tudo lendo
+  dado que já existia.
+- **A9 da Parte 3** (sonnet) — contrato de fornecimento com preço fixo:
+  `model ContratoFornecimento` (contrato "coringa" por fornecedor ou
+  específico por item/variante), finalmente dá função real a
+  `OrigemSolicitacaoCompra.CONTRATO_PROGRAMADO` (existia sem uso desde a
+  rodada 14) — solicitação vinculada nasce direto em APROVADO, pulando
+  COTANDO, com `quantidadeConsumida` incrementada atomicamente ao
+  confirmar RECEBIDO. Alerta de vigência/quantidade esgotando (30 dias /
+  90%, fixos por ora — sem uso real que justifique configuração por
+  tenant ainda).
+
+**Achado extra na verificação — bug real de build corrigido**: o `npm run
+build` quebrou com `Module not found: Can't resolve 'util/types'` — o
+subagente de A9 colocou a função pura `contratosAplicaveis` (consumida por
+`NovaSolicitacaoForm.tsx`, um Client Component) no mesmo arquivo
+`src/lib/contrato-fornecimento.ts` da função `listarContratosProximosDoLimite`,
+que importa `@/lib/prisma` — vazando o driver `pg` pro bundle do navegador.
+Mesmo motivo pelo qual `src/lib/dias-uteis.ts` foi separado de `data.ts` na
+rodada 11. Corrigido movendo a função com Prisma pra
+`src/lib/contrato-fornecimento-db.ts`, mesma separação já usada em
+`comparativo-fornecedores.ts`/`comparativo-fornecedores-db.ts`. Também 2
+asserts frágeis (`Decimal` do Prisma comparado direto com número em
+`configuracoes/actions.test.ts`) corrigidos com `Number(...)`. As 5
+migrations aplicadas ao banco de dev com aprovação explícita (1 retry por
+cold-start do Neon). Suíte cheia mostrou flakiness pontual e diferente a
+cada rodada (1-2 testes isolados falhando, sempre um arquivo diferente,
+sempre passando ao rodar de novo) — mesma contenção de conexão no Postgres
+de rodadas anteriores, não bug de lógica; precisou rodar a suíte 4× até
+estabilizar 100% verde. Verificação final: `tsc --noEmit` limpo, 1043/1043
+testes (109 arquivos) passando, `npm run build` OK (com cache do Turbopack
+limpo — o build também apresentou um erro interno do Turbopack não
+relacionado ao código, resolvido apagando `.next`).
+
 ## Como ler cada parte
 
 Cada uma das 6 partes abaixo cobre um módulo (ou par de módulos muito
@@ -1044,7 +1101,10 @@ Achado transversal importante: **`SolicitacaoCompra` não aparece em NENHUM arqu
 
 **Proposta.** Enriquecer `Fornecedor`: `documento` (CNPJ, `@@unique([graficaId, documento])`), `email`, `telefone`, `condicaoPagamentoPadrao`, `prazoEntregaMedioDias`, `pedidoMinimoValor`. Categoria fechada+Outro cobrindo perfis além do offset (`PAPEL_CARTAO`, `TINTA_VERNIZ`, `CHAPA_CLICHE_MATRIZ`, `SUBSTRATO_RIGIDO`, `TECIDO_LINHA_BORDADO`, `BRINDE_PROMOCIONAL`, `ACABAMENTO_TERCEIRIZADO` etc). `CondicaoPagamento` fechada+Outro (`A_VISTA`, `BOLETO_30_60_90` etc). Adicionar `fornecedorId` a `Despesa` e, ao avançar pra COMPRADO, **gerar automaticamente as parcelas de contas a pagar**. É provavelmente o maior ganho de percepção de valor do módulo.
 
-### A6 — Unidade de compra ≠ unidade de estoque; sem lote mínimo nem múltiplo de embalagem
+### A6 — Unidade de compra ≠ unidade de estoque; sem lote mínimo nem múltiplo de embalagem — **CONSTRUÍDO 2026-08-30 (rodada 16)**
+
+**Status:** `enum UnidadeCompra` + campos de conversão em `SolicitacaoCompra`/`ItemGrafica`, conforme a proposta. `quantidade` (estoque) sempre recalculada no servidor, nunca confia no cliente. Aviso de múltiplo é só aviso.
+
 **O que falta.** `SolicitacaoCompra.quantidade` está sempre na unidade de estoque; `ItemGrafica.quantidadePorEmbalagem` é "puramente informativo" (comentário do schema). Sem `unidadeCompra`, `fatorConversaoCompra`, `loteMinimoCompra`, `multiploCompra`. Comprador vê proposta em R$/tonelada ou R$/fardo e converte de cabeça.
 
 **Pesquisa.** NF-e brasileira tem o par `uCom`/`uTrib` justamente pra representar "unidade comercial × unidade tributável", com tabela oficial incluindo FARDO/RESMA/BOBINA/ROLO/PALETE. Divergência de conversão de unidade é fonte notória de erro documentada pela Senior.
@@ -1067,7 +1127,10 @@ Achado transversal importante: **`SolicitacaoCompra` não aparece em NENHUM arqu
 
 **Proposta.** `Fornecedor.prazoEntregaMedioDias` (A5) e/ou `ItemGrafica.leadTimeDias`; calcular ponto de pedido de verdade. `ParametrosGrafica.diasAlertaCompraPadrao @default(30)` + `leadTimePadraoDias @default(7)`. **Lead time real aprendido de graça**: a solicitação já tem `compradoEm`/`recebidoEm` — com `prazoEntregaPrometidoDias` da cotação vencedora (A4), dá pra calcular lead time médio real por fornecedor, realimentando o ponto de pedido e o OTIF (A11). Sugerir também a quantidade, arredondada ao múltiplo/lote mínimo (A6).
 
-### A9 — Não existe contrato / preço fixo por período
+### A9 — Não existe contrato / preço fixo por período — **CONSTRUÍDO 2026-08-30 (rodada 16)**
+
+**Status:** `model ContratoFornecimento` (coringa ou específico), dá função real a `CONTRATO_PROGRAMADO` — solicitação vinculada pula COTANDO, nasce em APROVADO. Alerta de vigência/quantidade esgotando (limiares fixos, sem configuração por tenant ainda).
+
 **O que falta.** Nada representa acordo de fornecimento contínuo. `precoCompra`/`TabelaPrecoPapel.precoKg` são preços de referência sem vigência nem fornecedor associado.
 
 **Pesquisa.** Contratos de fornecimento com preço fixo por período são prática corrente pra gráfica de volume alto, dispensando cotação a cada reposição.
@@ -1459,7 +1522,9 @@ Cliente.margemPadraoOverride Decimal? @db.Decimal(5,4)
 - `Cliente.updatedAt DateTime @updatedAt` — trivial, alinha com todo o resto do schema.
 - Ação `anonimizarCliente` no lugar de "fale com o suporte": sobrescreve nome/documento/contatos por marcadores e marca `desativadoEm`, preservando os `Orcamento`/`NotaFiscal` que a legislação fiscal obriga a manter — e registrando em `LogAuditoria`, que já existe exatamente pra esse tipo de rastro.
 
-### A10. Não há visão financeira nem histórico no cadastro — e a consulta "por cliente" nem índice tem
+### A10. Não há visão financeira nem histórico no cadastro — e a consulta "por cliente" nem índice tem — **CONSTRUÍDO 2026-08-30 (rodada 16)**
+
+**Status:** índice + `ContaReceber.clienteId` (com backfill do histórico existente) + card na ficha do cliente com os 3 blocos propostos, tudo lendo dado que já existia.
 
 **O que falta:** três coisas empilhadas.
 1. `ContaReceber` se liga a `Orcamento`, não a `Cliente`. Para responder "quanto o cliente X me deve" é preciso `ContaReceber → Orcamento → clienteId`.
@@ -1487,7 +1552,9 @@ Cliente.margemPadraoOverride Decimal? @db.Decimal(5,4)
 - `Cliente.preferenciasProducao String? @db.Text` (opcional, separado) — o que precisa chegar ao chão de fábrica junto da Ordem de Produção, que é onde essa informação de fato é usada.
 - `enum OrigemCliente { INDICACAO, REDES_SOCIAIS, BUSCA_GOOGLE, ANUNCIO, FEIRA_EVENTO, PROSPECCAO_ATIVA, CLIENTE_ANTIGO, OUTRO }` + `origemOutro String?` — é o campo que transforma o backlog de "CRM de funil" em algo mensurável (qual canal traz cliente que fecha), e custa um enum.
 
-### A12. Cliente órgão público não tem onde guardar empenho, processo licitatório e dados de faturamento próprios
+### A12. Cliente órgão público não tem onde guardar empenho, processo licitatório e dados de faturamento próprios — **CONSTRUÍDO 2026-08-30 (rodada 16)**
+
+**Status:** `Orcamento.notaEmpenho`/`processoLicitatorio`, exibidos no PDF quando preenchidos. Escopo mínimo conforme a proposta — sem model de licitação.
 
 **O que falta:** nada no schema representa venda para o setor público. Não há campo de nota de empenho, número do processo/pregão, ata de registro de preços, nem o vínculo entre o pedido e o empenho que autoriza o faturamento.
 
@@ -1818,7 +1885,9 @@ enum AreaAdministrativa {
 
 Fora de escopo e assim deve permanecer: o sistema é BR-fiscal de ponta a ponta (`RegimeTributario` fechado sem OUTRO por decisão explícita no schema, CSOSN/CFOP/NCM, Focus NFe, `formatoMoeda` pt-BR, `dataInputParaUTC` ancorado em Brasília). Multi-moeda não é um campo `moeda` — é reescrever precificação, financeiro e fiscal. Não fazer.
 
-## A13 — Política comercial padrão (tolerância de tiragem, dias úteis, mínimos) só existe como texto livre
+## A13 — Política comercial padrão (tolerância de tiragem, dias úteis, mínimos) só existe como texto livre — **CONSTRUÍDO 2026-08-30 (rodada 16)**
+
+**Status:** `toleranciaTiragemPercent` construído conforme a proposta (default 0). Interpolado nos termos padrão e exibido na Ordem de Produção. Faturar pela quantidade entregue continua fora de escopo (segunda etapa, deliberadamente não construída).
 
 **O que falta.** A única expressão de política comercial configurável é `termosCondicoesPdf` — um bloco de texto de até 4.000 caracteres, único pra gráfica inteira, sem nenhum campo estruturado por trás. Não há `toleranciaTiragemPercent`, não há mínimo em quantidade (`pedidoMinimo` é em R$), e a `Entrega` não registra quantidade efetivamente entregue.
 

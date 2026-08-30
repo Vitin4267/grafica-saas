@@ -56,6 +56,10 @@ export type OrcamentoParaPdf = {
       // corridos", em vez do literal fixo de sempre. Ver
       // ParametrosGrafica.prazoEmDiasUteis no schema.
       prazoEmDiasUteis: boolean;
+      // Achado A13 da Parte 6 (auditoria de abrangência, 2026-08-29) —
+      // tolerância de tiragem para interpolar no texto padrão de termos
+      // e exibir faixa aceitável na Ordem de Produção. 0 = sem tolerância.
+      toleranciaTiragemPercent: Prisma.Decimal;
     } | null;
   };
   // Bloco 1 (dados gerais) — seguros pro cliente ver, ao contrário de
@@ -67,6 +71,10 @@ export type OrcamentoParaPdf = {
   frete: string | null;
   transportadora: string | null;
   localEntrega: string | null;
+  // Achado A12 da Parte 5 da auditoria de abrangência — campos opcionais
+  // pra cliente órgão público.
+  notaEmpenho: string | null;
+  processoLicitatorio: string | null;
   prazoEntregaEstimadoDias: number | null;
   itens: {
     quantidade: number;
@@ -142,6 +150,8 @@ export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
     frete: orcamento.frete ? (ROTULO_FRETE[orcamento.frete] ?? orcamento.frete) : null,
     transportadora: orcamento.transportadora,
     localEntrega: orcamento.localEntrega,
+    notaEmpenho: orcamento.notaEmpenho,
+    processoLicitatorio: orcamento.processoLicitatorio,
     prazoEntregaEstimadoDias: orcamento.prazoEntregaEstimadoDias,
   };
   const temDadosPedido = Object.values(dadosPedido).some((v) => v !== null);

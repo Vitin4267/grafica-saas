@@ -29,6 +29,11 @@ export type SolicitacaoParaTransicao = {
   // quando origem=PEDIDO_ESPECIFICO. Ao chegar em RECEBIDO, gera o
   // CustoPedido origem=COMPRA deste pedido (ver criarCustoAutomaticoCompra).
   pedidoId: string | null;
+  // Achado A9 da auditoria de abrangência (Parte 3/Compras) — preenchido só
+  // quando origem=CONTRATO_PROGRAMADO. Ao chegar em RECEBIDO, incrementa
+  // ContratoFornecimento.quantidadeConsumida deste contrato (ver bloco
+  // RECEBIDO abaixo).
+  contratoFornecimentoId: string | null;
 };
 
 // Campos opcionais que o formulário de transição pode enviar junto — cada
@@ -232,6 +237,19 @@ export async function avancarStatusCompra(
             varianteId: solicitacao.varianteId,
             categoriaCustoIdMaterial: itemGraficaMaterial?.categoriaCustoId ?? null,
             valor: valorFinalFinal,
+          });
+        }
+
+        // Achado A9 da auditoria de abrangência (Parte 3/Compras): compra
+        // vinculada a um contrato de fornecimento (origem=CONTRATO_PROGRAMADO)
+        // consome parte da quantidade contratada assim que o material chega
+        // de fato — increment() do Prisma, nunca leitura+gravação em passos
+        // separados, pra nunca perder incremento sob concorrência (duas
+        // solicitações do mesmo contrato confirmando RECEBIDO ao mesmo tempo).
+        if (solicitacao.contratoFornecimentoId) {
+          await tx.contratoFornecimento.update({
+            where: { id: solicitacao.contratoFornecimentoId },
+            data: { quantidadeConsumida: { increment: quantidadeDec.toFixed(4) } },
           });
         }
       });

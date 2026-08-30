@@ -26,7 +26,7 @@ function orcamentoBase(
       emailContato: null,
       site: null,
       enderecoResumido: null,
-      parametros: { termosCondicoesPdf: null, mostrarEspecificacoesTecnicas: true, prazoEmDiasUteis: true },
+      parametros: { termosCondicoesPdf: null, mostrarEspecificacoesTecnicas: true, prazoEmDiasUteis: true, toleranciaTiragemPercent: 0 as unknown as Prisma.Decimal },
     },
     vendedor: null,
     tipoPedido: null,
@@ -34,6 +34,8 @@ function orcamentoBase(
     frete: null,
     transportadora: null,
     localEntrega: null,
+    notaEmpenho: null,
+    processoLicitatorio: null,
     prazoEntregaEstimadoDias: null,
     itens: [
       {
@@ -96,7 +98,7 @@ describe("mapearDadosPdf — dias úteis vs corridos (achado A2 da Parte 6)", ()
       ...base,
       grafica: {
         ...base.grafica,
-        parametros: { termosCondicoesPdf: null, mostrarEspecificacoesTecnicas: true, prazoEmDiasUteis: false },
+        parametros: { termosCondicoesPdf: null, mostrarEspecificacoesTecnicas: true, prazoEmDiasUteis: false, toleranciaTiragemPercent: 0 as unknown as Prisma.Decimal },
       },
     });
     expect(dados.prazoEmDiasUteis).toBe(false);

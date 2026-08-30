@@ -15,6 +15,7 @@ import { ArrowLeftIcon } from "@/components/icons";
 import { ClienteEditForm } from "./ClienteEditForm";
 import { ContatosClienteCard } from "./ContatosClienteCard";
 import { EnderecoClienteCard } from "./EnderecoClienteCard";
+import { HistoricoClienteCard } from "./HistoricoClienteCard";
 
 export default async function ClienteDetalhePage({
   params,
@@ -177,6 +178,8 @@ export default async function ClienteDetalhePage({
             }))}
           />
         </div>
+
+        <HistoricoClienteCard graficaId={usuario.graficaId} clienteId={cliente.id} />
       </main>
     </div>
   );

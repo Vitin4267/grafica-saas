@@ -124,6 +124,11 @@ export async function gerarContasReceberDaAprovacao(
   params: {
     graficaId: string;
     orcamentoId: string;
+    // Achado A10 da Parte 5 — preenche ContaReceber.clienteId no nascimento
+    // (ver comentário no schema.prisma), evitando o join
+    // ContaReceber → Orcamento → clienteId em toda consulta financeira "por
+    // cliente".
+    clienteId: string;
     condicaoPagamentoId: string | null;
     total: number;
     aprovadoEm: Date;
@@ -171,6 +176,7 @@ export async function gerarContasReceberDaAprovacao(
       data: {
         graficaId: params.graficaId,
         orcamentoId: params.orcamentoId,
+        clienteId: params.clienteId,
         descricao: `Parcela ${parcela.ordem}/${totalParcelas} — ${condicao.nome}`,
         valor,
         vencimento,

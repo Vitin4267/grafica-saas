@@ -126,6 +126,9 @@ export function mapearDadosOrdemProducao(pedido: PedidoParaOrdemProducao): Dados
     // do PEDIDO). Snapshot em Cliente, não em Orcamento — vale pra todo
     // pedido futuro desse cliente, não só este.
     preferenciasProducaoCliente: pedido.orcamento.cliente.preferenciasProducao,
+    // Achado A13 da Parte 6 (auditoria de abrangência, 2026-08-29) —
+    // tolerância de tiragem configurável pela gráfica.
+    toleranciaTiragemPercent: 0, // placeholder — será preenchido corretamente após ler parametros
     itens: pedido.orcamento.itens.map((item) => ({
       nome: item.itemGrafica.itemCatalogo.nome,
       quantidade: item.quantidade,

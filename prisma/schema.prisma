@@ -113,6 +113,9 @@ model Grafica {
   condicoesPagamento    CondicaoPagamento[]
   importacoesPlanilha   ImportacaoPlanilha[]
   solicitacoesCompra    SolicitacaoCompra[]
+  // Achado A9 da auditoria de abrangência (Parte 3/Compras, 2026-08-30) —
+  // ver model ContratoFornecimento.
+  contratosFornecimento ContratoFornecimento[]
   entregas              Entrega[]
   filaGangRun           FilaGangRun[]
   gruposGangRun         GrupoGangRun[]
@@ -205,6 +208,14 @@ model ParametrosGrafica {
   // nullable deixa espaço pra uma futura opção de "tolerância zero" sem
   // sentinela mágico.
   toleranciaTiragemPadraoPercent Decimal? @default(10) @db.Decimal(5, 2)
+
+  // Achado A13 da Parte 6 da auditoria de abrangência (2026-08-29) —
+  // tolerância de tiragem configurável pela gráfica (usada no PDF de
+  // termos-padrão e exibição de faixa aceitável na Ordem de Produção).
+  // 0 = sem tolerância (comportamento padrão hoje); > 0 = % de variação
+  // permitida exibida em documentos. Aditivo: zero mudança de comportamento
+  // de faturamento (fora de escopo desta rodada, ver pesquisa-abrangencia-modulos.md).
+  toleranciaTiragemPercent Decimal @default(0) @db.Decimal(5, 2)
 
   // Limiares do alerta de prazo por e-mail (ver src/lib/alerta-prazo-email.ts)
   // — antes fixos em 5/3/0 dias no código. Uma gráfica com ciclo de produção
@@ -1413,6 +1424,8 @@ model Cliente {
   // Achado A5 da Parte 5 da auditoria de abrangência — ver EnderecoCliente
   // mais abaixo no schema.
   enderecos      EnderecoCliente[]
+  // Achado A10 da Parte 5 da auditoria de abrangência — ver ContaReceber.clienteId.
+  contasReceber  ContaReceber[]
 
   // NULL não colide com NULL em unique index do Postgres — várias gráficas
   // podem ter clientes sem documento cadastrado sem problema. Escopado por
@@ -1668,6 +1681,27 @@ enum UnidadeMedida {
   OUTRO
 }
 
+// Unidade COMERCIAL de compra — achado A6 da auditoria de abrangência (Parte
+// 3/Compras, 2026-08-29): separada da unidade de ESTOQUE (UnidadeMedida
+// acima). NF-e brasileira distingue uCom (unidade comercial, o que consta na
+// nota/negociação) de uTrib (unidade tributável — aqui, a de estoque), com
+// tabela oficial incluindo FARDO/RESMA/BOBINA/ROLO/PALETE: o comprador
+// negocia e recebe proposta em R$/tonelada ou R$/fardo, não na unidade que o
+// estoque já usa. OUTRO + campo de texto livre, mesmo padrão de
+// UnidadeMedida.OUTRO/ItemCatalogo.unidadeOutro.
+enum UnidadeCompra {
+  FARDO
+  RESMA
+  BOBINA
+  ROLO
+  PALETE
+  CAIXA
+  UNIDADE
+  KG
+  TONELADA
+  OUTRO
+}
+
 enum TipoItemCatalogo {
   PRODUTO
   MATERIA_PRIMA
@@ -1786,6 +1820,31 @@ model ItemGrafica {
   // (estoqueAtual continua sendo "quantas unidades cadastradas", igual hoje).
   // null = sem conversão configurada (comportamento atual, sem mudança).
   quantidadePorEmbalagem  Decimal?  @db.Decimal(12, 4)
+  // Achado A6 da auditoria de abrangência (Parte 3/Compras): unidade
+  // COMERCIAL padrão em que este item costuma ser comprado (ex: FARDO),
+  // separada da unidade de ESTOQUE (ItemCatalogo.unidade) — ver enum
+  // UnidadeCompra. unidadeCompraPadraoOutro é texto livre só usado quando
+  // unidadeCompraPadrao=OUTRO (mesmo padrão de unidadeOutro). Só pré-
+  // preenche e avisa na tela de nova solicitação de compra (ver
+  // src/app/compras/nova/NovaSolicitacaoForm.tsx) — nunca obrigatório,
+  // nunca muda como estoque é lançado. null = sem padrão configurado
+  // (comprador digita direto na unidade de estoque, comportamento de hoje).
+  unidadeCompraPadrao        UnidadeCompra?
+  unidadeCompraPadraoOutro   String?
+  // Quantas unidades de ESTOQUE cada unidade de COMPRA representa (ex:
+  // unidadeCompraPadrao=FARDO, fatorConversaoCompraPadrao=50 → 1 fardo = 50
+  // kg de estoque). Pré-preenche o fator da solicitação; o comprador pode
+  // sempre digitar um fator diferente pra uma compra específica. null = sem
+  // fator padrão (precisa digitar na hora que unidadeCompra é usada).
+  fatorConversaoCompraPadrao Decimal?       @db.Decimal(12, 4)
+  // Lote mínimo e múltiplo de embalagem padrão de compra deste item, na
+  // unidade de COMPRA (não de estoque) — só CONFIGURAÇÃO pra pré-preencher
+  // e avisar arredondamento na tela de nova solicitação (mesma disciplina
+  // de aviso não-bloqueante já usada nesta auditoria, ex.: divergência de
+  // máquina): pedir uma quantidade que não é múltiplo é sempre permitido,
+  // nunca barrado. null = sem lote/múltiplo configurado, sem aviso.
+  loteMinimoCompra           Decimal?       @db.Decimal(12, 4)
+  multiploCompra             Decimal?       @db.Decimal(12, 4)
   // Quanto desse material é perdido por CALIBRAGEM toda vez que uma produção
   // entra em impressão (FILA→IMPRESSAO) — fixo, não escala com a quantidade
   // do pedido (1 unidade ou 1000 = mesma perda). Diferente de
@@ -1905,6 +1964,10 @@ model ItemGrafica {
   // Pedidos de compra (workflow SOLICITADO→...→CONFERIDO) que têm esta
   // matéria-prima como alvo — ver model SolicitacaoCompra.
   solicitacoesCompra SolicitacaoCompra[]
+  // Contratos de fornecimento com preço fixo por período que travam
+  // especificamente esta matéria-prima — achado A9 da auditoria de
+  // abrangência (Parte 3/Compras, 2026-08-30). Ver model ContratoFornecimento.
+  contratosFornecimento ContratoFornecimento[]
 
   @@unique([graficaId, itemCatalogoId])
   @@index([graficaId])
@@ -1990,6 +2053,9 @@ model VarianteMateriaPrima {
   fichaTecnica       FichaTecnicaItem[]
   movimentacoes      MovimentacaoEstoque[]
   solicitacoesCompra SolicitacaoCompra[]
+  // Achado A9 da auditoria de abrangência (Parte 3/Compras, 2026-08-30) —
+  // ver model ContratoFornecimento.
+  contratosFornecimento ContratoFornecimento[]
 
   @@unique([itemGraficaId, rotulo])
   @@index([itemGraficaId])
@@ -2225,6 +2291,9 @@ model Fornecedor {
   movimentacoes      MovimentacaoEstoque[]
   solicitacoesCompra SolicitacaoCompra[]
   cotacoes           CotacaoFornecedor[]
+  // Achado A9 da auditoria de abrangência (Parte 3/Compras, 2026-08-30) —
+  // ver model ContratoFornecimento.
+  contratosFornecimento ContratoFornecimento[]
 
   @@unique([graficaId, nome])
   @@index([graficaId])
@@ -2285,6 +2354,26 @@ model SolicitacaoCompra {
   fornecedorId  String?
 
   quantidade    Decimal  @db.Decimal(12, 4)
+  // Achado A6 da auditoria de abrangência (Parte 3/Compras): unidade
+  // COMERCIAL desta compra específica (ex: FARDO — "R$/fardo"), separada da
+  // unidade de ESTOQUE que `quantidade` acima sempre representa (ver enum
+  // UnidadeCompra). unidadeCompraOutro é texto livre só usado quando
+  // unidadeCompra=OUTRO. quantidadeCompra × fatorConversaoCompra = quantidade
+  // (calculado e gravado na criação/edição da solicitação, em
+  // criarSolicitacaoCompra — não é campo computed do Prisma). `quantidade`
+  // continua sendo a ÚNICA fonte de verdade lida pelo resto do sistema
+  // (baixa de estoque, custo automático etc.); estes campos só existem pra
+  // reconstruir/exibir a conta original em unidade de compra pro comprador.
+  // precoUnitarioCompra é o preço por unidade de COMPRA (R$/fardo), DIFERENTE
+  // de ItemGrafica.precoCompra (preço por unidade de ESTOQUE) — puramente
+  // informativo, nunca usado em cálculo de custo. Todos null quando a
+  // solicitação não usa unidade de compra própria (comportamento de hoje
+  // 100% preservado: quantidade digitada direto na unidade de estoque).
+  unidadeCompra        UnidadeCompra?
+  unidadeCompraOutro   String?
+  quantidadeCompra     Decimal?       @db.Decimal(12, 4)
+  fatorConversaoCompra Decimal?       @db.Decimal(12, 4)
+  precoUnitarioCompra  Decimal?       @db.Decimal(12, 4)
   // Estimativa no momento da solicitação/cotação — informativa, nunca usada
   // pra decrementar caixa nem pra gravar o custo da entrada de estoque.
   // valorFinal é o que de fato foi pago, preenchido ao confirmar COMPRADO —
@@ -2305,6 +2394,15 @@ model SolicitacaoCompra {
   origem      OrigemSolicitacaoCompra @default(REPOSICAO_ESTOQUE)
   origemOutro String?
   pedidoId    String?
+
+  // Achado A9 da auditoria de abrangência (Parte 3/Compras, 2026-08-30) —
+  // preenchido só quando origem=CONTRATO_PROGRAMADO: o contrato de
+  // fornecimento que autorizou esta solicitação a nascer direto em APROVADO
+  // (fornecedor/preço copiados dele, ver criarSolicitacaoCompra em
+  // src/app/compras/actions.ts). SetNull: apagar o contrato (hoje sem fluxo
+  // de exclusão, só alternarAtivoContratoFornecimento) não pode apagar o
+  // histórico da compra, só perde a referência de qual contrato a originou.
+  contratoFornecimentoId String?
 
   usuarioSolicitanteId String
   usuarioAprovadorId   String?
@@ -2345,6 +2443,9 @@ model SolicitacaoCompra {
   // Pedido (hoje não existe fluxo que apague) não pode apagar a solicitação
   // de compra, só perde a referência de qual pedido a originou.
   pedido              Pedido?               @relation(fields: [pedidoId], references: [id], onDelete: SetNull)
+  // Achado A9 da auditoria de abrangência (Parte 3/Compras) — ver comentário
+  // do campo contratoFornecimentoId acima.
+  contratoFornecimento ContratoFornecimento? @relation(fields: [contratoFornecimentoId], references: [id], onDelete: SetNull)
   // Lado inverso de MovimentacaoEstoque.solicitacaoCompraId (FK mora lá, não
   // aqui) — a entrada de estoque gerada ao confirmar RECEBIDO.
   movimentacaoEstoque MovimentacaoEstoque?
@@ -2362,7 +2463,94 @@ model SolicitacaoCompra {
   @@index([fornecedorId])
   @@index([usuarioSolicitanteId])
   @@index([pedidoId])
+  @@index([contratoFornecimentoId])
   @@map("solicitacoes_compra")
+}
+
+// Achado A9 da auditoria de abrangência (Parte 3/Compras, 2026-08-30) —
+// contrato de fornecimento com preço fixo por período, prática corrente pra
+// gráfica de volume alto que dispensa cotação a cada reposição. Antes disto,
+// nada representava um acordo contínuo: ItemGrafica.precoCompra e
+// TabelaPrecoPapel.precoKg são preços de REFERÊNCIA, sem vigência nem
+// fornecedor associado. Dá função de verdade a
+// OrigemSolicitacaoCompra.CONTRATO_PROGRAMADO (enum existia desde a rodada 14
+// da auditoria sem nenhum comportamento associado) — ver
+// criarSolicitacaoCompra em src/app/compras/actions.ts: uma solicitação
+// criada com essa origem, vinculada a um contrato ativo e dentro da
+// vigência, nasce direto em APROVADO (fornecedor e preço copiados do
+// contrato), sem passar por COTANDO.
+//
+// itemGraficaId/varianteId são OPCIONAIS (validado em app, não em constraint
+// de banco — mesmo padrão do resto do schema): null em itemGraficaId é
+// contrato "coringa" que cobre qualquer matéria-prima deste fornecedor; null
+// em varianteId com itemGraficaId preenchido cobre qualquer variante deste
+// item — ver contratosAplicaveis em src/lib/contrato-fornecimento.ts.
+//
+// precoUnitario é sempre por UNIDADE DE ESTOQUE (a mesma unidade de
+// SolicitacaoCompra.quantidade) — unidadeCompra aqui é só INFORMATIVO (rótulo
+// de como o preço foi negociado, ex: "R$/fardo" na tela), sem fator de
+// conversão próprio: se o preço foi negociado numa unidade comercial
+// diferente da unidade de estoque, quem cadastra o contrato já digita
+// precoUnitario convertido pra unidade de estoque (fora de escopo desta
+// rodada acoplar isso ao fator de conversão do achado A6, trabalho em
+// paralelo). Reusa o enum UnidadeCompra (achado A6) em vez de duplicar;
+// unidadeCompraOutro é texto livre só usado quando unidadeCompra=OUTRO,
+// mesmo padrão do resto do schema.
+//
+// quantidadeConsumida só CRESCE, incrementada via increment() do Prisma
+// dentro da MESMA transação que já confirma RECEBIDO (ver
+// avancarStatusCompra em src/app/compras/status-transicao.ts) — nunca
+// lê-modifica-grava em passos separados, pra não perder incremento sob
+// concorrência. quantidadeContratada é o teto opcional (contrato "preço
+// travado, sem teto de volume" também é comum) — ver
+// listarContratosProximosDoLimite em src/lib/contrato-fornecimento.ts pro
+// alerta de esgotamento de quantidade/vigência.
+model ContratoFornecimento {
+  id        String @id @default(cuid())
+  graficaId String
+
+  fornecedorId  String
+  itemGraficaId String?
+  varianteId    String?
+
+  precoUnitario      Decimal       @db.Decimal(12, 4)
+  unidadeCompra      UnidadeCompra
+  unidadeCompraOutro String?
+
+  vigenciaInicio DateTime @db.Date
+  vigenciaFim    DateTime @db.Date
+
+  quantidadeContratada Decimal? @db.Decimal(12, 4)
+  quantidadeConsumida  Decimal  @default(0) @db.Decimal(12, 4)
+
+  condicaoPagamento String? // texto livre, mesmo padrão de CotacaoFornecedor.condicaoPagamento
+  observacao        String?
+
+  ativo Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica    Grafica    @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  // Restrict: um fornecedor com contrato cadastrado nunca deveria ser
+  // excluído de verdade (hoje nem existe fluxo de exclusão física de
+  // Fornecedor, só alternarAtivoFornecedor) — puramente defensivo.
+  fornecedor Fornecedor @relation(fields: [fornecedorId], references: [id], onDelete: Restrict)
+  // SetNull: desativar/remover o item ou a variante não apaga o contrato, só
+  // perde o escopo específico e passa a valer como "coringa" pro fornecedor
+  // (mesmo raciocínio de SolicitacaoCompra.varianteId).
+  itemGrafica ItemGrafica?          @relation(fields: [itemGraficaId], references: [id], onDelete: SetNull)
+  variante    VarianteMateriaPrima? @relation(fields: [varianteId], references: [id], onDelete: SetNull)
+
+  // Lado inverso de SolicitacaoCompra.contratoFornecimentoId — todas as
+  // solicitações nascidas via este contrato (origem=CONTRATO_PROGRAMADO).
+  solicitacoesCompra SolicitacaoCompra[]
+
+  @@index([graficaId, ativo])
+  @@index([fornecedorId])
+  @@index([itemGraficaId])
+  @@index([varianteId])
+  @@map("contratos_fornecimento")
 }
 
 // Uma cotação de um fornecedor específico pra uma SolicitacaoCompra — "mapa
@@ -2562,6 +2750,12 @@ model Orcamento {
   // como respaldo contratual pra faturar a quantidade real. null = ainda
   // em RASCUNHO/nunca enviado, ou orçamento criado antes desta feature.
   toleranciaTiragemPercent Decimal?             @db.Decimal(5, 2)
+  // Achado A12 da Parte 5 da auditoria de abrangência (2026-08-30) — campos
+  // opcionais pra cliente órgão público. Aparecem no PDF quando preenchidos.
+  // Não é uma modelagem de licitação, é só o mínimo pra o faturamento não
+  // travar (empenho autoriza a entrega, processo/pregão fica pra referência).
+  notaEmpenho              String?
+  processoLicitatorio      String?
   // Nota interna — nunca aparece no PDF nem no link público (ver
   // src/lib/pdf/mapear-dados.ts), só na tela autenticada da gráfica.
   observacoes              String?
@@ -2652,6 +2846,13 @@ model Orcamento {
   // Query da lista de "orçamentos parados" (ver /orcamento/parados) —
   // filtra por graficaId+status=ENVIADO e ordena por enviadoEm.
   @@index([graficaId, status, enviadoEm])
+  // Achado A10 da Parte 5 da auditoria de abrangência (2026-08-30) — toda
+  // consulta "orçamentos/faturamento deste cliente" (ficha do cliente,
+  // relatorios-negocio.ts) filtrava por clienteId sem nenhum índice
+  // dedicado, varrendo por graficaId inteiro. graficaId primeiro (mesmo
+  // padrão de [graficaId, status, enviadoEm] acima) porque toda query já
+  // filtra por tenant de qualquer forma.
+  @@index([graficaId, clienteId])
   @@map("orcamentos")
 }
 
@@ -3051,8 +3252,25 @@ model ContaReceber {
   // src/lib/baixa-financeira.ts).
   pagamentoId String? @unique
 
+  // Achado A10 da Parte 5 da auditoria de abrangência (2026-08-30) — antes só
+  // dava pra chegar no cliente via ContaReceber → Orcamento → clienteId, o
+  // que impedia um índice direto pra "quanto o cliente X me deve". Preenchida
+  // na CRIAÇÃO a partir de Orcamento.clienteId (tanto no caminho automático,
+  // gerarContasReceberDaAprovacao em src/lib/condicao-pagamento.ts, quanto no
+  // manual, criarContaReceber em src/app/financeiro/contas-receber/actions.ts)
+  // — nunca escrita depois disso. Sincronização garantida por construção:
+  // alterarClienteOrcamento (src/app/orcamento/[id]/actions.ts) só permite
+  // trocar o cliente enquanto o orçamento está em RASCUNHO, e ContaReceber só
+  // nasce depois de APROVADO — o vínculo nunca pode dessincronizar. Nullable
+  // + SetNull (mesmo padrão de Orcamento.duplicadoDeId): contas criadas antes
+  // desta coluna existir (ou cujo cliente foi apagado — nunca acontece de
+  // verdade, é soft-delete via Cliente.desativadoEm) não travam por causa
+  // disso, só perdem o vínculo direto (ainda alcançável via orcamento.clienteId).
+  clienteId String?
+
   grafica   Grafica    @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   orcamento Orcamento  @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+  cliente   Cliente?   @relation(fields: [clienteId], references: [id], onDelete: SetNull)
   pagamento Pagamento? @relation(fields: [pagamentoId], references: [id], onDelete: SetNull)
 
   // Baixas parciais (ou o fechamento final de uma conta que já teve baixas
@@ -3062,6 +3280,9 @@ model ContaReceber {
 
   @@index([graficaId, status, vencimento])
   @@index([orcamentoId])
+  // Achado A10 da Parte 5 — ver comentário em clienteId acima. Sustenta a
+  // consulta "contas em aberto/vencidas deste cliente" na ficha do cliente.
+  @@index([clienteId])
   @@map("contas_a_receber")
 }
 

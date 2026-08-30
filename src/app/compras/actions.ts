@@ -19,6 +19,7 @@ import {
 } from "@/lib/compras-status";
 import { dataInputParaUTC } from "@/lib/data";
 import { formatoMoeda } from "@/lib/moeda";
+import { UNIDADES_COMPRA, calcularQuantidadeEstoque, type UnidadeCompra } from "@/lib/unidade-compra";
 import { avancarStatusCompra, type SolicitacaoParaTransicao } from "./status-transicao";
 
 const MENSAGEM_SEM_PERMISSAO = "Você não tem permissão pra editar compras.";
@@ -58,7 +59,23 @@ const criarSchema = z.object({
     .min(1)
     .optional()
     .transform((v) => (v ? v : undefined)),
-  quantidade: z.coerce.number().positive("Quantidade deve ser maior que zero."),
+  // Achado A6 da auditoria de abrangência (Parte 3/Compras): sem
+  // unidadeCompra, `quantidade` é obrigatória e usada direto (comportamento
+  // de hoje). Com unidadeCompra, `quantidade` vira DERIVADA de
+  // quantidadeCompra × fatorConversaoCompra (recalculada aqui, nunca confia
+  // no que o client mandaria pra ela) — por isso opcional no schema, a
+  // obrigatoriedade condicional é validada abaixo.
+  quantidade: z.coerce.number().positive("Quantidade deve ser maior que zero.").optional(),
+  unidadeCompra: z.enum(UNIDADES_COMPRA as [UnidadeCompra, ...UnidadeCompra[]]).optional(),
+  unidadeCompraOutro: z
+    .string()
+    .trim()
+    .max(60)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+  quantidadeCompra: z.coerce.number().positive("Quantidade de compra deve ser maior que zero.").optional(),
+  fatorConversaoCompra: z.coerce.number().positive("Fator de conversão deve ser maior que zero.").optional(),
+  precoUnitarioCompra: z.coerce.number().positive("Preço unitário de compra deve ser maior que zero.").optional(),
   valorEstimado: z.coerce.number().positive("Valor estimado deve ser maior que zero.").optional(),
   observacao: z
     .string()
@@ -80,6 +97,16 @@ const criarSchema = z.object({
     .optional()
     .transform((v) => (v ? v : undefined)),
   pedidoId: z
+    .string()
+    .trim()
+    .min(1)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+  // Achado A9 da auditoria de abrangência (Parte 3/Compras) — preenchido só
+  // quando origem=CONTRATO_PROGRAMADO (ver NovaSolicitacaoForm, botão "usar
+  // este contrato"). Nunca confia nele sozinho: sempre revalidado abaixo
+  // contra graficaId/ativo/vigência/escopo do item antes de usar.
+  contratoFornecimentoId: z
     .string()
     .trim()
     .min(1)
@@ -108,18 +135,62 @@ export async function criarSolicitacaoCompra(
     itemGraficaId: formData.get("itemGraficaId"),
     varianteId: formData.get("varianteId") || undefined,
     fornecedorId: formData.get("fornecedorId") || undefined,
-    quantidade: formData.get("quantidade"),
+    quantidade: formData.get("quantidade") || undefined,
+    unidadeCompra: formData.get("unidadeCompra") || undefined,
+    unidadeCompraOutro: formData.get("unidadeCompraOutro") || undefined,
+    quantidadeCompra: formData.get("quantidadeCompra") || undefined,
+    fatorConversaoCompra: formData.get("fatorConversaoCompra") || undefined,
+    precoUnitarioCompra: formData.get("precoUnitarioCompra") || undefined,
     valorEstimado: formData.get("valorEstimado") || undefined,
     observacao: formData.get("observacao") || undefined,
     origem: formData.get("origem") || undefined,
     origemOutro: formData.get("origemOutro") || undefined,
     pedidoId: formData.get("pedidoId") || undefined,
+    contratoFornecimentoId: formData.get("contratoFornecimentoId") || undefined,
   });
   if (!parsed.success) {
     return { ok: false, mensagem: parsed.error.issues[0].message };
   }
-  const { itemGraficaId, varianteId, fornecedorId, quantidade, valorEstimado, observacao, origem, origemOutro, pedidoId } =
-    parsed.data;
+  const {
+    itemGraficaId,
+    varianteId,
+    fornecedorId,
+    quantidade,
+    unidadeCompra,
+    unidadeCompraOutro,
+    quantidadeCompra,
+    fatorConversaoCompra,
+    precoUnitarioCompra,
+    valorEstimado,
+    observacao,
+    origem,
+    origemOutro,
+    pedidoId,
+    contratoFornecimentoId,
+  } = parsed.data;
+
+  // Achado A6 da auditoria de abrangência (Parte 3/Compras): sem
+  // unidadeCompra, `quantidade` (unidade de estoque) é usada direto — 100%
+  // do comportamento de hoje preservado. Com unidadeCompra, `quantidade` é
+  // SEMPRE recalculada aqui a partir de quantidadeCompra × fatorConversaoCompra
+  // (nunca confia em quantidade vinda do client nesse caso).
+  let quantidadeFinal: number;
+  let unidadeCompraOutroFinal: string | null = null;
+  if (unidadeCompra) {
+    if (quantidadeCompra === undefined || fatorConversaoCompra === undefined) {
+      return {
+        ok: false,
+        mensagem: "Informe a quantidade e o fator de conversão da unidade de compra.",
+      };
+    }
+    quantidadeFinal = calcularQuantidadeEstoque(quantidadeCompra, fatorConversaoCompra);
+    unidadeCompraOutroFinal = unidadeCompra === "OUTRO" ? (unidadeCompraOutro ?? null) : null;
+  } else {
+    if (quantidade === undefined) {
+      return { ok: false, mensagem: "Quantidade deve ser maior que zero." };
+    }
+    quantidadeFinal = quantidade;
+  }
 
   // Achado A3 da auditoria de abrangência (Parte 3/Compras): pedidoId é
   // OBRIGATÓRIO na aplicação quando origem=PEDIDO_ESPECIFICO (nullable no
@@ -160,6 +231,48 @@ export async function criarSolicitacaoCompra(
     fornecedorValidoId = fornecedorValido.id;
   }
 
+  // Achado A9 da auditoria de abrangência (Parte 3/Compras) — dá função de
+  // verdade a origem=CONTRATO_PROGRAMADO: revalida o contrato inteiro contra
+  // o tenant/vigência/escopo (nunca confia em contratoFornecimentoId vindo do
+  // client sozinho) e, se válido, a solicitação nasce já em APROVADO com
+  // fornecedor/valor copiados do contrato — pula a etapa de cotação.
+  let statusInicial: StatusSolicitacaoCompra = "SOLICITADO";
+  let aprovadoEmInicial: Date | null = null;
+  let usuarioAprovadorIdInicial: string | null = null;
+  let contratoValidoId: string | null = null;
+  let valorEstimadoFinal = valorEstimado;
+
+  if (origem === "CONTRATO_PROGRAMADO") {
+    if (!contratoFornecimentoId) {
+      return { ok: false, mensagem: "Selecione o contrato de fornecimento pra esta compra programada." };
+    }
+    const agora = new Date();
+    const contrato = await prisma.contratoFornecimento.findFirst({
+      where: {
+        id: contratoFornecimentoId,
+        graficaId: usuario.graficaId,
+        ativo: true,
+        vigenciaInicio: { lte: agora },
+        vigenciaFim: { gte: agora },
+      },
+    });
+    if (!contrato) {
+      return { ok: false, mensagem: "Contrato de fornecimento inválido, inativo ou fora da vigência." };
+    }
+    if (contrato.itemGraficaId && contrato.itemGraficaId !== itemGrafica.id) {
+      return { ok: false, mensagem: "Este contrato não cobre a matéria-prima selecionada." };
+    }
+    if (contrato.varianteId && contrato.varianteId !== (variante?.id ?? null)) {
+      return { ok: false, mensagem: "Este contrato não cobre a variante selecionada." };
+    }
+    contratoValidoId = contrato.id;
+    fornecedorValidoId = contrato.fornecedorId; // sempre o do contrato, nunca o enviado pelo form
+    valorEstimadoFinal = Number(contrato.precoUnitario) * quantidadeFinal;
+    statusInicial = "APROVADO";
+    aprovadoEmInicial = agora;
+    usuarioAprovadorIdInicial = usuario.id;
+  }
+
   const novaSolicitacao = await prisma.solicitacaoCompra.create({
     data: {
       graficaId: usuario.graficaId,
@@ -169,8 +282,17 @@ export async function criarSolicitacaoCompra(
       origem,
       origemOutro: origem === "OUTRO" ? (origemOutro ?? null) : null,
       pedidoId: pedidoValidoId,
-      quantidade: quantidade.toFixed(4),
-      valorEstimado: valorEstimado !== undefined ? valorEstimado.toFixed(2) : null,
+      contratoFornecimentoId: contratoValidoId,
+      status: statusInicial,
+      aprovadoEm: aprovadoEmInicial,
+      usuarioAprovadorId: usuarioAprovadorIdInicial,
+      quantidade: quantidadeFinal.toFixed(4),
+      unidadeCompra: unidadeCompra ?? null,
+      unidadeCompraOutro: unidadeCompraOutroFinal,
+      quantidadeCompra: quantidadeCompra !== undefined ? quantidadeCompra.toFixed(4) : null,
+      fatorConversaoCompra: fatorConversaoCompra !== undefined ? fatorConversaoCompra.toFixed(4) : null,
+      precoUnitarioCompra: precoUnitarioCompra !== undefined ? precoUnitarioCompra.toFixed(4) : null,
+      valorEstimado: valorEstimadoFinal !== undefined ? valorEstimadoFinal.toFixed(2) : null,
       observacao: observacao ?? null,
       usuarioSolicitanteId: usuario.id,
     },
@@ -183,7 +305,7 @@ export async function criarSolicitacaoCompra(
     acao: "compras.solicitar",
     entidade: "SolicitacaoCompra",
     entidadeId: novaSolicitacao.id,
-    descricao: `Solicitação de compra de "${nomeItem}" (${quantidade}) criada`,
+    descricao: `Solicitação de compra de "${nomeItem}" (${quantidadeFinal}) criada`,
   });
 
   revalidatePath("/compras");
@@ -289,6 +411,7 @@ export async function avancarSolicitacaoCompra(
     fornecedorId: solicitacao.fornecedorId,
     documento: solicitacao.documento,
     pedidoId: solicitacao.pedidoId,
+    contratoFornecimentoId: solicitacao.contratoFornecimentoId,
   };
 
   const resultado = await avancarStatusCompra(solicitacaoParaTransicao, proximoStatus, usuario, {
