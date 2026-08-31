@@ -35,7 +35,12 @@ quem trava a próxima ação. Detalhe de cada item nas seções abaixo.
       decidido o desconto, falta criar os Prices e o código)
 - [ ] 121 achados catalogados de abrangência de produto — 33 na Parte 7
       **nenhum construído ainda** (isso é backlog intencional a seu
-      pedido, não pendência esquecida — mas fica registrado aqui também)
+      pedido, não pendência esquecida — mas fica registrado aqui também).
+      **87 dos 121 estão pendentes e agora têm custo estimado** (Barato/
+      Médio/Caro) direto no documento — 32 baratos, 29 médios, 26 caros.
+      Os baratos são os candidatos naturais pra próxima rodada de
+      construção (ver "Resumo de custo" no fim de
+      `pesquisa-abrangencia-modulos.md`).
 
 **Nenhum item acima é urgência de hoje.** Nada é furo de segurança ativo
 nem bloqueia cliente pagando agora — é o que fica pendente entre uma
