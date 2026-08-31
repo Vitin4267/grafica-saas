@@ -12,6 +12,15 @@
 Tudo que precisa de uma ação (sua ou minha) num lugar só. Categorizado por
 quem trava a próxima ação. Detalhe de cada item nas seções abaixo.
 
+### 🔴 URGENTE — marcado por você em 2026-08-31
+- [ ] **Criar os 6 Prices no Stripe pros intervalos semestral/anual** — o
+      código já está pronto (2026-08-31), só falta você criar os Price
+      objects no dashboard do Stripe (semestral com -15%, anual com -20%
+      sobre o mensal de cada plano) e colar os IDs nas env vars
+      `STRIPE_PRICE_ID_<PLANO>_SEMESTRAL`/`_ANUAL` na Vercel. Sem isso, o
+      toggle de intervalo simplesmente não aparece pra ninguém — não
+      quebra nada, só fica invisível até você configurar. (seção 2)
+
 ### Trava em VOCÊ decidir (eu não posso avançar sozinho)
 - [ ] **Preço de plano pro/empresarial** — só o básico (R$749,90) está
       fechado. (seção 2)
@@ -27,13 +36,6 @@ quem trava a próxima ação. Detalhe de cada item nas seções abaixo.
 - [ ] Criptografia de campo pra token sensível (`focusNfeToken`)
 - [ ] RLS (trava extra de isolamento direto no banco)
 - [ ] Role de banco de dados com permissão restrita (hoje usa acesso total)
-- [ ] **Criar os 6 Prices no Stripe pros intervalos semestral/anual** — o
-      código já está pronto (2026-08-31), só falta você criar os Price
-      objects no dashboard do Stripe (semestral com -15%, anual com -20%
-      sobre o mensal de cada plano) e colar os IDs nas env vars
-      `STRIPE_PRICE_ID_<PLANO>_SEMESTRAL`/`_ANUAL` na Vercel. Sem isso, o
-      toggle de intervalo simplesmente não aparece pra ninguém — não
-      quebra nada, só fica invisível até você configurar. (seção 2)
 - [ ] 121 achados catalogados de abrangência de produto — 11 dos 33 da
       Parte 7 já construídos (rodadas 17 e 18, 2026-08-31), 22 pendentes.
       **76 achados pendentes no total têm custo estimado** (Barato/Médio/
@@ -41,9 +43,10 @@ quem trava a próxima ação. Detalhe de cada item nas seções abaixo.
       baratos são os candidatos naturais pra próxima rodada de construção
       (ver "Resumo de custo" no fim de `pesquisa-abrangencia-modulos.md`).
 
-**Nenhum item acima é urgência de hoje.** Nada é furo de segurança ativo
-nem bloqueia cliente pagando agora — é o que fica pendente entre uma
-sessão e outra, listado pra não se perder.
+**O item 🔴 acima é o único marcado como urgente** (por você, não por mim —
+é ação manual no dashboard do Stripe, eu não tenho acesso pra fazer). O
+resto não é furo de segurança ativo nem bloqueia cliente pagando agora — é
+o que fica pendente entre uma sessão e outra, listado pra não se perder.
 
 ---
 
