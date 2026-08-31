@@ -54,6 +54,27 @@ export function NovoEquipamentoForm() {
         </div>
       )}
 
+      {/* Achado A3 da Parte 7 da auditoria de abrangência — largura/
+         tecnologia de impressão. Não é específico de categoria (qualquer
+         Equipamento pode ter, não só IMPRESSORA_GRANDE_FORMATO), por isso
+         fora do bloco condicional de categoria acima. */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Input
+          label="Largura máxima (mm)"
+          name="larguraMaximaMm"
+          type="number"
+          step="1"
+          min="1"
+          placeholder="ex: 1600"
+        />
+        <Input
+          label="Tecnologia de impressão"
+          name="tecnologiaImpressao"
+          type="text"
+          placeholder="ex: eco-solvente, UV, sublimática"
+        />
+      </div>
+
       {state && !state.ok && <Alert variant="error">{state.mensagem}</Alert>}
       <Button type="submit" loading={isPending} className="self-start">
         {isPending ? "Criando..." : "+ Novo equipamento"}

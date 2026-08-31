@@ -588,6 +588,43 @@ testes (109 arquivos) passando, `npm run build` OK (com cache do Turbopack
 limpo — o build também apresentou um erro interno do Turbopack não
 relacionado ao código, resolvido apagando `.next`).
 
+**Atualização 2026-08-31 (rodada 17) — 10 achados 🟢 Barato CONSTRUÍDOS, primeira rodada dentro da Parte 7** (2 subagentes em paralelo, `haiku` pro bundle mecânico, `sonnet` pro bundle que mexe em schema/migration, mesmo princípio de agrupar achados que tocam o mesmo código num prompt só):
+- **B1-B5 da Parte 7** (haiku) — 19 itens novos em `CATALOGO_MESTRE`
+  (`src/lib/catalogo-mestre.ts`): tecido em rolo (5, "Sublimação e
+  Vestuário"), filme/pó/tinta DTF (3, categoria nova "DTF e Transfer"),
+  corpos de brinde em branco (6, categoria nova "Brindes (Corpos)"), filme
+  metalizado por cor (4, categoria nova "Hot Stamping"), papelão ondulado
+  (1, "Placas e Chapas"). Trabalho puro de conteúdo — sem schema, sem
+  migration, confirma a recategorização como SEED que a revisão Opus já
+  tinha feito.
+- **A1/A2/A3/A5 da Parte 7** (sonnet) — `CategoriaEquipamento` ganhou
+  `BORDADO`/`CORTE_VINCO`/`VINCADORA`; `Equipamento` ganhou
+  `larguraMaximaMm Int?`/`tecnologiaImpressao String?` com campo nos 2
+  forms (`NovoEquipamentoForm.tsx`/`[id]/EquipamentoForm.tsx`) e
+  validação/auditoria em `actions.ts` — sem isso o campo existiria no banco
+  sem forma de a gráfica preencher, o que anularia o próprio ponto da
+  Parte 7. Implementadas só as versões CORRIGIDAS pela revisão Opus (A1 sem
+  `ProcessoSetupPorPeca.BORDADO`/`numeroCabecotes`, que conflitaria com o
+  achado A4/Parte 1; **A4 não precisou de nenhuma mudança de código** —
+  `MaquinaSetupPorPeca.custoPorSetup`/`custoPorPeca`, campos já existentes,
+  já resolvem o achado).
+- **Achado extra fora de escopo, corrigido no processo**: o subagente
+  sonnet detectou e reverteu sozinho 13 hunks de reformatação cosmética
+  (`npx prisma format` mexendo em alinhamento de coluna de 7 models não
+  relacionados) que tinham vazado pro diff antes da revisão — deixou o
+  `schema.prisma` só com as 21 linhas reais da mudança.
+- B6 (materiais de bordado) ficou de fora de propósito, pra fechar em
+  exatamente 10 — próximo candidato natural.
+- 1 migration aplicada ao banco de dev com aprovação explícita
+  (`20260831100000_abrangencia_maquinas_parte7` — 3× `ADD VALUE` em enum +
+  2 colunas nullable, 100% aditiva). Verificação: `prisma validate` OK,
+  `tsc --noEmit` limpo, 1043/1043 testes passando **de primeira** (sem
+  flakiness desta vez), `npm run build` OK.
+
+Placar depois desta rodada: das Partes 1-6 seguem 34 construídos + 8
+parciais de 88 (sem mudança). Na Parte 7, 10 dos 33 achados construídos
+(A1-A5 e B1-B5 da seção "Máquinas e matérias-primas"), 23 pendentes.
+
 ## Como ler cada parte
 
 Cada uma das 6 partes abaixo cobre um módulo (ou par de módulos muito
@@ -2127,8 +2164,10 @@ documento inteiro.
 
 ## A. Máquinas e equipamentos cadastráveis
 
-### A1 — Máquina de bordado sem categoria própria
+### A1 — Máquina de bordado sem categoria própria — **CONSTRUÍDO 2026-08-31 (rodada 17)**
 **Custo estimado:** 🟢 Barato — pela proposta CORRIGIDA pela revisão Opus (`CategoriaEquipamento.BORDADO`, só cadastro, sem motor de custo), é só `ADD VALUE` num enum já existente; a proposta original (`ProcessoSetupPorPeca.BORDADO`) foi descartada por conflitar com o achado A4/Parte 1.
+
+**Status:** `CategoriaEquipamento.BORDADO` adicionado (só a versão corrigida — sem `ProcessoSetupPorPeca.BORDADO`/`numeroCabecotes`, que ficaria descartado por cobrar por ponto da arte, não por peça fixa). Utilizável end-to-end via `/configuracoes/maquinas/equipamentos` sem mudança de form (categoria é validada dinamicamente contra o dicionário).
 
 **O que falta.** Não existe `BORDADO` em `CategoriaEquipamento` nem em `ProcessoSetupPorPeca` — uma gráfica de estamparia com máquina de bordado (mono ou multicabeça) cadastra como `OUTRO` genérico e perde a diferenciação de custo por número de cabeçotes (multicabeça reduz tempo de setup proporcionalmente).
 
@@ -2136,8 +2175,10 @@ documento inteiro.
 
 **Proposta.** `ProcessoSetupPorPeca.BORDADO` (mesmo padrão dos 5 processos já adicionados no achado A3/Parte 1) + `MaquinaSetupPorPeca.numeroCabecotes Int? @default(1)`.
 
-### A2 — Corte e vinco (cartonagem) sem categoria
+### A2 — Corte e vinco (cartonagem) sem categoria — **CONSTRUÍDO 2026-08-31 (rodada 17)**
 **Custo estimado:** 🟢 Barato — `ADD VALUE` num enum já existente (`CategoriaEquipamento`) mais uma entrada de conteúdo no dicionário de exemplos.
+
+**Status:** `CategoriaEquipamento.CORTE_VINCO` adicionado, com "ex: Makpel, DellMarck, Slottec" em `EXEMPLOS_MARCA_CATEGORIA_EQUIPAMENTO`.
 
 **O que falta.** `CategoriaEquipamento` não tem opção pra máquina de corte-e-vinco (corta e vinca papel/papelão simultaneamente) — diferente de `CORTE_LASER_ROUTER`, que é outra tecnologia. Gráfica de embalagem cadastra como `OUTRO`.
 
@@ -2145,8 +2186,10 @@ documento inteiro.
 
 **Proposta.** Adicionar `CORTE_VINCO` a `CategoriaEquipamento` + entrada em `EXEMPLOS_MARCA_CATEGORIA_EQUIPAMENTO`.
 
-### A3 — Impressora de grande formato sem tecnologia/largura/velocidade
+### A3 — Impressora de grande formato sem tecnologia/largura/velocidade — **CONSTRUÍDO 2026-08-31 (rodada 17)**
 **Custo estimado:** 🟢 Barato — campos aditivos nullable em `Equipamento` (model já existente), sem enum novo (texto livre por ora); a revisão Opus só pede coordenar com A4 pra não duplicar campo de texto livre solto no mesmo model.
+
+**Status:** `Equipamento.larguraMaximaMm Int?` + `tecnologiaImpressao String?`, com campo no form de criar/editar equipamento (não específico de categoria — aparece pra qualquer tipo) e validação/auditoria em `actions.ts`. Velocidade ficou de fora (não veio no texto final da proposta).
 
 **O que falta.** `Equipamento`/`ImpressoraDigital` não têm campo de tecnologia de impressão (solvente/eco-solvente/UV/sublimática) nem largura máxima — dado que muda o preço por m² de forma relevante.
 
@@ -2154,8 +2197,10 @@ documento inteiro.
 
 **Proposta.** `Equipamento.larguraMaximaMm Int?` + `tecnologiaImpressao String?` (texto livre por ora, sem enum fechado).
 
-### A4 — Prensa térmica/estampador sem tipo diferenciado
+### A4 — Prensa térmica/estampador sem tipo diferenciado — **CONSTRUÍDO 2026-08-31 (rodada 17, sem mudança de código)**
 **Custo estimado:** 🟢 Barato — mas só pela proposta CORRIGIDA pela revisão Opus: a original (`Equipamento.notas`) está no model errado, porque `Equipamento` "nunca influencia preço" e o achado descreve diferença real de custo; se o custo importa de verdade, o lugar é reaproveitar `custoPorSetup`/`custoPorPeca`, campos que já existem em `MaquinaSetupPorPeca` — nenhum campo novo necessário.
+
+**Status:** confirmado que a proposta corrigida não precisa de nenhuma mudança de schema — `MaquinaSetupPorPeca.custoPorSetup`/`custoPorPeca` já existem e já diferenciam prensa plana×cap press×carrossel pelo cadastro atual (cada prensa é sua própria `MaquinaSetupPorPeca`). Nenhum código tocado.
 
 **O que falta.** `ProcessoSetupPorPeca` (SUBLIMACAO/ESTAMPAGEM_QUENTE) não diferencia prensa plana, cap press (boné), caneca press e carrossel rotativo — setup e custo por peça mudam muito entre eles (carrossel multicolor é setup paralelo, ~8× mais eficiente que prensa plana).
 
@@ -2163,8 +2208,10 @@ documento inteiro.
 
 **Proposta.** Campo simples `Equipamento.notas String?` pra a gráfica descrever o tipo (pragmático, evita over-engineering num enum fechado sem uso validado ainda).
 
-### A5 — Gofradeira/vincadeira sem categoria
+### A5 — Gofradeira/vincadeira sem categoria — **CONSTRUÍDO 2026-08-31 (rodada 17)**
 **Custo estimado:** 🟢 Barato — `ADD VALUE` num enum já existente (`CategoriaEquipamento`).
+
+**Status:** `CategoriaEquipamento.VINCADORA` adicionado (sem marca de exemplo — pesquisa não achou marca consolidada, hint descreve a função).
 
 **O que falta.** Máquina que faz só vinco (sem cortar, comprime o papel pra dobra) — etapa anterior à dobra em cartonagem — não tem categoria, só `OUTRO`.
 
@@ -2174,8 +2221,10 @@ documento inteiro.
 
 ## B. Matérias-primas, substratos e insumos cadastráveis
 
-### B1 — Tecido em rolo pra estamparia (antes de virar peça)
+### B1 — Tecido em rolo pra estamparia (antes de virar peça) — **CONSTRUÍDO 2026-08-31 (rodada 17)**
 **Custo estimado:** 🟢 Barato — a revisão Opus recategoriza B1-B6 como trabalho de SEED (conteúdo do catálogo mestre), não gap de schema: `ItemCatalogo` privado por gráfica já permite cadastrar isso hoje.
+
+**Status:** 5 itens adicionados em `CATALOGO_MESTRE` (categoria "Sublimação e Vestuário"): Tecido Algodão/Poliéster/Dry-Fit/Malha PV/Ribana (Rolo), unidade `METRO_LINEAR`.
 
 **O que falta.** Catálogo tem peças prontas ("Camiseta Branca") mas não o tecido em rolo (algodão, poliéster, dry-fit, malha PV, ribana) que uma gráfica de estamparia real compra como matéria-prima.
 
@@ -2183,8 +2232,10 @@ documento inteiro.
 
 **Proposta.** Novos itens de catálogo mestre em categoria "Sublimação e Vestuário", unidade METRO_LINEAR (já existe).
 
-### B2 — Filme DTF e insumos (pó adesivo, tinta DTF)
+### B2 — Filme DTF e insumos (pó adesivo, tinta DTF) — **CONSTRUÍDO 2026-08-31 (rodada 17)**
 **Custo estimado:** 🟢 Barato — mesma recategorização de B1: trabalho de SEED, sem gap de schema.
+
+**Status:** 3 itens adicionados em `CATALOGO_MESTRE` (categoria nova "DTF e Transfer"): Filme DTF (ROLO), Pó Adesivo DTF (KG), Tinta DTF CMYK (LITRO).
 
 **O que falta.** Existe "Papel Transfer Sublimático" mas não filme DTF (processo distinto), pó adesivo (powder) nem tinta DTF específica.
 
@@ -2192,8 +2243,10 @@ documento inteiro.
 
 **Proposta.** 3 itens novos: Filme DTF (ROLO), Pó Adesivo DTF (KG), Tinta DTF CMYK (LITRO).
 
-### B3 — Corpos de brinde em branco (antes de personalizar)
+### B3 — Corpos de brinde em branco (antes de personalizar) — **CONSTRUÍDO 2026-08-31 (rodada 17)**
 **Custo estimado:** 🟢 Barato — mesma recategorização de B1: trabalho de SEED, usando `VarianteMateriaPrima` que já existe.
+
+**Status:** 6 itens adicionados em `CATALOGO_MESTRE` (categoria nova "Brindes (Corpos)"): Caneta/Squeeze/Copo/Chaveiro/Botton/Sacola em Branco, unidade `UNIDADE`. Variante de modelo/cor fica pra gráfica configurar depois (mecanismo já existente, não precisou de seed).
 
 **O que falta.** Catálogo só tem produto final ("Caneta Personalizada"), não o corpo em branco que uma gráfica-revenda de brindes compra e precifica com custo real do dia.
 
@@ -2201,8 +2254,10 @@ documento inteiro.
 
 **Proposta.** Categoria nova "Brindes (Corpos)": caneta/squeeze/copo/chaveiro/botton/sacola em branco, com `VarianteMateriaPrima` pra modelo/cor.
 
-### B4 — Filme metalizado (hotfoil) pra hot stamping
+### B4 — Filme metalizado (hotfoil) pra hot stamping — **CONSTRUÍDO 2026-08-31 (rodada 17)**
 **Custo estimado:** 🟢 Barato — mesma recategorização de B1: trabalho de SEED, sem gap de schema.
+
+**Status:** 4 itens adicionados em `CATALOGO_MESTRE` (categoria nova "Hot Stamping"): Filme Metalizado Ouro/Prata/Cobre/Holográfico, unidade `ROLO`.
 
 **O que falta.** Hot stamping é acabamento implementado, mas o insumo (filme metalizado — ouro/prata/cobre/holográfico) não está no catálogo.
 
@@ -2210,8 +2265,10 @@ documento inteiro.
 
 **Proposta.** Categoria "Hot Stamping": 4 itens por cor, unidade ROLO.
 
-### B5 — Papelão ondulado sem especificação de onda (B/C/BC/E)
+### B5 — Papelão ondulado sem especificação de onda (B/C/BC/E) — **CONSTRUÍDO 2026-08-31 (rodada 17)**
 **Custo estimado:** 🟢 Barato — mesma recategorização de B1: trabalho de SEED, usando `VarianteMateriaPrima` que já existe.
+
+**Status:** "Papelão Ondulado" adicionado em `CATALOGO_MESTRE` (categoria "Placas e Chapas", complementa "Papelão Paraná" que é maciço), unidade `METRO_QUADRADO`. A distinção de onda B/C/BC/E vira variante depois, configurada pela gráfica (mecanismo já existente).
 
 **O que falta.** Catálogo tem "Papelão Paraná" genérico (maciço, não ondulado). Cartonagem real usa onda B/C/BC/E, com resistência e preço bem diferentes (~30-50% de variação).
 
@@ -2442,11 +2499,13 @@ confirmando ausência — diferente de A-E, tratar com mais confiança.
 
 Classificação de custo/esforço aplicada a todo achado ainda não marcado `CONSTRUÍDO` (inclui o restante pendente dos `PARCIALMENTE CONSTRUÍDO`), ao longo do documento inteiro (Partes 1-7). Critério: 🟢 Barato = campo aditivo nullable em model existente, `ADD VALUE` em enum existente, ou trabalho de seed/conteúdo; 🟡 Médio = 1 model novo simples ou 1 enum novo fechado+`OUTRO`, ou extensão moderada de tela existente; 🔴 Caro = 2+ models novos com relação não-trivial, workflow completo novo, área sensível (financeiro/CAS/autenticação), motor de cálculo novo, ou proposta que expressa incerteza/decisão pendente.
 
-**Contagem total (87 achados classificados):**
+**Atualização 2026-08-31 (rodada 17):** 10 dos 32 🟢 Barato construídos — Parte 7 A1/A2/A3/A4/A5 (equipamentos) + B1/B2/B3/B4/B5 (matérias-primas, seed). B6 (materiais de bordado) ficou de fora de propósito, pra fechar a rodada em exatamente 10; é o próximo candidato natural.
+
+**Contagem total (87 achados classificados, 77 ainda pendentes):**
 
 | Custo | Contagem |
 |---|---|
-| 🟢 Barato | 32 |
+| 🟢 Barato | 22 (10 construídos) |
 | 🟡 Médio | 29 |
 | 🔴 Caro | 26 |
 
@@ -2471,12 +2530,7 @@ Classificação de custo/esforço aplicada a todo achado ainda não marcado `CON
 - A11 — `UnidadeDimensao.POLEGADA`
 
 **Parte 7 — Completude de cadastro**
-- A1 — Máquina de bordado (`CategoriaEquipamento.BORDADO`, proposta corrigida)
-- A2 — Corte e vinco (cartonagem)
-- A3 — Impressora de grande formato: largura/tecnologia
-- A4 — Prensa térmica/estampador (proposta corrigida, reaproveita `MaquinaSetupPorPeca`)
-- A5 — Gofradeira/vincadeira
-- B1-B6 — Matérias-primas/insumos (recategorizados como SEED pela revisão Opus: tecido em rolo, filme DTF, corpos de brinde, filme hotfoil, papelão ondulado por onda, materiais de bordado)
+- B6 — Materiais de bordado (tecido específico, entretela, linha, bobina) — mesma categoria SEED de B1-B5, já construídas
 - C1 — TipoAdesivo (durabilidade, com ressalva: proposta precisa correção antes de construir)
 - C2 — TipoLaminacao: soft touch/metalizada
 - C3 — TipoAcabamentoVerniz: soft touch

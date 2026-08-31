@@ -75,6 +75,8 @@ export default async function EquipamentoDetalhePage({
             categoriaOutro: equipamento.categoriaOutro,
             marca: equipamento.marca,
             modelo: equipamento.modelo,
+            larguraMaximaMm: equipamento.larguraMaximaMm,
+            tecnologiaImpressao: equipamento.tecnologiaImpressao,
           }}
         />
       </main>

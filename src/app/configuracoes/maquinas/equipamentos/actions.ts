@@ -40,6 +40,27 @@ function validarCategoria(
   return { ok: true, categoria: categoria as CategoriaEquipamento, categoriaOutro: null };
 }
 
+// Achado A3 da Parte 7 da auditoria de abrangência (impressora de grande
+// formato sem largura cadastrável) — campo numérico opcional, mesmo padrão
+// de validação de "string vazia vira null, valor inválido é rejeitado com
+// mensagem" já usado pra campos numéricos opcionais de formulário no resto
+// do projeto (ver Cliente.prazoPagamentoPadraoDias em
+// src/app/clientes/actions.ts). Não é específico de categoria — qualquer
+// Equipamento pode ter largura máxima, não só IMPRESSORA_GRANDE_FORMATO.
+function validarLarguraMaximaMm(
+  formData: FormData
+): { ok: true; valor: number | null } | { ok: false; mensagem: string } {
+  const bruto = formData.get("larguraMaximaMm");
+  if (typeof bruto !== "string" || bruto.trim() === "") {
+    return { ok: true, valor: null };
+  }
+  const valor = Number(bruto);
+  if (!Number.isInteger(valor) || valor <= 0) {
+    return { ok: false, mensagem: "Largura máxima inválida — use um número inteiro positivo de milímetros." };
+  }
+  return { ok: true, valor };
+}
+
 export async function criarEquipamento(
   _estadoAnterior: SalvarEquipamentoResult | null,
   formData: FormData
@@ -61,8 +82,14 @@ export async function criarEquipamento(
     return validacaoCategoria;
   }
 
+  const validacaoLarguraMaximaMm = validarLarguraMaximaMm(formData);
+  if (!validacaoLarguraMaximaMm.ok) {
+    return validacaoLarguraMaximaMm;
+  }
+
   const marca = String(formData.get("marca") ?? "").trim() || null;
   const modelo = String(formData.get("modelo") ?? "").trim() || null;
+  const tecnologiaImpressao = String(formData.get("tecnologiaImpressao") ?? "").trim() || null;
 
   let novoEquipamento: { id: string };
   try {
@@ -74,6 +101,8 @@ export async function criarEquipamento(
         categoriaOutro: validacaoCategoria.categoriaOutro,
         marca,
         modelo,
+        larguraMaximaMm: validacaoLarguraMaximaMm.valor,
+        tecnologiaImpressao,
       },
     });
   } catch (erro) {
@@ -127,8 +156,14 @@ export async function salvarEquipamento(
     return validacaoCategoria;
   }
 
+  const validacaoLarguraMaximaMm = validarLarguraMaximaMm(formData);
+  if (!validacaoLarguraMaximaMm.ok) {
+    return validacaoLarguraMaximaMm;
+  }
+
   const marca = String(formData.get("marca") ?? "").trim() || null;
   const modelo = String(formData.get("modelo") ?? "").trim() || null;
+  const tecnologiaImpressao = String(formData.get("tecnologiaImpressao") ?? "").trim() || null;
 
   try {
     await prisma.equipamento.update({
@@ -140,6 +175,8 @@ export async function salvarEquipamento(
         categoriaOutro: validacaoCategoria.categoriaOutro,
         marca,
         modelo,
+        larguraMaximaMm: validacaoLarguraMaximaMm.valor,
+        tecnologiaImpressao,
       },
     });
   } catch (erro) {
@@ -159,6 +196,8 @@ export async function salvarEquipamento(
   );
   diff.campo("Marca", equipamento.marca, marca);
   diff.campo("Modelo", equipamento.modelo, modelo);
+  diff.campo("Largura máxima (mm)", equipamento.larguraMaximaMm, validacaoLarguraMaximaMm.valor);
+  diff.campo("Tecnologia de impressão", equipamento.tecnologiaImpressao, tecnologiaImpressao);
   if (diff.temMudanca) {
     await registrarAuditoria({
       graficaId: usuario.graficaId,

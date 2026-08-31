@@ -1,13 +1,15 @@
 import type { CategoriaEquipamento, ProcessoSetupPorPeca } from "@/generated/prisma/enums";
 
 // Categorias reais de equipamento de gráfica, levantadas por pesquisa
-// (2026-08-22, expandida em 2026-08-23) — cobre o que sobra fora de
-// Offset/Flexografia (que já têm motor de custo próprio, ver
+// (2026-08-22, expandida em 2026-08-23 e 2026-08-31) — cobre o que sobra
+// fora de Offset/Flexografia (que já têm motor de custo próprio, ver
 // Prensa/MaquinaFlexografia). `exemplos` é só texto de apoio no formulário
 // (placeholder), nunca validado — a gráfica pode ter qualquer marca,
 // inclusive nenhuma listada aqui. Onde a pesquisa não achou marca
-// brasileira consolidada o bastante (serigrafia, estampagem a quente),
-// o hint descreve a função em vez de arriscar um nome de marca.
+// brasileira consolidada o bastante (serigrafia, estampagem a quente,
+// vincadora), o hint descreve a função em vez de arriscar um nome de marca.
+// BORDADO/CORTE_VINCO/VINCADORA vêm dos achados A1/A2/A5 da Parte 7 da
+// auditoria de abrangência (ver comentário no schema).
 export const ORDEM_CATEGORIA_EQUIPAMENTO: CategoriaEquipamento[] = [
   "GUILHOTINA",
   "LAMINADORA",
@@ -22,6 +24,9 @@ export const ORDEM_CATEGORIA_EQUIPAMENTO: CategoriaEquipamento[] = [
   "SERIGRAFIA",
   "SUBLIMACAO",
   "ESTAMPAGEM_QUENTE",
+  "BORDADO",
+  "CORTE_VINCO",
+  "VINCADORA",
   "OUTRO",
 ];
 
@@ -39,6 +44,9 @@ export const ROTULO_CATEGORIA_EQUIPAMENTO: Record<CategoriaEquipamento, string> 
   SERIGRAFIA: "Serigrafia",
   SUBLIMACAO: "Sublimação",
   ESTAMPAGEM_QUENTE: "Estampagem a quente (hot stamping)",
+  BORDADO: "Bordado",
+  CORTE_VINCO: "Corte e vinco",
+  VINCADORA: "Vincadeira / gofradeira",
   OUTRO: "Outro",
 };
 
@@ -56,6 +64,9 @@ export const EXEMPLOS_MARCA_CATEGORIA_EQUIPAMENTO: Record<CategoriaEquipamento, 
   SERIGRAFIA: "mesa ou carrossel serigráfico, manual ou automático",
   SUBLIMACAO: "prensa térmica (ex: Metalnox, MAQmei) + impressora (ex: Epson SureColor F)",
   ESTAMPAGEM_QUENTE: "aplica filme metalizado/pigmentado com calor e pressão",
+  BORDADO: "ex: Juki, Brother, Tajima",
+  CORTE_VINCO: "ex: Makpel, DellMarck, Slottec",
+  VINCADORA: "vinca sem cortar — etapa antes da dobra em cartonagem",
   OUTRO: "",
 };
 

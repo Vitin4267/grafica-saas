@@ -496,6 +496,17 @@ enum CategoriaEquipamento {
   SUBLIMACAO // prensa térmica + impressora — ex: Metalnox, MAQmei (prensa); Epson SureColor F (impressora)
   ESTAMPAGEM_QUENTE // hot stamping — aplica filme metalizado/pigmentado com calor e pressão
   CORTE_LASER_ROUTER // corte/gravação de acrílico, ACM, MDF — ex: Visutec, MultiCam
+  // Terceira leva (achados A1/A2/A5 da Parte 7 da auditoria de abrangência,
+  // pesquisa-abrangencia-modulos.md, versão CORRIGIDA pela revisão Opus
+  // 2026-08-31). BORDADO substitui a proposta original de
+  // ProcessoSetupPorPeca.BORDADO (descartada por conflitar com o achado
+  // A4/Parte 1 — bordado cobra por PONTO da arte, não por peça fixa como
+  // calcularSetupPorPeca assume): entra só como cadastro informativo, sem
+  // motor de custo próprio, o mesmo papel que Equipamento já cumpre pro
+  // resto desta lista.
+  BORDADO // bordadeira mono ou multicabeça — ex: Juki, Brother, Tajima
+  CORTE_VINCO // corta e vinca papel/papelão simultaneamente (cartonagem) — ex: Makpel, DellMarck, Slottec
+  VINCADORA // só vinca (não corta) — etapa anterior à dobra em cartonagem/gofragem
   OUTRO
 }
 
@@ -516,6 +527,16 @@ model Equipamento {
   marca          String?
   modelo         String?
   ativo          Boolean              @default(true)
+
+  // Achado A3 da Parte 7 (impressora de grande formato sem largura/
+  // tecnologia cadastrável) — textos livres/nullable de propósito: sem
+  // enum fechado pra tecnologiaImpressao (solvente/eco-solvente/UV/
+  // sublimática) por decisão deliberada da revisão Opus 2026-08-31, mesmo
+  // raciocínio de marca/modelo acima (contexto informativo, não catálogo
+  // fechado). Faz sentido pra qualquer categoria de Equipamento, não só
+  // IMPRESSORA_GRANDE_FORMATO — nenhuma validação de categoria aqui.
+  larguraMaximaMm     Int?
+  tecnologiaImpressao String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

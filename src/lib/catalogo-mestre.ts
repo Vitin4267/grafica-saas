@@ -124,6 +124,7 @@ export const CATALOGO_MESTRE: ItemCatalogoSeed[] = [
   { tipo: "MATERIA_PRIMA", categoria: "Placas e Chapas", nome: "Chapa de ACM", unidade: "UNIDADE" },
   { tipo: "MATERIA_PRIMA", categoria: "Placas e Chapas", nome: "Chapa de MDF", unidade: "UNIDADE" },
   { tipo: "MATERIA_PRIMA", categoria: "Placas e Chapas", nome: "Papelão Paraná", unidade: "UNIDADE" },
+  { tipo: "MATERIA_PRIMA", categoria: "Placas e Chapas", nome: "Papelão Ondulado", unidade: "METRO_QUADRADO" },
 
   // Tintas e Consumíveis
   { tipo: "MATERIA_PRIMA", categoria: "Tintas e Consumíveis", nome: "Tinta CMYK para Offset", unidade: "LITRO" },
@@ -143,11 +144,35 @@ export const CATALOGO_MESTRE: ItemCatalogoSeed[] = [
   { tipo: "MATERIA_PRIMA", categoria: "Laminação e Acabamento", nome: "Fita Dupla Face", unidade: "ROLO" },
   { tipo: "MATERIA_PRIMA", categoria: "Laminação e Acabamento", nome: "Cola Branca / Instantânea", unidade: "UNIDADE" },
 
-  // Insumos para Sublimação e Vestuário
+  // Sublimação e Vestuário
   { tipo: "MATERIA_PRIMA", categoria: "Sublimação e Vestuário", nome: "Camiseta Branca (Malha PV)", unidade: "UNIDADE" },
   { tipo: "MATERIA_PRIMA", categoria: "Sublimação e Vestuário", nome: "Caneca Branca de Cerâmica", unidade: "UNIDADE" },
   { tipo: "MATERIA_PRIMA", categoria: "Sublimação e Vestuário", nome: "Boné em Branco", unidade: "UNIDADE" },
   { tipo: "MATERIA_PRIMA", categoria: "Sublimação e Vestuário", nome: "Papel Transfer Sublimático", unidade: "FOLHA" },
+  { tipo: "MATERIA_PRIMA", categoria: "Sublimação e Vestuário", nome: "Tecido Algodão (Rolo)", unidade: "METRO_LINEAR" },
+  { tipo: "MATERIA_PRIMA", categoria: "Sublimação e Vestuário", nome: "Tecido Poliéster (Rolo)", unidade: "METRO_LINEAR" },
+  { tipo: "MATERIA_PRIMA", categoria: "Sublimação e Vestuário", nome: "Tecido Dry-Fit (Rolo)", unidade: "METRO_LINEAR" },
+  { tipo: "MATERIA_PRIMA", categoria: "Sublimação e Vestuário", nome: "Tecido Malha PV (Rolo)", unidade: "METRO_LINEAR" },
+  { tipo: "MATERIA_PRIMA", categoria: "Sublimação e Vestuário", nome: "Tecido Ribana (Rolo)", unidade: "METRO_LINEAR" },
+
+  // DTF e Transfer
+  { tipo: "MATERIA_PRIMA", categoria: "DTF e Transfer", nome: "Filme DTF", unidade: "ROLO" },
+  { tipo: "MATERIA_PRIMA", categoria: "DTF e Transfer", nome: "Pó Adesivo DTF", unidade: "KG" },
+  { tipo: "MATERIA_PRIMA", categoria: "DTF e Transfer", nome: "Tinta DTF CMYK", unidade: "LITRO" },
+
+  // Brindes (Corpos)
+  { tipo: "MATERIA_PRIMA", categoria: "Brindes (Corpos)", nome: "Caneta em Branco", unidade: "UNIDADE" },
+  { tipo: "MATERIA_PRIMA", categoria: "Brindes (Corpos)", nome: "Squeeze em Branco", unidade: "UNIDADE" },
+  { tipo: "MATERIA_PRIMA", categoria: "Brindes (Corpos)", nome: "Copo em Branco", unidade: "UNIDADE" },
+  { tipo: "MATERIA_PRIMA", categoria: "Brindes (Corpos)", nome: "Chaveiro em Branco", unidade: "UNIDADE" },
+  { tipo: "MATERIA_PRIMA", categoria: "Brindes (Corpos)", nome: "Botton em Branco", unidade: "UNIDADE" },
+  { tipo: "MATERIA_PRIMA", categoria: "Brindes (Corpos)", nome: "Sacola em Branco", unidade: "UNIDADE" },
+
+  // Hot Stamping
+  { tipo: "MATERIA_PRIMA", categoria: "Hot Stamping", nome: "Filme Metalizado Ouro", unidade: "ROLO" },
+  { tipo: "MATERIA_PRIMA", categoria: "Hot Stamping", nome: "Filme Metalizado Prata", unidade: "ROLO" },
+  { tipo: "MATERIA_PRIMA", categoria: "Hot Stamping", nome: "Filme Metalizado Cobre", unidade: "ROLO" },
+  { tipo: "MATERIA_PRIMA", categoria: "Hot Stamping", nome: "Filme Metalizado Holográfico", unidade: "ROLO" },
 
   // Encadernação
   { tipo: "MATERIA_PRIMA", categoria: "Encadernação", nome: "Espiral Plástico", unidade: "UNIDADE" },
