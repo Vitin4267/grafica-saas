@@ -26,16 +26,23 @@ processo de impressão/personalização.
 
 ## Como esta auditoria foi conduzida
 
-Rodada por rodada, um subagente Opus por vez (nunca em paralelo, por
-economia de token), cada um **só pesquisando e planejando** — sem acesso
-de escrita, sem tocar em código. Cada subagente recebeu uma briefing
-completa (o que é o produto, o princípio acima, o estado atual do módulo
-verificado no schema/código, achados de rodadas anteriores pra não
-redescobrir o que já foi achado) e devolveu um relatório em texto, que foi
-colado aqui sem edição de conteúdo. A pesquisa favorece fontes reais
-(blogs de gráfica brasileira, documentação fiscal, ERPs concorrentes,
-fóruns do setor) citadas com link; quando não havia fonte externa
-aplicável, o relatório marca explicitamente "(inferência minha)".
+Rodada por rodada, um subagente por vez (Opus nas Partes 1-6, nunca em
+paralelo por economia de token; a Parte 7, adicionada em 2026-08-30, usou
+5 subagentes haiku em paralelo — pesquisa mais rápida e barata, ver nota
+no início da Parte 7), cada um **só pesquisando e planejando** — sem
+acesso de escrita, sem tocar em código. Cada subagente recebeu uma
+briefing completa (o que é o produto, o princípio acima, o estado atual
+do módulo verificado no schema/código, achados de rodadas anteriores pra
+não redescobrir o que já foi achado) e devolveu um relatório em texto,
+que foi colado aqui (Partes 1-6 sem edição de conteúdo; Parte 7 condensada
+pela thread principal pro estilo do resto do documento). A pesquisa
+favorece fontes reais (blogs de gráfica brasileira, documentação fiscal,
+ERPs concorrentes, fóruns do setor) citadas com link; quando não havia
+fonte externa aplicável, o relatório marca explicitamente
+"(inferência minha)".
+
+**Total catalogado:** 88 achados nas Partes 1-6 + 24 achados na Parte 7
+(completude de cadastro) = **112 achados**.
 
 **Nada aqui foi implementado ainda** — é material bruto de pesquisa, a
 base pra decidir o que atacar. Duas exceções: os achados "motor de preço
@@ -1920,3 +1927,195 @@ Usos imediatos e de baixo risco: interpolar o valor no texto padrão de termos (
 | A12 | Multi-moeda | **Não fazer** | Sistema é BR-fiscal de ponta a ponta; não é um campo, é outro produto |
 
 Critical files: `prisma/schema.prisma` (`ParametrosGrafica` ~L100, `Grafica` ~L26, `Filial` ~L473, `RegistroManutencao` ~L425, `AreaAdministrativa` ~L2928), `src/app/configuracoes/actions.ts` (único escritor de `ParametrosGrafica`; padrão de diff de auditoria a extrair), `src/app/configuracoes/ParametrosForm.tsx` (onde os 8 campos órfãos precisam aparecer), `src/lib/pendencias-configuracao.ts` e `src/lib/custo-pedido.ts` (defaults hoje congelados no perfil rótulos), `src/lib/pdf/OrcamentoDocumento.tsx` + `src/lib/pdf/mapear-dados.ts` (o "dias úteis" literal e o cabeçalho sem contato).
+
+# Parte 7 — Completude de cadastro ("dá pra nem cadastrar isso")
+
+**Adicionada em 2026-08-30, frente de pesquisa diferente das Partes 1-6.**
+As Partes anteriores perguntam majoritariamente "o motor de preço cobre
+esse processo?". Esta pergunta a diferente e mais básica, a que gera a
+reclamação mais direta de um cliente pagante: **"eu nem consigo cadastrar
+o equipamento/material/acabamento/pessoa que eu tenho — o sistema não
+oferece a opção."** Pedido explícito do dono do produto, com exemplo
+próprio: "falta de máquinas para cadastrar". 5 subagentes (haiku, pesquisa
+rápida — não é o padrão Opus das Partes 1-6, decisão de custo) cobriram 5
+ângulos em paralelo: máquinas, matérias-primas, acabamento cadastrável,
+equipe/prestadores, e primeira experiência (onboarding) de uma gráfica
+atípica. Nada aqui foi verificado linha-a-linha pela thread principal
+ainda (diferente das Partes 1-6, que passaram por reconciliação) — tratar
+como pesquisa bruta, mais sujeita a imprecisão que o resto do documento.
+
+## A. Máquinas e equipamentos cadastráveis
+
+### A1 — Máquina de bordado sem categoria própria
+**O que falta.** Não existe `BORDADO` em `CategoriaEquipamento` nem em `ProcessoSetupPorPeca` — uma gráfica de estamparia com máquina de bordado (mono ou multicabeça) cadastra como `OUTRO` genérico e perde a diferenciação de custo por número de cabeçotes (multicabeça reduz tempo de setup proporcionalmente).
+
+**Pesquisa.** Máquinas Juki/Brother/Tajima com 1, 6, 8 ou 12 cabeçotes são padrão de mercado ([Galpão das Máquinas](https://galpaodasmaquinas.com.br/categoria/textil/maquina-de-bordar)).
+
+**Proposta.** `ProcessoSetupPorPeca.BORDADO` (mesmo padrão dos 5 processos já adicionados no achado A3/Parte 1) + `MaquinaSetupPorPeca.numeroCabecotes Int? @default(1)`.
+
+### A2 — Corte e vinco (cartonagem) sem categoria
+**O que falta.** `CategoriaEquipamento` não tem opção pra máquina de corte-e-vinco (corta e vinca papel/papelão simultaneamente) — diferente de `CORTE_LASER_ROUTER`, que é outra tecnologia. Gráfica de embalagem cadastra como `OUTRO`.
+
+**Pesquisa.** Marcas brasileiras: Makpel, DellMarck, Slottec ([Flockcolor](https://flockcolor.com.br/maquina-de-corte-vinco-para-caixas-embalagens)).
+
+**Proposta.** Adicionar `CORTE_VINCO` a `CategoriaEquipamento` + entrada em `EXEMPLOS_MARCA_CATEGORIA_EQUIPAMENTO`.
+
+### A3 — Impressora de grande formato sem tecnologia/largura/velocidade
+**O que falta.** `Equipamento`/`ImpressoraDigital` não têm campo de tecnologia de impressão (solvente/eco-solvente/UV/sublimática) nem largura máxima — dado que muda o preço por m² de forma relevante.
+
+**Pesquisa.** (Inferência minha, baseada em catálogo de fabricante — Roland, Mimaki, HP Latex, Epson SureColor variam preço/m² por tecnologia e largura).
+
+**Proposta.** `Equipamento.larguraMaximaMm Int?` + `tecnologiaImpressao String?` (texto livre por ora, sem enum fechado).
+
+### A4 — Prensa térmica/estampador sem tipo diferenciado
+**O que falta.** `ProcessoSetupPorPeca` (SUBLIMACAO/ESTAMPAGEM_QUENTE) não diferencia prensa plana, cap press (boné), caneca press e carrossel rotativo — setup e custo por peça mudam muito entre eles (carrossel multicolor é setup paralelo, ~8× mais eficiente que prensa plana).
+
+**Pesquisa.** (Inferência minha, baseada em equipamento industrial padrão do setor).
+
+**Proposta.** Campo simples `Equipamento.notas String?` pra a gráfica descrever o tipo (pragmático, evita over-engineering num enum fechado sem uso validado ainda).
+
+### A5 — Gofradeira/vincadeira sem categoria
+**O que falta.** Máquina que faz só vinco (sem cortar, comprime o papel pra dobra) — etapa anterior à dobra em cartonagem — não tem categoria, só `OUTRO`.
+
+**Pesquisa.** (Inferência minha).
+
+**Proposta.** Adicionar `VINCADORA` a `CategoriaEquipamento`.
+
+## B. Matérias-primas, substratos e insumos cadastráveis
+
+### B1 — Tecido em rolo pra estamparia (antes de virar peça)
+**O que falta.** Catálogo tem peças prontas ("Camiseta Branca") mas não o tecido em rolo (algodão, poliéster, dry-fit, malha PV, ribana) que uma gráfica de estamparia real compra como matéria-prima.
+
+**Pesquisa.** Fio (20s/30s) e composição são tabelados (NBR 12.748, ABIT); preço varia ~R$35-70/kg conforme composição.
+
+**Proposta.** Novos itens de catálogo mestre em categoria "Sublimação e Vestuário", unidade METRO_LINEAR (já existe).
+
+### B2 — Filme DTF e insumos (pó adesivo, tinta DTF)
+**O que falta.** Existe "Papel Transfer Sublimático" mas não filme DTF (processo distinto), pó adesivo (powder) nem tinta DTF específica.
+
+**Pesquisa.** Filme em rolo 60/80cm × 100m (~R$120-180); pó adesivo por kg (~R$25-35).
+
+**Proposta.** 3 itens novos: Filme DTF (ROLO), Pó Adesivo DTF (KG), Tinta DTF CMYK (LITRO).
+
+### B3 — Corpos de brinde em branco (antes de personalizar)
+**O que falta.** Catálogo só tem produto final ("Caneta Personalizada"), não o corpo em branco que uma gráfica-revenda de brindes compra e precifica com custo real do dia.
+
+**Pesquisa.** Fornecedores (Luminati, XBZ, DGL) vendem o corpo separado, por caixa/mil.
+
+**Proposta.** Categoria nova "Brindes (Corpos)": caneta/squeeze/copo/chaveiro/botton/sacola em branco, com `VarianteMateriaPrima` pra modelo/cor.
+
+### B4 — Filme metalizado (hotfoil) pra hot stamping
+**O que falta.** Hot stamping é acabamento implementado, mas o insumo (filme metalizado — ouro/prata/cobre/holográfico) não está no catálogo.
+
+**Pesquisa.** Rolo 32-40cm × 200m, ~R$50-120/rolo conforme cor ([Sposi](https://www.sposi.com.br/)).
+
+**Proposta.** Categoria "Hot Stamping": 4 itens por cor, unidade ROLO.
+
+### B5 — Papelão ondulado sem especificação de onda (B/C/BC/E)
+**O que falta.** Catálogo tem "Papelão Paraná" genérico (maciço, não ondulado). Cartonagem real usa onda B/C/BC/E, com resistência e preço bem diferentes (~30-50% de variação).
+
+**Pesquisa.** Normatizado pela ABNT NBR 14713; preço C ~R$1,5-2,5/m², BC ~R$2,5-3,5/m².
+
+**Proposta.** `VarianteMateriaPrima` pra "Papelão Ondulado" com 4 variantes de onda, preço próprio por variante.
+
+### B6 — Materiais de bordado (tecido específico, entretela, linha, bobina)
+**O que falta.** Entretela (fusível/não-fusível, peso em oz), linha de bordar e bobina de bobbing não têm representação — críticos pra custo real de bordado.
+
+**Pesquisa.** (Inferência minha, baseada em insumo padrão do setor têxtil).
+
+**Proposta.** Categoria "Bordado (Materiais)": tecido/entretela/linha/bobina, unidades conforme item.
+
+## C. Tipos de acabamento cadastráveis (opção existir, não precificação)
+
+### C1 — TipoAdesivo sem hot melt, siliconado, durabilidade
+**O que falta.** Enum só tem acrílico/borracha em gramas — falta hot melt (nome técnico da "borracha" já existente, mas usado com outro nome no mercado), flag de liner siliconado (atributo de substrato, não de adesivo), e permanente×removível (critério de venda comum).
+
+**Pesquisa.** [Guia do Gráfico — tipos de adesivo](https://www.guiadografico.com.br/artigos/tipos-de-adesivo-aplicados-em-substratos-utilizados-pelos-convertedores-de-rotulos-e-etiquetas-autoadesivas).
+
+**Proposta.** Campo `durabilidadeAdesivo` opcional + flag `superficieComSilicone Boolean`.
+
+### C2 — TipoLaminacao sem soft touch/metalizada
+**O que falta.** Só BRILHO/FOSCO/OUTRO — soft touch (aveludado, sem marca de dedo) é categoria própria vendida com preço premium.
+
+**Pesquisa.** [EMBRAPA — acabamento gráfico](https://www.embrapa.br/manual-de-editoracao/conceitos-e-normas-editoriais/o-processo-e-o-fluxo-editorial/nocoes-e-tecnicas-para-producao-grafica/acabamento/) lista soft touch como tipo principal, ao lado de brilho/fosco.
+
+**Proposta.** Adicionar `SOFT_TOUCH` e `METALIZADA` a `TipoLaminacao`.
+
+### C3 — TipoAcabamentoVerniz sem soft touch/UV explícito
+**O que falta.** Falta soft touch (mesma lógica de C2) e a aplicação UV×convencional não é selecionável (fica implícita).
+
+**Pesquisa.** (Mesma fonte de C2 — soft touch é comum a laminação e verniz).
+
+**Proposta.** Adicionar `SOFT_TOUCH` a `TipoAcabamentoVerniz`.
+
+### C4 — TipoHotStamping sem efeito holográfico/colorido
+**O que falta.** Só HOT/COLD — não captura o efeito visual (holográfico, espelhado, colorido), que é vendido como serviço distinto.
+
+**Pesquisa.** (Inferência minha, baseada em catálogo de fornecedor de filme — ver B4 acima).
+
+**Proposta.** Campo `tipoEfeitoHotStamping` opcional (holográfico/espelhado/metalizado/colorido/outro).
+
+### C5 — Sem NENHUM enum de acabamento fora de etiquetas (dobra, encadernação, colagem) — **gap estrutural, maior que C1-C4**
+**O que falta.** `TipoAdesivo`/`TipoSerrilha`/`TipoLaminacao`/`TipoAcabamentoVerniz`/`TipoHotStamping` só existem em `OrcamentoItemEtiqueta` (motor M2/flexografia de rótulo). Pra embalagem, livro/editorial, comunicação visual, brinde — não existe NENHUM dropdown estruturado de acabamento; a gráfica cria um "serviço" com nome livre. Uma gráfica desses perfis vê seleção estruturada só pra etiqueta e assume que falta a feature pro resto.
+
+**Pesquisa.** Dobra (meia-dobra/sanfona/carta/paralela — [Zapgrafica](https://blog.zapgrafica.com.br/acabamentos-graficos-quais-sao-os-4-tipos-de-dobras-e-como-usa-los/)), encadernação (brochura/wire-o/espiral/capa dura — [Guia do Gráfico](https://www.guiadografico.com.br/produtos-e-servicos/categoria/acabamentos-de-livros)), colagem (cola fria/quente/PUR — cartonagem).
+
+**Proposta.** Enums paralelos `TipoDobra`/`TipoEncadernacao`/`TipoColagem`, referenciáveis por um serviço (`ItemGrafica` tipo=SERVICO) via campo opcional — dropdown só aparece quando fizer sentido pro tipo de serviço.
+
+## D. Equipe e prestadores externos
+
+### D1 — Sem conceito de "colaborador sem login" (motorista, operador de chão de fábrica)
+**O que falta.** `Usuario` é 100% acoplado a autenticação (`email`/`senhaHash` obrigatórios). `Entrega.motorista` é texto livre sem histórico auditado; `ApontamentoEtapa.operadorNomeDeclarado` (já construído, rodada 15) prova que o sistema já aceita "pessoa sem login" nesse ponto específico, mas não generalizou o conceito.
+
+**Pesquisa.** Motorista terceirizado e freelancer de design são modelo comum em gráfica de pequeno/médio porte ([Design com Café — terceirizar design](https://designcomcafe.com.br/terceirizar-design-grafico-ou-fazer-voce-mesmo/)).
+
+**Proposta.** `Entrega.motoristaUsuarioId String?` (FK opcional pra `Usuario` com `email`/`senhaHash` nulos — exige relaxar as colunas obrigatórias, mudança não-trivial) — **avaliar com cuidado antes de construir**, é mudança estrutural em `Usuario`, não um campo aditivo simples como o resto do documento.
+
+### D2 — Prestador de serviço recorrente (≠ Fornecedor de insumo)
+**O que falta.** `Fornecedor` é só pra compra de material. Acabamento terceirizado (laminação, encadernação feita por terceiro), logística/despachante, freelancer de design — não têm onde ser cadastrados como prestador recorrente; viram `Despesa` genérica sem estrutura.
+
+**Pesquisa.** (Inferência minha, mas alinhada ao próprio achado A9/Parte 3 já catalogado: "ERPs tratam requisição de material e de serviço no mesmo fluxo").
+
+**Proposta.** `model PrestadorServico` (nome, tipo fechado+OUTRO: ACABAMENTO/LOGISTICA/DESIGN/OUTRO, CPF/CNPJ, contato) — parecido com `Fornecedor` mas pra serviço, não insumo.
+
+### D3 — Dados de pessoa incompletos pra pagamento (CPF, PIX, especialidade)
+**O que falta.** `Usuario` não tem CPF, dados bancários/PIX nem especialidade — necessário pra gerar recibo de comissão/serviço e saber pra onde pagar.
+
+**Pesquisa.** (Inferência minha — CPF é exigência fiscal básica pra qualquer recibo no Brasil).
+
+**Proposta.** Campos opcionais em `Usuario`: `cpf`, `chavePix`, `especialidade` (texto livre) — nunca exibidos fora de tela de folha/comissão com acesso restrito.
+
+*(Nota: um 4º achado desta pesquisa — "cargo desvinculado de papel/permissão" — é DUPLICATA do achado A5 já catalogado na Parte 6 ["Permissão é por usuário, não por cargo"]. Omitido aqui de propósito, não é achado novo.)*
+
+## E. Primeira experiência (onboarding) de uma gráfica atípica
+
+### E1 — Dashboard mostra "Pipeline de produção" mesmo pra quem não produz
+**O que falta.** `/meu-negocio` sempre mostra os cards "Pipeline de produção" e "Previsão de estoque", mesmo pra uma gráfica REVENDA pura (achado A12/Parte 1, já construído — terceiriza 100%) que nunca vai ter nada nesses cards. Fica eternamente "Nenhum pedido em produção", confundindo mais que ajudando.
+
+**Pesquisa.** Gráfica de revenda (brinde, papelaria, etiqueta) compra pronto/semiacabado e não passa por etapa de produção interna nenhuma (inferência baseada no próprio modelo de revenda já reconhecido no achado A12/Parte 1).
+
+**Proposta.** Condicionar os 2 cards a `Grafica.segmento` — omitir ou trocar por "Últimas compras/terceirizações" quando o segmento for REVENDA/BRINDES_PERSONALIZADOS.
+
+### E2 — Link "Produção" no menu oferecido mesmo pra quem não usa
+**O que falta.** Mesmo problema de E1, no menu de navegação (`UserNav.tsx`) — o link é condicionado só a permissão de módulo, não a segmento.
+
+**Proposta.** Mesma condição de E1.
+
+### E3 — Segmento é respondido DEPOIS do onboarding — dados de exemplo saem errados
+**O que falta.** `/comecar` carrega dados de exemplo a partir de `Grafica.segmento`, mas responder o segmento é uma tela opcional em Configurações, fora do fluxo inicial. Uma gráfica de estamparia que passa por `/comecar` antes de configurar o segmento recebe exemplos de Offset/Etiqueta (pacote padrão) — cria confusão de identidade logo na primeira experiência.
+
+**Proposta.** Checar `segmento === null` antes de carregar exemplo em `/comecar`; se nulo, mostrar banner linkando pra escolher o segmento primeiro (opção conservadora, não quebra conta existente).
+
+### E4 — Segmentos "Brindes"/"Corte a laser" caem no pacote de exemplo errado (Offset)
+**O que falta.** `PACOTES_POR_SEGMENTO` em `src/lib/dados-exemplo.ts` só tem entrada dedicada pra COMUNICACAO_VISUAL e ESTAMPARIA_VESTUARIO — os demais segmentos (já nomeados no enum, ex. BRINDES_PERSONALIZADOS, CORTE_LASER_ACRILICO) caem no pacote padrão de Offset comercial, sem nenhuma relação com o negócio real.
+
+**Proposta.** Criar pacotes de exemplo dedicados pros segmentos já nomeados no enum que ainda não têm um.
+
+### E5 — Dados de exemplo sem marca visual, risco de virar orçamento real
+**O que falta.** O único sinal de que um cliente/produto é de exemplo é o prefixo de texto "[Exemplo] " no nome — sem badge/cor/ícone. Um usuário distraído pode incluir um cliente ou produto de exemplo num orçamento real.
+
+**Proposta.** Badge visual nos seletores de produto/cliente quando a origem for exemplo; aviso no momento de criar orçamento se algum item/cliente selecionado for de exemplo.
+
+---
+
+**Como usar esta Parte 7:** ainda não passou pela reconciliação que as Partes 1-6 tiveram (thread principal lendo achado por achado contra o código antes de aceitar). Antes de construir qualquer um destes, vale uma verificação rápida contra o código atual — pesquisa em haiku é mais rápida mas também mais sujeita a imprecisão de detalhe (nome de arquivo/linha pode ter mudado ou estar levemente errado).
