@@ -21,6 +21,9 @@ export type ItemPdfOrdemProducao = {
   nome: string;
   quantidade: number;
   medidas: string | null;
+  // Achado F7 — espessura de chapa (corte a laser/router), separada de
+  // `medidas` acima porque é outra unidade (sempre mm).
+  espessura: string | null;
   cores: string | null;
   acabamento: string | null;
   acabamentosEstruturados: string[];
@@ -226,6 +229,7 @@ export function OrdemProducaoDocumento({ dados }: { dados: DadosPdfOrdemProducao
         {dados.itens.map((item, indice) => {
           const detalhes = [
             item.medidas,
+            item.espessura,
             item.cores ? `Cores: ${item.cores}` : null,
             item.acabamento ? `Acabamento: ${item.acabamento}` : null,
             item.acabamentosEstruturados.length > 0

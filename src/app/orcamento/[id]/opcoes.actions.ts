@@ -94,6 +94,10 @@ export async function adicionarOpcaoOrcamento(
     quantidade: number;
     larguraCm: number | null;
     alturaCm: number | null;
+    // Achado F7 — mesmo padrão de criarOrcamento (src/app/orcamento/actions.ts):
+    // nunca vão pro motor de preço, só gravados direto no create.
+    profundidadeCm: number | null;
+    espessuraMm: number | null;
     unidadeDimensao: (typeof itensResult.data)[number]["unidadeDimensao"];
     cores: string | null;
     acabamento: string | null;
@@ -150,6 +154,13 @@ export async function adicionarOpcaoOrcamento(
       entrada.largura !== null ? converterParaCm(entrada.largura, entrada.unidadeDimensao) : null;
     const alturaCm =
       entrada.altura !== null ? converterParaCm(entrada.altura, entrada.unidadeDimensao) : null;
+    // Achado F7 — mesma conversão de largura/altura pra profundidade;
+    // espessuraMm já chega em mm. Nenhum dos dois entra no motor de preço.
+    const profundidadeCm =
+      entrada.profundidade !== null
+        ? converterParaCm(entrada.profundidade, entrada.unidadeDimensao)
+        : null;
+    const espessuraMm = entrada.espessuraMm;
 
     const resultado = await calcularItemOrcamento(itemGrafica, usuario.graficaId, {
       quantidade: entrada.quantidade,
@@ -180,6 +191,8 @@ export async function adicionarOpcaoOrcamento(
       quantidade: entrada.quantidade,
       larguraCm,
       alturaCm,
+      profundidadeCm,
+      espessuraMm,
       unidadeDimensao: entrada.unidadeDimensao,
       cores: entrada.cores,
       acabamento: entrada.acabamento,
@@ -218,6 +231,8 @@ export async function adicionarOpcaoOrcamento(
           quantidade: item.quantidade,
           larguraCm: item.larguraCm,
           alturaCm: item.alturaCm,
+          profundidadeCm: item.profundidadeCm,
+          espessuraMm: item.espessuraMm,
           unidadeDimensao: item.unidadeDimensao,
           cores: item.cores,
           acabamento: item.acabamento,
@@ -247,6 +262,7 @@ export async function adicionarOpcaoOrcamento(
                     materialSubstratoOutro: item.etiqueta?.materialSubstratoOutro ?? null,
                     tipoAdesivo: item.etiqueta?.tipoAdesivo ?? null,
                     tipoAdesivoOutro: item.etiqueta?.tipoAdesivoOutro ?? null,
+                    durabilidadeAdesivo: item.etiqueta?.durabilidadeAdesivo ?? null,
                     superficieAplicacao: item.etiqueta?.superficieAplicacao ?? null,
                     superficieAplicacaoOutro: item.etiqueta?.superficieAplicacaoOutro ?? null,
                     formatoEtiqueta: item.etiqueta?.formatoEtiqueta ?? null,
@@ -274,9 +290,10 @@ export async function adicionarOpcaoOrcamento(
                       create: (item.etiqueta?.hotStampings ?? []).map((h) => ({
                         lado: h.lado,
                         tipo: h.tipo,
-                        tipoOutro: h.tipoOutro,
-                        medida: h.medida,
-                        cor: h.cor,
+                        tipoOutro: h.tipoOutro || null,
+                        tipoEfeitoHotStamping: h.tipoEfeitoHotStamping || null,
+                        medida: h.medida || null,
+                        cor: h.cor || null,
                       })),
                     },
                   },

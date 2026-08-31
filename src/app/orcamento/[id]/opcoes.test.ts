@@ -120,6 +120,8 @@ function itemCarrinhoJson(itemGraficaId: string, quantidade: number): string {
       quantidade,
       largura: null,
       altura: null,
+      profundidade: null,
+      espessuraMm: null,
       unidadeDimensao: "CM",
       corFrente: null,
       corVerso: null,

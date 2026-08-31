@@ -35,13 +35,18 @@ afterEach(async () => {
   graficaIdsParaLimpar.length = 0;
 }, TIMEOUT_MS);
 
-async function criarGrafica(nome: string, segmento?: string) {
+async function criarGrafica(
+  nome: string,
+  segmento?: string,
+  segmentosSecundarios?: string[]
+) {
   const s = sufixo();
   const grafica = await prisma.grafica.create({
     data: {
       nome: `${nome} ${s}`,
       slug: `${nome.toLowerCase().replace(/\s+/g, "-")}-${s}`,
       ...(segmento ? { segmento: segmento as never } : {}),
+      ...(segmentosSecundarios ? { segmentosSecundarios: segmentosSecundarios as never } : {}),
     },
   });
   graficaIdsParaLimpar.push(grafica.id);
@@ -138,6 +143,138 @@ describe("carregarDadosExemplo — escolha de pacote por segmento", () => {
         where: { graficaId: grafica.id, nome: `${PREFIXO_EXEMPLO}Banner em Lona` },
       });
       expect(produtos).toHaveLength(1);
+    },
+    TIMEOUT_MS
+  );
+});
+
+// Cobre o achado F9 da Parte 7 da auditoria de abrangência (2026-08-31):
+// `Grafica.segmentosSecundarios` só pode ACRESCENTAR catálogo, nunca
+// substituir/esconder o que o segmento PRINCIPAL já cria.
+//
+// IMPORTANTE: depende também da migration
+// prisma/migrations/20260831120000_grafica_segmentos_secundarios — até ela
+// ser aplicada ao banco de dev, todo teste aqui falha com "column
+// graficas.segmentosSecundarios does not exist" (esperado, não é regressão).
+describe("carregarDadosExemplo — segmentosSecundarios é aditivo (achado F9)", () => {
+  it(
+    "segmento principal COMUNICACAO_VISUAL + secundário ESTAMPARIA_VESTUARIO cria os DOIS catálogos",
+    async () => {
+      const grafica = await criarGrafica(
+        "Teste Exemplo Hibrida",
+        "COMUNICACAO_VISUAL",
+        ["ESTAMPARIA_VESTUARIO"]
+      );
+
+      const resultado = await carregarDadosExemplo(grafica.id);
+      expect(resultado.ok).toBe(true);
+
+      // O catálogo do segmento PRINCIPAL continua presente por completo —
+      // nada foi substituído/escondido.
+      const produtoBanner = await prisma.itemCatalogo.findFirst({
+        where: { graficaId: grafica.id, nome: `${PREFIXO_EXEMPLO}Banner em Lona` },
+      });
+      expect(produtoBanner).not.toBeNull();
+      const produtoAdesivo = await prisma.itemCatalogo.findFirst({
+        where: { graficaId: grafica.id, nome: `${PREFIXO_EXEMPLO}Adesivo Vinil Recorte A4` },
+      });
+      expect(produtoAdesivo).not.toBeNull();
+
+      // ...e o catálogo do segmento SECUNDÁRIO aparece A MAIS, junto.
+      const produtoCamiseta = await prisma.itemCatalogo.findFirst({
+        where: { graficaId: grafica.id, nome: `${PREFIXO_EXEMPLO}Camiseta Estampada` },
+      });
+      expect(produtoCamiseta).not.toBeNull();
+      const maquinaSerigrafica = await prisma.maquinaSetupPorPeca.findFirst({
+        where: { graficaId: grafica.id, nome: `${PREFIXO_EXEMPLO}Mesa Serigráfica` },
+      });
+      expect(maquinaSerigrafica).not.toBeNull();
+
+      // O orçamento de demonstração continua sendo gerado só a partir do
+      // pacote PRINCIPAL (M2/banner) — segmentosSecundarios nunca troca o
+      // que gerarOrcamentoExemplo usa.
+      const usuario = await prisma.usuario.create({
+        data: {
+          graficaId: grafica.id,
+          nome: "Dono Teste",
+          email: `dono-${Date.now()}-${Math.random().toString(36).slice(2)}@teste.com`,
+          senhaHash: "hash",
+          papel: "DONO",
+        },
+      });
+      const orcamentoResultado = await gerarOrcamentoExemplo(grafica.id, usuario.id);
+      expect(orcamentoResultado.ok).toBe(true);
+      if (orcamentoResultado.ok) {
+        const orcamento = await prisma.orcamento.findUnique({
+          where: { id: orcamentoResultado.orcamentoId },
+          include: { itens: true },
+        });
+        const nomesItens = orcamento?.itens.map((i) => i.itemGraficaId) ?? [];
+        // O item da camiseta (secundário) não deve estar entre os itens do
+        // orçamento de demonstração — só banner + adesivo (principal).
+        const itemCamiseta = await prisma.itemGrafica.findFirst({
+          where: { graficaId: grafica.id, itemCatalogoId: produtoCamiseta!.id },
+        });
+        expect(nomesItens).not.toContain(itemCamiseta?.id);
+      }
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "segmento secundário igual ao principal não duplica nem quebra (dedupe)",
+    async () => {
+      const grafica = await criarGrafica("Teste Exemplo Dedupe", "COMUNICACAO_VISUAL", [
+        "COMUNICACAO_VISUAL",
+      ]);
+
+      const resultado = await carregarDadosExemplo(grafica.id);
+      expect(resultado.ok).toBe(true);
+
+      const produtosBanner = await prisma.itemCatalogo.findMany({
+        where: { graficaId: grafica.id, nome: `${PREFIXO_EXEMPLO}Banner em Lona` },
+      });
+      expect(produtosBanner).toHaveLength(1);
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "segmento secundário SEM pacote dedicado (ex: BORDADO) não adiciona nem quebra nada",
+    async () => {
+      const grafica = await criarGrafica("Teste Exemplo SemPacote", "COMUNICACAO_VISUAL", [
+        "BORDADO",
+      ]);
+
+      const resultado = await carregarDadosExemplo(grafica.id);
+      expect(resultado.ok).toBe(true);
+
+      const produtoBanner = await prisma.itemCatalogo.findFirst({
+        where: { graficaId: grafica.id, nome: `${PREFIXO_EXEMPLO}Banner em Lona` },
+      });
+      expect(produtoBanner).not.toBeNull();
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "limparDadosExemplo remove o catálogo dos DOIS pacotes (principal + secundário)",
+    async () => {
+      const grafica = await criarGrafica(
+        "Teste Exemplo Limpar Hibrida",
+        "COMUNICACAO_VISUAL",
+        ["ESTAMPARIA_VESTUARIO"]
+      );
+      await carregarDadosExemplo(grafica.id);
+
+      const resultado = await limparDadosExemplo(grafica.id);
+      expect(resultado.ok).toBe(true);
+
+      expect(await existemDadosExemplo(grafica.id)).toBe(false);
+      const itensRestantes = await prisma.itemCatalogo.findMany({ where: { graficaId: grafica.id } });
+      expect(itensRestantes).toHaveLength(0);
+      const maquina = await prisma.maquinaSetupPorPeca.findFirst({ where: { graficaId: grafica.id } });
+      expect(maquina).toBeNull();
     },
     TIMEOUT_MS
   );

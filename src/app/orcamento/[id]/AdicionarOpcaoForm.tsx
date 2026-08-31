@@ -33,6 +33,7 @@ function etiquetaParaEntrada(etiqueta: CamposEtiqueta) {
     materialSubstratoOutro: textoOuNulo(etiqueta.materialSubstratoOutro),
     tipoAdesivo: enumOuNulo(etiqueta.tipoAdesivo),
     tipoAdesivoOutro: textoOuNulo(etiqueta.tipoAdesivoOutro),
+    durabilidadeAdesivo: textoOuNulo(etiqueta.durabilidadeAdesivo),
     superficieAplicacao: enumOuNulo(etiqueta.superficieAplicacao),
     superficieAplicacaoOutro: textoOuNulo(etiqueta.superficieAplicacaoOutro),
     formatoEtiqueta: textoOuNulo(etiqueta.formatoEtiqueta),
@@ -73,6 +74,10 @@ type ItemCarrinho = {
   quantidade: number;
   largura: number | null;
   altura: number | null;
+  // Achado F7 — nunca passam por precificarItem (motor de preço), só
+  // gravados direto no envio final.
+  profundidade: number | null;
+  espessuraMm: number | null;
   unidadeDimensao: CamposItemOrcamento["unidadeDimensao"];
   corFrente: number | null;
   corVerso: number | null;
@@ -147,6 +152,10 @@ export function AdicionarOpcaoForm({
 
     const largura = campos.largura ? Number(campos.largura) : null;
     const altura = campos.altura ? Number(campos.altura) : null;
+    // Achado F7 — nunca vai pro motor de preço (precificarItem abaixo não
+    // recebe estes campos), só entra no carrinho pra gravação direta.
+    const profundidade = campos.profundidade ? Number(campos.profundidade) : null;
+    const espessuraMm = campos.espessuraMm ? Number(campos.espessuraMm) : null;
     const corFrente = campos.corFrente !== "" ? Number(campos.corFrente) : null;
     const corVerso = campos.corVerso !== "" ? Number(campos.corVerso) : null;
     const numeroCoresFlexo = campos.numeroCoresFlexo !== "" ? Number(campos.numeroCoresFlexo) : null;
@@ -203,6 +212,8 @@ export function AdicionarOpcaoForm({
         quantidade,
         largura,
         altura,
+        profundidade,
+        espessuraMm,
         unidadeDimensao: campos.unidadeDimensao,
         corFrente,
         corVerso,
@@ -235,6 +246,8 @@ export function AdicionarOpcaoForm({
       quantidade: i.quantidade,
       largura: i.largura,
       altura: i.altura,
+      profundidade: i.profundidade,
+      espessuraMm: i.espessuraMm,
       unidadeDimensao: i.unidadeDimensao,
       corFrente: i.corFrente,
       corVerso: i.corVerso,

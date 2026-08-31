@@ -94,6 +94,9 @@ export default async function OrcamentoPublicoPage({
       precoTotal: item.precoTotal.toString(),
       larguraCm: item.larguraCm ? Number(item.larguraCm) : null,
       alturaCm: item.alturaCm ? Number(item.alturaCm) : null,
+      // Achado F7 — mesma convenção de largura/altura acima.
+      profundidadeCm: item.profundidadeCm ? Number(item.profundidadeCm) : null,
+      espessuraMm: item.espessuraMm ? Number(item.espessuraMm) : null,
       unidadeDimensao: item.unidadeDimensao,
       cores: item.cores,
       acabamento: item.acabamento,
@@ -220,10 +223,14 @@ export default async function OrcamentoPublicoPage({
                   {item.larguraCm && item.alturaCm && (
                     <span>
                       {converterDeCm(Number(item.larguraCm), item.unidadeDimensao)} ×{" "}
-                      {converterDeCm(Number(item.alturaCm), item.unidadeDimensao)}{" "}
+                      {converterDeCm(Number(item.alturaCm), item.unidadeDimensao)}
+                      {item.profundidadeCm
+                        ? ` × ${converterDeCm(Number(item.profundidadeCm), item.unidadeDimensao)}`
+                        : ""}{" "}
                       {ROTULO_UNIDADE_DIMENSAO[item.unidadeDimensao]}
                     </span>
                   )}
+                  {item.espessuraMm && <span>Espessura: {Number(item.espessuraMm)}mm</span>}
                   {item.cores && <span>Cores: {item.cores}</span>}
                   {item.acabamento && <span>Acabamento: {item.acabamento}</span>}
                   <span>Unitário: {formatoMoeda.format(Number(item.precoUnitario))}</span>

@@ -405,11 +405,20 @@ export type SalvarResponsaveisAdministrativoResult = { ok: boolean; mensagem: st
 // e o rótulo abaixo. PRAZO_PRODUCAO adicionado 2026-08-24 (achado A9 da
 // auditoria de abrangência) pra rotear o alerta de prazo/atraso de pedido
 // (src/lib/alerta-prazo-email.ts) pra um responsável dedicado em vez de
-// sempre cair em todos os DONOs.
-export const AREAS_ADMINISTRATIVAS: AreaAdministrativa[] = ["NOTA_FISCAL", "PRAZO_PRODUCAO"];
+// sempre cair em todos os DONOs. COMPRAS adicionado 2026-08-31 (achado A9,
+// restante pendente) pro mesmo tratamento no alerta de estoque crítico
+// (src/lib/alerta-estoque.ts). COBRANCA adicionado junto (mesmo achado,
+// mesma rodada) só como valor cadastrável — hoje não existe nenhum disparo
+// de e-mail de "conta a receber vencida" no código pra rotear (só a tela
+// /financeiro/contas-receber destacando visualmente as vencidas), então
+// marcar um funcionário aqui não liga nada ainda; fica pronto pro dia que
+// esse alerta for construído.
+export const AREAS_ADMINISTRATIVAS: AreaAdministrativa[] = ["NOTA_FISCAL", "PRAZO_PRODUCAO", "COBRANCA", "COMPRAS"];
 export const ROTULO_AREA_ADMINISTRATIVA: Record<AreaAdministrativa, string> = {
   NOTA_FISCAL: "Emissão de Nota Fiscal",
   PRAZO_PRODUCAO: "Alerta de prazo/atraso de pedido",
+  COBRANCA: "Cobrança (conta a receber vencida)",
+  COMPRAS: "Alerta de estoque crítico",
 };
 
 // Mesmo padrão de salvarResponsaveisEstagio logo acima: ResponsavelAdministrativo

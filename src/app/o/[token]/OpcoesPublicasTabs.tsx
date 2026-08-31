@@ -15,6 +15,9 @@ export type ItemOpcaoPublica = {
   precoTotal: string;
   larguraCm: number | null;
   alturaCm: number | null;
+  // Achado F7 — mesma convenção de largura/altura acima.
+  profundidadeCm: number | null;
+  espessuraMm: number | null;
   unidadeDimensao: UnidadeDimensao;
   cores: string | null;
   acabamento: string | null;
@@ -96,10 +99,14 @@ export function OpcoesPublicasTabs({
               {item.larguraCm && item.alturaCm && (
                 <span>
                   {converterDeCm(item.larguraCm, item.unidadeDimensao)} ×{" "}
-                  {converterDeCm(item.alturaCm, item.unidadeDimensao)}{" "}
+                  {converterDeCm(item.alturaCm, item.unidadeDimensao)}
+                  {item.profundidadeCm
+                    ? ` × ${converterDeCm(item.profundidadeCm, item.unidadeDimensao)}`
+                    : ""}{" "}
                   {ROTULO_UNIDADE_DIMENSAO[item.unidadeDimensao]}
                 </span>
               )}
+              {item.espessuraMm && <span>Espessura: {item.espessuraMm}mm</span>}
               {item.cores && <span>Cores: {item.cores}</span>}
               {item.acabamento && <span>Acabamento: {item.acabamento}</span>}
               <span>Unitário: {formatoMoeda.format(Number(item.precoUnitario))}</span>

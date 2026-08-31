@@ -15,6 +15,7 @@ export type CamposHotStamping = {
   lado: string;
   tipo: string;
   tipoOutro: string;
+  tipoEfeitoHotStamping: string;
   medida: string;
   cor: string;
 };
@@ -27,6 +28,7 @@ export type CamposEtiqueta = {
   materialSubstratoOutro: string;
   tipoAdesivo: string;
   tipoAdesivoOutro: string;
+  durabilidadeAdesivo: string;
   superficieAplicacao: string;
   superficieAplicacaoOutro: string;
   formatoEtiqueta: string;
@@ -59,6 +61,7 @@ export function etiquetaInicial(): CamposEtiqueta {
     materialSubstratoOutro: "",
     tipoAdesivo: "",
     tipoAdesivoOutro: "",
+    durabilidadeAdesivo: "",
     superficieAplicacao: "",
     superficieAplicacaoOutro: "",
     formatoEtiqueta: "",
@@ -95,6 +98,7 @@ export function etiquetaParaCampos(linha: {
   materialSubstratoOutro: string | null;
   tipoAdesivo: string | null;
   tipoAdesivoOutro: string | null;
+  durabilidadeAdesivo: string | null;
   superficieAplicacao: string | null;
   superficieAplicacaoOutro: string | null;
   formatoEtiqueta: string | null;
@@ -118,7 +122,7 @@ export function etiquetaParaCampos(linha: {
   laminacaoContraRotulo: string | null;
   laminacaoContraRotuloOutro: string | null;
   rebobinamento: number | null;
-  hotStampings: { lado: string; tipo: string; tipoOutro: string | null; medida: string | null; cor: string | null }[];
+  hotStampings: { lado: string; tipo: string; tipoOutro: string | null; tipoEfeitoHotStamping: string | null; medida: string | null; cor: string | null }[];
 } | null): CamposEtiqueta {
   if (!linha) return etiquetaInicial();
   return {
@@ -126,6 +130,7 @@ export function etiquetaParaCampos(linha: {
     materialSubstratoOutro: linha.materialSubstratoOutro ?? "",
     tipoAdesivo: linha.tipoAdesivo ?? "",
     tipoAdesivoOutro: linha.tipoAdesivoOutro ?? "",
+    durabilidadeAdesivo: linha.durabilidadeAdesivo ?? "",
     superficieAplicacao: linha.superficieAplicacao ?? "",
     superficieAplicacaoOutro: linha.superficieAplicacaoOutro ?? "",
     formatoEtiqueta: linha.formatoEtiqueta ?? "",
@@ -154,6 +159,7 @@ export function etiquetaParaCampos(linha: {
       lado: h.lado,
       tipo: h.tipo,
       tipoOutro: h.tipoOutro ?? "",
+      tipoEfeitoHotStamping: h.tipoEfeitoHotStamping ?? "",
       medida: h.medida ?? "",
       cor: h.cor ?? "",
     })),

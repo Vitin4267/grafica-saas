@@ -10,6 +10,9 @@ export type ItemPdfOrcamento = {
   nome: string;
   quantidade: number;
   medidas: string | null;
+  // Achado F7 — "Espessura: 3mm", separado de `medidas` acima porque é
+  // outra unidade (chapa é vendida em mm no Brasil).
+  espessura: string | null;
   cores: string | null;
   acabamento: string | null;
   acabamentosEstruturados: string[];
@@ -355,6 +358,7 @@ export function OrcamentoDocumento({ dados }: { dados: DadosPdfOrcamento }) {
           {dados.itens.map((item, indice) => {
             const detalhes = [
               item.medidas,
+              item.espessura,
               item.cores ? `Cores: ${item.cores}` : null,
               item.acabamento ? `Acabamento: ${item.acabamento}` : null,
               item.acabamentosEstruturados.length > 0

@@ -48,8 +48,8 @@ const tipoAdesivoSchema = z.enum([
 const superficieAplicacaoSchema = z.enum(["VIDRO", "PLASTICO", "METAL", "PAPEL", "PAPELAO", "OUTROS"]);
 const tipoRotulagemSchema = z.enum(["MANUAL", "AUTOMATICA"]);
 const tipoSerrilhaSchema = z.enum(["SERRILHA", "MICRO_SERRILHA", "GAP", "OUTRO"]);
-const tipoLaminacaoSchema = z.enum(["BRILHO", "FOSCO", "OUTRO"]);
-const tipoAcabamentoVernizSchema = z.enum(["BRILHO", "FOSCO", "RIBBON", "OUTRO"]);
+const tipoLaminacaoSchema = z.enum(["BRILHO", "FOSCO", "SOFT_TOUCH", "METALIZADA", "OUTRO"]);
+const tipoAcabamentoVernizSchema = z.enum(["BRILHO", "FOSCO", "RIBBON", "SOFT_TOUCH", "OUTRO"]);
 const tipoHotStampingSchema = z.enum(["HOT", "COLD", "OUTRO"]);
 
 const hotStampingEntradaSchema = z
@@ -57,6 +57,7 @@ const hotStampingEntradaSchema = z
     lado: ladoEtiquetaSchema,
     tipo: tipoHotStampingSchema,
     tipoOutro: z.string().max(60).nullable(),
+    tipoEfeitoHotStamping: z.string().max(120).nullable(),
     medida: z.string().max(60).nullable(),
     cor: z.string().max(60).nullable(),
   })
@@ -70,6 +71,7 @@ export const etiquetaEntradaSchema = z
     materialSubstratoOutro: z.string().max(120).nullable(),
     tipoAdesivo: tipoAdesivoSchema.nullable(),
     tipoAdesivoOutro: z.string().max(120).nullable(),
+    durabilidadeAdesivo: z.string().max(120).nullable(),
     superficieAplicacao: superficieAplicacaoSchema.nullable(),
     superficieAplicacaoOutro: z.string().max(120).nullable(),
     formatoEtiqueta: z.string().max(120).nullable(),
@@ -140,6 +142,17 @@ export const itemEntradaSchema = z.object({
   // chama, antes de qualquer validação/cálculo.
   largura: z.number().positive().nullable(),
   altura: z.number().positive().nullable(),
+  // Achado F7 (auditoria de abrangência, Parte 7) — terceira dimensão do
+  // item VENDIDO (caixa/embalagem, acrílico, livro). Mesma unidade
+  // `unidadeDimensao` abaixo que largura/altura, convertida pra cm na
+  // fronteira igual às duas. Opcional e ignorada por 100% dos motores de
+  // preço (nunca chega em calcularItemOrcamento) — puramente descritivo.
+  profundidade: z.number().positive().nullable(),
+  // Espessura de chapa/placa (corte a laser/router) do item VENDIDO —
+  // distinta da espessura do lado da matéria-prima. SEMPRE em milímetro
+  // (chapa é vendida em mm no Brasil), nunca passa pela conversão de
+  // unidadeDimensao abaixo. Também nunca chega no motor de preço.
+  espessuraMm: z.number().positive().nullable(),
   unidadeDimensao: unidadeDimensaoSchema,
   corFrente: z.number().int().nullable(),
   corVerso: z.number().int().nullable(),

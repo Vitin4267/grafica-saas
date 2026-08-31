@@ -81,6 +81,7 @@ function etiquetaParaEntrada(etiqueta: CamposEtiqueta) {
     materialSubstratoOutro: textoOuNulo(etiqueta.materialSubstratoOutro),
     tipoAdesivo: enumOuNulo(etiqueta.tipoAdesivo),
     tipoAdesivoOutro: textoOuNulo(etiqueta.tipoAdesivoOutro),
+    durabilidadeAdesivo: textoOuNulo(etiqueta.durabilidadeAdesivo),
     superficieAplicacao: enumOuNulo(etiqueta.superficieAplicacao),
     superficieAplicacaoOutro: textoOuNulo(etiqueta.superficieAplicacaoOutro),
     formatoEtiqueta: textoOuNulo(etiqueta.formatoEtiqueta),
@@ -136,6 +137,10 @@ type ItemCarrinho = {
   // aqui só existe pra reexibir a medida do jeito que foi digitada.
   largura: number | null;
   altura: number | null;
+  // Achado F7 — nunca passam pro motor de preço (precificarItem), só
+  // gravados direto no envio final.
+  profundidade: number | null;
+  espessuraMm: number | null;
   unidadeDimensao: CamposItemOrcamento["unidadeDimensao"];
   corFrente: number | null;
   corVerso: number | null;
@@ -276,6 +281,10 @@ export function CalculadoraForm({
     // converte pra cm no servidor (nunca confia no que vier do cliente).
     const largura = campos.largura ? Number(campos.largura) : null;
     const altura = campos.altura ? Number(campos.altura) : null;
+    // Achado F7 — nunca vai pro motor de preço (precificarItem abaixo não
+    // recebe estes campos), só entra no carrinho pra gravação direta.
+    const profundidade = campos.profundidade ? Number(campos.profundidade) : null;
+    const espessuraMm = campos.espessuraMm ? Number(campos.espessuraMm) : null;
     const corFrente = campos.corFrente !== "" ? Number(campos.corFrente) : null;
     const corVerso = campos.corVerso !== "" ? Number(campos.corVerso) : null;
     const numeroCoresFlexo =
@@ -338,6 +347,8 @@ export function CalculadoraForm({
         quantidade,
         largura,
         altura,
+        profundidade,
+        espessuraMm,
         unidadeDimensao: campos.unidadeDimensao,
         corFrente,
         corVerso,
@@ -371,6 +382,8 @@ export function CalculadoraForm({
       quantidade: i.quantidade,
       largura: i.largura,
       altura: i.altura,
+      profundidade: i.profundidade,
+      espessuraMm: i.espessuraMm,
       unidadeDimensao: i.unidadeDimensao,
       corFrente: i.corFrente,
       corVerso: i.corVerso,
@@ -544,8 +557,11 @@ export function CalculadoraForm({
                       <p className="text-xs text-slate-500">
                         Qtd: {item.quantidade}
                         {item.largura && item.altura
-                          ? ` · ${item.largura} × ${item.altura} ${ROTULO_UNIDADE_DIMENSAO[item.unidadeDimensao]}`
+                          ? ` · ${item.largura} × ${item.altura}${
+                              item.profundidade ? ` × ${item.profundidade}` : ""
+                            } ${ROTULO_UNIDADE_DIMENSAO[item.unidadeDimensao]}`
                           : ""}
+                        {item.espessuraMm ? ` · ${item.espessuraMm}mm` : ""}
                       </p>
                     </div>
                     <div className="flex items-center gap-3">

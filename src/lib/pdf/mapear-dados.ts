@@ -92,6 +92,12 @@ export type OrcamentoParaPdf = {
     quantidade: number;
     larguraCm: Prisma.Decimal | null;
     alturaCm: Prisma.Decimal | null;
+    // Achado F7 da Parte 7 (auditoria de abrangência, 2026-08-31) — terceira
+    // dimensão (profundidadeCm, mesma unidade de largura/altura) e
+    // espessura de chapa (espessuraMm, sempre em milímetro) do item VENDIDO.
+    // Puramente descritivo, nunca afeta preço.
+    profundidadeCm: Prisma.Decimal | null;
+    espessuraMm: Prisma.Decimal | null;
     unidadeDimensao: UnidadeDimensao;
     cores: string | null;
     acabamento: string | null;
@@ -112,6 +118,7 @@ export type OrcamentoParaPdf = {
       materialSubstratoOutro: string | null;
       tipoAdesivo: string | null;
       tipoAdesivoOutro: string | null;
+      durabilidadeAdesivo: string | null;
       superficieAplicacao: string | null;
       superficieAplicacaoOutro: string | null;
       formatoEtiqueta: string | null;
@@ -139,6 +146,7 @@ export type OrcamentoParaPdf = {
         lado: string;
         tipo: string;
         tipoOutro: string | null;
+        tipoEfeitoHotStamping: string | null;
         medida: string | null;
         cor: string | null;
       }[];
@@ -205,8 +213,15 @@ export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
       quantidade: item.quantidade,
       medidas:
         item.larguraCm && item.alturaCm
-          ? `${converterDeCm(Number(item.larguraCm), item.unidadeDimensao)} × ${converterDeCm(Number(item.alturaCm), item.unidadeDimensao)} ${ROTULO_UNIDADE_DIMENSAO[item.unidadeDimensao]}`
+          ? `${converterDeCm(Number(item.larguraCm), item.unidadeDimensao)} × ${converterDeCm(Number(item.alturaCm), item.unidadeDimensao)}${
+              item.profundidadeCm
+                ? ` × ${converterDeCm(Number(item.profundidadeCm), item.unidadeDimensao)}`
+                : ""
+            } ${ROTULO_UNIDADE_DIMENSAO[item.unidadeDimensao]}`
           : null,
+      // Achado F7 — espessura de chapa (corte a laser/router), unidade
+      // separada (sempre mm) de `medidas` acima.
+      espessura: item.espessuraMm ? `Espessura: ${Number(item.espessuraMm)}mm` : null,
       cores: item.cores,
       acabamento: item.acabamento,
       acabamentosEstruturados: item.acabamentos.map((a) => a.itemGrafica.itemCatalogo.nome),

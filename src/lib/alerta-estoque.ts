@@ -15,6 +15,11 @@ import { estoqueEstaCritico } from "@/lib/estoque-critico";
 //
 // Retorna quantos itens estão críticos AGORA (não só os novos) — a página
 // usa esse número pro aviso visual, sem precisar de uma segunda consulta.
+//
+// DESTINATÁRIOS (achado A9 da auditoria de abrangência, restante pendente,
+// 2026-08-31): mesmo mecanismo de ResponsavelAdministrativo já usado por
+// enviarAlertasPrazoEmail (src/lib/alerta-prazo-email.ts) pra PRAZO_PRODUCAO,
+// agora com a área COMPRAS — ver o bloco perto do fim da função.
 export async function verificarEDispararAlertaEstoque(
   graficaId: string,
   graficaNome: string
@@ -95,16 +100,29 @@ export async function verificarEDispararAlertaEstoque(
   }
 
   if (novosCriticos.length > 0) {
-    const donos = await prisma.usuario.findMany({
-      where: { graficaId, papel: "DONO" },
-      select: { email: true },
+    // Destinatários (achado A9 da auditoria de abrangência, restante
+    // pendente, 2026-08-31): mesmo mecanismo/fallback já usado por
+    // enviarAlertasPrazoEmail (src/lib/alerta-prazo-email.ts) pra
+    // PRAZO_PRODUCAO — se a gráfica tem pelo menos 1 responsável
+    // configurado em /usuarios pra COMPRAS, o alerta vai só pra ele(s); se
+    // nunca configurou nenhum, cai no fallback de sempre (todo DONO da
+    // gráfica) — zero regressão pra quem nunca mexeu em /usuarios.
+    const responsaveisCompras = await prisma.responsavelAdministrativo.findMany({
+      where: { area: "COMPRAS", usuario: { graficaId, desativadoEm: null } },
+      select: { usuario: { select: { email: true } } },
     });
+    const destinatarios =
+      responsaveisCompras.length > 0
+        ? responsaveisCompras.map((r) => r.usuario.email)
+        : (await prisma.usuario.findMany({ where: { graficaId, papel: "DONO" }, select: { email: true } })).map(
+            (dono) => dono.email
+          );
     const { assunto, html, texto } = templateEstoqueBaixo(graficaNome, novosCriticos);
-    for (const dono of donos) {
+    for (const destinatario of destinatarios) {
       // after() em vez de void: garante que a instância serverless continua
       // viva até o e-mail terminar, mesmo depois da resposta (render da
       // página /catalogo) já ter sido enviada ao cliente.
-      after(() => dispararEventoEmail({ tipo: "estoque_baixo", destinatario: dono.email, assunto, html, texto }));
+      after(() => dispararEventoEmail({ tipo: "estoque_baixo", destinatario, assunto, html, texto }));
     }
   }
 

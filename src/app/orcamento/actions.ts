@@ -319,6 +319,11 @@ export async function criarOrcamento(
     quantidade: number;
     larguraCm: number | null;
     alturaCm: number | null;
+    // Achado F7 — nunca passam por calcularItemOrcamento (motor de preço),
+    // só gravados direto no OrcamentoItem — ver comentário em
+    // itemEntradaSchema (src/lib/orcamento-item-entrada.ts).
+    profundidadeCm: number | null;
+    espessuraMm: number | null;
     unidadeDimensao: (typeof UNIDADES_DIMENSAO)[number];
     cores: string | null;
     acabamento: string | null;
@@ -389,6 +394,15 @@ export async function criarOrcamento(
       entrada.largura !== null ? converterParaCm(entrada.largura, entrada.unidadeDimensao) : null;
     const alturaCm =
       entrada.altura !== null ? converterParaCm(entrada.altura, entrada.unidadeDimensao) : null;
+    // Achado F7 — profundidadeCm segue a mesma conversão de largura/altura;
+    // espessuraMm já chega em mm (nunca passa por converterParaCm). Nenhum
+    // dos dois vai pro motor de preço abaixo (calcularItemOrcamento nem
+    // aceita esses campos) — só gravados direto no create mais abaixo.
+    const profundidadeCm =
+      entrada.profundidade !== null
+        ? converterParaCm(entrada.profundidade, entrada.unidadeDimensao)
+        : null;
+    const espessuraMm = entrada.espessuraMm;
 
     const resultado = await calcularItemOrcamento(itemGrafica, usuario.graficaId, {
       quantidade: entrada.quantidade,
@@ -419,6 +433,8 @@ export async function criarOrcamento(
       quantidade: entrada.quantidade,
       larguraCm,
       alturaCm,
+      profundidadeCm,
+      espessuraMm,
       unidadeDimensao: entrada.unidadeDimensao,
       cores: entrada.cores,
       acabamento: entrada.acabamento,
@@ -455,6 +471,8 @@ export async function criarOrcamento(
           quantidade: item.quantidade,
           larguraCm: item.larguraCm,
           alturaCm: item.alturaCm,
+          profundidadeCm: item.profundidadeCm,
+          espessuraMm: item.espessuraMm,
           unidadeDimensao: item.unidadeDimensao,
           cores: item.cores,
           acabamento: item.acabamento,
@@ -482,6 +500,7 @@ export async function criarOrcamento(
                     materialSubstratoOutro: item.etiqueta?.materialSubstratoOutro ?? null,
                     tipoAdesivo: item.etiqueta?.tipoAdesivo ?? null,
                     tipoAdesivoOutro: item.etiqueta?.tipoAdesivoOutro ?? null,
+                    durabilidadeAdesivo: item.etiqueta?.durabilidadeAdesivo || null,
                     superficieAplicacao: item.etiqueta?.superficieAplicacao ?? null,
                     superficieAplicacaoOutro: item.etiqueta?.superficieAplicacaoOutro ?? null,
                     formatoEtiqueta: item.etiqueta?.formatoEtiqueta ?? null,
@@ -509,9 +528,10 @@ export async function criarOrcamento(
                       create: (item.etiqueta?.hotStampings ?? []).map((h) => ({
                         lado: h.lado,
                         tipo: h.tipo,
-                        tipoOutro: h.tipoOutro,
-                        medida: h.medida,
-                        cor: h.cor,
+                        tipoOutro: h.tipoOutro || null,
+                        tipoEfeitoHotStamping: h.tipoEfeitoHotStamping || null,
+                        medida: h.medida || null,
+                        cor: h.cor || null,
                       })),
                     },
                   },

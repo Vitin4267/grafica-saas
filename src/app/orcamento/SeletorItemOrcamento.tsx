@@ -61,6 +61,16 @@ export type CamposItemOrcamento = {
   // src/app/orcamento/actions.ts e src/app/orcamento/[id]/actions.ts).
   largura: string;
   altura: string;
+  // Achado F7 — terceira dimensão (caixa/embalagem, acrílico, livro) do item
+  // VENDIDO. Mesma unidade `unidadeDimensao` abaixo que largura/altura,
+  // SEMPRE visível (não condicionada a categoria/modeloCalculo do produto —
+  // uma caixa pode ser vendida como SIMPLES) e nunca entra no motor de
+  // preço.
+  profundidade: string;
+  // Espessura de chapa/placa (corte a laser/router) — SEMPRE em milímetro
+  // (chapa é vendida em mm no Brasil), não segue `unidadeDimensao` abaixo.
+  // Também sempre visível e nunca entra no motor de preço.
+  espessuraMm: string;
   unidadeDimensao: UnidadeDimensao;
   corFrente: string;
   corVerso: string;
@@ -118,6 +128,8 @@ export function camposIniciais(
     quantidade: "100",
     largura: "",
     altura: "",
+    profundidade: "",
+    espessuraMm: "",
     unidadeDimensao: unidadePadrao,
     corFrente: "4",
     corVerso: "0",
@@ -202,6 +214,8 @@ export function SeletorItemOrcamento({
       quantidade: valores.quantidade,
       largura: "",
       altura: "",
+      profundidade: "",
+      espessuraMm: "",
       // Mantém a unidade que o usuário já tinha escolhido nesta sessão do
       // formulário — só as medidas em si (específicas do produto anterior)
       // são resetadas, ver comentário acima.
@@ -241,6 +255,9 @@ export function SeletorItemOrcamento({
       unidadeDimensao: novaUnidade,
       largura: converter(valores.largura),
       altura: converter(valores.altura),
+      // profundidade segue a mesma unidadeDimensao de largura/altura —
+      // espessuraMm fica de fora de propósito (sempre mm, nunca converte).
+      profundidade: converter(valores.profundidade),
     });
   };
 
@@ -300,6 +317,32 @@ export function SeletorItemOrcamento({
             </option>
           ))}
         </Select>
+      </div>
+
+      {/* Achado F7 — profundidade (caixa/embalagem, acrílico, livro) e
+          espessura de chapa (corte a laser/router) do item VENDIDO. SEMPRE
+          visíveis, independente do modeloCalculo do produto (uma caixa pode
+          ser vendida como SIMPLES) — nunca entram no motor de preço, só
+          descritivas. */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Input
+          label={`Profundidade (${rotuloUnidade})`}
+          type="number"
+          step={passoDimensao}
+          value={valores.profundidade}
+          onChange={set("profundidade")}
+          placeholder="opcional"
+          hint="Ex: caixa/embalagem, acrílico, livro — terceira dimensão."
+        />
+        <Input
+          label="Espessura (mm)"
+          type="number"
+          step="1"
+          value={valores.espessuraMm}
+          onChange={set("espessuraMm")}
+          placeholder="opcional"
+          hint="Ex: chapa de corte a laser/router — sempre em milímetro."
+        />
       </div>
 
       {usaModeloOffset && (

@@ -101,6 +101,21 @@ model Grafica {
   // padrão de Cliente.segmentoOutro/OrigemCliente.origemOutro.
   segmentoOutro String?
 
+  // Segmentos SECUNDÁRIOS da gráfica (achado F9 da Parte 7 da auditoria de
+  // abrangência, pesquisa-abrangencia-modulos.md, 2026-08-31) — gráfica real
+  // quase nunca é uma coisa só (offset + gráfica rápida + comunicação visual
+  // no mesmo CNPJ é a norma). MESMA REGRA DE OURO de `segmento` acima: 100%
+  // DESCRITIVO, NUNCA RESTRITIVO. Só pode alimentar lógica ADITIVA (ex:
+  // ampliar o pacote de dados de exemplo em src/lib/dados-exemplo.ts com
+  // produtos extras dos segmentos secundários) — nunca uma condição que
+  // esconde/bloqueia card, menu ou feature (ver correção de E1/E2 no mesmo
+  // documento: usar `segmento`/`segmentosSecundarios` desse jeito já foi
+  // sinalizado como potencialmente perigoso). Array vazio (default) =
+  // comportamento de hoje, sem nenhuma mudança pra tenant existente. Não há
+  // campo "Outro" irmão aqui (diferente de segmento/segmentoOutro): a lista
+  // secundária é só um multi-select sobre o mesmo enum, sem texto livre.
+  segmentosSecundarios SegmentoGrafica[] @default([])
+
   usuarios              Usuario[]
   clientes              Cliente[]
   itensGrafica          ItemGrafica[]
@@ -1701,6 +1716,18 @@ enum SegmentoGrafica {
   EDITORIAL_LIVRO
   CORTE_LASER_ACRILICO
   GRAFICA_RAPIDA
+  // Leva 2 (achado F9 da Parte 7 da auditoria de abrangência,
+  // pesquisa-abrangencia-modulos.md, 2026-08-31) — SERIGRAFIA e FLEXOGRAFIA
+  // já tinham ModeloCalculo próprio no motor de preço sem ter valor
+  // correspondente aqui; BORDADO/PAPELARIA_CONVITES/SINALIZACAO_ADESIVAGEM
+  // cobrem segmentos reais de mercado que não caíam em nenhum valor
+  // existente. Mesmo padrão enum-fechado+OUTRO acima — nunca restritivo, só
+  // amplia a lista de opção.
+  SERIGRAFIA
+  FLEXOGRAFIA
+  BORDADO
+  PAPELARIA_CONVITES
+  SINALIZACAO_ADESIVAGEM
   OUTRO
 }
 
@@ -3585,6 +3612,15 @@ model OrcamentoItem {
   quantidade      Int
   larguraCm       Decimal?        @db.Decimal(8, 2)
   alturaCm        Decimal?        @db.Decimal(8, 2)
+  // Terceira dimensão (caixa/embalagem, acrílico, livro) e espessura de chapa
+  // (corte a laser/router) do ITEM VENDIDO — distinto da espessura do lado da
+  // matéria-prima. Ambos opcionais e ignorados por 100% dos motores de preço
+  // em src/lib/pricing/ hoje (risco zero de mudar preço de ninguém).
+  // profundidadeCm segue a MESMA unidade canônica de largura/altura (cm).
+  // espessuraMm é em MILÍMETRO (chapa é vendida em mm no Brasil) — não
+  // confundir com a unidade de largura/altura/profundidade, que é cm.
+  profundidadeCm  Decimal?        @db.Decimal(8, 2)
+  espessuraMm     Decimal?        @db.Decimal(8, 2)
   // Unidade em que o usuário efetivamente DIGITOU largura/altura deste item
   // (mm/cm/m — ver src/lib/unidade-dimensao.ts) — congelada no momento da
   // criação do item, nunca lida dinamicamente de Grafica.unidadePadraoDimensao
@@ -3738,6 +3774,8 @@ enum TipoSerrilha {
 enum TipoLaminacao {
   BRILHO
   FOSCO
+  SOFT_TOUCH
+  METALIZADA
   OUTRO
 }
 
@@ -3745,6 +3783,7 @@ enum TipoAcabamentoVerniz {
   BRILHO
   FOSCO
   RIBBON
+  SOFT_TOUCH
   OUTRO
 }
 
@@ -3774,6 +3813,7 @@ model OrcamentoItemEtiqueta {
   materialSubstratoOutro   String? // só usado quando materialSubstrato = OUTRO
   tipoAdesivo              TipoAdesivo?
   tipoAdesivoOutro         String? // só usado quando tipoAdesivo = OUTRO
+  durabilidadeAdesivo      String? // PERMANENTE/REMOVIVEL ou outro tipo de durabilidade do adesivo
   superficieAplicacao      SuperficieAplicacao?
   superficieAplicacaoOutro String? // só usado quando superficieAplicacao = OUTROS
   formatoEtiqueta          String?
@@ -3820,6 +3860,7 @@ model OrcamentoItemHotStamping {
   lado      LadoEtiqueta
   tipo      TipoHotStamping
   tipoOutro String? // só usado quando tipo = OUTRO
+  tipoEfeitoHotStamping String? // holográfico/espelhado/metalizado/colorido/outro — efeito visual do hot stamping
   medida    String?
   cor       String?
 
@@ -4374,9 +4415,22 @@ model ResponsavelEstagio {
 // dedicado sem promovê-lo a DONO) — enum deixado aberto pra outras áreas
 // administrativas futuras (cobrança, etc.) sem precisar de migration nova,
 // só adicionar valor ao enum + linha na UI.
+// PRAZO_PRODUCAO adicionado 2026-08-24 (achado A9 da auditoria de
+// abrangência) pra rotear o alerta de prazo/atraso de pedido
+// (src/lib/alerta-prazo-email.ts) pra um responsável dedicado em vez de
+// sempre cair em todos os DONOs. COMPRAS adicionado 2026-08-31 (achado A9,
+// restante pendente) pro mesmo tratamento no alerta de estoque crítico
+// (src/lib/alerta-estoque.ts). COBRANCA adicionado junto (mesmo achado,
+// mesma rodada) só como valor cadastrável — hoje não existe nenhum disparo
+// de e-mail de "conta a receber vencida" no código pra rotear (só a tela
+// /financeiro/contas-receber destacando visualmente as vencidas), então
+// marcar um funcionário aqui não liga nada ainda; fica pronto pro dia que
+// esse alerta for construído.
 enum AreaAdministrativa {
   NOTA_FISCAL
   PRAZO_PRODUCAO
+  COBRANCA
+  COMPRAS
 }
 
 model ResponsavelAdministrativo {

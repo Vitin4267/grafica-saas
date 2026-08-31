@@ -17,7 +17,10 @@ import { ehViolacaoDeChaveEstrangeira } from "@/lib/prisma-conflito";
 // feature havia só um pacote (o de baixo, hoje "padrão"), calibrado no
 // perfil da gráfica-piloto (rótulos/etiquetas) e mostrado pra QUALQUER
 // tenant — continua sendo o fallback pra segmento=null ou sem pacote
-// dedicado.
+// dedicado. Achado F9 da mesma Parte 7 (2026-08-31) estendeu isso: o pacote
+// do `segmento` PRINCIPAL continua decidindo o orçamento de demonstração
+// gerado, mas o catálogo criado ganha um extra ADITIVO por
+// `Grafica.segmentosSecundarios` — ver resolverPacotesSecundarios.
 //
 // Marcação/remoção: o schema não tem um campo "éExemplo" (fora do território
 // desta feature alterar prisma/schema.prisma pra adicionar um, além do
@@ -548,12 +551,51 @@ async function resolverPacote(graficaId: string): Promise<PacoteExemplo> {
   return PACOTES_POR_SEGMENTO[grafica.segmento] ?? PACOTE_PADRAO;
 }
 
+// Achado F9 da Parte 7 da auditoria de abrangência (2026-08-31) — consumo
+// ADITIVO de `Grafica.segmentosSecundarios` (ver comentário do campo no
+// schema: nunca restritivo). O pacote PRINCIPAL continua decidindo o
+// cliente/orçamento de demonstração (gerarOrcamentoExemplo só usa
+// `pacote.dadosAvancado`/`dadosSimples` do pacote de `resolverPacote`
+// acima) — isto só ACRESCENTA catálogo extra dos segmentos secundários que
+// tenham pacote dedicado em PACOTES_POR_SEGMENTO, pra a gráfica híbrida ver
+// produtos de exemplo mais parecidos com o negócio real dela. Nunca troca
+// nem esconde nada do pacote principal, nunca remove um pacote secundário
+// igual ao principal (dedupe evita criar o mesmo catálogo 2x, o que
+// colidiria na constraint @@unique([graficaId, tipo, nome])).
+async function resolverPacotesSecundarios(graficaId: string): Promise<PacoteExemplo[]> {
+  const grafica = await prisma.grafica.findUnique({
+    where: { id: graficaId },
+    select: { segmento: true, segmentosSecundarios: true },
+  });
+  if (!grafica || grafica.segmentosSecundarios.length === 0) return [];
+
+  const pacotePrincipal = grafica.segmento ? PACOTES_POR_SEGMENTO[grafica.segmento] : undefined;
+  const vistos = new Set<PacoteExemplo>();
+  const extras: PacoteExemplo[] = [];
+  for (const segmentoSecundario of grafica.segmentosSecundarios) {
+    const pacote = PACOTES_POR_SEGMENTO[segmentoSecundario];
+    // Sem pacote dedicado (ex: os 5 valores novos do achado F9 ainda não têm
+    // PacoteExemplo próprio) ou igual ao principal/já incluído — pula, nunca
+    // duplica o PACOTE_PADRAO à toa (colidiria com o catálogo que o pacote
+    // principal já criou, já que os dois usam os MESMOS nomes de produto).
+    if (!pacote || pacote === pacotePrincipal || vistos.has(pacote)) continue;
+    vistos.add(pacote);
+    extras.push(pacote);
+  }
+  return extras;
+}
+
 export async function carregarDadosExemplo(graficaId: string): Promise<ResultadoCarregarExemplo> {
   if (await existemDadosExemplo(graficaId)) {
     return { ok: true, jaCarregado: true };
   }
 
   const pacote = await resolverPacote(graficaId);
+  // Achado F9 — catálogo extra dos segmentos secundários, só ADITIVO (ver
+  // comentário de resolverPacotesSecundarios acima). Lista vazia (gráfica
+  // sem segmentosSecundarios, ou sem pacote dedicado pra nenhum deles) é o
+  // caso comum de hoje — o loop abaixo não roda nada a mais nesse caso.
+  const pacotesSecundarios = await resolverPacotesSecundarios(graficaId);
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -567,6 +609,9 @@ export async function carregarDadosExemplo(graficaId: string): Promise<Resultado
       });
 
       await pacote.criarCatalogo(tx, graficaId);
+      for (const pacoteSecundario of pacotesSecundarios) {
+        await pacoteSecundario.criarCatalogo(tx, graficaId);
+      }
     });
   } catch (erro) {
     if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2002") {
@@ -651,9 +696,12 @@ export async function limparDadosExemplo(graficaId: string): Promise<ResultadoLi
         await tx.itemCatalogo.deleteMany({ where: { id: { in: itemCatalogoIds } } });
       }
 
-      // Só existe registro em UM destes dois por gráfica (o pacote carregado
-      // usa prensa OU máquina de setup por peça, nunca os dois) — os
-      // deleteMany dos outros pacotes são sempre no-op.
+      // Sem segmentosSecundarios (achado F9), só existe registro em UM destes
+      // dois por gráfica (o pacote principal usa prensa OU máquina de setup
+      // por peça, nunca os dois) — com segmentosSecundarios ambos podem ter
+      // linha de verdade (ex: principal=PACOTE_PADRAO + secundário=
+      // ESTAMPARIA_VESTUARIO). deleteMany com startsWith cobre os dois casos
+      // igual — nunca é erro limpar zero linhas.
       await tx.prensa.deleteMany({ where: { graficaId, nome: { startsWith: PREFIXO_EXEMPLO } } });
       await tx.maquinaSetupPorPeca.deleteMany({
         where: { graficaId, nome: { startsWith: PREFIXO_EXEMPLO } },

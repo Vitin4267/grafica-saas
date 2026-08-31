@@ -629,6 +629,18 @@ parciais de 88 (sem mudança). Na Parte 7, 10 dos 33 achados construídos
 
 Placar depois desta rodada: Parte 7 com 11 dos 33 achados construídos, 22 pendentes.
 
+**Atualização 2026-08-31 (rodada 19) — 8 achados 🟢 Barato CONSTRUÍDOS** (5 subagentes: 2 haiku pros bundles mecânicos, 3 sonnet pros que precisavam de mais julgamento):
+- **C1/C2/C3/C4 da Parte 7** (haiku) — acabamento de etiqueta: `durabilidadeAdesivo` (só a versão corrigida de C1), `SOFT_TOUCH`/`METALIZADA` em `TipoLaminacao`, `SOFT_TOUCH` em `TipoAcabamentoVerniz`, `tipoEfeitoHotStamping` em `OrcamentoItemHotStamping`.
+- **B6 da Parte 7** (haiku) — 4 itens de seed em `CATALOGO_MESTRE` (materiais de bordado).
+- **A9 restante da Parte 6** (sonnet) — `COBRANCA`/`COMPRAS` no enum `AreaAdministrativa`; só `COMPRAS` religado de verdade (`alerta-estoque.ts`) — `COBRANCA` ficou cadastrável mas sem call site pra adaptar (não existe HOJE nenhum disparo de e-mail de cobrança no código, só a tela destacando visualmente).
+- **F7 da Parte 7** (sonnet) — `OrcamentoItem.profundidadeCm`/`espessuraMm`, fiação completa (18 arquivos: criar/editar/duplicar item, opção alternativa, PDF de orçamento e de ordem de produção).
+- **F9 da Parte 7** (sonnet) — `SegmentoGrafica` +5 valores + `Grafica.segmentosSecundarios[]`, com consumo aditivo real em `dados-exemplo.ts` (catálogo extra dos segmentos secundários, nunca substitui o principal).
+- **Achado de processo grave, corrigido no meio da rodada**: ao mesclar o bundle de C1-C4 (haiku) por cima do que já tinha sido aplicado, a thread principal COPIOU ARQUIVOS SEM PERCEBER que 11 deles também tinham sido tocados pelo bundle F7 (sonnet) — como os 2 subagentes trabalharam em worktrees isolados sem se ver, a cópia apagou a fiação do F7 nesses 11 arquivos. Nada tinha sido commitado ainda, então foi recuperável: a thread principal reconstruiu a fiação do F7 nos 11 arquivos NA MÃO, guiada pelos erros exatos do `tsc --noEmit` (cada erro apontava exatamente o arquivo/linha faltando) mais um grep cruzado de `largura`/`profundidade` em todo `src/app/orcamento` pra confirmar que nada mais tinha sido perdido silenciosamente (um campo que só é lido via JSON solto, sem tipo estrito, não dispara erro de `tsc` mesmo faltando). Ver [[feedback-orquestracao-modelo]] pra a lição de processo.
+- **2 bugs reais pegos na verificação, nenhum deles do reconstrução**: (1) a migration do F7 usava `ALTER TABLE "OrcamentoItem"` — nome errado, o model tem `@@map("orcamento_itens")`, teria falhado ao aplicar; corrigido antes de aplicar. (2) 2 arquivos de teste (`actions.dimensoes-item.test.ts` ×2, escritos pelo próprio F7) tinham asserções frágeis de `Decimal.toString()` esperando zero à direita (`"50.00"` em vez de `"50"`) e um mock de `redirect()` faltando em `criarOrcamento` — nenhum dos dois tinha rodado de verdade antes (a migration não estava aplicada nas verificações anteriores), corrigidos só depois da migration ir pro ar e os testes rodarem pela primeira vez de verdade.
+- 4 migrations aplicadas ao banco de dev com aprovação explícita, todas aditivas.
+
+Placar depois desta rodada: Parte 7 com 18 dos 33 achados construídos, 15 pendentes; Parte 6 A9 fechado (com a ressalva COBRANCA documentada acima).
+
 ## Como ler cada parte
 
 Cada uma das 6 partes abaixo cobre um módulo (ou par de módulos muito
@@ -2003,11 +2015,13 @@ Resolução por fallback: filial → gráfica → padrão da plataforma, exatame
 
 *Nota lateral, sobre a decisão de escopo de `Filial` não ter preço próprio:* não achei caso de mercado forte o bastante pra reabrir. Rede de franquia com preço por unidade existe, mas quem opera assim precisa de estoque e financeiro separados também — não é um campo a mais, é outro produto (tenant por unidade + consolidação). Mantida a decisão atual; o que muda é só identidade/contato, que é barato.
 
-## A9 — Roteamento de notificação não é configurável: destinatário, canal e escopo estão no código — **PARCIALMENTE CONSTRUÍDO 2026-08-24 (rodada 9)**
+## A9 — Roteamento de notificação não é configurável: destinatário, canal e escopo estão no código — **CONSTRUÍDO 2026-08-31 (rodada 19, com ressalva)**
 
 **Custo estimado (restante pendente):** 🟢 Barato — 2 valores novos no enum `AreaAdministrativa` já existente (`ADD VALUE`) mais religar 2 call sites de e-mail existentes, exatamente o mesmo padrão já construído pra `PRAZO_PRODUCAO`.
 
-**Status:** `AreaAdministrativa.PRAZO_PRODUCAO` construído, reaproveitando o mecanismo já existente pra `NOTA_FISCAL`. `alerta-prazo-email.ts` agora manda pro(s) responsável(is) configurado(s) em vez de todo DONO, com fallback pro comportamento de hoje quando nenhum for cadastrado. `ResponsaveisAdministrativoForm.tsx` virou tabela funcionário × área (exatamente o "no dia que uma segunda área existir" que o próprio comentário do arquivo previa). **Fora de escopo**: `COBRANCA`/`COMPRAS` (as outras 2 áreas que a proposta original sugeria) não foram construídas — cada uma tem seu próprio call site de disparo de e-mail a mapear, deixado pra quando/se algum desses dois fluxos for revisado.
+**Status (restante):** `AreaAdministrativa.COBRANCA`/`COMPRAS` adicionados. `COMPRAS` religado de verdade — `alerta-estoque.ts` (`verificarEDispararAlertaEstoque`) agora roteia pro(s) `ResponsavelAdministrativo(COMPRAS)`, com fallback pros DONOs (mesmo padrão de `PRAZO_PRODUCAO`). **`COBRANCA` ficou só cadastrável, sem religar** — investigação confirmou que não existe HOJE nenhum disparo de e-mail de "conta a receber vencida" no código pra adaptar (só a tela `/financeiro/contas-receber` destacando visualmente as vencidas); o valor do enum fica pronto pra quando esse alerta for construído.
+
+**Status (original, rodada 9):** `AreaAdministrativa.PRAZO_PRODUCAO` construído, reaproveitando o mecanismo já existente pra `NOTA_FISCAL`. `alerta-prazo-email.ts` manda pro(s) responsável(is) configurado(s) em vez de todo DONO, com fallback pro comportamento de hoje quando nenhum for cadastrado. `ResponsaveisAdministrativoForm.tsx` virou tabela funcionário × área.
 
 **O que falta.** `AutomacaoGrafica` tem 1 `webhookUrl` + 3 booleans. Além dele: `src/lib/alerta-prazo-email.ts:198-203` monta os destinatários como "vendedor do orçamento + **todos** os DONOs da gráfica", fixo. `ResponsavelAdministrativo` existe e resolve o problema certo, mas o enum `AreaAdministrativa` (`schema.prisma:2928-2930`) tem **um único valor**, `NOTA_FISCAL` — o próprio comentário diz que foi deixado aberto pra "cobrança, etc.". Na prática, uma gráfica com um PCP dedicado não tem como fazer o alerta de prazo chegar nele sem promovê-lo a DONO, e o dono de uma gráfica de 30 pessoas recebe e-mail de todo pedido que se aproxima do prazo.
 
@@ -2280,8 +2294,10 @@ documento inteiro.
 
 **Proposta.** `VarianteMateriaPrima` pra "Papelão Ondulado" com 4 variantes de onda, preço próprio por variante.
 
-### B6 — Materiais de bordado (tecido específico, entretela, linha, bobina)
+### B6 — Materiais de bordado (tecido específico, entretela, linha, bobina) — **CONSTRUÍDO 2026-08-31 (rodada 19)**
 **Custo estimado:** 🟢 Barato — mesma recategorização de B1: trabalho de SEED, sem gap de schema.
+
+**Status:** 4 itens adicionados em `CATALOGO_MESTRE` (categoria "Bordado (Materiais)"): Entretela Fusível/Não-Fusível (METRO_LINEAR), Linha de Bordar e Bobina de Bobbing (UNIDADE).
 
 **O que falta.** Entretela (fusível/não-fusível, peso em oz), linha de bordar e bobina de bobbing não têm representação — críticos pra custo real de bordado.
 
@@ -2291,8 +2307,10 @@ documento inteiro.
 
 ## C. Tipos de acabamento cadastráveis (opção existir, não precificação)
 
-### C1 — TipoAdesivo sem hot melt, siliconado, durabilidade
+### C1 — TipoAdesivo sem hot melt, siliconado, durabilidade — **CONSTRUÍDO 2026-08-31 (rodada 19)**
 **Custo estimado:** 🟢 Barato, mas a proposta precisa ser corrigida antes de construir — a revisão Opus aponta contradição interna (HOT_MELT duplicaria BORRACHA; siliconado é atributo do substrato, não do adesivo, e a proposta erra o lugar mesmo admitindo isso). O que sobra depois de corrigido (campo de durabilidade) é campo aditivo nullable, sem model/enum novo.
+
+**Status:** só a versão corrigida — `OrcamentoItemEtiqueta.durabilidadeAdesivo String?` (texto livre). Sem `HOT_MELT` no enum e sem `superficieComSilicone` (ambos descartados pela correção). Campo visível no formulário de etiqueta.
 
 **O que falta.** Enum só tem acrílico/borracha em gramas — falta hot melt (nome técnico da "borracha" já existente, mas usado com outro nome no mercado), flag de liner siliconado (atributo de substrato, não de adesivo), e permanente×removível (critério de venda comum).
 
@@ -2300,8 +2318,10 @@ documento inteiro.
 
 **Proposta.** Campo `durabilidadeAdesivo` opcional + flag `superficieComSilicone Boolean`.
 
-### C2 — TipoLaminacao sem soft touch/metalizada
+### C2 — TipoLaminacao sem soft touch/metalizada — **CONSTRUÍDO 2026-08-31 (rodada 19)**
 **Custo estimado:** 🟢 Barato — `ADD VALUE` num enum já existente (`TipoLaminacao`), 2 valores.
+
+**Status:** `SOFT_TOUCH`/`METALIZADA` adicionados; dropdown já era dinâmico (`OPCOES_LAMINACAO` em `CamposEtiquetaOrcamento.tsx`), só editar o dicionário bastou.
 
 **O que falta.** Só BRILHO/FOSCO/OUTRO — soft touch (aveludado, sem marca de dedo) é categoria própria vendida com preço premium.
 
@@ -2309,8 +2329,10 @@ documento inteiro.
 
 **Proposta.** Adicionar `SOFT_TOUCH` e `METALIZADA` a `TipoLaminacao`.
 
-### C3 — TipoAcabamentoVerniz sem soft touch/UV explícito
+### C3 — TipoAcabamentoVerniz sem soft touch/UV explícito — **CONSTRUÍDO 2026-08-31 (rodada 19, parcial)**
 **Custo estimado:** 🟢 Barato — `ADD VALUE` num enum já existente (`TipoAcabamentoVerniz`).
+
+**Status:** `SOFT_TOUCH` adicionado, dropdown dinâmico (`OPCOES_VERNIZ`). A distinção UV×convencional (fora do escopo do valor de enum) não foi construída.
 
 **O que falta.** Falta soft touch (mesma lógica de C2) e a aplicação UV×convencional não é selecionável (fica implícita).
 
@@ -2318,8 +2340,10 @@ documento inteiro.
 
 **Proposta.** Adicionar `SOFT_TOUCH` a `TipoAcabamentoVerniz`.
 
-### C4 — TipoHotStamping sem efeito holográfico/colorido
+### C4 — TipoHotStamping sem efeito holográfico/colorido — **CONSTRUÍDO 2026-08-31 (rodada 19)**
 **Custo estimado:** 🟢 Barato — campo aditivo nullable (texto/enum simples), sem model novo.
+
+**Status:** `OrcamentoItemHotStamping.tipoEfeitoHotStamping String?` (texto livre), campo visível no formulário de etiqueta.
 
 **O que falta.** Só HOT/COLD — não captura o efeito visual (holográfico, espelhado, colorido), que é vendido como serviço distinto.
 
@@ -2472,12 +2496,14 @@ confirmando ausência — diferente de A-E, tratar com mais confiança.
 
 **Proposta.** Em `Grafica` (identidade comercial, não `DadosFiscaisGrafica`): `chavePix`/`tipoChavePix` (enum fechado+OUTRO)/`favorecidoPix`/`dadosBancarios` (texto livre). Editável em `/configuracoes/identidade` (já existe, já auditada). Impresso no PDF e exibido em `/o/[token]` só quando preenchido. Nunca validar a chave, só exibir texto.
 
-### F7 — Item de orçamento tem 2 dimensões; caixa/acrílico/livro têm 3
+### F7 — Item de orçamento tem 2 dimensões; caixa/acrílico/livro têm 3 — **CONSTRUÍDO 2026-08-31 (rodada 19)**
 **Custo estimado:** 🟢 Barato — campos `Decimal?` aditivos em `OrcamentoItem` (model já existente), a própria proposta diz "risco zero de mudar preço de ninguém" (ignorados por todos os motores hoje).
 
 **O que falta.** `OrcamentoItem` só tem `larguraCm`/`alturaCm`. Sem profundidade/espessura — gráfica de embalagem não consegue registrar "caixa 20×15×10", corte a laser não registra espessura da chapa no ITEM (só existe do lado da matéria-prima). Distinto do A11/Parte 1 (que trata a mesma geometria pelo lado do CUSTO/nesting) — aqui é sobre conseguir registrar o que foi vendido.
 
 **Proposta.** `OrcamentoItem.profundidadeCm`/`espessuraMm Decimal?` — opcionais, ignorados por 100% dos motores atuais (risco zero de mudar preço de ninguém). Sempre visíveis no formulário (mesma decisão do A12/Parte 5). `espessuraMm` em milímetro (chapa é vendida em mm no Brasil), não cm.
+
+**Status:** construído exatamente como proposto — campos aditivos, fiação completa em todos os pontos de escrita (criar/editar/duplicar item, opção alternativa) e exibição (resumo interno, link público, PDF de orçamento e de ordem de produção). Confirmado por `git diff` que `src/lib/pricing/` não foi tocado.
 
 ### F8 — Sem onde registrar cor especial/Pantone — só a QUANTIDADE de cores
 **Custo estimado:** 🟡 Médio — 2 models novos (`CorEspecialCliente`/`OrcamentoItemCor`), mas com relações diretas e simples seguindo um padrão já estabelecido no repo (`OrcamentoItemHotStamping`), sem tocar o motor de preço.
@@ -2488,8 +2514,10 @@ confirmando ausência — diferente de A-E, tratar com mais confiança.
 
 **Proposta.** `model CorEspecialCliente { graficaId, clienteId?, nome, referencia ("PANTONE 485 C"), sistemaCor (enum fechado+OUTRO), formulaMistura? }` — biblioteca de cor da marca do cliente. `model OrcamentoItemCor { orcamentoItemId, corEspecialId?, nomeDeclarado }` (N:1, mesmo padrão de `OrcamentoItemHotStamping`). Nunca toca o motor — só descritivo, copiado no "Pedir de novo".
 
-### F9 — `SegmentoGrafica` não cobre segmento que o motor já atende, e é mono-valorado
+### F9 — `SegmentoGrafica` não cobre segmento que o motor já atende, e é mono-valorado — **CONSTRUÍDO 2026-08-31 (rodada 19)**
 **Custo estimado:** 🟢 Barato — `ADD VALUE` num enum já existente mais um campo array aditivo (`Grafica.segmentosSecundarios`) usando o mesmo enum, sem model nem enum novo.
+
+**Status:** os 5 valores + `Grafica.segmentosSecundarios[]` construídos, editável em `/configuracoes/identidade` (checkbox multi-select). Consumo aditivo real implementado em `dados-exemplo.ts`: catálogo extra dos segmentos secundários é criado JUNTO do catálogo do segmento principal (nunca substitui), o orçamento de demonstração continua usando só o pacote principal. Regra de ouro respeitada — nada usa `segmentosSecundarios` pra esconder/restringir.
 
 **O que falta.** Enum não tem `SERIGRAFIA` nem `FLEXOGRAFIA` — apesar de ambos terem `ModeloCalculo` próprio. Faltam também BORDADO, PAPELARIA_CONVITES, SINALIZACAO_ADESIVAGEM. Mais grave: `Grafica.segmento` é campo ÚNICO, mas gráfica real quase nunca é uma coisa só (offset + gráfica rápida + comunicação visual no mesmo CNPJ é a norma).
 
@@ -2509,11 +2537,13 @@ Classificação de custo/esforço aplicada a todo achado ainda não marcado `CON
 
 **Atualização 2026-08-31 (rodada 18):** +1 — Parte 7 F6 (chave PIX/dados de recebimento da gráfica).
 
-**Contagem total (87 achados classificados, 76 ainda pendentes):**
+**Atualização 2026-08-31 (rodada 19):** +8 — Parte 7 B6/C1/C2/C3/C4/F7/F9 + Parte 6 A9 (restante, com ressalva COBRANCA). Restam 13 🟢 Barato pendentes de todo o documento.
+
+**Contagem total (87 achados classificados, 68 ainda pendentes):**
 
 | Custo | Contagem |
 |---|---|
-| 🟢 Barato | 21 (11 construídos) |
+| 🟢 Barato | 13 (19 construídos) |
 | 🟡 Médio | 29 |
 | 🔴 Caro | 26 |
 
@@ -2533,18 +2563,10 @@ Classificação de custo/esforço aplicada a todo achado ainda não marcado `CON
 
 **Parte 6 — Configurações**
 - A8 (restante) — Identidade/contato por filial
-- A9 (restante) — Roteamento de notificação: áreas COBRANÇA/COMPRAS
 - A10 — Onboarding de tenant (nada além do que A6 já cobre)
-- A11 — `UnidadeDimensao.POLEGADA`
+- A11 — `UnidadeDimensao.POLEGADA` (a própria proposta recomenda NÃO construir agora — over-engineering sem sinal real de uso)
 
 **Parte 7 — Completude de cadastro**
-- B6 — Materiais de bordado (tecido específico, entretela, linha, bobina) — mesma categoria SEED de B1-B5, já construídas
-- C1 — TipoAdesivo (durabilidade, com ressalva: proposta precisa correção antes de construir)
-- C2 — TipoLaminacao: soft touch/metalizada
-- C3 — TipoAcabamentoVerniz: soft touch
-- C4 — TipoHotStamping: efeito holográfico/colorido
 - E1/E2 — Esconder card/menu de Produção por USO real (não por segmento — correção Opus)
 - E3 — Banner de segmento pendente no onboarding (checar contra o código antes)
 - E4 — Pacotes de dados de exemplo por segmento
-- F7 — Profundidade/espessura no item de orçamento
-- F9 — `SegmentoGrafica`: valores faltantes + `segmentosSecundarios[]`

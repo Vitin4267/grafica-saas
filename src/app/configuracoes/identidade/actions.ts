@@ -24,6 +24,7 @@ import { registrarAuditoria } from "@/lib/auditoria";
 import {
   ORDEM_SEGMENTO_GRAFICA,
   ROTULO_SEGMENTO_GRAFICA,
+  ORDEM_SEGMENTO_GRAFICA_SECUNDARIO,
   ORDEM_TIPO_CHAVE_PIX,
   ROTULO_TIPO_CHAVE_PIX,
 } from "@/lib/tipos-grafica";
@@ -334,6 +335,13 @@ export type SalvarSegmentoResult = { ok: boolean; mensagem: string };
 // schema). Mesma validação de validarSegmento em src/app/clientes/actions.ts:
 // lista fechada, segmentoOutro só obrigatório quando segmento=OUTRO, campo
 // em si sempre opcional (o Dono pode limpar de volta pra "Não informado").
+//
+// Achado F9 da Parte 7 (2026-08-31) estendeu esta mesma action pra também
+// salvar `segmentosSecundarios` (multi-select, mesmo card/form da tela) —
+// lista fechada (sem OUTRO, ver ORDEM_SEGMENTO_GRAFICA_SECUNDARIO), dedupe
+// automático, e o valor igual ao `segmento` principal é descartado
+// silenciosamente do array secundário (não é erro, só redundante). Nunca
+// usado pra esconder/bloquear nada — ver comentário do campo no schema.
 export async function salvarSegmento(
   _estadoAnterior: SalvarSegmentoResult | null,
   formData: FormData
@@ -362,17 +370,33 @@ export async function salvarSegmento(
     }
   }
 
+  const segmentosSecundariosBrutos = Array.from(new Set(formData.getAll("segmentosSecundarios").map((v) => String(v))));
+  for (const valor of segmentosSecundariosBrutos) {
+    if (!ORDEM_SEGMENTO_GRAFICA_SECUNDARIO.includes(valor as SegmentoGrafica)) {
+      return { ok: false, mensagem: "Segmento secundário inválido." };
+    }
+  }
+  // Descarta silenciosamente o valor igual ao segmento principal — evita
+  // redundância sem precisar barrar o envio do formulário por isso.
+  const segmentosSecundarios = segmentosSecundariosBrutos.filter(
+    (valor) => valor !== segmento
+  ) as SegmentoGrafica[];
+
   const anterior = await prisma.grafica.findUniqueOrThrow({
     where: { id: usuario.graficaId },
-    select: { segmento: true, segmentoOutro: true },
+    select: { segmento: true, segmentoOutro: true, segmentosSecundarios: true },
   });
 
   await prisma.grafica.update({
     where: { id: usuario.graficaId },
-    data: { segmento, segmentoOutro },
+    data: { segmento, segmentoOutro, segmentosSecundarios },
   });
 
-  if (anterior.segmento !== segmento || anterior.segmentoOutro !== segmentoOutro) {
+  const mesmosSecundarios =
+    anterior.segmentosSecundarios.length === segmentosSecundarios.length &&
+    anterior.segmentosSecundarios.every((v) => segmentosSecundarios.includes(v));
+
+  if (anterior.segmento !== segmento || anterior.segmentoOutro !== segmentoOutro || !mesmosSecundarios) {
     await registrarAuditoria({
       graficaId: usuario.graficaId,
       usuarioId: usuario.id,

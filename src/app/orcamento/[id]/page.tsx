@@ -479,6 +479,8 @@ export default async function OrcamentoDetalhePage({
                     quantidade: item.quantidade,
                     larguraCm: item.larguraCm?.toString() ?? "",
                     alturaCm: item.alturaCm?.toString() ?? "",
+                    profundidadeCm: item.profundidadeCm?.toString() ?? "",
+                    espessuraMm: item.espessuraMm?.toString() ?? "",
                     cores: item.cores ?? "",
                     acabamento: item.acabamento ?? "",
                     descricaoLivre: item.descricaoLivre ?? "",
@@ -572,10 +574,14 @@ export default async function OrcamentoDetalhePage({
                   {item.larguraCm && item.alturaCm && (
                     <span>
                       {converterDeCm(Number(item.larguraCm), item.unidadeDimensao)} ×{" "}
-                      {converterDeCm(Number(item.alturaCm), item.unidadeDimensao)}{" "}
+                      {converterDeCm(Number(item.alturaCm), item.unidadeDimensao)}
+                      {item.profundidadeCm
+                        ? ` × ${converterDeCm(Number(item.profundidadeCm), item.unidadeDimensao)}`
+                        : ""}{" "}
                       {ROTULO_UNIDADE_DIMENSAO[item.unidadeDimensao]}
                     </span>
                   )}
+                  {item.espessuraMm && <span>Espessura: {Number(item.espessuraMm)}mm</span>}
                   {item.cores && <span>Cores: {item.cores}</span>}
                   {item.corFrente !== null && (
                     <span>

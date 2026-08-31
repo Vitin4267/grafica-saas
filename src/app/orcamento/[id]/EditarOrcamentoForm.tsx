@@ -79,6 +79,11 @@ export function EditarOrcamentoForm({
     quantidade: number;
     larguraCm: string;
     alturaCm: string;
+    // Achado F7 — terceira dimensão/espessura do item VENDIDO. Sempre
+    // visíveis (não gateadas por mostraDimensao) — uma caixa pode ser vendida
+    // como SIMPLES também.
+    profundidadeCm: string;
+    espessuraMm: string;
     cores: string;
     acabamento: string;
     // Achado B6 — sobrepõe o nome do catálogo no PDF/link público quando
@@ -155,6 +160,13 @@ export function EditarOrcamentoForm({
   const [altura, setAltura] = useState(() =>
     paraExibicao(valoresIniciais.alturaCm, unidadeDimensao)
   );
+  // Achado F7 — profundidade segue a mesma conversão de unidade de largura/
+  // altura acima; espessuraMm é sempre em mm, sem conversão (chapa é vendida
+  // em mm no Brasil).
+  const [profundidade, setProfundidade] = useState(() =>
+    paraExibicao(valoresIniciais.profundidadeCm, unidadeDimensao)
+  );
+  const [espessuraMm, setEspessuraMm] = useState(valoresIniciais.espessuraMm);
   const [etiqueta, setEtiqueta] = useState<CamposEtiqueta>(valoresIniciais.etiqueta);
   const [confirmandoRemocao, setConfirmandoRemocao] = useState(false);
 
@@ -237,6 +249,30 @@ export function EditarOrcamentoForm({
             <input type="hidden" name="alturaCm" value={paraCm(altura, unidadeDimensao)} />
           </div>
         )}
+
+        {/* Achado F7 — profundidade/espessura do item vendido, sempre
+            visíveis (independente de mostraDimensao: uma caixa pode ser
+            vendida como SIMPLES também). */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Input
+            label={`Profundidade (${ROTULO_UNIDADE_DIMENSAO[unidadeDimensao]})`}
+            type="number"
+            step={passoInputDimensao(unidadeDimensao)}
+            placeholder="opcional"
+            value={profundidade}
+            onChange={(e) => setProfundidade(e.target.value)}
+          />
+          <Input
+            label="Espessura (mm)"
+            name="espessuraMm"
+            type="number"
+            step="0.01"
+            placeholder="opcional — ex: chapa de corte a laser"
+            value={espessuraMm}
+            onChange={(e) => setEspessuraMm(e.target.value)}
+          />
+          <input type="hidden" name="profundidadeCm" value={paraCm(profundidade, unidadeDimensao)} />
+        </div>
 
         {modeloCalculo === "OFFSET" && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -514,6 +550,7 @@ export function EditarOrcamentoForm({
                   lado: h.lado,
                   tipo: h.tipo,
                   tipoOutro: h.tipoOutro || null,
+                  tipoEfeitoHotStamping: h.tipoEfeitoHotStamping || null,
                   medida: h.medida || null,
                   cor: h.cor || null,
                 }))

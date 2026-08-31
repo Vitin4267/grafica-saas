@@ -7,6 +7,7 @@ export type EtiquetaResumoDados = {
   materialSubstratoOutro: string | null;
   tipoAdesivo: string | null;
   tipoAdesivoOutro: string | null;
+  durabilidadeAdesivo: string | null;
   superficieAplicacao: string | null;
   superficieAplicacaoOutro: string | null;
   formatoEtiqueta: string | null;
@@ -34,6 +35,7 @@ export type EtiquetaResumoDados = {
     lado: string;
     tipo: string;
     tipoOutro: string | null;
+    tipoEfeitoHotStamping: string | null;
     medida: string | null;
     cor: string | null;
   }[];
@@ -110,6 +112,7 @@ export function linhasEtiqueta(e: EtiquetaResumoDados): [string, string][] {
             : (ROTULO_TIPO_ADESIVO[e.tipoAdesivo] ?? e.tipoAdesivo),
         ]
       : null,
+    e.durabilidadeAdesivo ? ["Durabilidade do adesivo", e.durabilidadeAdesivo] : null,
     e.superficieAplicacao
       ? [
           "Aplicação",
@@ -206,6 +209,7 @@ export function EtiquetaResumo({ etiqueta }: { etiqueta: EtiquetaResumoDados }) 
               Hot/cold stamping ({ROTULO_LADO[h.lado] ?? h.lado}): {rotuloTipoHotStamping(h)}
               {h.medida ? ` · ${h.medida}` : ""}
               {h.cor ? ` · ${h.cor}` : ""}
+              {h.tipoEfeitoHotStamping ? ` · Efeito: ${h.tipoEfeitoHotStamping}` : ""}
             </span>
           ))}
         </div>

@@ -21,6 +21,7 @@ import {
 import {
   ORDEM_SEGMENTO_GRAFICA,
   ROTULO_SEGMENTO_GRAFICA,
+  ORDEM_SEGMENTO_GRAFICA_SECUNDARIO,
   ORDEM_TIPO_CHAVE_PIX,
   ROTULO_TIPO_CHAVE_PIX,
 } from "@/lib/tipos-grafica";
@@ -38,6 +39,7 @@ export function IdentidadeForm({
   enderecoResumidoAtual,
   segmentoAtual,
   segmentoOutroAtual,
+  segmentosSecundariosAtual,
   chavePixAtual,
   tipoChavePixAtual,
   favorecidoPixAtual,
@@ -51,6 +53,7 @@ export function IdentidadeForm({
   enderecoResumidoAtual: string | null;
   segmentoAtual: SegmentoGrafica | null;
   segmentoOutroAtual: string | null;
+  segmentosSecundariosAtual: SegmentoGrafica[];
   chavePixAtual: string | null;
   tipoChavePixAtual: TipoChavePix | null;
   favorecidoPixAtual: string | null;
@@ -81,6 +84,15 @@ export function IdentidadeForm({
   const [stateSegmento, formActionSegmento, isPendingSegmento] = useActionState(salvarSegmento, null);
   const [segmento, setSegmento] = useState<SegmentoGrafica | "">(segmentoAtual ?? "");
   const [segmentoOutro, setSegmentoOutro] = useState(segmentoOutroAtual ?? "");
+  const [segmentosSecundarios, setSegmentosSecundarios] = useState<SegmentoGrafica[]>(
+    segmentosSecundariosAtual
+  );
+
+  function alternarSegmentoSecundario(valor: SegmentoGrafica) {
+    setSegmentosSecundarios((atual) =>
+      atual.includes(valor) ? atual.filter((v) => v !== valor) : [...atual, valor]
+    );
+  }
 
   const [stateDadosPagamento, formActionDadosPagamento, isPendingDadosPagamento] = useActionState(
     salvarDadosPagamento,
@@ -380,6 +392,37 @@ export function IdentidadeForm({
                 required
               />
             )}
+          </div>
+
+          <div>
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              Também atende (opcional)
+            </span>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Muitas gráficas atendem mais de um segmento no mesmo CNPJ — marque quantos fizerem
+              sentido. Mesma regra do campo acima: só ajuda a sugerir dados de exemplo, não trava
+              nada.
+            </p>
+            <div className="mt-2 grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
+              {ORDEM_SEGMENTO_GRAFICA_SECUNDARIO.filter((valor) => valor !== segmento).map(
+                (valor) => (
+                  <label
+                    key={valor}
+                    className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200"
+                  >
+                    <input
+                      type="checkbox"
+                      name="segmentosSecundarios"
+                      value={valor}
+                      checked={segmentosSecundarios.includes(valor)}
+                      onChange={() => alternarSegmentoSecundario(valor)}
+                      className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500 dark:border-slate-700"
+                    />
+                    {ROTULO_SEGMENTO_GRAFICA[valor]}
+                  </label>
+                )
+              )}
+            </div>
           </div>
 
           <div className="flex justify-start">

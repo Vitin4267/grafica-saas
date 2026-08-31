@@ -56,6 +56,9 @@ export function AdicionarItemForm({
         <input type="hidden" name="quantidade" value={campos.quantidade} />
         <input type="hidden" name="largura" value={campos.largura} />
         <input type="hidden" name="altura" value={campos.altura} />
+        {/* Achado F7 — profundidade/espessura do item vendido. */}
+        <input type="hidden" name="profundidade" value={campos.profundidade} />
+        <input type="hidden" name="espessuraMm" value={campos.espessuraMm} />
         <input type="hidden" name="unidadeDimensao" value={campos.unidadeDimensao} />
         <input type="hidden" name="corFrente" value={campos.corFrente} />
         <input type="hidden" name="corVerso" value={campos.corVerso} />
@@ -138,6 +141,7 @@ export function AdicionarItemForm({
               lado: h.lado,
               tipo: h.tipo,
               tipoOutro: h.tipoOutro || null,
+              tipoEfeitoHotStamping: h.tipoEfeitoHotStamping || null,
               medida: h.medida || null,
               cor: h.cor || null,
             }))

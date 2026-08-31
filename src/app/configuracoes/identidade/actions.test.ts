@@ -31,7 +31,7 @@ vi.mock("@/lib/auth/assinatura", () => ({
 }));
 
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
-import { salvarDadosPagamento } from "./actions";
+import { salvarDadosPagamento, salvarSegmento } from "./actions";
 
 const TIMEOUT_MS = 30_000;
 const sufixo = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -167,5 +167,133 @@ describe("salvarDadosPagamento (achado F6)", () => {
 
     expect(resultado.ok).toBe(false);
     expect(resultado.mensagem).toContain("inválido");
+  }, TIMEOUT_MS);
+});
+
+// Cobre o achado F9 da Parte 7 da auditoria de abrangência
+// (pesquisa-abrangencia-modulos.md, 2026-08-31): `Grafica.segmentosSecundarios`
+// (array aditivo sobre o mesmo enum de `segmento`) + os 5 valores novos de
+// `SegmentoGrafica`.
+//
+// SÓ RODA DE VERDADE depois que a migration
+// prisma/migrations/20260831120000_grafica_segmentos_secundarios/migration.sql
+// tiver sido aplicada no banco.
+describe("salvarSegmento (achado F9 — segmentosSecundarios)", () => {
+  let fixture: Fixture;
+
+  afterEach(async () => {
+    if (fixture) {
+      await limparFixture(fixture);
+    }
+  });
+
+  it("salva segmento principal + segmentosSecundarios (incluindo os 5 valores novos do enum)", async () => {
+    fixture = await criarFixture();
+
+    vi.mocked(exigirUsuarioAutenticado).mockResolvedValue({
+      id: fixture.usuarioId,
+      graficaId: fixture.graficaId,
+      nome: "Teste",
+      email: "teste@example.com",
+      papel: "DONO",
+    } as any);
+
+    const formData = new FormData();
+    formData.append("segmento", "OFFSET_COMERCIAL");
+    formData.append("segmentosSecundarios", "SERIGRAFIA");
+    formData.append("segmentosSecundarios", "SINALIZACAO_ADESIVAGEM");
+
+    const resultado = await salvarSegmento(null, formData);
+
+    expect(resultado.ok).toBe(true);
+
+    const graficaSalva = await prisma.grafica.findUnique({ where: { id: fixture.graficaId } });
+    expect(graficaSalva?.segmento).toBe("OFFSET_COMERCIAL");
+    expect(graficaSalva?.segmentosSecundarios.sort()).toEqual(
+      ["SERIGRAFIA", "SINALIZACAO_ADESIVAGEM"].sort()
+    );
+  }, TIMEOUT_MS);
+
+  it("descarta duplicatas e o valor igual ao segmento principal, sem erro", async () => {
+    fixture = await criarFixture();
+
+    vi.mocked(exigirUsuarioAutenticado).mockResolvedValue({
+      id: fixture.usuarioId,
+      graficaId: fixture.graficaId,
+      nome: "Teste",
+      email: "teste@example.com",
+      papel: "DONO",
+    } as any);
+
+    const formData = new FormData();
+    formData.append("segmento", "FLEXOGRAFIA");
+    formData.append("segmentosSecundarios", "FLEXOGRAFIA"); // igual ao principal
+    formData.append("segmentosSecundarios", "BORDADO");
+    formData.append("segmentosSecundarios", "BORDADO"); // duplicata
+
+    const resultado = await salvarSegmento(null, formData);
+
+    expect(resultado.ok).toBe(true);
+
+    const graficaSalva = await prisma.grafica.findUnique({ where: { id: fixture.graficaId } });
+    expect(graficaSalva?.segmentosSecundarios).toEqual(["BORDADO"]);
+  }, TIMEOUT_MS);
+
+  it("rejeita segmento secundário fora da lista fechada", async () => {
+    fixture = await criarFixture();
+
+    vi.mocked(exigirUsuarioAutenticado).mockResolvedValue({
+      id: fixture.usuarioId,
+      graficaId: fixture.graficaId,
+      nome: "Teste",
+      email: "teste@example.com",
+      papel: "DONO",
+    } as any);
+
+    const formData = new FormData();
+    formData.append("segmentosSecundarios", "MARCENARIA");
+
+    const resultado = await salvarSegmento(null, formData);
+
+    expect(resultado.ok).toBe(false);
+    expect(resultado.mensagem).toContain("inválido");
+  }, TIMEOUT_MS);
+
+  it("rejeita OUTRO como segmento secundário (sem campo-irmão pra detalhar)", async () => {
+    fixture = await criarFixture();
+
+    vi.mocked(exigirUsuarioAutenticado).mockResolvedValue({
+      id: fixture.usuarioId,
+      graficaId: fixture.graficaId,
+      nome: "Teste",
+      email: "teste@example.com",
+      papel: "DONO",
+    } as any);
+
+    const formData = new FormData();
+    formData.append("segmentosSecundarios", "OUTRO");
+
+    const resultado = await salvarSegmento(null, formData);
+
+    expect(resultado.ok).toBe(false);
+  }, TIMEOUT_MS);
+
+  it("aceita lista vazia (gráfica que não marcou nenhum segmento secundário)", async () => {
+    fixture = await criarFixture();
+
+    vi.mocked(exigirUsuarioAutenticado).mockResolvedValue({
+      id: fixture.usuarioId,
+      graficaId: fixture.graficaId,
+      nome: "Teste",
+      email: "teste@example.com",
+      papel: "DONO",
+    } as any);
+
+    const resultado = await salvarSegmento(null, new FormData());
+
+    expect(resultado.ok).toBe(true);
+
+    const graficaSalva = await prisma.grafica.findUnique({ where: { id: fixture.graficaId } });
+    expect(graficaSalva?.segmentosSecundarios).toEqual([]);
   }, TIMEOUT_MS);
 });

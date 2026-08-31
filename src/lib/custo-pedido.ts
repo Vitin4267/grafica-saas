@@ -127,6 +127,59 @@ export const CATEGORIAS_CUSTO_SUGERIDAS: Record<SegmentoGrafica | "PADRAO", stri
     "Retrabalho",
     "Comissão",
   ],
+  // Leva 2 (achado F9 da Parte 7 da auditoria de abrangência, 2026-08-31) —
+  // mesmo espírito das listas acima: só ponto de partida sugerido, a gráfica
+  // é livre pra renomear/desativar/criar as suas.
+  SERIGRAFIA: [
+    "Malha/peça em branco",
+    "Tinta plastisol/base d'água",
+    "Tela/quadro serigráfico",
+    "Emulsão e revelação de tela",
+    "Frete",
+    "Mão de obra",
+    "Retrabalho",
+    "Comissão",
+  ],
+  FLEXOGRAFIA: [
+    "Bobina de substrato (filme/papel)",
+    "Tinta flexográfica",
+    "Clichê fotopolímero",
+    "Cilindro/manga",
+    "Frete",
+    "Mão de obra",
+    "Retrabalho",
+    "Comissão",
+  ],
+  BORDADO: [
+    "Tecido/peça em branco",
+    "Linha de bordado",
+    "Entretela",
+    "Digitalização da matriz",
+    "Frete",
+    "Mão de obra",
+    "Retrabalho",
+    "Comissão",
+  ],
+  PAPELARIA_CONVITES: [
+    "Papel especial/importado",
+    "Ferramental (faca)",
+    "Hot stamping/relevo seco",
+    "Envelope",
+    "Frete",
+    "Mão de obra",
+    "Retrabalho",
+    "Comissão",
+  ],
+  SINALIZACAO_ADESIVAGEM: [
+    "Vinil/ACM/Chapa rígida",
+    "Tinta/Insumo digital grande formato",
+    "Perfil de acabamento/estrutura",
+    "Instalação/mão de obra externa",
+    "Frete",
+    "Mão de obra",
+    "Retrabalho",
+    "Comissão",
+  ],
 };
 
 // Espelha a comissão do vendedor (model Comissao) como um CustoPedido, só

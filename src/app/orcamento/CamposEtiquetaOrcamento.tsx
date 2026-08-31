@@ -60,12 +60,15 @@ const OPCOES_SERRILHA: [string, string][] = [
 const OPCOES_LAMINACAO: [string, string][] = [
   ["BRILHO", "Brilho"],
   ["FOSCO", "Fosco"],
+  ["SOFT_TOUCH", "Soft Touch"],
+  ["METALIZADA", "Metalizada"],
   ["OUTRO", "Outro"],
 ];
 const OPCOES_VERNIZ: [string, string][] = [
   ["BRILHO", "Brilho"],
   ["FOSCO", "Fosco"],
   ["RIBBON", "Ribbon"],
+  ["SOFT_TOUCH", "Soft Touch"],
   ["OUTRO", "Outro"],
 ];
 const OPCOES_LADO: [string, string][] = [
@@ -149,6 +152,14 @@ function LinhaHotStamping({
       <div className="w-28">
         <Input label="Cor" value={linha.cor} onChange={(e) => onAlterar("cor", e.target.value)} />
       </div>
+      <div className="w-36">
+        <Input
+          label="Efeito"
+          value={linha.tipoEfeitoHotStamping}
+          onChange={(e) => onAlterar("tipoEfeitoHotStamping", e.target.value)}
+          placeholder="ex: Holográfico"
+        />
+      </div>
       <button
         type="button"
         onClick={onRemover}
@@ -192,7 +203,7 @@ export function CamposEtiquetaOrcamento({
   const adicionarHotStamping = () =>
     set("hotStampings", [
       ...valores.hotStampings,
-      { chave: gerarChave(), lado: "ROTULO", tipo: "HOT", tipoOutro: "", medida: "", cor: "" },
+      { chave: gerarChave(), lado: "ROTULO", tipo: "HOT", tipoOutro: "", tipoEfeitoHotStamping: "", medida: "", cor: "" },
     ]);
 
   if (!expandido) {
@@ -247,6 +258,12 @@ export function CamposEtiquetaOrcamento({
             onChange={(e) => set("tipoAdesivoOutro", e.target.value)}
           />
         )}
+        <Input
+          label="Durabilidade do adesivo"
+          value={valores.durabilidadeAdesivo}
+          onChange={(e) => set("durabilidadeAdesivo", e.target.value)}
+          placeholder="ex: Permanente, Removível"
+        />
         <SelectOpcional
           label="Superfície de aplicação"
           valor={valores.superficieAplicacao}

@@ -174,6 +174,12 @@ export const CATALOGO_MESTRE: ItemCatalogoSeed[] = [
   { tipo: "MATERIA_PRIMA", categoria: "Hot Stamping", nome: "Filme Metalizado Cobre", unidade: "ROLO" },
   { tipo: "MATERIA_PRIMA", categoria: "Hot Stamping", nome: "Filme Metalizado Holográfico", unidade: "ROLO" },
 
+  // Bordado (Materiais)
+  { tipo: "MATERIA_PRIMA", categoria: "Bordado (Materiais)", nome: "Entretela Fusível", unidade: "METRO_LINEAR" },
+  { tipo: "MATERIA_PRIMA", categoria: "Bordado (Materiais)", nome: "Entretela Não-Fusível", unidade: "METRO_LINEAR" },
+  { tipo: "MATERIA_PRIMA", categoria: "Bordado (Materiais)", nome: "Linha de Bordar", unidade: "UNIDADE" },
+  { tipo: "MATERIA_PRIMA", categoria: "Bordado (Materiais)", nome: "Bobina de Bobbing", unidade: "UNIDADE" },
+
   // Encadernação
   { tipo: "MATERIA_PRIMA", categoria: "Encadernação", nome: "Espiral Plástico", unidade: "UNIDADE" },
   { tipo: "MATERIA_PRIMA", categoria: "Encadernação", nome: "Wire-o", unidade: "UNIDADE" },

@@ -46,6 +46,8 @@ function orcamentoBase(
         quantidade: 100,
         larguraCm: null,
         alturaCm: null,
+        profundidadeCm: null,
+        espessuraMm: null,
         unidadeDimensao: "CM",
         cores: null,
         acabamento: null,

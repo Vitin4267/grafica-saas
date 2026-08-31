@@ -605,6 +605,12 @@ export async function editarOrcamento(
   const quantidade = Number(formData.get("quantidade"));
   const larguraCm = formData.get("larguraCm") ? Number(formData.get("larguraCm")) : null;
   const alturaCm = formData.get("alturaCm") ? Number(formData.get("alturaCm")) : null;
+  // Achado F7 — mesmo padrão de larguraCm/alturaCm acima: EditarOrcamentoForm.tsx
+  // já converte pra cm/mm no client antes de mandar (campo hidden). Nunca
+  // passa por calcularItemOrcamento (motor de preço) — só gravado direto no
+  // update abaixo.
+  const profundidadeCm = formData.get("profundidadeCm") ? Number(formData.get("profundidadeCm")) : null;
+  const espessuraMm = formData.get("espessuraMm") ? Number(formData.get("espessuraMm")) : null;
   // Limites iguais aos de itemEntradaSchema (orcamento/actions.ts), que
   // criarOrcamento já aplica — editarOrcamento/adicionarItemOrcamento não
   // usavam zod aqui e aceitavam string de qualquer tamanho. Com
@@ -753,6 +759,8 @@ export async function editarOrcamento(
             quantidade,
             larguraCm,
             alturaCm,
+            profundidadeCm,
+            espessuraMm,
             cores: cores || null,
             acabamento: acabamento || null,
             descricaoLivre: descricaoLivre || null,
@@ -830,6 +838,7 @@ export async function editarOrcamento(
             materialSubstratoOutro: etiqueta.materialSubstratoOutro,
             tipoAdesivo: etiqueta.tipoAdesivo,
             tipoAdesivoOutro: etiqueta.tipoAdesivoOutro,
+            durabilidadeAdesivo: etiqueta.durabilidadeAdesivo,
             superficieAplicacao: etiqueta.superficieAplicacao,
             superficieAplicacaoOutro: etiqueta.superficieAplicacaoOutro,
             formatoEtiqueta: etiqueta.formatoEtiqueta,
@@ -872,9 +881,10 @@ export async function editarOrcamento(
                 orcamentoItemEtiquetaId: etiquetaRow.id,
                 lado: h.lado,
                 tipo: h.tipo,
-                tipoOutro: h.tipoOutro,
-                medida: h.medida,
-                cor: h.cor,
+                tipoOutro: h.tipoOutro || null,
+                tipoEfeitoHotStamping: h.tipoEfeitoHotStamping || null,
+                medida: h.medida || null,
+                cor: h.cor || null,
               })),
             });
           }
@@ -1357,6 +1367,7 @@ const hotStampingFormSchema = z
     lado: z.enum(["ROTULO", "CONTRA_ROTULO"]),
     tipo: z.enum(["HOT", "COLD", "OUTRO"]),
     tipoOutro: z.string().max(60).nullable(),
+    tipoEfeitoHotStamping: z.string().max(120).nullable(),
     medida: z.string().max(60).nullable(),
     cor: z.string().max(60).nullable(),
   })
@@ -1369,6 +1380,7 @@ type EtiquetaParaGravar = {
   materialSubstratoOutro: string | null;
   tipoAdesivo: (typeof TIPO_ADESIVO_VALORES)[number] | null;
   tipoAdesivoOutro: string | null;
+  durabilidadeAdesivo: string | null;
   superficieAplicacao: (typeof SUPERFICIE_APLICACAO_VALORES)[number] | null;
   superficieAplicacaoOutro: string | null;
   formatoEtiqueta: string | null;
@@ -1427,6 +1439,8 @@ function lerEtiquetaDoFormData(formData: FormData): ResultadoEtiquetaFormData {
     'Descreva o adesivo quando escolher "Outro" como tipo de adesivo.'
   );
   if (!validacaoTipoAdesivo.ok) return { ok: false, mensagem: validacaoTipoAdesivo.mensagem };
+
+  const durabilidadeAdesivo = campoTexto("durabilidadeAdesivo", 120);
 
   const superficieAplicacao = campoEnum("superficieAplicacao", SUPERFICIE_APLICACAO_VALORES);
   const superficieAplicacaoOutro = campoTexto("superficieAplicacaoOutro", 120);
@@ -1505,6 +1519,7 @@ function lerEtiquetaDoFormData(formData: FormData): ResultadoEtiquetaFormData {
       materialSubstratoOutro,
       tipoAdesivo,
       tipoAdesivoOutro,
+      durabilidadeAdesivo,
       superficieAplicacao,
       superficieAplicacaoOutro,
       formatoEtiqueta: campoTexto("formatoEtiqueta", 120),
@@ -1553,6 +1568,11 @@ export async function adicionarItemOrcamento(
   // antes de calcularItemOrcamento.
   const larguraBruta = formData.get("largura") ? Number(formData.get("largura")) : null;
   const alturaBruta = formData.get("altura") ? Number(formData.get("altura")) : null;
+  // Achado F7 — mesma convenção de largura/altura acima: profundidade
+  // DIGITADA na unidade abaixo (convertida pra cm mais abaixo), espessura
+  // SEMPRE em mm (nunca passa pela conversão de unidade).
+  const profundidadeBruta = formData.get("profundidade") ? Number(formData.get("profundidade")) : null;
+  const espessuraMm = formData.get("espessuraMm") ? Number(formData.get("espessuraMm")) : null;
   // Limites iguais aos de itemEntradaSchema (orcamento/actions.ts), que
   // criarOrcamento já aplica — editarOrcamento/adicionarItemOrcamento não
   // usavam zod aqui e aceitavam string de qualquer tamanho. Com
@@ -1611,6 +1631,10 @@ export async function adicionarItemOrcamento(
   const unidadeDimensao = unidadeParsed.data;
   const larguraCm = larguraBruta !== null ? converterParaCm(larguraBruta, unidadeDimensao) : null;
   const alturaCm = alturaBruta !== null ? converterParaCm(alturaBruta, unidadeDimensao) : null;
+  // Achado F7 — mesma conversão de largura/altura acima pra profundidade;
+  // espessuraMm já chega em mm. Nenhum dos dois vai pro motor de preço.
+  const profundidadeCm =
+    profundidadeBruta !== null ? converterParaCm(profundidadeBruta, unidadeDimensao) : null;
 
   const orcamento = await prisma.orcamento.findFirst({
     where: { id: orcamentoId, graficaId: usuario.graficaId },
@@ -1683,6 +1707,8 @@ export async function adicionarItemOrcamento(
             quantidade,
             larguraCm,
             alturaCm,
+            profundidadeCm,
+            espessuraMm,
             unidadeDimensao,
             cores: cores || null,
             acabamento: acabamento || null,
@@ -1712,6 +1738,7 @@ export async function adicionarItemOrcamento(
                       materialSubstratoOutro: etiqueta?.materialSubstratoOutro ?? null,
                       tipoAdesivo: etiqueta?.tipoAdesivo ?? null,
                       tipoAdesivoOutro: etiqueta?.tipoAdesivoOutro ?? null,
+                      durabilidadeAdesivo: etiqueta?.durabilidadeAdesivo ?? null,
                       superficieAplicacao: etiqueta?.superficieAplicacao ?? null,
                       superficieAplicacaoOutro: etiqueta?.superficieAplicacaoOutro ?? null,
                       formatoEtiqueta: etiqueta?.formatoEtiqueta ?? null,
@@ -1739,9 +1766,10 @@ export async function adicionarItemOrcamento(
                         create: (etiqueta?.hotStampings ?? []).map((h) => ({
                           lado: h.lado,
                           tipo: h.tipo,
-                          tipoOutro: h.tipoOutro,
-                          medida: h.medida,
-                          cor: h.cor,
+                          tipoOutro: h.tipoOutro || null,
+                          tipoEfeitoHotStamping: h.tipoEfeitoHotStamping || null,
+                          medida: h.medida || null,
+                          cor: h.cor || null,
                         })),
                       },
                     },
@@ -2270,6 +2298,11 @@ export async function duplicarOrcamento(
     quantidade: number;
     larguraCm: Prisma.Decimal | null;
     alturaCm: Prisma.Decimal | null;
+    // Achado F7 — copiados direto do item original (mesmo padrão de
+    // larguraCm/alturaCm acima), nunca passam por montarDadosItemParaRecalculo
+    // nem calcularItemOrcamento — motor de preço nunca viu esses campos.
+    profundidadeCm: Prisma.Decimal | null;
+    espessuraMm: Prisma.Decimal | null;
     unidadeDimensao: (typeof UNIDADES_DIMENSAO)[number];
     cores: string | null;
     acabamento: string | null;
@@ -2407,6 +2440,8 @@ export async function duplicarOrcamento(
       quantidade: itemOriginal.quantidade,
       larguraCm: itemOriginal.larguraCm,
       alturaCm: itemOriginal.alturaCm,
+      profundidadeCm: itemOriginal.profundidadeCm,
+      espessuraMm: itemOriginal.espessuraMm,
       unidadeDimensao: itemOriginal.unidadeDimensao,
       cores: itemOriginal.cores,
       acabamento: itemOriginal.acabamento,
@@ -2456,6 +2491,8 @@ export async function duplicarOrcamento(
           quantidade: item.quantidade,
           larguraCm: item.larguraCm,
           alturaCm: item.alturaCm,
+          profundidadeCm: item.profundidadeCm,
+          espessuraMm: item.espessuraMm,
           unidadeDimensao: item.unidadeDimensao,
           cores: item.cores,
           acabamento: item.acabamento,
@@ -2490,6 +2527,7 @@ export async function duplicarOrcamento(
                     materialSubstratoOutro: item.etiqueta?.materialSubstratoOutro ?? null,
                     tipoAdesivo: item.etiqueta?.tipoAdesivo ?? null,
                     tipoAdesivoOutro: item.etiqueta?.tipoAdesivoOutro ?? null,
+                    durabilidadeAdesivo: item.etiqueta?.durabilidadeAdesivo ?? null,
                     superficieAplicacao: item.etiqueta?.superficieAplicacao ?? null,
                     superficieAplicacaoOutro: item.etiqueta?.superficieAplicacaoOutro ?? null,
                     formatoEtiqueta: item.etiqueta?.formatoEtiqueta ?? null,
@@ -2517,9 +2555,10 @@ export async function duplicarOrcamento(
                       create: (item.etiqueta?.hotStampings ?? []).map((h) => ({
                         lado: h.lado,
                         tipo: h.tipo,
-                        tipoOutro: h.tipoOutro,
-                        medida: h.medida,
-                        cor: h.cor,
+                        tipoOutro: h.tipoOutro || null,
+                        tipoEfeitoHotStamping: h.tipoEfeitoHotStamping || null,
+                        medida: h.medida || null,
+                        cor: h.cor || null,
                       })),
                     },
                   },

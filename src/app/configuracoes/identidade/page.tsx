@@ -56,6 +56,7 @@ export default async function ConfiguracoesIdentidadePage() {
           enderecoResumidoAtual={usuario.grafica.enderecoResumido}
           segmentoAtual={usuario.grafica.segmento}
           segmentoOutroAtual={usuario.grafica.segmentoOutro}
+          segmentosSecundariosAtual={usuario.grafica.segmentosSecundarios}
           chavePixAtual={usuario.grafica.chavePix}
           tipoChavePixAtual={usuario.grafica.tipoChavePix}
           favorecidoPixAtual={usuario.grafica.favorecidoPix}
