@@ -27,8 +27,13 @@ quem trava a próxima ação. Detalhe de cada item nas seções abaixo.
 - [ ] Criptografia de campo pra token sensível (`focusNfeToken`)
 - [ ] RLS (trava extra de isolamento direto no banco)
 - [ ] Role de banco de dados com permissão restrita (hoje usa acesso total)
-- [ ] Implementar em código os intervalos semestral/anual do Stripe (já
-      decidido o desconto, falta criar os Prices e o código)
+- [ ] **Criar os 6 Prices no Stripe pros intervalos semestral/anual** — o
+      código já está pronto (2026-08-31), só falta você criar os Price
+      objects no dashboard do Stripe (semestral com -15%, anual com -20%
+      sobre o mensal de cada plano) e colar os IDs nas env vars
+      `STRIPE_PRICE_ID_<PLANO>_SEMESTRAL`/`_ANUAL` na Vercel. Sem isso, o
+      toggle de intervalo simplesmente não aparece pra ninguém — não
+      quebra nada, só fica invisível até você configurar. (seção 2)
 - [ ] 121 achados catalogados de abrangência de produto — 11 dos 33 da
       Parte 7 já construídos (rodadas 17 e 18, 2026-08-31), 22 pendentes.
       **76 achados pendentes no total têm custo estimado** (Barato/Médio/
@@ -60,8 +65,9 @@ gráfica trazendo a própria conta).
 ## 2. Modelo de negócio e preço — o que já foi DECIDIDO
 
 - **Plano básico: R$749,90/mês**, fixo. Ponto de partida da régua.
-- **Intervalos novos** (semestral -15%, anual -20%) — decidido, **ainda não
-  implementado em código** (nenhum Price novo criado no Stripe ainda).
+- **Intervalos novos** (semestral -15%, anual -20%) — decidido, **código
+  pronto desde 2026-08-31**. Falta só você criar os 6 Prices no Stripe e
+  colar os IDs nas env vars da Vercel (ver seção 0) pra ativar de verdade.
 - **Desconto de "cliente fundador"**: os 10 primeiros que ASSINAREM plano
   pago (não quando só criam conta) ganham **30% de desconto permanente**,
   mesmo se cancelar e voltar depois. Aplicado manualmente como cupom no
