@@ -18,11 +18,6 @@ quem trava a próxima ação. Detalhe de cada item nas seções abaixo.
 - [ ] **Qual eixo diferencia os planos** — faturamento e nº de prensas
       sozinho já foram testados e descartados; falta fechar o critério
       combinado (máquinas/usuários/orçamentos). (seção 2)
-- [ ] **13 commits aguardando `git push`** — código de 6 rodadas da
-      auditoria + documentação (visão de ADM, mapa de arquitetura,
-      classificação de custo) estão só no seu computador, não foram pro
-      GitHub, então não estão no ar na Vercel. Só empurro quando você
-      pedir. (seção 6)
 - [ ] **Prensa fantasma "[Exemplo] Prensa Offset"** na conta real da Assus
       — resíduo de dado de exemplo, nunca confirmou se quer que eu apague.
       (seção 7)
@@ -180,32 +175,12 @@ antes, e já corrigi isso no documento.
 
 ## 6. Estado do git — atenção aqui
 
-**13 commits estão só no seu computador, ainda não foram pro GitHub
-(`origin/main`)** — e portanto não disparam deploy na Vercel:
-
-```
-6193228 Rodada 18 (achado F6 — PIX da gráfica)
-19e9631 Rodada 17 (10 achados construídos, Parte 7)
-fd28cd1 Atualiza pendências no visao-admin.md
-7537ac6 Classifica custo/esforço dos 87 achados pendentes
-092f67e Seção 0 (Pendências) no visao-admin.md
-641bd5e Cria visao-admin.md
-83173cb Parte 7 seção F (Opus) + revisão crítica
-5eb3d70 Mapa de arquitetura do repo
-586dac0 Parte 7 da auditoria (achados de completude de cadastro)
-fa09116 Rodada 16 (5 achados construídos)
-644dc01 Rodada 15 (3 achados construídos)
-7304bd4 Rodada 14 (3 achados construídos)
-7693118 Rodada 13 (3 achados construídos)
-```
-
-Os de documentação pura (visao-admin.md, mapa de arquitetura, classificação
-de custo) não afetam o site. Os 6 de rodada (13-18) SÃO código novo em
-produção que ainda não foi pro ar — precisam de um `git push` quando você
-quiser que o site atualize, incluindo as migrations de banco das rodadas
-17 e 18 (já aplicadas no banco de dev, mas o schema só vai bater com o
-código em produção depois do push+deploy). Eu só empurro quando você pede
-explicitamente (decisão de segurança sua, cada push é aprovado na hora).
+**Tudo empurrado.** Os 13 commits que estavam só no seu computador (rodadas
+13-18 + documentação) foram pro GitHub (`origin/main`) em 2026-08-31 —
+`072dcf7..172710f`. Isso dispara o deploy automático na Vercel; as
+migrations das rodadas 13-18 já estavam aplicadas no banco de dev antes do
+push, então o schema já bate certo com o código novo. Sem pendência de git
+no momento.
 
 ---
 
