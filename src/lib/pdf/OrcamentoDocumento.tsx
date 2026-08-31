@@ -45,6 +45,15 @@ export type DadosPdfOrcamento = {
   emailContato: string | null;
   site: string | null;
   enderecoResumido: string | null;
+  // Achado F6 da Parte 7 (auditoria de abrangência, 2026-08-31) — dados de
+  // RECEBIMENTO da gráfica, mesmo nível de telefone/emailContato acima:
+  // aparecem no rodapé do PDF sempre que preenchidos, nunca validados.
+  // tipoChavePix já chega convertido pro rótulo em português (ver
+  // mapearDadosPdf) — este componente não conhece o enum TipoChavePix.
+  chavePix: string | null;
+  tipoChavePix: string | null;
+  favorecidoPix: string | null;
+  dadosBancarios: string | null;
   clienteNome: string;
   status: "RASCUNHO" | "ENVIADO" | "APROVADO" | "REJEITADO";
   criadoEm: Date;
@@ -230,6 +239,16 @@ const estilos = StyleSheet.create({
     borderTopColor: "#e2e8f0",
   },
   contatoRodapeLinha: { fontSize: 8, color: "#475569", marginBottom: 2 },
+  pagamentoBox: {
+    marginTop: 16,
+    padding: 10,
+    borderRadius: 4,
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  pagamentoTitulo: { fontSize: 9, fontWeight: "bold", color: "#475569", marginBottom: 6 },
+  pagamentoLinha: { fontSize: 9, color: "#0f172a", marginBottom: 2 },
   rodape: {
     position: "absolute",
     bottom: 30,
@@ -385,6 +404,25 @@ export function OrcamentoDocumento({ dados }: { dados: DadosPdfOrcamento }) {
           <Text style={[estilos.totalLabel, { color: cores.escura }]}>Total do orçamento</Text>
           <Text style={[estilos.totalValor, { color: cores.maisEscura }]}>{dados.total}</Text>
         </View>
+
+        {/* Achado F6 — dados de recebimento da gráfica, nunca validados, só
+            exibidos quando cadastrados em /configuracoes/identidade. */}
+        {(dados.chavePix || dados.favorecidoPix || dados.dadosBancarios) && (
+          <View style={estilos.pagamentoBox}>
+            <Text style={estilos.pagamentoTitulo}>COMO PAGAR</Text>
+            {dados.chavePix && (
+              <Text style={estilos.pagamentoLinha}>
+                Chave PIX{dados.tipoChavePix ? ` (${dados.tipoChavePix})` : ""}: {dados.chavePix}
+              </Text>
+            )}
+            {dados.favorecidoPix && (
+              <Text style={estilos.pagamentoLinha}>Favorecido: {dados.favorecidoPix}</Text>
+            )}
+            {dados.dadosBancarios && (
+              <Text style={estilos.pagamentoLinha}>Dados bancários: {dados.dadosBancarios}</Text>
+            )}
+          </View>
+        )}
 
         <View style={estilos.termosBox}>
           <Text style={estilos.termosTexto}>

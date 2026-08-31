@@ -5,6 +5,7 @@ import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { validarArquivoLogo } from "@/lib/upload-validacao";
@@ -15,9 +16,15 @@ import {
   restaurarCorPadrao,
   salvarContato,
   salvarSegmento,
+  salvarDadosPagamento,
 } from "./actions";
-import { ORDEM_SEGMENTO_GRAFICA, ROTULO_SEGMENTO_GRAFICA } from "@/lib/tipos-grafica";
-import type { SegmentoGrafica } from "@/generated/prisma/enums";
+import {
+  ORDEM_SEGMENTO_GRAFICA,
+  ROTULO_SEGMENTO_GRAFICA,
+  ORDEM_TIPO_CHAVE_PIX,
+  ROTULO_TIPO_CHAVE_PIX,
+} from "@/lib/tipos-grafica";
+import type { SegmentoGrafica, TipoChavePix } from "@/generated/prisma/enums";
 
 const COR_PADRAO = "#0d9488";
 const HEX_REGEX_COR = /^#[0-9A-Fa-f]{6}$/;
@@ -31,6 +38,10 @@ export function IdentidadeForm({
   enderecoResumidoAtual,
   segmentoAtual,
   segmentoOutroAtual,
+  chavePixAtual,
+  tipoChavePixAtual,
+  favorecidoPixAtual,
+  dadosBancariosAtual,
 }: {
   logoUrlAtual: string | null;
   corPrimariaAtual: string | null;
@@ -40,6 +51,10 @@ export function IdentidadeForm({
   enderecoResumidoAtual: string | null;
   segmentoAtual: SegmentoGrafica | null;
   segmentoOutroAtual: string | null;
+  chavePixAtual: string | null;
+  tipoChavePixAtual: TipoChavePix | null;
+  favorecidoPixAtual: string | null;
+  dadosBancariosAtual: string | null;
 }) {
   const [stateSalvar, formActionSalvar, isPendingSalvar] = useActionState(salvarLogo, null);
   const [stateRemover, formActionRemover, isPendingRemover] = useActionState(removerLogo, null);
@@ -66,6 +81,15 @@ export function IdentidadeForm({
   const [stateSegmento, formActionSegmento, isPendingSegmento] = useActionState(salvarSegmento, null);
   const [segmento, setSegmento] = useState<SegmentoGrafica | "">(segmentoAtual ?? "");
   const [segmentoOutro, setSegmentoOutro] = useState(segmentoOutroAtual ?? "");
+
+  const [stateDadosPagamento, formActionDadosPagamento, isPendingDadosPagamento] = useActionState(
+    salvarDadosPagamento,
+    null
+  );
+  const [chavePix, setChavePix] = useState(chavePixAtual ?? "");
+  const [tipoChavePix, setTipoChavePix] = useState<TipoChavePix | "">(tipoChavePixAtual ?? "");
+  const [favorecidoPix, setFavorecidoPix] = useState(favorecidoPixAtual ?? "");
+  const [dadosBancarios, setDadosBancarios] = useState(dadosBancariosAtual ?? "");
 
   // Sincroniza o campo local com o teal padrão quando "Restaurar cor padrão"
   // é confirmado — sem isso, o input continuaria mostrando a última cor
@@ -249,6 +273,73 @@ export function IdentidadeForm({
 
         {stateContato && (
           <Alert variant={stateContato.ok ? "success" : "error"}>{stateContato.mensagem}</Alert>
+        )}
+      </Card>
+
+      <Card className="flex flex-col gap-4 p-6">
+        <div>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            Dados para pagamento
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Opcional — quando preenchidos, aparecem no PDF de orçamento e na página pública que
+            o cliente vê depois de aprovar. Só exibição: não validamos o formato da chave PIX
+            nem confirmamos pagamento automaticamente — isso continua sendo conferido por você,
+            como hoje.
+          </p>
+        </div>
+
+        <form action={formActionDadosPagamento} className="flex flex-col gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input
+              label="Chave PIX"
+              name="chavePix"
+              value={chavePix}
+              onChange={(evento) => setChavePix(evento.target.value)}
+              placeholder="CPF, CNPJ, e-mail, telefone ou chave aleatória"
+            />
+            <Select
+              label="Tipo de chave"
+              name="tipoChavePix"
+              value={tipoChavePix}
+              onChange={(e) => setTipoChavePix(e.target.value as TipoChavePix | "")}
+            >
+              <option value="">Não informado</option>
+              {ORDEM_TIPO_CHAVE_PIX.map((valor) => (
+                <option key={valor} value={valor}>
+                  {ROTULO_TIPO_CHAVE_PIX[valor]}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <Input
+            label="Favorecido"
+            name="favorecidoPix"
+            value={favorecidoPix}
+            onChange={(evento) => setFavorecidoPix(evento.target.value)}
+            placeholder="Nome de quem recebe (pode ser diferente da razão social)"
+          />
+
+          <Textarea
+            label="Dados bancários (opcional, pra TED/depósito)"
+            name="dadosBancarios"
+            value={dadosBancarios}
+            onChange={(evento) => setDadosBancarios(evento.target.value)}
+            placeholder="Banco, agência e conta"
+          />
+
+          <div className="flex justify-start">
+            <Button type="submit" loading={isPendingDadosPagamento}>
+              Salvar dados de recebimento
+            </Button>
+          </div>
+        </form>
+
+        {stateDadosPagamento && (
+          <Alert variant={stateDadosPagamento.ok ? "success" : "error"}>
+            {stateDadosPagamento.mensagem}
+          </Alert>
         )}
       </Card>
 

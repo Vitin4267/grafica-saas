@@ -625,6 +625,10 @@ Placar depois desta rodada: das Partes 1-6 seguem 34 construídos + 8
 parciais de 88 (sem mudança). Na Parte 7, 10 dos 33 achados construídos
 (A1-A5 e B1-B5 da seção "Máquinas e matérias-primas"), 23 pendentes.
 
+**Atualização 2026-08-31 (rodada 18) — F6 CONSTRUÍDO** (1 subagente sonnet, pedido pontual do usuário depois de perguntar como o PIX funcionava hoje): `Grafica` ganhou `chavePix`/`tipoChavePix`/`favorecidoPix`/`dadosBancarios`, editáveis em `/configuracoes/identidade`, impressos no PDF do orçamento e exibidos em `/o/[token]` só depois de `APROVADO`. Escopo mantido estritamente enxuto (combinado antes de construir): zero validação de formato de chave, zero automação/confirmação de pagamento — `ContaReceber`/conciliação continuam 100% manuais. 1 migration aplicada (1 enum + 4 colunas nullable, 100% aditiva). Suíte cheia rodou 2× (1 falha isolada e não-reprodutível na 1ª rodada, mesmo padrão de contenção de conexão de rodadas anteriores — passou sozinha isolada e na 2ª rodada completa), 1049/1049 verde; build OK.
+
+Placar depois desta rodada: Parte 7 com 11 dos 33 achados construídos, 22 pendentes.
+
 ## Como ler cada parte
 
 Cada uma das 6 partes abaixo cobre um módulo (ou par de módulos muito
@@ -2457,8 +2461,10 @@ confirmando ausência — diferente de A-E, tratar com mais confiança.
 
 **Proposta.** `model ArteItem { orcamentoItemId, pedidoId?, url, versao Int @default(1), aprovadaEm?, comentarioCliente?, preflightAvisos Json? }`. `Pedido.arteUrl` continua existindo (legado, nunca removido). Gate de avanço vira "toda `ArteItem` aprovada OU nenhuma existe" — zero mudança pra quem não usa. `TipoArquivoArmazenado.ARTE_ITEM` novo.
 
-### F6 — Gráfica não tem onde cadastrar a própria chave PIX / dados de recebimento
+### F6 — Gráfica não tem onde cadastrar a própria chave PIX / dados de recebimento — **CONSTRUÍDO 2026-08-31 (rodada 18)**
 **Custo estimado:** 🟢 Barato — a própria proposta se autodescreve como "achado mais barato do relatório": campos aditivos em `Grafica` reaproveitando a tela `/configuracoes/identidade` que já existe e já é auditada.
+
+**Status:** `Grafica.chavePix`/`tipoChavePix` (`enum TipoChavePix`)/`favorecidoPix`/`dadosBancarios`, editáveis em `/configuracoes/identidade` (novo Card "Dados para pagamento", com auditoria — só o rótulo do tipo de chave é logado, nunca o valor). Impresso no PDF do orçamento (sempre que preenchido, independente do status) e exibido em `/o/[token]` só depois de `APROVADO`. Zero validação de formato, zero automação de conciliação — exatamente o escopo combinado.
 
 **O que falta.** `Grafica` tem logo/cor/contato — zero dado de recebimento. Ao mesmo tempo `FormaPagamento.PIX` existe no lançamento, `CondicaoPagamento` gera `ContaReceber`, e `/o/[token]` deixa o cliente aprovar SOZINHO sem login. O fluxo termina exatamente onde o dinheiro deveria começar. Achado mais barato e mais universal do relatório — afeta 100% dos tenants, toda venda.
 
@@ -2501,11 +2507,13 @@ Classificação de custo/esforço aplicada a todo achado ainda não marcado `CON
 
 **Atualização 2026-08-31 (rodada 17):** 10 dos 32 🟢 Barato construídos — Parte 7 A1/A2/A3/A4/A5 (equipamentos) + B1/B2/B3/B4/B5 (matérias-primas, seed). B6 (materiais de bordado) ficou de fora de propósito, pra fechar a rodada em exatamente 10; é o próximo candidato natural.
 
-**Contagem total (87 achados classificados, 77 ainda pendentes):**
+**Atualização 2026-08-31 (rodada 18):** +1 — Parte 7 F6 (chave PIX/dados de recebimento da gráfica).
+
+**Contagem total (87 achados classificados, 76 ainda pendentes):**
 
 | Custo | Contagem |
 |---|---|
-| 🟢 Barato | 22 (10 construídos) |
+| 🟢 Barato | 21 (11 construídos) |
 | 🟡 Médio | 29 |
 | 🔴 Caro | 26 |
 
@@ -2538,6 +2546,5 @@ Classificação de custo/esforço aplicada a todo achado ainda não marcado `CON
 - E1/E2 — Esconder card/menu de Produção por USO real (não por segmento — correção Opus)
 - E3 — Banner de segmento pendente no onboarding (checar contra o código antes)
 - E4 — Pacotes de dados de exemplo por segmento
-- F6 — Chave PIX / dados de recebimento da gráfica (achado mais barato do relatório)
 - F7 — Profundidade/espessura no item de orçamento
 - F9 — `SegmentoGrafica`: valores faltantes + `segmentosSecundarios[]`

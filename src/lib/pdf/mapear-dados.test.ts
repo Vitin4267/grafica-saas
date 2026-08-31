@@ -26,6 +26,10 @@ function orcamentoBase(
       emailContato: null,
       site: null,
       enderecoResumido: null,
+      chavePix: null,
+      tipoChavePix: null,
+      favorecidoPix: null,
+      dadosBancarios: null,
       parametros: { termosCondicoesPdf: null, mostrarEspecificacoesTecnicas: true, prazoEmDiasUteis: true, toleranciaTiragemPercent: 0 as unknown as Prisma.Decimal },
     },
     vendedor: null,
@@ -102,5 +106,48 @@ describe("mapearDadosPdf — dias úteis vs corridos (achado A2 da Parte 6)", ()
       },
     });
     expect(dados.prazoEmDiasUteis).toBe(false);
+  });
+});
+
+// Achado F6 da Parte 7 (auditoria de abrangência, 2026-08-31) — dados de
+// recebimento (PIX) da gráfica só aparecem no PDF quando cadastrados; sem
+// nada preenchido, o mapeamento sai null (mesmo comportamento de hoje pra
+// toda gráfica que nunca configurou, sem regressão).
+describe("mapearDadosPdf — dados de recebimento / PIX (achado F6)", () => {
+  it("sem nenhum campo de pagamento cadastrado: sai tudo null", () => {
+    const dados = mapearDadosPdf(orcamentoBase());
+    expect(dados.chavePix).toBeNull();
+    expect(dados.tipoChavePix).toBeNull();
+    expect(dados.favorecidoPix).toBeNull();
+    expect(dados.dadosBancarios).toBeNull();
+  });
+
+  it("com chavePix e tipoChavePix cadastrados: sai a chave e o tipo já convertido pro rótulo em português", () => {
+    const base = orcamentoBase();
+    const dados = mapearDadosPdf({
+      ...base,
+      grafica: {
+        ...base.grafica,
+        chavePix: "contato@grafica.com.br",
+        tipoChavePix: "EMAIL",
+      },
+    });
+    expect(dados.chavePix).toBe("contato@grafica.com.br");
+    expect(dados.tipoChavePix).toBe("E-mail");
+  });
+
+  it("com favorecidoPix e dadosBancarios cadastrados, sem chavePix: cada campo sai independente", () => {
+    const base = orcamentoBase();
+    const dados = mapearDadosPdf({
+      ...base,
+      grafica: {
+        ...base.grafica,
+        favorecidoPix: "João da Silva",
+        dadosBancarios: "Banco X, ag. 0001, c/c 12345-6",
+      },
+    });
+    expect(dados.chavePix).toBeNull();
+    expect(dados.favorecidoPix).toBe("João da Silva");
+    expect(dados.dadosBancarios).toBe("Banco X, ag. 0001, c/c 12345-6");
   });
 });

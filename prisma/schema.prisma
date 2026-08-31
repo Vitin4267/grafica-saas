@@ -57,6 +57,28 @@ model Grafica {
   site             String?
   enderecoResumido String? // texto livre, uma linha — mesmo espírito de Filial.endereco
 
+  // Dados de RECEBIMENTO da própria gráfica (achado F6 da Parte 7 da
+  // auditoria de abrangência, pesquisa-abrangencia-modulos.md, 2026-08-31) —
+  // identidade comercial, não fiscal (por isso mora aqui, não em
+  // DadosFiscaisGrafica). SÓ EXIBIÇÃO: chavePix nunca é validada (não confere
+  // CPF/CNPJ/e-mail/telefone real, é texto livre) e nada aqui confirma
+  // pagamento automaticamente — ContaReceber/Pagamento continuam a única
+  // fonte de verdade de "foi pago", baixados manualmente como hoje. Impresso
+  // no PDF de orçamento e exibido em /o/[token] (só depois de APROVADO) só
+  // quando preenchido — null = gráfica não cadastrou, comportamento de hoje
+  // 100% preservado.
+  chavePix     String?
+  tipoChavePix TipoChavePix?
+  // Nome de quem recebe o PIX — pode ser diferente de `nome`/razão social
+  // (ex: sócio pessoa física, ou outra empresa do grupo). Puramente
+  // declarativo, nunca comparado com nada.
+  favorecidoPix String?
+  // Texto livre pra quem prefere TED/depósito em vez de PIX (banco, agência,
+  // conta) — sem cadastro estruturado de banco/agência/conta de propósito:
+  // achado classificado 🟢 Barato cobre só recebimento básico, não um
+  // cadastro bancário completo.
+  dadosBancarios String?
+
   // Unidade padrão pra ENTRADA e EXIBIÇÃO de medidas de item de orçamento
   // (largura/altura) — não afeta como o dado é gravado: OrcamentoItem.
   // larguraCm/alturaCm continuam SEMPRE em centímetros, a unidade canônica
@@ -1679,6 +1701,24 @@ enum SegmentoGrafica {
   EDITORIAL_LIVRO
   CORTE_LASER_ACRILICO
   GRAFICA_RAPIDA
+  OUTRO
+}
+
+// Tipo da chave PIX cadastrada em Grafica.chavePix (achado F6 da Parte 7 da
+// auditoria de abrangência, pesquisa-abrangencia-modulos.md, 2026-08-31) —
+// só rotula o campo pra exibição ("Chave PIX (CPF): ..."), nunca valida o
+// FORMATO do valor digitado (não confere dígito verificador de CPF/CNPJ nem
+// formato de e-mail/telefone — texto livre em Grafica.chavePix). Os 5
+// valores reais de chave PIX no arranjo BACEN, +OUTRO de escape (mesmo
+// padrão enum-fechado+OUTRO do resto do schema, aqui sem campo-irmão
+// `xxxOutro` — os tipos reais já esgotam o universo do BACEN; OUTRO só cobre
+// "não quis especificar", sem detalhe adicional a coletar).
+enum TipoChavePix {
+  CPF
+  CNPJ
+  EMAIL
+  TELEFONE
+  ALEATORIA
   OUTRO
 }
 

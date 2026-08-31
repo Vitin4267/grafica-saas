@@ -4,6 +4,8 @@ import { slugify } from "@/lib/slug";
 import { linhasEtiqueta, ROTULO_LADO, rotuloTipoHotStamping } from "@/app/orcamento/[id]/EtiquetaResumo";
 import { converterDeCm, ROTULO_UNIDADE_DIMENSAO, type UnidadeDimensao } from "@/lib/unidade-dimensao";
 import { calcularConversoesPreco } from "@/lib/unidade-contagem";
+import { ROTULO_TIPO_CHAVE_PIX } from "@/lib/tipos-grafica";
+import type { TipoChavePix } from "@/generated/prisma/enums";
 import type { DadosPdfOrcamento } from "./OrcamentoDocumento";
 
 const ROTULO_TIPO_PEDIDO: Record<string, string> = {
@@ -43,6 +45,16 @@ export type OrcamentoParaPdf = {
     emailContato: string | null;
     site: string | null;
     enderecoResumido: string | null;
+    // Achado F6 da Parte 7 (auditoria de abrangência, 2026-08-31) — dados de
+    // RECEBIMENTO da gráfica, só exibição (nunca validados). Impressos no
+    // rodapé do PDF junto do contato, sempre que preenchidos — ao contrário
+    // de "Como pagar" em /o/[token] (só depois de APROVADO), o PDF não sabe
+    // olhar o status do orçamento em tempo real depois de baixado, então
+    // mostra sempre que a gráfica cadastrou.
+    chavePix: string | null;
+    tipoChavePix: TipoChavePix | null;
+    favorecidoPix: string | null;
+    dadosBancarios: string | null;
     // Só o texto de termos e o toggle de especificações técnicas — nunca os
     // demais campos de ParametrosGrafica (overhead, margem, comissão etc.),
     // que são dado comercial interno e não podem chegar no PDF (nem no
@@ -164,6 +176,15 @@ export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
     emailContato: orcamento.grafica.emailContato,
     site: orcamento.grafica.site,
     enderecoResumido: orcamento.grafica.enderecoResumido,
+    // Achado F6 — só exibição, chavePix nunca validada. tipoChavePix já sai
+    // convertido pro rótulo em português (mesmo padrão de `frete`/
+    // `tipoPedido` acima) pra OrcamentoDocumento não precisar saber do enum.
+    chavePix: orcamento.grafica.chavePix,
+    tipoChavePix: orcamento.grafica.tipoChavePix
+      ? ROTULO_TIPO_CHAVE_PIX[orcamento.grafica.tipoChavePix]
+      : null,
+    favorecidoPix: orcamento.grafica.favorecidoPix,
+    dadosBancarios: orcamento.grafica.dadosBancarios,
     clienteNome: orcamento.cliente.nome,
     status: orcamento.status,
     criadoEm: orcamento.createdAt,

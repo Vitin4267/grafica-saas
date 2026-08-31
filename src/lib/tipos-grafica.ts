@@ -1,4 +1,4 @@
-import type { SegmentoGrafica } from "@/generated/prisma/enums";
+import type { SegmentoGrafica, TipoChavePix } from "@/generated/prisma/enums";
 
 // Perfil de negócio da GRÁFICA — achado A6 da Parte 6 da auditoria de
 // abrangência (2026-08-27), mesmo padrão enum-fechado+OUTRO de
@@ -30,5 +30,27 @@ export const ROTULO_SEGMENTO_GRAFICA: Record<SegmentoGrafica, string> = {
   EDITORIAL_LIVRO: "Editorial e livros",
   CORTE_LASER_ACRILICO: "Corte a laser e acrílico",
   GRAFICA_RAPIDA: "Gráfica rápida",
+  OUTRO: "Outro",
+};
+
+// Tipo de chave PIX cadastrada em Grafica.chavePix — achado F6 da Parte 7 da
+// auditoria de abrangência (2026-08-31). Só rotula o campo pra exibição
+// ("Chave PIX (CPF): ..."), nunca valida o formato do valor digitado (ver
+// comentário do enum TipoChavePix no schema).
+export const ORDEM_TIPO_CHAVE_PIX: TipoChavePix[] = [
+  "CPF",
+  "CNPJ",
+  "EMAIL",
+  "TELEFONE",
+  "ALEATORIA",
+  "OUTRO",
+];
+
+export const ROTULO_TIPO_CHAVE_PIX: Record<TipoChavePix, string> = {
+  CPF: "CPF",
+  CNPJ: "CNPJ",
+  EMAIL: "E-mail",
+  TELEFONE: "Telefone",
+  ALEATORIA: "Chave aleatória",
   OUTRO: "Outro",
 };

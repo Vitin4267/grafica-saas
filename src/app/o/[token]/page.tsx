@@ -11,6 +11,7 @@ import { RespostaPublica } from "./RespostaPublica";
 import { OpcoesPublicasTabs, type OpcaoPublica } from "./OpcoesPublicasTabs";
 import { EtiquetaResumo, type EtiquetaResumoDados } from "@/app/orcamento/[id]/EtiquetaResumo";
 import { converterDeCm, ROTULO_UNIDADE_DIMENSAO } from "@/lib/unidade-dimensao";
+import { ROTULO_TIPO_CHAVE_PIX } from "@/lib/tipos-grafica";
 
 const ROTULO_TIPO_PEDIDO: Record<string, string> = {
   MODELO_NOVO: "Modelo novo",
@@ -68,6 +69,14 @@ export default async function OrcamentoPublicoPage({
   // Achado A2 da Parte 6 (auditoria de abrangência, 2026-08-27) — decide se
   // "Prazo estimado" (abaixo) fala em "dias úteis" ou "dias corridos".
   const prazoEmDiasUteis = orcamento.grafica.parametros?.prazoEmDiasUteis ?? true;
+  // Achado F6 da Parte 7 (auditoria de abrangência, 2026-08-31) — "Como
+  // pagar" só faz sentido depois que o orçamento foi APROVADO (antes disso
+  // não existe cobrança ainda) e só quando a gráfica cadastrou pelo menos um
+  // dos 4 campos em /configuracoes/identidade.
+  const temDadosPagamento =
+    !!orcamento.grafica.chavePix ||
+    !!orcamento.grafica.favorecidoPix ||
+    !!orcamento.grafica.dadosBancarios;
 
   // Mapeia um conjunto de OrcamentoItem (base ou de uma opção alternativa)
   // pro shape simples que OpcoesPublicasTabs consome — mesmos campos que a
@@ -300,6 +309,35 @@ export default async function OrcamentoPublicoPage({
                 }.`
               : "Este orçamento foi aprovado."}
           </p>
+        )}
+        {/* Achado F6 — só depois de APROVADO existe cobrança de verdade; antes
+            disso mostrar dados de pagamento seria prematuro (ver comentário
+            de temDadosPagamento acima). Nunca confirma pagamento automático:
+            é só o mesmo texto que a gráfica cadastrou, pro cliente ler. */}
+        {orcamento.status === "APROVADO" && temDadosPagamento && (
+          <Card className="mt-6 flex flex-col gap-2 p-5">
+            <p className="text-sm font-medium text-slate-500">Como pagar</p>
+            {orcamento.grafica.chavePix && (
+              <p className="text-sm text-slate-800 dark:text-slate-100">
+                Chave PIX
+                {orcamento.grafica.tipoChavePix
+                  ? ` (${ROTULO_TIPO_CHAVE_PIX[orcamento.grafica.tipoChavePix]})`
+                  : ""}
+                : <span className="font-medium">{orcamento.grafica.chavePix}</span>
+              </p>
+            )}
+            {orcamento.grafica.favorecidoPix && (
+              <p className="text-sm text-slate-800 dark:text-slate-100">
+                Favorecido: <span className="font-medium">{orcamento.grafica.favorecidoPix}</span>
+              </p>
+            )}
+            {orcamento.grafica.dadosBancarios && (
+              <p className="text-sm text-slate-800 dark:text-slate-100">
+                Dados bancários:{" "}
+                <span className="font-medium">{orcamento.grafica.dadosBancarios}</span>
+              </p>
+            )}
+          </Card>
         )}
         {orcamento.status === "REJEITADO" && (
           <p className="text-sm text-rose-600 dark:text-rose-400">

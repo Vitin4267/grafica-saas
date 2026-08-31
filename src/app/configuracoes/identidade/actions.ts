@@ -21,8 +21,13 @@ import {
   removerArquivo,
 } from "@/lib/billing/armazenamento";
 import { registrarAuditoria } from "@/lib/auditoria";
-import { ORDEM_SEGMENTO_GRAFICA, ROTULO_SEGMENTO_GRAFICA } from "@/lib/tipos-grafica";
-import type { SegmentoGrafica } from "@/generated/prisma/enums";
+import {
+  ORDEM_SEGMENTO_GRAFICA,
+  ROTULO_SEGMENTO_GRAFICA,
+  ORDEM_TIPO_CHAVE_PIX,
+  ROTULO_TIPO_CHAVE_PIX,
+} from "@/lib/tipos-grafica";
+import type { SegmentoGrafica, TipoChavePix } from "@/generated/prisma/enums";
 
 export type SalvarLogoResult = { ok: boolean; mensagem: string };
 
@@ -383,4 +388,73 @@ export async function salvarSegmento(
 
   revalidatePath("/configuracoes/identidade");
   return { ok: true, mensagem: "Perfil de negócio salvo com sucesso!" };
+}
+
+export type SalvarDadosPagamentoResult = { ok: boolean; mensagem: string };
+
+// Achado F6 da Parte 7 da auditoria de abrangência (pesquisa-abrangencia-
+// modulos.md, 2026-08-31) — dados de RECEBIMENTO da própria gráfica
+// (identidade comercial, não fiscal). SÓ EXIBIÇÃO: chavePix nunca é validada
+// (texto livre, não confere CPF/CNPJ/e-mail real — mesmo espírito de
+// dadosBancarios), nada aqui confirma pagamento automaticamente. Mesmo
+// formato de salvarContato acima: vários campos texto livre opcionais num
+// único form/action, só tipoChavePix tem lista fechada (mesma validação de
+// salvarSegmento, mas sem campo-irmão "Outro" — ver comentário do enum
+// TipoChavePix no schema).
+export async function salvarDadosPagamento(
+  _estadoAnterior: SalvarDadosPagamentoResult | null,
+  formData: FormData
+): Promise<SalvarDadosPagamentoResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CONFIGURACOES"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar configurações." };
+  }
+
+  const chavePix = String(formData.get("chavePix") ?? "").trim() || null;
+  const tipoChavePixBruto = String(formData.get("tipoChavePix") ?? "").trim();
+  const favorecidoPix = String(formData.get("favorecidoPix") ?? "").trim() || null;
+  const dadosBancarios = String(formData.get("dadosBancarios") ?? "").trim() || null;
+
+  let tipoChavePix: TipoChavePix | null = null;
+  if (tipoChavePixBruto) {
+    if (!ORDEM_TIPO_CHAVE_PIX.includes(tipoChavePixBruto as TipoChavePix)) {
+      return { ok: false, mensagem: "Tipo de chave PIX inválido." };
+    }
+    tipoChavePix = tipoChavePixBruto as TipoChavePix;
+  }
+
+  const anterior = await prisma.grafica.findUniqueOrThrow({
+    where: { id: usuario.graficaId },
+    select: { chavePix: true, tipoChavePix: true, favorecidoPix: true, dadosBancarios: true },
+  });
+
+  await prisma.grafica.update({
+    where: { id: usuario.graficaId },
+    data: { chavePix, tipoChavePix, favorecidoPix, dadosBancarios },
+  });
+
+  const mudou =
+    anterior.chavePix !== chavePix ||
+    anterior.tipoChavePix !== tipoChavePix ||
+    anterior.favorecidoPix !== favorecidoPix ||
+    anterior.dadosBancarios !== dadosBancarios;
+
+  if (mudou) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "configuracoes.salvar_dados_pagamento",
+      entidade: "Grafica",
+      entidadeId: usuario.graficaId,
+      descricao: "Dados de recebimento (PIX) da gráfica atualizados",
+      valorAnterior: `Tipo de chave: ${anterior.tipoChavePix ? ROTULO_TIPO_CHAVE_PIX[anterior.tipoChavePix] : "não informado"}`,
+      valorNovo: `Tipo de chave: ${tipoChavePix ? ROTULO_TIPO_CHAVE_PIX[tipoChavePix] : "não informado"}`,
+    });
+  }
+
+  revalidatePath("/configuracoes/identidade");
+  return { ok: true, mensagem: "Dados de recebimento salvos com sucesso!" };
 }
