@@ -42,7 +42,8 @@ fonte externa aplicável, o relatório marca explicitamente
 "(inferência minha)".
 
 **Total catalogado:** 88 achados nas Partes 1-6 + 24 achados na Parte 7
-(completude de cadastro) = **112 achados**.
+seções A-E (haiku) + 9 achados na Parte 7 seção F (Opus, 2026-08-31) =
+**121 achados**.
 
 **Nada aqui foi implementado ainda** — é material bruto de pesquisa, a
 base pra decidir o que atacar. Duas exceções: os achados "motor de preço
@@ -1944,6 +1945,68 @@ atípica. Nada aqui foi verificado linha-a-linha pela thread principal
 ainda (diferente das Partes 1-6, que passaram por reconciliação) — tratar
 como pesquisa bruta, mais sujeita a imprecisão que o resto do documento.
 
+**Atualização 2026-08-31 — revisão + rodada Opus (seção F).** Depois da
+pesquisa haiku acima, um subagente Opus (lendo `arquitetura-resumo.md` +
+este documento inteiro antes de raciocinar, em vez de reexplorar o repo —
+ver [[feedback-orquestracao-modelo]] na memória) fez duas coisas: (1) achou
+9 achados novos na seção **F — Documento e transação** abaixo, um ângulo
+que os 5 haiku não cobriram (focaram todos em "catálogo de coisas" —
+máquina/material/acabamento/pessoa/onboarding; nenhum tocou documento
+fiscal, frete, arte, pagamento); (2) revisou criticamente os 24 achados A-E
+acima, achando **3 propostas erradas** e **2 riscos de dano**, direto nos
+achados abaixo (não reescritos, só anotados com "⚠️ Revisão Opus 2026-08-31"
+no ponto certo):
+
+- **A1 (bordado):** proposta de `ProcessoSetupPorPeca.BORDADO` conflita com
+  o achado A4/Parte 1 (já catalogado) — bordado cobra por PONTO da arte,
+  não por peça fixa como `calcularSetupPorPeca` assume. Encaixar ali seria
+  o mesmo erro que o achado A5/Parte 1 aponta pro DTF (classificado no
+  motor errado, erra silenciosamente). Corrigir pra `CategoriaEquipamento.
+  BORDADO` (só cadastro, sem motor de custo — é o que `Equipamento` já é).
+- **A3+A4 (impressora/prensa):** dois campos de texto livre genéricos
+  (`tecnologiaImpressao`, `notas`) despejados no mesmo model sem
+  coordenação entre os 2 agentes que os escreveram. Pior: A4 diagnostica
+  diferença de CUSTO entre tipo de prensa mas propõe resolver em
+  `Equipamento`, que o próprio schema documenta como "nunca influencia
+  preço". Se o custo muda de verdade, o campo é em `MaquinaSetupPorPeca`
+  (`custoPorSetup`/`custoPorPeca`), não em `Equipamento`.
+- **B1-B6 (matérias-primas):** são trabalho de SEED (conteúdo do catálogo
+  mestre), não gap de cadastro — `ItemCatalogo` privado por gráfica +
+  `UnidadeMedida.OUTRO` já permitem cadastrar tudo isso hoje. Recategorizar
+  como 1 item de baixa prioridade ("ampliar catálogo mestre por segmento"),
+  não 6 achados separados inflando o placar.
+- **C1 (TipoAdesivo):** contradição interna — propõe `HOT_MELT` como "o
+  mesmo material que BORRACHA com outro nome" e ao mesmo tempo pede
+  adicionar (duplicaria o dado histórico). "Siliconado" é atributo do
+  SUBSTRATO, não do adesivo — o próprio achado admite isso e propõe no
+  lugar errado mesmo assim.
+- **C5:** é o melhor achado da seção C (gap estrutural real, verificado) —
+  deveria estar em destaque, não no rodapé.
+- **D1 (colaborador sem login):** a proposta original (relaxar `email`/
+  `senhaHash` de `Usuario` pra nulo) está ERRADA, não só arriscada —
+  contamina toda a cadeia de auth/sessão/billing por usuário. O caminho
+  correto já está provado no próprio achado: nome DECLARADO em texto
+  (`ApontamentoEtapa.operadorNomeDeclarado`, `Entrega.motorista`), ou um
+  model NOVO (`Colaborador`) se cadastro estruturado for mesmo necessário
+  — nunca um `Usuario` capenga.
+- **D3 (dados de pessoa/pagamento):** se sobrepõe a F6 abaixo (pra onde a
+  GRÁFICA recebe) e ao A15/Parte 4 (`ContaFinanceira`, conta bancária
+  interna) — são 3 achados de "dado de pagamento" chegando em 3 lugares
+  diferentes do schema sem se conhecer. Decidir 1 modelo antes de construir
+  qualquer um dos 3.
+- **E1/E2 (esconder card/menu por segmento):** potencialmente PERIGOSO como
+  está — `Grafica.segmento` é documentado no próprio schema como
+  "DESCRITIVO, nunca restritivo" e é opcional (maioria dos tenants tem
+  `null`, a regra proposta nem dispararia) e mono-valorado (gráfica híbrida
+  perderia módulo que usa). Sinal melhor pra "esconder card vazio": uso
+  real (ex: "0 pedidos em produção nos últimos N dias"), não identidade
+  declarada.
+- **E3:** o melhor achado da seção E, mas ainda não conferido contra
+  `src/lib/onboarding.ts`/`dados-exemplo.ts` — checar antes de construir.
+
+Placar depois desta rodada: **112 + 9 = 121 achados catalogados** no
+documento inteiro.
+
 ## A. Máquinas e equipamentos cadastráveis
 
 ### A1 — Máquina de bordado sem categoria própria
@@ -2115,6 +2178,75 @@ como pesquisa bruta, mais sujeita a imprecisão que o resto do documento.
 **O que falta.** O único sinal de que um cliente/produto é de exemplo é o prefixo de texto "[Exemplo] " no nome — sem badge/cor/ícone. Um usuário distraído pode incluir um cliente ou produto de exemplo num orçamento real.
 
 **Proposta.** Badge visual nos seletores de produto/cliente quando a origem for exemplo; aviso no momento de criar orçamento se algum item/cliente selecionado for de exemplo.
+
+## F. Documento e transação
+
+**Adicionada em 2026-08-31, por um subagente Opus** (não haiku — ver nota
+de atualização no topo desta Parte). Ângulo que os 5 haiku de A-E não
+cobriram: não "catálogo de coisas" (máquina/material/acabamento/pessoa),
+mas o documento e a transação em si — nota fiscal, frete, arte, pagamento,
+ferramental. Cada achado abaixo foi verificado contra o código real
+(`prisma/schema.prisma`, `src/lib/`) antes de ser escrito, com grep
+confirmando ausência — diferente de A-E, tratar com mais confiança.
+
+### F1 — Ferramental reutilizável (faca, clichê, tela, matriz de bordado) não tem cadastro nenhum
+**O que falta.** Nenhum model representa a ferramenta física — só o dinheiro dela (`ConfiguracaoClicheEtiqueta`/`Flexografia`, `ConfiguracaoAcabamento.custoFerramental`, `OrcamentoItemPrecificacaoEtiqueta.custoFaca`). `ConfiguracaoClicheFlexografia` é OBRIGATÓRIA pra todo produto FLEXOGRAFIA, então toda repetição de tiragem recalcula o clichê como se fosse novo — `TipoPedidoOrcamento.REPETICAO_SEM_ALTERACAO` é só rótulo, nada por trás sabe que a matriz já existe. Também: sem localização física, sem registro de propriedade (cliente x gráfica), sem controle de vida útil por tiragem acumulada.
+
+**Pesquisa.** No web-to-print de baixa tiragem a faca é refeita a cada pedido ([Gráfica das Gráficas](https://instrucoes.graficadasgraficas.com.br/corte-especial/)); em flexo/rótulo industrial o clichê é lavado, guardado e reutilizado, com vida útil variando por cuidado de manuseio ([Clicheria Blumenau](https://www.clicheriablumenau.com.br/blog/mercado/quais-fatores-afetam-o-desempenho-do-cliche-flexografico/)). Clicherias/facas são categoria de fornecimento própria e recorrente ([Guia do Gráfico](https://www.guiadografico.com.br/produtos-e-servicos/categoria/clicherias)).
+
+**Proposta.** `enum TipoFerramental { FACA_CORTE_VINCO CLICHE_FLEXO CLICHE_HOT_STAMPING TELA_SERIGRAFIA MATRIZ_BORDADO CILINDRO_ROTOGRAVURA FERRAMENTA_ACABAMENTO OUTRO }` + `ProprietarioFerramental { GRAFICA CLIENTE }` + `StatusFerramental { ATIVO EM_MANUTENCAO DESCARTADO DEVOLVIDO_AO_CLIENTE }`. `model Ferramental { graficaId, tipo, tipoOutro?, codigo, descricao, clienteId? (SetNull), itemGraficaId?, proprietario, localizacao?, tiragensAcumuladas Int @default(0), status, desativadoEm }`. `OrcamentoItem.ferramentalId String?` opcional, nunca automático — só sugere aviso ("esta faca já existe, considere não cobrar"), preço continua travado à mão.
+
+### F2 — Sistema só emite NF-e de mercadoria; gráfica que fatura serviço não tem onde cadastrar
+**O que falta.** `NotaFiscal`/`focus-nfe.ts` são inteiramente NF-e modelo 55. Zero campo de NFS-e (código de serviço, inscrição municipal do emitente, alíquota ISS). `Cliente.inscricaoMunicipal` já existe reservado com comentário "sistema só emite NF-e hoje". Atinge comunicação visual, design/arte, personalização, estamparia — e qualquer gráfica que imprima sobre material do cliente (`materialFornecidoPeloCliente`, já modelado), que é industrialização/serviço por definição.
+
+**Pesquisa.** Súmula 156/STJ: composição gráfica personalizada sob encomenda é ISS, não ICMS. LC 116/2003 item 13.05 (composição gráfica) e 24.01 (sinalização visual, banners, adesivos). STF ressalva embalagem que integra produto industrializado (fica ICMS) — os dois mundos coexistem numa gráfica média.
+
+**Proposta.** Cadastro primeiro, emissão depois: `ItemCatalogo.itemListaServicoLc116`/`codigoServicoMunicipal` (só quando `tipo=SERVICO`). `DadosFiscaisGrafica.inscricaoMunicipal`/`codigoMunicipioIbge`/`aliquotaIssPercent`. `NotaFiscal.modelo ModeloDocumentoFiscal @default(NFE)` (`NFE`/`NFSE`/`NFCE`) + relaxar `@@unique([orcamentoId, modelo])` pra venda mista emitir os dois. `verificarProntidaoFiscal` passa a checar pendência por modelo. Emissão de NFS-e em si fica pra fase 2.
+
+### F3 — Frete: existe a modalidade, não existe o valor, transportadora é texto livre, nota sai com transporte vazio
+**O que falta.** `Orcamento.frete` é só a modalidade (já corrigido no B1/Parte 1); não existe `valorFrete` em lugar nenhum. `transportadora` é texto livre sem CNPJ/RNTRC. `focus-nfe.ts` manda `valor_frete: "0"` LITERAL e não tem grupo de transportadora nem volumes/peso no payload.
+
+**Pesquisa.** Grupo `transp` da NF-e 4.0 tem `transporta` (dados da transportadora) e `vol` (volumes, peso) — `modFrete` é só um elemento desse grupo ([DataFrete](https://www.datafrete.com/tipos-de-frete-na-nf-e-modalidades-codigos-e-novas-exigencias-fiscais/)).
+
+**Proposta.** `model Transportadora` (mesmo formato de `Fornecedor`, já nascendo com `documento`). `Orcamento.transportadoraId` (FK opcional, convive com texto — padrão já estabelecido) + `valorFrete Decimal?` (null=hoje). `Entrega.volumes`/`pesoBrutoKg`/`especieVolume`/`transportadoraId`. Decisão explícita necessária: frete entra na base de comissão? (sugestão: não, mesmo espírito de `BaseComissao.LUCRO`).
+
+### F4 — Estoque sem lote/validade — schema já cita exigência que não consegue atender
+**O que falta.** `MovimentacaoEstoque` não tem lote nem validade. `Cliente.preferenciasProducao` usa como exemplo real "não aceita variação de tom entre lotes" — o sistema registra a EXIGÊNCIA e não tem onde registrar de qual lote saiu o pedido. Também sem alerta de validade (mecânica já existe em `alerta-estoque.ts`, só falta o dado) e sem certificação FSC.
+
+**Pesquisa.** Rastreabilidade por lote é exigência regulatória (Anvisa RDC 275/2002, RDC 655/2022) pra quem fornece indústria alimentícia/farma. Cadeia de custódia FSC é aplicável a gráficas/rotuladores, com código de licença exibido na peça ([SGS](https://www.sgs.com/pt-br/services/certificacao-de-cadeia-de-custodia-fsc-na-industria-grafica)).
+
+**Proposta.** `ItemGrafica.controlaLote Boolean @default(false)` opt-in. `MovimentacaoEstoque.lote`/`validade` preenchidos na ENTRADA_COMPRA, copiados como snapshot na SAIDA_PRODUCAO (liga lote→pedido de graça). `ItemGrafica.certificacao` enum fechado+OUTRO. Não fazer agora: FEFO/apropriação automática — só registro/rastro.
+
+### F5 — Arte é uma só por orçamento/pedido; não existe arte por item
+**O que falta.** `Orcamento.arteUrl`/`Pedido.arteUrl` são um arquivo único no cabeçalho — `OrcamentoItem` não tem campo de arte nenhum. Quebra no caso mais comum do próprio perfil-piloto: 6 SKUs de rótulo num pedido só recebem UMA aprovação, e o preflight de DPI/sangria checa o arquivo único contra a geometria de um pedido com itens de dimensões diferentes.
+
+**Pesquisa.** (inferência minha, sustentada por 2 fatos do próprio repo) — `ArquivoArmazenado.referenciaId` já documenta `orcamentoItemId` como referência possível (a camada de storage previu isso); `OrcamentoItemTinta` já prova o formato "anexo por item".
+
+**Proposta.** `model ArteItem { orcamentoItemId, pedidoId?, url, versao Int @default(1), aprovadaEm?, comentarioCliente?, preflightAvisos Json? }`. `Pedido.arteUrl` continua existindo (legado, nunca removido). Gate de avanço vira "toda `ArteItem` aprovada OU nenhuma existe" — zero mudança pra quem não usa. `TipoArquivoArmazenado.ARTE_ITEM` novo.
+
+### F6 — Gráfica não tem onde cadastrar a própria chave PIX / dados de recebimento
+**O que falta.** `Grafica` tem logo/cor/contato — zero dado de recebimento. Ao mesmo tempo `FormaPagamento.PIX` existe no lançamento, `CondicaoPagamento` gera `ContaReceber`, e `/o/[token]` deixa o cliente aprovar SOZINHO sem login. O fluxo termina exatamente onde o dinheiro deveria começar. Achado mais barato e mais universal do relatório — afeta 100% dos tenants, toda venda.
+
+**Pesquisa.** (inferência minha — consequência direta de existir link público de aprovação sem nenhum dado de pagamento no documento).
+
+**Proposta.** Em `Grafica` (identidade comercial, não `DadosFiscaisGrafica`): `chavePix`/`tipoChavePix` (enum fechado+OUTRO)/`favorecidoPix`/`dadosBancarios` (texto livre). Editável em `/configuracoes/identidade` (já existe, já auditada). Impresso no PDF e exibido em `/o/[token]` só quando preenchido. Nunca validar a chave, só exibir texto.
+
+### F7 — Item de orçamento tem 2 dimensões; caixa/acrílico/livro têm 3
+**O que falta.** `OrcamentoItem` só tem `larguraCm`/`alturaCm`. Sem profundidade/espessura — gráfica de embalagem não consegue registrar "caixa 20×15×10", corte a laser não registra espessura da chapa no ITEM (só existe do lado da matéria-prima). Distinto do A11/Parte 1 (que trata a mesma geometria pelo lado do CUSTO/nesting) — aqui é sobre conseguir registrar o que foi vendido.
+
+**Proposta.** `OrcamentoItem.profundidadeCm`/`espessuraMm Decimal?` — opcionais, ignorados por 100% dos motores atuais (risco zero de mudar preço de ninguém). Sempre visíveis no formulário (mesma decisão do A12/Parte 5). `espessuraMm` em milímetro (chapa é vendida em mm no Brasil), não cm.
+
+### F8 — Sem onde registrar cor especial/Pantone — só a QUANTIDADE de cores
+**O que falta.** Todo campo de cor no schema é um número (`corFrente`/`numeroCoresFlexo`/`coresRotulo`) — nenhum diz QUAIS cores. Cor especial é simultaneamente tinta que se mistura por fórmula, clichê/tela a mais, e o critério nº1 de aprovação/reclamação do cliente. Repetição de pedido não carrega a receita de cor.
+
+**Pesquisa.** (inferência minha, sustentada pelo desenho interno — o produto já cobra por cor especial via `ConfiguracaoClicheEtiqueta`/`Flexografia`, só o identificador da cor ficou de fora).
+
+**Proposta.** `model CorEspecialCliente { graficaId, clienteId?, nome, referencia ("PANTONE 485 C"), sistemaCor (enum fechado+OUTRO), formulaMistura? }` — biblioteca de cor da marca do cliente. `model OrcamentoItemCor { orcamentoItemId, corEspecialId?, nomeDeclarado }` (N:1, mesmo padrão de `OrcamentoItemHotStamping`). Nunca toca o motor — só descritivo, copiado no "Pedir de novo".
+
+### F9 — `SegmentoGrafica` não cobre segmento que o motor já atende, e é mono-valorado
+**O que falta.** Enum não tem `SERIGRAFIA` nem `FLEXOGRAFIA` — apesar de ambos terem `ModeloCalculo` próprio. Faltam também BORDADO, PAPELARIA_CONVITES, SINALIZACAO_ADESIVAGEM. Mais grave: `Grafica.segmento` é campo ÚNICO, mas gráfica real quase nunca é uma coisa só (offset + gráfica rápida + comunicação visual no mesmo CNPJ é a norma).
+
+**Proposta.** `ADD VALUE` puro (aditivo): SERIGRAFIA, FLEXOGRAFIA, BORDADO, PAPELARIA_CONVITES, SINALIZACAO_ADESIVAGEM. Adicionar `Grafica.segmentosSecundarios SegmentoGrafica[]`, consumido só pelo que é ADITIVO (dados de exemplo, categorias sugeridas) — mantendo `segmento` como principal, zero migração de comportamento. **Regra de ouro:** nada que RESTRINJA (esconder card/link — ver correção de E1/E2 acima) deve olhar pra `segmento`, que o próprio schema documenta como "descritivo, nunca restritivo".
 
 ---
 
