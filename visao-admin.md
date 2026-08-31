@@ -18,9 +18,10 @@ quem trava a próxima ação. Detalhe de cada item nas seções abaixo.
 - [ ] **Qual eixo diferencia os planos** — faturamento e nº de prensas
       sozinho já foram testados e descartados; falta fechar o critério
       combinado (máquinas/usuários/orçamentos). (seção 2)
-- [ ] **7 commits aguardando `git push`** — código de 4 rodadas da
-      auditoria + 3 de documentação estão só no seu computador, não foram
-      pro GitHub, então não estão no ar na Vercel. Só empurro quando você
+- [ ] **12 commits aguardando `git push`** — código de 5 rodadas da
+      auditoria + documentação (visão de ADM, mapa de arquitetura,
+      classificação de custo) estão só no seu computador, não foram pro
+      GitHub, então não estão no ar na Vercel. Só empurro quando você
       pedir. (seção 6)
 - [ ] **Prensa fantasma "[Exemplo] Prensa Offset"** na conta real da Assus
       — resíduo de dado de exemplo, nunca confirmou se quer que eu apague.
@@ -33,13 +34,13 @@ quem trava a próxima ação. Detalhe de cada item nas seções abaixo.
 - [ ] Role de banco de dados com permissão restrita (hoje usa acesso total)
 - [ ] Implementar em código os intervalos semestral/anual do Stripe (já
       decidido o desconto, falta criar os Prices e o código)
-- [ ] 121 achados catalogados de abrangência de produto — 33 na Parte 7
-      **nenhum construído ainda** (isso é backlog intencional a seu
-      pedido, não pendência esquecida — mas fica registrado aqui também).
-      **87 dos 121 estão pendentes e agora têm custo estimado** (Barato/
-      Médio/Caro) direto no documento — 32 baratos, 29 médios, 26 caros.
-      Os baratos são os candidatos naturais pra próxima rodada de
-      construção (ver "Resumo de custo" no fim de
+- [ ] 121 achados catalogados de abrangência de produto — 10 dos 33 da
+      Parte 7 já construídos (rodada 17, 2026-08-31: máquinas de bordado/
+      corte-e-vinco/impressora-grande-formato/gofradeira + 5 matérias-
+      primas de seed), 23 pendentes. **77 achados pendentes no total têm
+      custo estimado** (Barato/Médio/Caro) direto no documento — 22
+      baratos, 29 médios, 26 caros. Os baratos são os candidatos naturais
+      pra próxima rodada de construção (ver "Resumo de custo" no fim de
       `pesquisa-abrangencia-modulos.md`).
 
 **Nenhum item acima é urgência de hoje.** Nada é furo de segurança ativo
@@ -152,7 +153,10 @@ embalagem, editorial, bordado, serigrafia, DTF, corte a laser...).
 - **Parte 7 é nova** (33 achados, adicionada 30-31/08/2026): pergunta
   diferente — não "o motor calcula certo?", e sim **"dá pra sequer
   CADASTRAR isso?"** (ex: seu próprio exemplo — falta de máquina pra
-  cadastrar). **Nada da Parte 7 foi construído ainda**, é catálogo puro.
+  cadastrar). **10 dos 33 já construídos** (rodada 17, 31/08): categorias
+  de máquina pra bordado/corte-e-vinco/impressora-grande-formato/
+  gofradeira, e 19 itens novos de matéria-prima (tecido em rolo, DTF,
+  corpos de brinde, filme metalizado, papelão ondulado). 23 pendentes.
 
 ### Os achados mais importantes da Parte 7, pra você bater o olho
 - **Chave PIX da própria gráfica não tem onde cadastrar** — hoje o cliente
@@ -176,10 +180,15 @@ antes, e já corrigi isso no documento.
 
 ## 6. Estado do git — atenção aqui
 
-**7 commits estão só no seu computador, ainda não foram pro GitHub
+**12 commits estão só no seu computador, ainda não foram pro GitHub
 (`origin/main`)** — e portanto não disparam deploy na Vercel:
 
 ```
+19e9631 Rodada 17 (10 achados construídos, Parte 7)
+fd28cd1 Atualiza pendências no visao-admin.md
+7537ac6 Classifica custo/esforço dos 87 achados pendentes
+092f67e Seção 0 (Pendências) no visao-admin.md
+641bd5e Cria visao-admin.md
 83173cb Parte 7 seção F (Opus) + revisão crítica
 5eb3d70 Mapa de arquitetura do repo
 586dac0 Parte 7 da auditoria (achados de completude de cadastro)
@@ -189,9 +198,12 @@ fa09116 Rodada 16 (5 achados construídos)
 7693118 Rodada 13 (3 achados construídos)
 ```
 
-Os 2 primeiros (documentação) não afetam o site. Os 4 de rodada (13-16) SÃO
-código novo em produção que ainda não foi pro ar — precisam de um `git push`
-quando você quiser que o site atualize. Eu só empurro quando você pede
+Os de documentação pura (visao-admin.md, mapa de arquitetura, classificação
+de custo) não afetam o site. Os 5 de rodada (13-17) SÃO código novo em
+produção que ainda não foi pro ar — precisam de um `git push` quando você
+quiser que o site atualize, incluindo a migration de banco da rodada 17
+(já aplicada no banco de dev, mas o schema só vai bater com o código em
+produção depois do push+deploy). Eu só empurro quando você pede
 explicitamente (decisão de segurança sua, cada push é aprovado na hora).
 
 ---
