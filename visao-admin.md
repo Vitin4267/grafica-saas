@@ -18,7 +18,7 @@ quem trava a próxima ação. Detalhe de cada item nas seções abaixo.
 - [ ] **Qual eixo diferencia os planos** — faturamento e nº de prensas
       sozinho já foram testados e descartados; falta fechar o critério
       combinado (máquinas/usuários/orçamentos). (seção 2)
-- [ ] **12 commits aguardando `git push`** — código de 5 rodadas da
+- [ ] **13 commits aguardando `git push`** — código de 6 rodadas da
       auditoria + documentação (visão de ADM, mapa de arquitetura,
       classificação de custo) estão só no seu computador, não foram pro
       GitHub, então não estão no ar na Vercel. Só empurro quando você
@@ -34,14 +34,12 @@ quem trava a próxima ação. Detalhe de cada item nas seções abaixo.
 - [ ] Role de banco de dados com permissão restrita (hoje usa acesso total)
 - [ ] Implementar em código os intervalos semestral/anual do Stripe (já
       decidido o desconto, falta criar os Prices e o código)
-- [ ] 121 achados catalogados de abrangência de produto — 10 dos 33 da
-      Parte 7 já construídos (rodada 17, 2026-08-31: máquinas de bordado/
-      corte-e-vinco/impressora-grande-formato/gofradeira + 5 matérias-
-      primas de seed), 23 pendentes. **77 achados pendentes no total têm
-      custo estimado** (Barato/Médio/Caro) direto no documento — 22
-      baratos, 29 médios, 26 caros. Os baratos são os candidatos naturais
-      pra próxima rodada de construção (ver "Resumo de custo" no fim de
-      `pesquisa-abrangencia-modulos.md`).
+- [ ] 121 achados catalogados de abrangência de produto — 11 dos 33 da
+      Parte 7 já construídos (rodadas 17 e 18, 2026-08-31), 22 pendentes.
+      **76 achados pendentes no total têm custo estimado** (Barato/Médio/
+      Caro) direto no documento — 21 baratos, 29 médios, 26 caros. Os
+      baratos são os candidatos naturais pra próxima rodada de construção
+      (ver "Resumo de custo" no fim de `pesquisa-abrangencia-modulos.md`).
 
 **Nenhum item acima é urgência de hoje.** Nada é furo de segurança ativo
 nem bloqueia cliente pagando agora — é o que fica pendente entre uma
@@ -153,15 +151,17 @@ embalagem, editorial, bordado, serigrafia, DTF, corte a laser...).
 - **Parte 7 é nova** (33 achados, adicionada 30-31/08/2026): pergunta
   diferente — não "o motor calcula certo?", e sim **"dá pra sequer
   CADASTRAR isso?"** (ex: seu próprio exemplo — falta de máquina pra
-  cadastrar). **10 dos 33 já construídos** (rodada 17, 31/08): categorias
+  cadastrar). **11 dos 33 já construídos**: rodada 17 (31/08) — categorias
   de máquina pra bordado/corte-e-vinco/impressora-grande-formato/
   gofradeira, e 19 itens novos de matéria-prima (tecido em rolo, DTF,
-  corpos de brinde, filme metalizado, papelão ondulado). 23 pendentes.
+  corpos de brinde, filme metalizado, papelão ondulado); rodada 18 (31/08)
+  — chave PIX da gráfica (ver acima). 22 pendentes.
 
 ### Os achados mais importantes da Parte 7, pra você bater o olho
-- **Chave PIX da própria gráfica não tem onde cadastrar** — hoje o cliente
-  aprova o orçamento sozinho pelo link público e não sabe pra onde pagar
-  (vai tudo por WhatsApp). Achado mais barato e mais universal de todos.
+- ~~Chave PIX da própria gráfica não tem onde cadastrar~~ — **construído
+  2026-08-31**: agora dá pra cadastrar em Configurações > Identidade, e
+  aparece no PDF do orçamento e no link público depois de aprovado. Só
+  exibição — sem validar a chave, sem confirmar pagamento automático.
 - **Ferramental (faca, clichê, tela) não tem cadastro** — toda repetição de
   pedido recalcula o clichê como se fosse novo, mesmo já existindo.
 - **Sistema só emite NF-e**, não NFS-e — gráfica que presta serviço
@@ -180,10 +180,11 @@ antes, e já corrigi isso no documento.
 
 ## 6. Estado do git — atenção aqui
 
-**12 commits estão só no seu computador, ainda não foram pro GitHub
+**13 commits estão só no seu computador, ainda não foram pro GitHub
 (`origin/main`)** — e portanto não disparam deploy na Vercel:
 
 ```
+6193228 Rodada 18 (achado F6 — PIX da gráfica)
 19e9631 Rodada 17 (10 achados construídos, Parte 7)
 fd28cd1 Atualiza pendências no visao-admin.md
 7537ac6 Classifica custo/esforço dos 87 achados pendentes
@@ -199,11 +200,11 @@ fa09116 Rodada 16 (5 achados construídos)
 ```
 
 Os de documentação pura (visao-admin.md, mapa de arquitetura, classificação
-de custo) não afetam o site. Os 5 de rodada (13-17) SÃO código novo em
+de custo) não afetam o site. Os 6 de rodada (13-18) SÃO código novo em
 produção que ainda não foi pro ar — precisam de um `git push` quando você
-quiser que o site atualize, incluindo a migration de banco da rodada 17
-(já aplicada no banco de dev, mas o schema só vai bater com o código em
-produção depois do push+deploy). Eu só empurro quando você pede
+quiser que o site atualize, incluindo as migrations de banco das rodadas
+17 e 18 (já aplicadas no banco de dev, mas o schema só vai bater com o
+código em produção depois do push+deploy). Eu só empurro quando você pede
 explicitamente (decisão de segurança sua, cada push é aprovado na hora).
 
 ---
