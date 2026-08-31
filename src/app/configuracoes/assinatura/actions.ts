@@ -6,7 +6,7 @@ import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirPapel } from "@/lib/auth/permissoes";
 import { resolverOrigemPublica } from "@/lib/url-publica";
 import { obterStripe } from "@/lib/billing/stripe-client";
-import { obterPlano, type PlanoId } from "@/lib/billing/planos";
+import { obterPriceId, type Intervalo, type PlanoId } from "@/lib/billing/planos";
 import { DIAS_TOLERANCIA_LIMITE } from "@/lib/billing/limite-uso";
 import { reservarCheckout, liberarReservaCheckout } from "@/lib/billing/checkout-reserva";
 import type { StatusAssinatura } from "@/generated/prisma/enums";
@@ -64,6 +64,7 @@ export async function obterResumoAssinatura(): Promise<ResumoAssinatura | null> 
 // sobrevive a toda mudança futura da assinatura (upgrade, reativação pelo
 // Customer Portal), diferente de tentar casar por stripeSubscriptionId.
 const PLANOS_VALIDOS: PlanoId[] = ["basico", "pro", "empresarial"];
+const INTERVALOS_VALIDOS: Intervalo[] = ["mensal", "semestral", "anual"];
 
 export async function iniciarCheckout(
   _estadoAnterior: AssinaturaActionResult | null,
@@ -77,7 +78,24 @@ export async function iniciarCheckout(
     return { ok: false, mensagem: "Plano inválido." };
   }
 
-  const plano = obterPlano(planoId as PlanoId);
+  // Intervalo é opcional no FormData por retrocompatibilidade (nunca deveria
+  // faltar vindo da UI atual) — sem ele, cai no mensal, que é o único
+  // intervalo garantido pra qualquer plano listado.
+  const intervaloBruto = formData.get("intervalo");
+  const intervalo: Intervalo =
+    typeof intervaloBruto === "string" && INTERVALOS_VALIDOS.includes(intervaloBruto as Intervalo)
+      ? (intervaloBruto as Intervalo)
+      : "mensal";
+
+  // Resolve o Price ID certo pro (plano, intervalo) pedido. Isto não deveria
+  // acontecer na prática (a UI só oferece intervalo já configurado pro
+  // plano), mas defende mesmo assim contra FormData montado à mão / estado
+  // stale do client.
+  const stripePriceId = obterPriceId(planoId as PlanoId, intervalo);
+  if (!stripePriceId) {
+    return { ok: false, mensagem: "Esse intervalo de cobrança não está disponível pra este plano." };
+  }
+
   const origem = await resolverOrigemPublica();
   const stripe = obterStripe();
 
@@ -102,7 +120,7 @@ export async function iniciarCheckout(
       mode: "subscription",
       customer: assinatura?.stripeCustomerId ?? undefined,
       customer_email: assinatura?.stripeCustomerId ? undefined : usuario.email,
-      line_items: [{ price: plano.stripePriceId, quantity: 1 }],
+      line_items: [{ price: stripePriceId, quantity: 1 }],
       success_url: `${origem}/configuracoes/assinatura?checkout=sucesso`,
       cancel_url: `${origem}/configuracoes/assinatura?checkout=cancelado`,
       client_reference_id: usuario.graficaId,

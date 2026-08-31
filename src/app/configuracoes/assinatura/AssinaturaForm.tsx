@@ -1,15 +1,28 @@
 "use client";
 
-import { useActionState } from "react";
+import { useMemo, useState, useActionState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { iniciarCheckout, abrirPortalCliente } from "./actions";
 import { UsersIcon, TrendingUpIcon, BuildingIcon, CheckCircleIcon, SparklesIcon } from "@/components/icons";
 import type { StatusAssinatura, PapelUsuario } from "@/generated/prisma/enums";
-import type { Plano, PlanoId } from "@/lib/billing/planos";
+import type { Intervalo, Plano, PlanoId } from "@/lib/billing/planos";
 import type { PlanoComPreco } from "@/lib/billing/precos";
 import { formatarBytes, percentualUsado } from "@/lib/billing/limite-armazenamento";
+
+// Cópia local dos 3 intervalos (não importa INTERVALOS de @/lib/billing/planos
+// — esse módulo tem "server-only" no topo; um import de VALOR dele aqui
+// arrastaria o módulo inteiro pro bundle do client component e quebra o
+// build. Só importamos `type Intervalo` acima, que é apagado em tempo de
+// compilação.
+const INTERVALOS: Intervalo[] = ["mensal", "semestral", "anual"];
+
+const ROTULO_TOGGLE_INTERVALO: Record<Intervalo, string> = {
+  mensal: "Mensal",
+  semestral: "Semestral",
+  anual: "Anual",
+};
 
 const ROTULO_STATUS: Record<StatusAssinatura, string> = {
   TRIALING: "Em teste gratuito",
@@ -33,9 +46,17 @@ const ESTILO_POR_PLANO: Record<PlanoId, { Icon: typeof UsersIcon; destaque: bool
   empresarial: { Icon: BuildingIcon, destaque: false },
 };
 
-function CardPlano({ plano }: { plano: PlanoComPreco }) {
+function CardPlano({ plano, intervaloSelecionado }: { plano: PlanoComPreco; intervaloSelecionado: Intervalo }) {
   const [estado, acao, pending] = useActionState(iniciarCheckout, null);
   const { Icon, destaque } = ESTILO_POR_PLANO[plano.id];
+
+  // Nem todo plano tem todo intervalo configurado no Stripe (semestral/anual
+  // são opcionais por plano — ver planos.ts). Se o intervalo escolhido no
+  // toggle global não existir pra ESTE plano, o card cai pro mensal em vez de
+  // ficar sem preço/botão — decisão de UX: prefere sempre mostrar uma opção
+  // funcional de assinar a esconder o card ou desabilitar o botão.
+  const intervalo: Intervalo = plano.precos[intervaloSelecionado] ? intervaloSelecionado : "mensal";
+  const preco = plano.precos[intervalo];
 
   const itens = [
     plano.limiteOrcamentosMes === null
@@ -73,13 +94,20 @@ function CardPlano({ plano }: { plano: PlanoComPreco }) {
       </span>
 
       <h3 className="mt-4 text-lg font-bold text-slate-900 dark:text-white">{plano.nome}</h3>
-      {plano.precoFormatado && (
-        <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">
-          {plano.precoFormatado.replace(/(\/\w+)$/, "")}
-          <span className="text-sm font-medium text-slate-400">
-            {plano.precoFormatado.match(/\/\w+$/)?.[0]}
-          </span>
-        </p>
+      {preco && (
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <p className="text-2xl font-bold text-slate-900 dark:text-white">
+            {preco.precoFormatado.replace(/(\/[^/]+)$/, "")}
+            <span className="text-sm font-medium text-slate-400">
+              {preco.precoFormatado.match(/\/[^/]+$/)?.[0]}
+            </span>
+          </p>
+          {intervalo !== "mensal" && preco.economiaPercentual !== null && preco.economiaPercentual > 0 && (
+            <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+              Economize {preco.economiaPercentual}%
+            </span>
+          )}
+        </div>
       )}
       <p className="mt-1 text-sm text-slate-500">{plano.descricao}</p>
 
@@ -100,6 +128,7 @@ function CardPlano({ plano }: { plano: PlanoComPreco }) {
 
       <form action={acao} className="mt-6">
         <input type="hidden" name="planoId" value={plano.id} />
+        <input type="hidden" name="intervalo" value={intervalo} />
         <Button
           type="submit"
           variant={destaque ? "primary" : "outline"}
@@ -159,6 +188,20 @@ export function AssinaturaForm({
   // "ADMIN", não "Cortesia" — é o dono da plataforma, faz sentido a etiqueta
   // deixar isso claro em vez de soar como um desconto/favor concedido.
   const rotuloCortesia = souSuperAdmin ? "ADMIN" : "Cortesia";
+
+  // Toggle global (Mensal/Semestral/Anual) aplicado aos 3 cards de uma vez —
+  // padrão comum de página de preço SaaS, em vez de cada card ter o próprio
+  // seletor. Só oferece um intervalo na aba se PELO MENOS UM plano tiver
+  // aquele Price resolvido com sucesso (env var configurada + busca no
+  // Stripe ok); se nenhum plano tiver semestral/anual configurado, a aba
+  // nem aparece (evita um toggle que não muda nada). Cada CardPlano ainda
+  // decide por conta própria se cai pro mensal quando O SEU plano específico
+  // não tem o intervalo escolhido (ver CardPlano acima).
+  const intervalosDisponiveis = useMemo(
+    () => INTERVALOS.filter((intervalo) => planos.some((plano) => plano.precos[intervalo])),
+    [planos]
+  );
+  const [intervaloSelecionado, setIntervaloSelecionado] = useState<Intervalo>("mensal");
 
   return (
     <div className="flex flex-col gap-8">
@@ -269,10 +312,33 @@ export function AssinaturaForm({
       </Card>
 
       {mostrarPlanos && (
-        <div className="grid grid-cols-1 gap-6 pt-2 sm:grid-cols-3">
-          {planos.map((plano) => (
-            <CardPlano key={plano.id} plano={plano} />
-          ))}
+        <div className="flex flex-col gap-6">
+          {intervalosDisponiveis.length > 1 && (
+            <div className="flex justify-center">
+              <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1 dark:border-slate-800 dark:bg-slate-900">
+                {intervalosDisponiveis.map((intervalo) => (
+                  <button
+                    key={intervalo}
+                    type="button"
+                    onClick={() => setIntervaloSelecionado(intervalo)}
+                    className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${
+                      intervaloSelecionado === intervalo
+                        ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white"
+                        : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                    }`}
+                  >
+                    {ROTULO_TOGGLE_INTERVALO[intervalo]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-6 pt-2 sm:grid-cols-3">
+            {planos.map((plano) => (
+              <CardPlano key={plano.id} plano={plano} intervaloSelecionado={intervaloSelecionado} />
+            ))}
+          </div>
         </div>
       )}
     </div>
