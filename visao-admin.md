@@ -187,11 +187,10 @@ antes, e já corrigi isso no documento.
 
 ## 6. Estado do git — atenção aqui
 
-**5 commits estão só no seu computador, ainda não foram pro GitHub**
-(desde o último push em `172710f`): rodada 19 da auditoria (8 achados,
-código real) + os intervalos semestral/anual do Stripe (código real) + 3
-de documentação. Migrations da rodada 19 já aplicadas no banco de dev, sem
-pendência de schema. Só empurro quando você pedir.
+**Tudo empurrado.** `172710f..df3426c` foi pro GitHub em 2026-08-31 —
+rodada 19 da auditoria + os intervalos semestral/anual do Stripe, tudo
+código real em produção agora. Migrations já estavam aplicadas no banco
+de dev antes do push, schema bate certo. Sem pendência de git.
 
 ---
 
