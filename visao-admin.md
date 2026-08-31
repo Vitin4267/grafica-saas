@@ -7,6 +7,42 @@
 
 ---
 
+## 0. PENDÊNCIAS — leia isto primeiro
+
+Tudo que precisa de uma ação (sua ou minha) num lugar só. Categorizado por
+quem trava a próxima ação. Detalhe de cada item nas seções abaixo.
+
+### Trava em VOCÊ decidir (eu não posso avançar sozinho)
+- [ ] **Preço de plano pro/empresarial** — só o básico (R$749,90) está
+      fechado. (seção 2)
+- [ ] **Qual eixo diferencia os planos** — faturamento e nº de prensas
+      sozinho já foram testados e descartados; falta fechar o critério
+      combinado (máquinas/usuários/orçamentos). (seção 2)
+- [ ] **7 commits aguardando `git push`** — código de 4 rodadas da
+      auditoria + 3 de documentação estão só no seu computador, não foram
+      pro GitHub, então não estão no ar na Vercel. Só empurro quando você
+      pedir. (seção 6)
+- [ ] **Prensa fantasma "[Exemplo] Prensa Offset"** na conta real da Assus
+      — resíduo de dado de exemplo, nunca confirmou se quer que eu apague.
+      (seção 7)
+
+### Backlog técnico rastreado (sem decisão pendente, só fila de prioridade)
+- [ ] Configurar Dependabot (scan de dependência automatizado)
+- [ ] Criptografia de campo pra token sensível (`focusNfeToken`)
+- [ ] RLS (trava extra de isolamento direto no banco)
+- [ ] Role de banco de dados com permissão restrita (hoje usa acesso total)
+- [ ] Implementar em código os intervalos semestral/anual do Stripe (já
+      decidido o desconto, falta criar os Prices e o código)
+- [ ] 121 achados catalogados de abrangência de produto — 33 na Parte 7
+      **nenhum construído ainda** (isso é backlog intencional a seu
+      pedido, não pendência esquecida — mas fica registrado aqui também)
+
+**Nenhum item acima é urgência de hoje.** Nada é furo de segurança ativo
+nem bloqueia cliente pagando agora — é o que fica pendente entre uma
+sessão e outra, listado pra não se perder.
+
+---
+
 ## 1. O que é o GrafPro, em 1 parágrafo
 
 SaaS multi-tenant pra gráficas brasileiras (catálogo, motor de precificação,
