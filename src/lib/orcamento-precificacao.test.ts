@@ -611,3 +611,134 @@ describe("calcularItemOrcamento — margemLucroOverride (achado A7)", () => {
     TIMEOUT_MS
   );
 });
+
+// Teste de INTEGRAÇÃO de verdade (mesmo padrão dos describes acima) — cobre o
+// guard estendido de "custo R$0 silencioso" pra METRO_LINEAR/HORA (achado A1
+// da auditoria de abrangência): um item DIGITAL/setup-por-peça (sem nesting,
+// largura/altura opcionais) que tenha um acabamento METRO_LINEAR ou HORA
+// anexado precisa ser bloqueado ANTES do motor, com mensagem amigável, em vez
+// de calcular perimetroOuEmenda/horasEstimadas ausente = 0 em silêncio (ver
+// ctxAcabamentoExtra em src/lib/pricing/precificar.ts).
+describe("calcularItemOrcamento — guard METRO_LINEAR/HORA (achado A1)", () => {
+  const TIMEOUT_MS = 30_000;
+  const sufixo = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const graficaIdsParaLimpar: string[] = [];
+
+  afterEach(async () => {
+    for (const graficaId of graficaIdsParaLimpar) {
+      await prisma.itemGrafica.deleteMany({ where: { graficaId } });
+      await prisma.itemCatalogo.deleteMany({ where: { graficaId } });
+      await prisma.impressoraDigital.deleteMany({ where: { graficaId } });
+      await prisma.parametrosGrafica.deleteMany({ where: { graficaId } });
+      await prisma.grafica.delete({ where: { id: graficaId } }).catch(() => {});
+    }
+    graficaIdsParaLimpar.length = 0;
+  }, TIMEOUT_MS);
+
+  async function criarProdutoDigitalComAcabamento(baseCobranca: "METRO_LINEAR" | "HORA") {
+    const s = sufixo();
+    const grafica = await prisma.grafica.create({
+      data: { nome: `Teste Guard Acabamento ${s}`, slug: `teste-guard-acabamento-${s}` },
+    });
+    graficaIdsParaLimpar.push(grafica.id);
+    const impressora = await prisma.impressoraDigital.create({
+      data: { graficaId: grafica.id, nome: `HP Indigo ${s}`, custoPorClique: 0.08 },
+    });
+    const catalogoProduto = await prisma.itemCatalogo.create({
+      data: { graficaId: grafica.id, tipo: "PRODUTO", categoria: "Camiseta", nome: `Camiseta Digital ${s}` },
+    });
+    const produto = await prisma.itemGrafica.create({
+      data: {
+        graficaId: grafica.id,
+        itemCatalogoId: catalogoProduto.id,
+        modeloCalculo: "DIGITAL",
+        precoCompra: 5,
+        impressoraDigitalId: impressora.id,
+      },
+    });
+    const catalogoAcabamento = await prisma.itemCatalogo.create({
+      data: { graficaId: grafica.id, tipo: "SERVICO", categoria: "Acabamento", nome: `Instalação ${s}` },
+    });
+    const acabamento = await prisma.itemGrafica.create({
+      data: {
+        graficaId: grafica.id,
+        itemCatalogoId: catalogoAcabamento.id,
+        precoCompra: 50,
+        configuracaoAcabamento: {
+          create: { baseCobranca, estagio: "POS_REFILE", custoSetup: 0, custoMinimo: 0 },
+        },
+      },
+    });
+    return { produto, acabamento };
+  }
+
+  it(
+    "DIGITAL com acabamento METRO_LINEAR anexado e sem largura/altura: bloqueia com mensagem amigável (não custa R$0 em silêncio)",
+    async () => {
+      const { produto, acabamento } = await criarProdutoDigitalComAcabamento("METRO_LINEAR");
+
+      const resultado = await calcularItemOrcamento(
+        produto,
+        produto.graficaId,
+        dadosBase({ acabamentoIds: [acabamento.id] })
+      );
+
+      expect(resultado.ok).toBe(false);
+      if (!resultado.ok) {
+        expect(resultado.mensagem).toMatch(/largura e altura/i);
+      }
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "DIGITAL com acabamento METRO_LINEAR anexado e largura/altura informadas: calcula normalmente",
+    async () => {
+      const { produto, acabamento } = await criarProdutoDigitalComAcabamento("METRO_LINEAR");
+
+      const resultado = await calcularItemOrcamento(
+        produto,
+        produto.graficaId,
+        dadosBase({ acabamentoIds: [acabamento.id], larguraCm: 100, alturaCm: 200 })
+      );
+
+      expect(resultado.ok).toBe(true);
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "DIGITAL com acabamento HORA anexado e sem horasEstimadas: bloqueia com mensagem amigável",
+    async () => {
+      const { produto, acabamento } = await criarProdutoDigitalComAcabamento("HORA");
+
+      const resultado = await calcularItemOrcamento(
+        produto,
+        produto.graficaId,
+        dadosBase({ acabamentoIds: [acabamento.id], larguraCm: 100, alturaCm: 200 })
+      );
+
+      expect(resultado.ok).toBe(false);
+      if (!resultado.ok) {
+        expect(resultado.mensagem).toMatch(/hora/i);
+      }
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "DIGITAL com acabamento HORA anexado e horasEstimadas preenchido: calcula normalmente",
+    async () => {
+      const { produto, acabamento } = await criarProdutoDigitalComAcabamento("HORA");
+
+      const resultado = await calcularItemOrcamento(
+        produto,
+        produto.graficaId,
+        dadosBase({ acabamentoIds: [acabamento.id], larguraCm: 100, alturaCm: 200, horasEstimadas: 2 })
+      );
+
+      expect(resultado.ok).toBe(true);
+    },
+    TIMEOUT_MS
+  );
+});
