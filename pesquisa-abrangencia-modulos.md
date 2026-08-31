@@ -657,6 +657,9 @@ Pesquisei como sete perfis de gráfica brasileira realmente cotam (comunicação
 - Regra de filtro: `PERSONALIZACAO` aceita qualquer máquina cujo `tipoProcesso` não seja um dos 3 já mapeados 1:1.
 
 ### A4. Bordado não tem modelo — o driver de custo (pontos) não existe em lugar nenhum
+
+**Custo estimado:** 🔴 Caro — novo `ModeloCalculo`, novo model `MaquinaBordado` e nova fórmula de custo por pontos em `src/lib/pricing/*`.
+
 **O que falta:** nenhum dos 8 modelos representa bordado. Encaixá-lo em `SERIGRAFIA`/setup-por-peça falha porque `custoPorPeca` mora na **máquina** (é fixo), enquanto em bordado o custo por peça varia com a arte **de cada pedido** — um logo de 3.000 pontos e uma arte de costas de 15.000 pontos, na mesma máquina, na mesma camiseta, custam 5× diferente.
 
 **Pesquisa:** a fórmula do setor é literalmente `(contagem de pontos ÷ 1000) × preço por 1000 pontos + taxa de matriz/digitalização + material + margem`; padrão internacional US$1–3/1.000 pontos, referência brasileira ~R$0,75/1.000 pontos; a taxa de digitalização da matriz é cobrada uma vez por arte, e o custo por mil pontos deve embutir linha de bordar + linha de bobina + 2 camadas de entretela ([HoopTalent](https://www.hooptalent.com/pt/blogs/news/embroidery-pricing-mastery-calculate-costs-and-set-profitable-rates), [O Artesão Bordados](https://oartesaobordados.com.br/blogs/news/como-calcular-preco-bordado), [Fiarte](https://www.fiarte.com.br/precos.html)). "Bordado" já é um SERVICO do catálogo mestre — sem motor por trás.
@@ -664,6 +667,9 @@ Pesquisei como sete perfis de gráfica brasileira realmente cotam (comunicação
 **Proposta:** `ModeloCalculo.BORDADO` + `model MaquinaBordado { custoPorMilPontos, custoMatrizDigitalizacao, cabecas Int, custoHoraMaq?, custoMinimo }` + `OrcamentoItem.numeroPontos Int?` + o substrato de A2. `custoBase = custoMatrizDigitalizacao (1×, não escala com tiragem — mesmo princípio já provado no clichê de etiqueta) + Q × (pontos/1000 × custoPorMilPontos) + Q × custoSubstrato`.
 
 ### A5. DTF está classificado como o processo errado
+
+**Custo estimado:** 🟡 Médio — novo rótulo `ModeloCalculo.DTF` reaproveitando `calcularM2` existente, mais dois campos de contexto novos em `carregar.ts`/`m2.ts`, sem model novo.
+
 **O que falta:** DTF existe só como SERVICO no catálogo mestre. Se a gráfica escolher `SUBLIMACAO` como modelo (o rótulo mais próximo), o custo sai errado por construção: **DTF não tem tela/matriz por arte** (o setup tende a zero) e o custo real é **por metro linear de filme**, com múltiplas artes "gangadas" no mesmo metro — ou seja, a forma de custo é a do **M2 (nesting em bobina)**, não a do setup-por-peça.
 
 **Pesquisa:** o cálculo real é por metro linear de filme, somando filme (rolo 60cm × 100m ≈ US$120-150), tinta (US$50-70/L), pó adesivo (US$15-25/kg cobrindo 100-150 m lineares), energia, cabeças e mão de obra; recomenda-se **montar painéis com múltiplas artes para reduzir sobras** e somar 5-10% de perda — isto é literalmente nesting em bobina ([A Good Printer](https://www.agoodprinter.com/pt/blog/is-dtf-printing-expensive-learn-how-to-calculate-its-true-cost.html), [MB Máquinas](https://www.lojambmaquinas.com.br/guia-completo-para-precificar-e-lucrar), [SR DTF](https://srdtf.com/pt/dtf-ao-metro/)).
@@ -671,6 +677,9 @@ Pesquisei como sete perfis de gráfica brasileira realmente cotam (comunicação
 **Proposta:** `ModeloCalculo.DTF` como **rótulo apontando para `calcularM2`** (mesmo precedente dos 3 rótulos que compartilham `calcularSetupPorPeca`), com dois extras: `custoSubstratoPorPeca` (a camiseta) e `custoPrensagemPorPeca` (a prensa térmica). Não precisa de motor novo — precisa parar de mandar DTF pro motor errado.
 
 ### A6. Nenhum modelo cobra por TEMPO DE MÁQUINA
+
+**Custo estimado:** 🔴 Caro — novo `ModeloCalculo`, novo model `MaquinaTempo` e nova fórmula de custo por tempo/corte no motor de precificação.
+
 **O que falta:** corte/gravação a laser, router CNC, plotter de recorte, montagem de letra caixa/totem, acabamento manual — nada disso tem modelo. `BaseCobranca.HORA` seria a saída via acabamento, mas está morta (A1). `CategoriaEquipamento` já lista `CORTE_LASER_ROUTER` e `PLOTTER_RECORTE` como equipamento — mas `Equipamento` explicitamente "nunca influencia preço de nenhum orçamento" (comentário do schema:373).
 
 **Pesquisa:** "o principal custo do corte a laser depende do tempo de corte da peça... é por isso que você é cobrado por cada minuto de uso da máquina"; alguns cobram por **centímetro de corte**; o orçamento típico é `área de chapa × aproveitamento + corte + gravação + hora-máquina + mão de obra + perda + margem` ([Porto Aço e Ferro](https://portoacoeferro.com.br/blog/como-calcular-o-custo-de-corte-a-laser/), [PrintCal](https://printcal.co/calculadora-corte-laser/), [Ranger3D](https://ranger3d.com.br/software/calc-corte-laser/), [FortuneLaser](https://www.fortunelaser.com/pt/news/laser-cutting-pricing-demystified-a-complete-guide-to-service-costs/)).
@@ -678,11 +687,17 @@ Pesquisei como sete perfis de gráfica brasileira realmente cotam (comunicação
 **Proposta:** `ModeloCalculo.TEMPO_MAQUINA` + `model MaquinaTempo { custoHoraMaq, custoSetupPorJob, custoMinimo, custoPorMetroCorte? }` + `OrcamentoItem.tempoEstimadoMin Decimal?` e `OrcamentoItem.metrosCorte Decimal?` (a gráfica escolhe a base na máquina). Combinar com A7 pro consumo de chapa.
 
 ### A7. Não existe nesting em CHAPA RÍGIDA — a categoria "Placas e Chapas" não fecha custo
+
+**Custo estimado:** 🔴 Caro — novo `ModeloCalculo` que reaproveita o nesting do Offset mas precisa de fórmula de custo própria, e depende de A6 (também 🔴) para o tempo de corte.
+
 **O que falta:** `FormatoFolha` só é lido no branch OFFSET (`carregar.ts:229`) e só aparece na UI quando `modeloCalculo === "OFFSET"` (`ConfiguracaoProdutoForm.tsx:419`, com `temFormatosOrfaos` alertando o contrário). O modelo M2 **exige `BobinaMaterial`** (`ErroPrecificacao("PECA_EXCEDE_BOBINA")` / `MATERIAL_SEM_BOBINA`). Consequência: PVC, ACM, acrílico, MDF, papelão Paraná — todos já no catálogo mestre como matéria-prima, todos vendidos em **chapa 1220×2440**, nenhum com como calcular "quantas peças saem de uma chapa" nem quanto sobra. Uma gráfica de placas/comunicação visual rígida hoje só consegue usar SIMPLES (custo zero).
 
 **Proposta:** `ModeloCalculo.CHAPA_RIGIDA` reaproveitando o **nesting 2D que o Offset já tem** (`src/lib/pricing/offset.ts`), mas com custo = `nº de chapas × preço da chapa` (não peso/gramatura/chapa de impressão) + custo de impressão por m² + o tempo de corte de A6. `FormatoFolha` passa a ser habilitado nesse modelo também (a estrutura já serve — largura/altura em metros). Casa direto com impressão UV flatbed, que é sobre rígido.
 
 ### A8. M2 é o único motor sem máquina, sem perda e sem vínculo com a matéria-prima
+
+**Custo estimado:** 🔴 Caro — múltiplos models novos (`MaquinaGrandeFormato`, possivelmente `ModoImpressao`) mais FK nova em `ItemGrafica` e mudança estrutural no motor M2, que é o motor mais usado do sistema.
+
 Três limitações que andam juntas, todas em `carregar.ts:162-204`:
 
 **(a) Sem máquina.** OFFSET→`Prensa`, FLEXOGRAFIA→`MaquinaFlexografia`, DIGITAL→`ImpressoraDigital`, os 3 de personalização→`MaquinaSetupPorPeca`. M2 → nada. O custo de impressão é um único número digitado (`custoImpressaoM2`). Não há hora-máquina, tempo/perda de acerto, nem `perdaPercentPadrao` — todos os outros quatro motores têm.
@@ -707,6 +722,9 @@ Três limitações que andam juntas, todas em `carregar.ts:162-204`:
 **Proposta:** quando nenhuma orientação couber, calcular `nºPainéis = ceil(w / wUtil)` e adicionar `custoEmendaPorMetroLinear × comprimento da emenda × (nºPainéis − 1)` — com `ConfiguracaoEmenda { itemGraficaId, custoPorMetroLinear, sobreposicaoM }` — devolvendo **aviso** no breakdown em vez de erro. Depende de A1 estar resolvido se for implementado via acabamento METRO_LINEAR.
 
 ### A10. Editorial multipágina não é representável — 7 produtos do catálogo mestre são inutilizáveis no motor
+
+**Custo estimado:** 🔴 Caro — a própria proposta lista duas rotas alternativas e recomenda a mais estrutural (item de orçamento composto, `itemPaiId`), que é uma mudança transversal ao modelo central de orçamento.
+
 **O que falta:** o modelo OFFSET assume **uma peça plana** (`larguraM`, `alturaM`, um `papelId`, uma `gramaturaGm2`, `corFrente`/`corVerso`). Revista, Catálogo, Livro Brochura, Livro Capa Dura, Apostila, Encadernação Espiral e Wire-o já estão no catálogo mestre — nenhum deles pode ser precificado, porque falta: **número de páginas**, cálculo de **cadernos/signatures**, e principalmente **papel/gramatura/cores do MIOLO separados dos da CAPA**.
 
 **Pesquisa:** o formulário de orçamento de livro da PoloPrinter pede exatamente 12 campos, e os que o schema não tem são estruturais: *formato fechado, orelhas, cores da capa (4x0/2x0/1x0), papel da capa, papel especial de capa, cores do miolo (1x1), papel do miolo, número de páginas, tipo de encadernação* ([PoloPrinter](https://poloprinter.com.br/orcamento-de-livros-explicado/)). O miolo tem que ser múltiplo de 4 por causa da composição dos cadernos ([Fábrica do Livro](https://blog.fabricadolivro.com.br/como-usar-simulador-impressao-livro), [LeandroVSilva](https://leandrovsilva.download/entendendo-os-calculos-para-diagramacao-de-livro-impresso/)).
@@ -716,6 +734,9 @@ Três limitações que andam juntas, todas em `carregar.ts:162-204`:
 2. *Genérica e mais valiosa:* **item de orçamento composto** — `OrcamentoItem.itemPaiId String?`, permitindo que uma linha do orçamento seja a soma de sub-linhas, cada uma com **seu próprio `modeloCalculo`**. Isso resolve num só golpe: livro (capa OFFSET + miolo OFFSET + encadernação), caixa (caixa CHAPA + berço + luva), kit de brinde (caneca REVENDA + gravação PERSONALIZACAO), letreiro (chapa cortada + iluminação + instalação). É o gap estrutural mais transversal do módulo.
 
 ### A11. Embalagem/cartonagem: a dimensão que importa é a planificação, não o produto acabado
+
+**Custo estimado:** 🟡 Médio — campos novos nullable em `OrcamentoItem`, mas exigem alterar a chamada de nesting existente pra preferir a dimensão planificada quando presente.
+
 **O que falta:** `larguraCm`/`alturaCm` do item alimentam direto o nesting. Numa caixa 20×15×10 cm, o que ocupa a folha é o **desenvolvimento da faca (~55×45 cm)**, não o 20×15. Sem separar os dois, o custo de uma embalagem sai errado por 2-3×.
 
 **Pesquisa:** o cálculo de cartonagem parte "do projeto com todas as características da embalagem" e avalia "as medidas internas para o melhor aproveitamento do material cartonado"; reforços, divisórias e componentes impactam o custo à parte ([BC3](https://bc3.com.br/calculo-custo-cartonagem), [Pcboot](https://www.pcboot.com.br/calculo-custo-cartonagem), [Milênio Embalagens](https://www.milenio-embalagens.com.br/artigo/como-calcular-o-preco-da-caixa-de-papelao-ondulado)).
@@ -761,6 +782,9 @@ Três limitações que andam juntas, todas em `carregar.ts:162-204`:
 **Proposta:** `ParametrosGrafica.toleranciaTiragemPadraoPercent Decimal? @default(0.10)` + `Orcamento.toleranciaTiragemPercent Decimal?` (snapshot no envio, igual `validoAteEm`), impresso no PDF e usado como aviso no momento de faturar quantidade divergente.
 
 ### B3. Entrega programada / parcelada não existe
+
+**Custo estimado:** 🔴 Caro — novo model relacionado a `Entrega`/`Pedido`, relaxar `Entrega.pedidoId` de `@unique` pra N:1, e a própria proposta avisa que interage com o financeiro (faturamento por entrega) e pede avaliação antes de implementar.
+
 **O que falta:** `Orcamento` tem um `localEntrega String?` e um `prazoEntregaEstimadoDias Int?`; `Entrega` é **1:1 com Pedido** (`pedidoId String @unique`, schema:2612). Não há como representar "produz 60.000 rótulos agora, entrega 10.000/mês por 6 meses, fatura por entrega" — que é um **modelo de negócio explícito** de gráficas de embalagem e rótulo, exatamente o perfil que o produto já atende bem no resto.
 
 **Pesquisa:** "nesse modelo de produção reduzem o custo por embalagem por meio de produção em alta quantidade e estoque do produto final no galpão... clientes podem solicitar entregas parciais ao longo de um trimestre, semestre ou ano, sendo o faturamento realizado somente quando das entregas e proporcional à quantidade solicitada" ([Forma Pack](https://formapack.ind.br/home2/)).
@@ -768,6 +792,9 @@ Três limitações que andam juntas, todas em `carregar.ts:162-204`:
 **Proposta:** `model OrcamentoEntregaProgramada { orcamentoId, ordem Int, quantidade Int, dataPrevista DateTime?, localEntrega String? }` (soma validada = quantidade total do item/orçamento), e relaxar `Entrega.pedidoId` de `@unique` para N:1, herdando as parcelas na aprovação. Interage com o financeiro (`ContaReceber` por parcela de entrega) — vale checar antes de implementar.
 
 ### B4. Prazo é por orçamento, nunca por item
+
+**Custo estimado:** 🟢 Barato — campo nullable novo em `OrcamentoItem` (model já existente), com o cabeçalho passando a exibir o máximo dos itens; o enum de início de contagem é só um complemento opcional.
+
 **O que falta:** `prazoEntregaEstimadoDias` é único no cabeçalho. Um orçamento com "Banner (2 dias)" + "Livro capa dura (20 dias)" só consegue declarar um número — e o vendedor acaba prometendo 20 dias pro banner ou 2 dias pro livro.
 
 **Embasamento:** os ERPs de gráfica tratam prazo como atributo **do trabalho**: "cada trabalho pode reunir dados comerciais, medidas, material, acabamento, quantidade, **prazo**, valor, custo e identificação interna" ([Elo Visual — OS para gráfica](https://elovisual.com.br/ordem-de-servico-grafica/), [vhsys](https://www.vhsys.com.br/segmentos/graficas/)).
@@ -775,6 +802,9 @@ Três limitações que andam juntas, todas em `carregar.ts:162-204`:
 **Proposta:** `OrcamentoItem.prazoEstimadoDias Int?` opcional; o campo do cabeçalho passa a exibir o máximo dos itens quando algum estiver preenchido (sem quebrar quem só usa o cabeçalho). Complemento útil: `enum InicioContagemPrazo { APROVACAO_ORCAMENTO, APROVACAO_ARTE, APROVACAO_BAT, RECEBIMENTO_MATERIAL }` — "o prazo conta a partir da aprovação da arte" é cláusula padrão e o sistema já tem os marcos (`etapaAprovacaoEm`, aprovação de BAT) pra ancorar isso. *Esse enum é inferência minha* apoiada na existência dos marcos, não achei fonte que o formalize.
 
 ### B5. Não há tabela de faixas de quantidade no mesmo item
+
+**Custo estimado:** 🟡 Médio — 1 model novo com FK direta pra `OrcamentoItem`, reaproveitando o mesmo motor de cálculo e o mesmo mecanismo de promoção na aprovação que `OrcamentoOpcao` já usa.
+
 **O que falta:** o orçamento gráfico brasileiro clássico apresenta 3 tiragens lado a lado ("1.000 / 3.000 / 5.000"). `OrcamentoOpcao` chega perto, mas: teto de 2 alternativas + base, é criada "de uma vez só, como um carrinho" (sem edição incremental, comentário do schema:2170), e obriga a recriar o conjunto inteiro de itens só pra variar a quantidade de um.
 
 **Pesquisa:** "o B2B trabalha com **preço por faixa de quantidade** ou por perfil de cliente, enquanto o B2C tem preço único de vitrine"; e "na maior parte dos casos o valor é tanto menor quanto maior a tiragem" ([base.com](https://base.com/pt-BR/blog/ecommerce-b2b-em-marketplace/), [Minerva](https://minerva-online.pt/en/orcamento-grafica/)).
@@ -782,6 +812,8 @@ Três limitações que andam juntas, todas em `carregar.ts:162-204`:
 **Proposta:** `model OrcamentoItemFaixaQuantidade { orcamentoItemId, quantidade Int, precoUnitario, precoTotal, breakdown Json? }` — cada faixa recalculada pelo **mesmo** motor (a diluição de setup/clichê/chapa acontece sozinha, o motor já é correto nisso), renderizada como tabela no PDF e no link público. Na aprovação, a faixa escolhida promove-se ao item (mesmo mecanismo de `resolverOpcoesNaAprovacao`).
 
 ### B6. Linha de orçamento sempre tem que ser um item do catálogo, e não tem descrição própria — **PARCIALMENTE CONSTRUÍDO 2026-08-24 (rodada 9)**
+
+**Custo estimado (restante pendente):** 🔴 Caro — tornar `itemGraficaId` opcional mexe numa FK central que o motor de precificação e todo o resto do sistema assume presente, e exige derivar `custoAquisicaoUnitario` corretamente pra não mentir a margem.
 
 **Status:** `OrcamentoItem.descricaoLivre` sobrepõe o nome do catálogo no PDF e no link público quando preenchido — resolve o caso "80% do incômodo" citado abaixo. **Fora de escopo de propósito**: `itemGraficaId` continua obrigatório — a parte opcional do achado (permitir item sem catálogo, nome+preço digitados) não foi construída.
 
@@ -832,6 +864,8 @@ Isso não é só um problema de abrangência para outros perfis de gráfica — 
 ### A. Estrutura do fluxo
 
 #### A1 — Fluxo linear único, sem roteiro por produto/processo
+**Custo estimado:** 🔴 Caro — a Fase 2 exige models novos (`FluxoProducao`/`EtapaFluxo`) e faz `Pedido.status` virar derivado da etapa atual, mexendo na lógica de transição protegida por CAS que já existe.
+
 **O que falta.** `SEQUENCIA_STATUS_PEDIDO` (`src/lib/producao-estagios.ts:12`) é um array literal de 8 valores de enum, e `avancarStatusPedido` (`src/app/producao/status-transicao.ts:248-260`) avança sempre para `indice + 1`. Não existe nenhum ponto onde uma gráfica, um produto ou um `modeloCalculo` possa dizer "essa etapa não existe pra mim". Uma gráfica só-digital arrasta card por `CLICHE_FACA` sem clichê nenhum; uma serigrafia não tem onde representar "queima de tela" (que é uma operação real, com custo e refugo — a tela pode velar); uma comunicação visual não tem "aplicação/instalação no cliente", que é a etapa mais cara e mais arriscada do serviço dela.
 
 **Pesquisa.** O conceito canônico nos ERPs industriais é *roteiro de produção*: "a sequência de operações que levam dos insumos ao item concluído"; "o usuário pode editar livremente o roteiro, acrescentando novas operações, centros de trabalho" (Maxiprod, Senior, Stout, Methos). Print MIS usa o mesmo com outro nome: "job routing can be created by dragging and dropping to create templates using blueprints" (Presswise). Os processos divergem materialmente: offset tem CTP/chapa; flexo tem clichê + cilindro; serigrafia tem film → emulsão → exposição → lavagem → impressão → **cura** (etapa que não existe em nenhum outro processo, com parâmetro de qualidade próprio — 160-170 °C pra plastisol); grande formato tem impressão → recorte (plotter/flatbed) → **aplicação/instalação no endereço do cliente**.
@@ -862,6 +896,8 @@ enum TipoEtapaProducao {
 **Ponto de atenção que a implementação vai encontrar:** três constantes hard-coded se tornam incorretas com fluxo configurável e precisam virar consultas ao fluxo — `ESTAGIOS_PRE_PRODUCAO` (gate do módulo Entrega, `producao-estagios.ts:40`), `ESTAGIOS_ATRIBUIVEIS` (`:49`, também usado por `ResponsavelEstagio` e pelo bypass de permissão em `podeConfirmarEstagio`), e a condição literal `pedido.status === "CLICHE_FACA" && proximoStatus === "PRODUCAO"` que dispara a baixa de estoque (`status-transicao.ts:272`) — esta última deve virar `etapaAnterior.baixaEstoque === true`.
 
 #### A2 — `CLICHE_FACA` embute o perfil da gráfica de referência no nome do estado
+**Custo estimado:** 🟡 Médio — a proposta usa exclusivamente o campo `rotulo` do model novo `EtapaGrafica` da Fase 1 de A1; sem esse model construído primeiro, A2 não tem onde guardar o rótulo por tenant.
+
 **O que falta.** O nome do estado (visível no Kanban, no e-mail ao responsável, no webhook de automação, no PDF) assume matriz física de flexografia/corte-e-vinco. Offset usa chapa (CTP), serigrafia usa tela, rotogravura usa cilindro, digital não usa nada.
 
 **Pesquisa.** A taxonomia consensual do setor no Brasil é **pré-impressão → impressão → acabamento** (Gráfica Riomega, Gráfica Natal, Tecnicópias, ExpoPrint), com a matriz sendo um artefato variável dentro da pré-impressão, não uma etapa nomeada.
@@ -915,6 +951,8 @@ Esse único model destrava: lead time por etapa, gargalo por coluna do Kanban, p
 **Proposta.** As 5 FKs opcionais em `ApontamentoEtapa`, **exatamente no padrão já estabelecido por `RegistroManutencao`** (5 FKs nullable, "exatamente 1 preenchida", validado em app não no banco) — reaproveitando literalmente `validarSelecaoMaquina` de `src/lib/manutencao-maquina.ts`, mais `equipamentoId` (guilhotina, laminadora, plotter etc., que hoje só serve pra manutenção e nunca aparece em produção). Sugestão padrão pré-preenchida a partir da máquina que o `ItemGrafica` usou na precificação, editável pelo operador. Quando divergir, gerar aviso na tela de custos do pedido ("rodou em máquina diferente da orçada") — encaixa no campo `possivelDuplicidade`/aviso que `CustoPedido` já sabe renderizar.
 
 #### B3 — Refugo só existe uma vez, no lugar errado, e como perda de MATERIAL
+**Custo estimado:** 🟡 Médio — campos novos em `ApontamentoEtapa` (model já existente de B1) mais 1 enum novo fechado+`OUTRO` (`MotivoRefugo`), reaproveitando o motor de baixa de estoque que `perda-fixa-producao.ts` já implementa.
+
 **O que falta.** O sistema captura perda exatamente **uma** vez: na transição `CLICHE_FACA → PRODUCAO`, via `resolverPerdasConfirmadas` / `perdaFixaPadrao`, e o que ele modela é *perda de calibragem/acerto de máquina* (folhas de acerto), lançada como `MovimentacaoEstoque` + `CustoPedido`. Depois disso, **nada**: 300 folhas cortadas errado na guilhotina, 80 camisetas com cura mal feita, 40 metros de lona com falha de tinta no meio da bobina — nenhum desses tem onde ser registrado. E como o refugo pós-produção normalmente exige *reimprimir* (consumindo material de novo), o custo real do pedido fica sistematicamente subestimado, o que ataca diretamente o diferencial do produto.
 
 **Pesquisa.** É padrão explícito: "além da quantidade produzida, o usuário poderá informar **até quatro motivos de refugo** e a quantidade referente a esse motivo. Ao fazer isso, o sistema fará a entrada no estoque da quantidade informada como produzida e imediatamente fará uma saída de estoque das quantidades refugadas" (Maxiprod). Na indústria gráfica especificamente, "o retrabalho é um dos problemas que mais afetam financeiramente as empresas" e figura como indicador-chave de qualidade (IndústriaPro, Núcleo do Conhecimento, Guia do Gráfico sobre controle de qualidade em mídia impressa com normas ABTG/ABNT/FOGRA).
@@ -940,6 +978,8 @@ enum MotivoRefugo {
 ### C. Fila, capacidade e paradas
 
 #### C1 — Fila é única e sem ordem; não há noção de "fila por máquina"
+**Custo estimado:** 🟡 Médio — campo `prioridade` novo em `Pedido` (barato isolado), mas as sub-raias por máquina e o badge de máquina parada são lógica nova moderada no Kanban existente.
+
 **O que falta.** No `KanbanBoard.tsx`, cada coluna é uma etapa e os cards são renderizados na ordem de `createdAt` da query (`page.tsx:125`), sem prioridade, sem reordenação, sem raia por máquina. Com duas prensas offset, os dois jobs aparecem no mesmo balde "Produção" e quem decide o que roda primeiro é a memória do encarregado. Também não há como o Kanban avisar que a máquina onde o job vai rodar está parada — apesar de `buscarManutencoesAtivas` já existir e ser usada nas telas de Máquinas e de cadastro de produto.
 
 **Pesquisa.** Scheduling board por máquina é feature central de print MIS: "full visibility of machine capacity, both short and long term, and detailed scheduling of each production step" (Labels & Labeling); "press operators can consult their work schedule on their press, and a change in schedule can be automatically seen on the shop floor" (Optimus, Printlogic, Wye).
@@ -947,6 +987,8 @@ enum MotivoRefugo {
 **Proposta MVP, sem construir um Gantt.** (a) `Pedido.prioridade Int @default(0)` + ordenação por `prioridade desc, prazoEntrega asc, createdAt asc` — resolve 80% da dor com uma coluna. (b) Sub-raias por máquina dentro da coluna `PRODUCAO`, agrupando pela máquina prevista (derivada do `ItemGrafica` do pedido, ou da máquina já apontada em `ApontamentoEtapa`). (c) Badge "máquina parada" na raia reaproveitando `buscarManutencoesAtivas` — dado já existe, custo quase zero. Capacidade finita / Gantt fica explicitamente fora de escopo v1.
 
 #### C2 — Não existe "pedido parado esperando alguma coisa"
+**Custo estimado:** 🟡 Médio — 1 model novo (`ParadaPedido`) com poucos campos e FKs diretas (`Pedido`, opcionalmente `ApontamentoEtapa` e `SolicitacaoCompra`), sem workflow de múltiplas etapas, mais 1 enum novo fechado+`OUTRO`.
+
 **O que falta.** Um job travado esperando papel chegar, ou esperando o cliente responder uma dúvida, é indistinguível de um job sendo produzido — ambos estão simplesmente "em Produção". Isso envenena qualquer métrica de lead time (B1) e faz o alerta de atraso (`alertaAtrasoEnviadoEm`, `alertaPrazoUltimoLimiarDias`) culpar a produção por espera que não é dela. `RegistroManutencao` cobre "a máquina parou", nunca "o pedido parou".
 
 **Pesquisa.** O apontamento padrão registra "ocorrências indesejadas" além de início/fim (Maxiprod), e a decomposição canônica de lead time separa explicitamente **tempo de espera** de tempo de processamento (Nomus, Objective, Universal Robots).
@@ -956,6 +998,8 @@ enum MotivoRefugo {
 ### D. Qualidade
 
 #### D1 — Não existe aprovação intermediária dentro da produção (OK de máquina / prova de máquina)
+**Custo estimado:** 🔴 Caro — o gate proposto depende de `EtapaFluxo.exigeAprovacaoQualidade`, campo que só existe na Fase 2 (estrutural, 🔴) de A1; sem ela, é model novo + 2 enums novos sem onde pendurar o gate opt-in.
+
 **O que falta.** Aprovação de arte existe (`arteUrl` / `arteAprovadaEm` / `arteLinkToken` / `/a/[token]`), é voltada ao **cliente** e é **pré-produção** — o gate está literalmente em `status === "ARTE"` (`status-transicao.ts:241`). Dentro da produção não há nada: nenhum "aprovar a primeira folha antes de rodar os outros 20 mil", nenhuma inspeção final registrada, nenhuma foto de conferência, nenhum registro de não-conformidade. A etapa `CONFERENCIA` existe como *nome de coluna*, mas não guarda **nenhum dado de conferência** — só a passagem do card.
 
 **Pesquisa.** É prática padrão e documentada: "após os ajustes da máquina, é feita uma impressão de teste para verificar se está tudo funcionando bem... **após a aprovação do teste, a máquina está pronta para imprimir em grande quantidade**" (Calcme, Guia do Gráfico). Em offset isso é instrumentado (cruzes de registro, escalas CMYK de 2% a 100% — UFSC/IPT). Em serigrafia existe checklist formal de QC de 20 pontos (Stitchi). "O cliente deve solicitar à gráfica pelo menos uma prova de impressão visando sua conferência e aprovação."
@@ -977,6 +1021,8 @@ enum ResultadoAprovacao { APROVADO, APROVADO_COM_RESSALVA, REPROVADO }
 Gate opt-in **no mesmo formato do gate de arte que já existe** (elegante justamente por ser opt-in: "só bloqueia se ESTA gráfica enviou uma arte"): a etapa exige aprovação só se `EtapaFluxo.exigeAprovacaoQualidade` estiver ligada. `arquivoId` reaproveita `ArquivoArmazenado` (foto da folha aprovada tirada do celular no chão de fábrica). `AMOSTRA_CLIENTE` deve reaproveitar o padrão de link público token + `/a/[token]` que a aprovação de arte já implementou.
 
 #### D2 — Não existe retorno de etapa: reprovado só pode ser CANCELADO
+**Custo estimado:** 🔴 Caro — nova action mexe diretamente na máquina de transição de status (`avancarStatusPedido`/CAS), área sensível de concorrência, além de 1 enum novo e de alterar a semântica de estorno de estoque.
+
 **O que falta.** Confirmado em três camadas: `avancarStatusPedido` só calcula `indice + 1`; o Kanban só habilita como droppable a coluna imediatamente seguinte; e as únicas server actions de mudança de estado são `avancarPedido` e `cancelarPedido`. Se a conferência reprova, a única saída modelada é cancelar o pedido inteiro — o que estorna todo o estoque e apaga o job, quando a realidade é "volta pra impressão e roda de novo os 300 que saíram errados". O FSM estritamente linear também é premissa explícita do `producaoLinkToken`.
 
 **Pesquisa.** Retrabalho é indicador de gestão, não exceção: "o retrabalho é um dos problemas que mais afetam financeiramente as empresas"; "quando a não conformidade é detectada durante a execução do processo e o material pode ser imediatamente retrabalhado, o lote inteiro deve ser reverificado" (IndústriaPro, New Quality, Núcleo do Conhecimento). Existe até CFOP fiscal específico para retrabalho no Brasil.
@@ -986,6 +1032,8 @@ Gate opt-in **no mesmo formato do gate de arte que já existe** (elegante justam
 ### E. Terceirização
 
 #### E1 — Não há como representar "esta etapa saiu da gráfica e volta depois"
+**Custo estimado:** 🔴 Caro — model novo `EtapaTerceirizada` com workflow completo de múltiplos status (`AGUARDANDO_ENVIO`/`ENVIADO`/`RETORNADO`/`PROBLEMA`), mais integração com alerta de prazo e geração automática de custo.
+
 **O que falta.** Nada no schema modela um pedido que fisicamente saiu do prédio para uma operação e vai voltar. Hoje o card fica parado em `ACABAMENTO` por cinco dias e ninguém sabe se é lentidão interna, se está no laminador, ou se sumiu. Custo do terceiro só entra como `CustoPedido` origem `MANUAL`, sem prazo, sem fornecedor vinculado, sem previsão de retorno, sem alerta.
 
 **Pesquisa.** Isso é estruturalmente comum no Brasil — o Guia do Gráfico tem **categorias inteiras** de terceirização como mercado: laminação, acabamentos de livros, impressão UV, impressão digital, acabamentos gráficos, inspeção. No Brasil essa operação tem forma fiscal definida: **remessa para industrialização por encomenda (CFOP 5901/6901), retorno (5902/6902), ICMS suspenso (CST 50), IPI CST 55, prazo máximo de retorno tipicamente 180 dias**.
@@ -1012,6 +1060,8 @@ Efeitos: (a) quando existe uma terceirização `ENVIADO`, o card mostra "no terc
 ### F. Escopo travado no perfil da gráfica de referência
 
 #### F1 — Gang run só existe para OFFSET
+**Custo estimado:** 🟡 Médio — sem model novo (generaliza `FilaGangRun`/`GrupoGangRun` existentes com o padrão de 5 FKs opcionais já usado em `RegistroManutencao`) mais 1 enum novo fechado+`OUTRO`, mas exige lógica nova moderada pra chave de compatibilidade por tipo de agrupamento.
+
 **O que falta.** `FilaGangRun.prensaId` é **não-nullable**, a chave de compatibilidade é `papel + gramatura + prensa + folha + corFrente + corVerso`, e os candidatos só são registrados para `modeloCalculo=OFFSET`. Toda a UI fala em "chapa". Uma gráfica digital, uma de grande formato ou uma serigrafia não têm acesso à funcionalidade.
 
 **Pesquisa.** Ganging não é técnica de offset, é técnica de **aproveitamento de substrato** — "as digital printing technology advances, gang printing is becoming even more efficient" (Wikipedia, Formax, Ultimate TechnoGraphics, Keboto). Em grande formato o equivalente é *nesting* na largura da bobina; em serigrafia, agrupar artes na mesma tela — e o schema **já tem** `BobinaMaterial` e `MaquinaFlexografia.larguraMaquinaM/passoCilindroM`.
@@ -1019,6 +1069,8 @@ Efeitos: (a) quando existe uma terceirização `ENVIADO`, o card mostra "no terc
 **Proposta.** Generalizar `FilaGangRun`/`GrupoGangRun`: `prensaId` vira o conjunto de 5 FKs opcionais padrão-`RegistroManutencao`, mais `tipoAgrupamento TipoAgrupamentoGangRun { FOLHA_2D, BOBINA_1D, TELA_MATRIZ, MESA_PLANA, OUTRO }`. MVP realista: adicionar **DIGITAL** e **BOBINA_1D** (flexo/grande formato, reaproveitando o nesting 1D que o motor de flexo já faz).
 
 #### F2 — Entrega é 1:1 com o pedido: não existe entrega parcial nem rastreio externo
+**Custo estimado:** 🔴 Caro — relaxar `Entrega.pedidoId` de `@unique` pra N:1 é a mesma mudança estrutural já marcada 🔴 no achado B3 da Parte 1 (interage com faturamento por entrega), agora também mudando o gate de `StatusPedido.ENTREGUE` pra exigir todas as remessas concluídas.
+
 **O que falta.** `Entrega.pedidoId` é `@unique` — um pedido tem no máximo uma entrega. Não há entrega parcial, retirada no balcão modelada, código de rastreio, ou comprovante/canhoto. `motorista` é texto livre e `transportadora` está congelada no `Orcamento`, preenchida uma vez na aprovação.
 
 **Pesquisa.** Entrega/faturamento parcial é recurso padrão de ERP — "o faturamento parcial ocorre na necessidade de faturamento de parte de um pedido, por motivos de falta de estoque, antecipação de entrega ou algum outro fator" (Maxiprod, Senior, GestãoPro). Print MIS trata o mesmo: "the dispatch module organizes all print job deliveries **in parts**" (Presswise).
@@ -1026,6 +1078,8 @@ Efeitos: (a) quando existe uma terceirização `ENVIADO`, o card mostra "no terc
 **Proposta.** Trocar `@unique` por índice, adicionar `sequencia Int` (1 de 3, 2 de 3) e `enum TipoEntrega { ENTREGA_PROPRIA, TRANSPORTADORA, CORREIOS, MOTOBOY_APP, RETIRADA_NO_BALCAO, OUTRO }` — hoje "retirada no balcão" (caso comum em gráfica rápida) é representado como entrega com motorista vazio. Adicionar `codigoRastreio`/`urlRastreio` e `comprovanteArquivoId`. Com N entregas, `StatusPedido.ENTREGUE` passa a exigir que todas as remessas estejam concluídas.
 
 #### F3 — Produção é monolítica por pedido, não por item/componente
+**Custo estimado:** 🔴 Caro — a própria proposta chama de "mudança estrutural mais cara", dependente de A1-Fase-2, e recomenda explicitamente não construir na primeira leva.
+
 **O que falta.** Um único `status` no `Pedido` governa todos os `OrcamentoItem`. Um livro (capa offset + miolo digital + acabamento terceirizado, em paralelo) não tem como andar em ritmos diferentes.
 
 **Pesquisa.** Print MIS modela job por componente: "a component type is a building block of a printing job... multiple components can be used to create job details on the Job Card" (PrintVis/Wye glossary).
@@ -1063,6 +1117,8 @@ Achado transversal importante: **`SolicitacaoCompra` não aparece em NENHUM arqu
 ## Achados
 
 ### A1 — Só dá pra comprar MATÉRIA-PRIMA do próprio catálogo (bloqueia perfis inteiros de gráfica)
+**Custo estimado:** 🟡 Médio — sem model novo (`itemGraficaId` vira nullable + `descricaoLivre` em `SolicitacaoCompra` já existente), mas soma 1 enum novo fechado+`OUTRO` e lógica condicional nova em `avancarStatusCompra` pra decidir quando gera `MovimentacaoEstoque`.
+
 **O que falta.** `resolverItemMateriaPrima` (`src/app/compras/actions.ts`) filtra rigidamente `itemCatalogo: { tipo: "MATERIA_PRIMA" }`, e o schema torna `itemGraficaId` obrigatório e não-nulo. Consequência: **é impossível registrar em Compras** clichê de clicheria, tela/emulsão de serigrafia terceirizada, corte a laser externo, acabamento terceirizado, peça de manutenção de máquina, EPI, ferramenta, ou qualquer compra pontual não cadastrada no catálogo. `TipoItemCatalogo` tem `SERVICO`, mas o módulo de compras o rejeita.
 
 **Pesquisa.** O Guia do Gráfico lista clicherias, insumos para flexografia (facas, cilindros anilox, doctor blades) e serviços terceirizados de sublimação como categorias de fornecimento próprias e recorrentes — pra flexo o clichê é uma das maiores linhas de compra recorrente, e pra serigrafia/sublimação/bordado a terceirização é rotina. ERPs nacionais (TOTVS Protheus, MXM, CRTI) tratam requisição de materiais **e** de serviços no mesmo fluxo.
@@ -1074,6 +1130,8 @@ Achado transversal importante: **`SolicitacaoCompra` não aparece em NENHUM arqu
 - `SERVICO_TERCEIRIZADO`/`PECA_MANUTENCAO` também abrem gancho natural pra `RegistroManutencao`/`Equipamento`, que já existem.
 
 ### A2 — Uma solicitação = um item; não existe pedido de compra multi-linha, nem frete, nem impostos
+**Custo estimado:** 🟢 Barato — pela rota que a própria proposta recomenda pra agora (a completa fica pra depois): campos `Decimal?` aditivos em `SolicitacaoCompra` (model já existente) mais um campo derivado, sem model nem enum novo.
+
 **O que falta.** `SolicitacaoCompra` tem `itemGraficaId`, `quantidade`, `valorFinal` como escalares. Comprar 3 papéis + 2 tintas do mesmo fornecedor na mesma nota exige 5 solicitações desconectadas, o mesmo `documento` digitado 5 vezes, e ratear o valor total à mão. Não há **nenhum** campo pra frete, IPI, ICMS-ST ou desconto — só `valorFinal`. Isso ataca o diferencial do produto: `custoUnitario = valorFinal / quantidade` — R$ 400 de frete numa compra de R$ 8.000 ou infla `valorFinal` (contaminando o custo se a nota tiver outros itens) ou some do custo real.
 
 **Pesquisa.** Rateio de frete/seguro proporcional ao valor de cada item da nota é comportamento padrão dos ERPs (Maxiprod); custo de aquisição correto é *valor do item + IPI + parcela rateada do frete*. Pra gráfica em Lucro Real/Presumido, crédito de ICMS/IPI sobre insumo muda o custo real do papel.
@@ -1103,6 +1161,8 @@ Achado transversal importante: **`SolicitacaoCompra` não aparece em NENHUM arqu
 **Proposta.** `model CotacaoFornecedor { solicitacaoCompraId, fornecedorId, precoUnitario, valorTotal, prazoEntregaDias?, condicaoPagamento, validaAte?, frete?, observacao, vencedora Boolean @default(false), registradaPorId, createdAt, @@unique([solicitacaoCompraId, fornecedorId]) }`. Ao avançar COTANDO→APROVADO, exigir escolher a vencedora e copiar pra solicitação. Pré-preencher com o último preço de cada fornecedor.
 
 ### A5 — `Fornecedor` é um cadastro-esqueleto e não conversa com o financeiro
+**Custo estimado:** 🔴 Caro — os campos e enums novos em `Fornecedor` seriam baratos isolados, mas a proposta inclui gerar automaticamente parcelas de contas a pagar ao avançar pra COMPRADO, mudança de comportamento em área financeira sensível (dinheiro).
+
 **O que falta.** `Fornecedor` tem só `id, graficaId, nome, contato (texto livre), ativo, createdAt`. Sem CNPJ, categoria, prazo/forma de pagamento, lead time, lote mínimo. E `Despesa` não tem `fornecedorId` (comentário do próprio schema admite: "só não tem vínculo com Despesa ainda") — nenhuma transição de compra cria `Despesa`. Uma compra de R$20.000 em boleto 30/60/90 nunca aparece no contas a pagar.
 
 **Pesquisa.** Condições 30/60/90, boleto, Pix e desconto por antecipação são padrão de negociação B2B brasileiro (Sebrae, Cora); ERPs tratam "condição de pagamento" como cadastro estruturado ligado ao fornecedor.
@@ -1120,6 +1180,8 @@ Achado transversal importante: **`SolicitacaoCompra` não aparece em NENHUM arqu
 **Proposta.** Em `SolicitacaoCompra`: `unidadeCompra`/`unidadeCompraOutro`, `quantidadeCompra`, `fatorConversaoCompra`, `precoUnitarioCompra` — `quantidade` (unidade de estoque) vira derivada. Em `ItemGrafica`: `unidadeCompraPadrao`, `fatorConversaoCompraPadrao`, `loteMinimoCompra`, `multiploCompra`, pra pré-preencher e avisar arredondamento.
 
 ### A7 — Recebimento é tudo-ou-nada; não existe entrega parcial nem divergência
+**Custo estimado:** 🟡 Médio — campos novos em `SolicitacaoCompra` mais 1 valor novo de status (`RECEBIDO_PARCIAL`), mas exige relaxar `MovimentacaoEstoque.solicitacaoCompraId` de `@unique` e nova lógica de recebimento parcial.
+
 **O que falta.** RECEBIDO soma **`solicitacao.quantidade` inteira** ao estoque, sem informar quanto chegou de fato. Sem `quantidadeRecebida`, sem estado de recebimento parcial. `CONFERIDO` é "só auditoria do que já entrou, nunca gera segunda entrada" — se a conferência achar diferença, não há pra onde ir.
 
 **Pesquisa.** Divergência entre NF de entrada e pedido de compra é categoria própria nos ERPs (Senior, Prosyst, Bluesoft), com "aprovar com divergência no recebimento" como permissão específica.
@@ -1127,6 +1189,8 @@ Achado transversal importante: **`SolicitacaoCompra` não aparece em NENHUM arqu
 **Proposta.** `quantidadeRecebida`/`valorNotaFiscal` na solicitação. Transição pra RECEBIDO passa a pedir quantidade efetivamente conferida — a `MovimentacaoEstoque` usa essa, não a solicitada. Novo status `RECEBIDO_PARCIAL`. `divergenciaObservacao` + flag derivada. Atenção: `MovimentacaoEstoque.solicitacaoCompraId` hoje é `@unique` — precisaria virar não-único.
 
 ### A8 — Sugestão de compra existe, mas o ponto de pedido é um número mágico e o lead time não existe em lugar nenhum
+**Custo estimado:** 🟡 Médio — campos novos em `ParametrosGrafica`/`ItemGrafica` são baratos isolados, mas a fórmula de ponto de pedido e o aprendizado de lead time real por fornecedor são lógica nova moderada.
+
 **O que confirmei.** A sugestão **existe** e é manual: `src/app/compras/page.tsx` calcula a partir de `calcularPrevisaoEstoque`, filtro `abaixoDoMinimo || diasRestantes <= 30` — "reduz fricção, não cria nada sozinho" (decisão de produto defensável).
 
 **O que falta.** `30` é literal, não parametrizável (`ParametrosGrafica` não tem nenhum parâmetro de compras). Sem lead time em lugar nenhum — a fórmula real do ponto de pedido não pode ser calculada. Sugestão diz *quando* mas não *quanto*.
@@ -1146,6 +1210,8 @@ Achado transversal importante: **`SolicitacaoCompra` não aparece em NENHUM arqu
 **Proposta (média prioridade).** `model ContratoFornecimento { graficaId, fornecedorId, itemGraficaId?/varianteId?, precoUnitario, unidadeCompra, vigenciaInicio, vigenciaFim, quantidadeContratada?, quantidadeConsumida, condicaoPagamento, ativo }`. Solicitação com `origem = CONTRATO_PROGRAMADO` pula COTANDO. Alerta quando quantidade/vigência está esgotando.
 
 ### A10 — Sem alçada de aprovação e sem segregação de funções
+**Custo estimado:** 🟢 Barato — 2 campos opt-in em `ParametrosGrafica` (model já existente), com precedente idêntico já construído (`descontoMaxSemAprovacao` do orçamento).
+
 **O que falta.** Única checagem é permissão de módulo. APROVADO grava `usuarioAprovadorId` sem checar que seja diferente do solicitante. Sem teto de valor — R$200 e R$200.000 passam pelo mesmo caminho. `ParametrosGrafica.descontoMaxSemAprovacao` já existe pra orçamento; o análogo de compras não foi feito.
 
 **Pesquisa.** Alçada por faixa de valor é padrão (Rech, Flexsys); "o solicitante nunca aprova o próprio pedido" é controle clássico contra fraude (COSO).
@@ -1153,6 +1219,8 @@ Achado transversal importante: **`SolicitacaoCompra` não aparece em NENHUM arqu
 **Proposta.** `ParametrosGrafica.valorMaxCompraSemAprovacao?` (null = sem trava) + `exigirAprovadorDiferenteDoSolicitante @default(false)` — opt-in, gráfica pequena não tem como segregar.
 
 ### A11 — Fornecedor não tem histórico de desempenho, só de preço
+**Custo estimado:** 🟢 Barato — a própria proposta diz "nenhuma tabela nova", só derivar métricas por query e exibir coluna extra no card comparativo existente; depende de A7/A8 (Médios) estarem construídos pra ter os dados de origem.
+
 **O que falta.** Único "score" é preço. Sem pontualidade, taxa de divergência, índice de qualidade.
 
 **Pesquisa.** OTIF (On Time In Full) é o KPI padrão de gestão de fornecedores.
@@ -1193,11 +1261,15 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 ### A. O eixo "quanto lucrei"
 
 #### A1 — `Despesa` e `CustoPedido` são universos paralelos: o mesmo gasto precisa ser digitado duas vezes e nada detecta a divergência
+**Custo estimado:** 🔴 Caro — os campos novos em `Despesa` são baratos isolados, mas a proposta gera `CustoPedido` automaticamente numa transação a partir de `Despesa`, mudança de comportamento em área financeira sensível (custo/lucro do pedido).
+
 **O que falta.** `CustoPedido` é o custo real por pedido e alimenta `lucroDoPedido` (`src/lib/custo-pedido.ts`). `Despesa` é o dinheiro que de fato saiu. **Não existe nenhum vínculo entre os dois.** Quando a gráfica terceiriza a laminação de um pedido por R$800, o correto é lançar `CustoPedido` (lucro do pedido certo) **e** `Despesa` (contas a pagar certo) — dois formulários, zero validação cruzada. Na prática só um dos dois será preenchido. O número de lucro por pedido e o resultado do mês nunca fecham entre si, e o sistema não sabe disso. O padrão pra resolver já existe e está maduro: `Despesa.comissao`, `Despesa.movimentacaoContaPrepaga`, `CustoPedido.movimentacaoEstoqueId @unique` — "um lançamento espelhado em outro modelo, com FK única pra nunca duplicar".
 
 **Proposta.** `Despesa.pedidoId String?` (`onDelete: SetNull`) + `Despesa.custoPedidoId String? @unique`. Quando o usuário informa `pedidoId` e `categoriaCustoId` numa despesa, gerar o `CustoPedido` espelhado na mesma transação, com novo `OrigemCusto.DESPESA`. Caminho inverso: checkbox "essa despesa ainda vai ser paga" no formulário de `CustoPedido`. Reaproveitar `possivelDuplicidade` (já existe em `CustoPedido`).
 
 #### A2 — O custo fixo real nunca é confrontado com o `overheadPercent` embutido no preço
+**Custo estimado:** 🔴 Caro — o campo `CategoriaCusto.natureza` e o relatório de cobertura seriam baratos/médios isolados, mas a proposta de abrangência inclui `ParametrosGrafica.overheadModo`, que muda o cálculo de overhead dentro de `comporPreco` — mudança no motor de precificação.
+
 **O que falta.** `comporPreco` aplica `overheadPercent` (default 15%) sobre o custo direto e já grava o valor absoluto em `detalhes.overhead` no breakdown persistido. O lado "quanto meu custo fixo realmente foi" também está no banco (`Despesa` de aluguel, salário administrativo). **Ninguém compara os dois.** Uma gráfica pode faturar o ano inteiro com 15% de overhead embutido enquanto o custo fixo consome 26%, sem nenhum ruído. Obstáculo estrutural: `CategoriaCusto` não tem classificação de natureza (fixo/variável) — sem isso não dá pra calcular custo fixo total, margem de contribuição nem ponto de equilíbrio.
 
 **Pesquisa.** O mapa de custo da Calcgraf (ferramenta de custeio pra gráficas brasileiras) descreve metodologia RKW e lista 20 itens de custo fixo típicos (seguros, aluguel, IPTU, energia, manutenção, honorários). A fórmula do setor é `(Custo Fixo do setor + rateio administrativo) ÷ Horas Produtivas = Custo/Hora` — não um percentual sobre material. Ponto de equilíbrio = `Gastos Fixos ÷ % Margem de Contribuição`.
@@ -1205,6 +1277,8 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 **Proposta.** `CategoriaCusto.natureza` — enum `NaturezaCusto { VARIAVEL, FIXO, SEMIVARIAVEL }`, default `VARIAVEL`. Relatório "cobertura de overhead" em `/financeiro`: `Σ Despesa PAGA categoria FIXO` vs `Σ overhead cobrado nos pedidos faturados` — se o segundo for menor, mostrar "seu overhead de 15% cobriu R$42 mil, mas seu custo fixo foi R$61 mil — o percentual que fecharia é 21,8%". **Essa frase sozinha é a funcionalidade mais defensável do módulo inteiro.** Abrangência: `ParametrosGrafica.overheadModo` — `PERCENTUAL_CUSTO_DIRETO | VALOR_POR_HORA_MAQUINA | VALOR_FIXO_POR_PEDIDO` — 15% sobre custo direto de serigrafia/bordado (material barato, mão de obra cara) cobre uma fração do custo fixo real.
 
 #### A3 — Não existe DRE; o "saldo real" hoje mistura competência com caixa
+**Custo estimado:** 🟡 Médio — sem model novo (função pura + página nova), mas monta um motor de cálculo próprio (linhas de DRE) e corrige `saldoReal`, cálculo já usado em outro lugar do Meu Negócio.
+
 **O que falta.** `meu-negocio.ts` calcula `saldoReal: faturamentoTotal - despesasPagasTotal`, comentado como "caixa de verdade" — mas `faturamentoTotal` vem de orçamentos **aprovados** pela data de **criação**, não de pagamento recebido. Um orçamento de R$80 mil parcelado em 90 dias entra 100% no "caixa de verdade" deste mês. O lado da despesa é caixa puro. Os dois lados da subtração estão em regimes diferentes — o rótulo mente.
 
 **Pesquisa.** Estrutura de DRE simplificada consensual: Receita Bruta → (−) impostos/descontos → Receita Líquida → (−) custos variáveis → Margem de Contribuição → (−) custo fixo/comissões → Resultado Operacional → (−) despesas financeiras → Lucro Líquido.
@@ -1214,6 +1288,8 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 ### B. Fluxo de caixa e cobrança
 
 #### A4 — Não existe fluxo de caixa projetado, embora todos os dados já estejam no banco
+**Custo estimado:** 🟢 Barato — a própria proposta diz "custo baixíssimo, valor altíssimo": função pura que só agrega `ContaReceber`/`Despesa` já existentes, sem model novo, sem mutar nenhum saldo.
+
 **O que falta.** `ContaReceber.vencimento` e `Despesa.vencimento` pendentes dão exatamente as duas curvas necessárias. Nada agrega isso — ninguém responde "no dia 12 eu fico negativo".
 
 **Pesquisa.** Horizonte mínimo recomendado é 90 dias, com projeção semanal nos primeiros 30. Falta de controle de fluxo de caixa é apontada como uma das três principais causas de mortalidade de pequenas empresas no Brasil.
@@ -1221,6 +1297,8 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 **Proposta.** `src/lib/fluxo-caixa.ts` puro: saldo inicial + entradas/saídas previstas → buckets (semanal 30 dias, mensal até 90) com saldo acumulado e o primeiro dia em que fica negativo. Custo baixíssimo, valor altíssimo. Depende de saldo inicial (ver A15) e melhora com prazos de compensação por forma de pagamento (A11).
 
 #### A5 — Não existe régua de cobrança nem juros/multa por atraso
+**Custo estimado:** 🔴 Caro — model novo `ReguaCobrancaEtapa` com workflow de escalonamento, mais permitir informar `valorJuros`/`valorMulta` na baixa é mudança de comportamento em área financeira sensível (valor efetivamente recebido).
+
 **O que falta.** Vencido hoje = pill vermelha, sem lembrete, sem escalonamento, sem juros/multa, sem status de negociação, sem baixa por perda. Infraestrutura pronta e não usada: cron diário, e-mail, webhook por evento, padrão CAS de idempotência (`Pedido.alertaAtrasoEnviadoEm`). `ContaReceber` só tem `valor` — quando cliente paga com juros, o `Pagamento` copia o valor literal e o dinheiro extra some.
 
 **Pesquisa.** Régua padrão: preventiva 3-7 dias antes, reativa escalonada após vencimento, escalação formal (~30 dias, notificar antes de negativar). Multa por atraso limitada a 2% (uma vez); juros de mora por dia a partir do dia seguinte.
@@ -1235,6 +1313,8 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 **Proposta.** `Cliente.limiteCredito Decimal?` (null = sem limite), `prazoPagamentoPadraoDias Int?`, `bloqueadoParaFaturamento Boolean @default(false)` + motivo. Aviso não-bloqueante por padrão na aprovação (flag em `ParametrosGrafica` decide se vira trava, mesmo espírito de `descontoMaxSemAprovacao`).
 
 #### A7 — Parcelas de contas a receber são 100% manuais; `condicoesPagamento` é texto livre morto — **PARCIALMENTE CONSTRUÍDO 2026-08-28 (rodada 13)**
+
+**Custo estimado (restante pendente):** 🟡 Médio — os models já foram construídos; o que falta é só a UI (1 tela de CRUD de condições de pagamento + seletor no formulário de orçamento), sem schema novo.
 
 **Status:** `model CondicaoPagamento`/`CondicaoPagamentoParcela` construídos, com bootstrap lazy das 4 condições comuns da pesquisa. `ContaReceber` gerada automaticamente (snapshot) na aprovação do orçamento, nos dois caminhos (painel e link público) — mas só pra âncora `APROVACAO`; `EMISSAO_NOTA`/`ENTREGA` ficam com enum pronto e sem gatilho. **Gap real: nenhuma UI foi construída** — hoje só é possível vincular uma condição ao orçamento via Prisma direto. Fica pra uma rodada futura: tela de configuração de condições + seletor no formulário de orçamento.
 
@@ -1255,6 +1335,8 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 ### C. Tributos e encargos
 
 #### A9 — Retenção de impostos na fonte não existe em lugar nenhum
+**Custo estimado:** 🔴 Caro — model novo `RetencaoContaReceber` com relação direta seria médio isolado, mas muda o valor líquido esperado usado na conciliação de pagamento (A8), mudança de comportamento em área financeira sensível.
+
 **O que falta.** `ContaReceber.valor`/`Pagamento.valor` são sempre valor cheio. Quando o tomador é PJ/órgão público, ele retém parte — hoje isso seria tratado como parcela paga a menor (que nem existe, por A8), inflando receita.
 
 **Pesquisa.** IRRF sobre serviço ~1,5%; CSRF (PIS+COFINS+CSLL) ~4,65%; ISS retido 2-5% conforme município. Impressos personalizados são tributados por ISS, não ICMS — boa parte do faturamento de gráfica é NFS-e, onde a retenção acontece.
@@ -1262,6 +1344,8 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 **Proposta.** `Cliente.tipoTomador` + `retemImpostos Boolean`. `ContaReceber.valorRetencoes` + `model RetencaoContaReceber { tributo TributoRetido, percentual, valor }`, `enum TributoRetido { IRRF, CSRF, PIS, COFINS, CSLL, ISS, INSS, OUTRO }`. Valor líquido esperado vira alvo da conciliação (A8).
 
 #### A10 — `impostoPercent` é um número solto que não conhece o regime tributário nem o faturamento
+**Custo estimado:** 🟢 Barato — a própria proposta descarta motor tributário e usa o mecanismo de pendência de configuração que já existe, só exibindo faixa de referência e aviso quando o RBT12 apurado supera o `impostoPercent` configurado.
+
 **O que falta.** `ParametrosGrafica.impostoPercent @default(0.06)` é fixo, sem relação com `DadosFiscaisGrafica.regimeTributario` (existe desde a correção de NF-e de hoje) nem com faturamento acumulado. 0,06 é a alíquota nominal da 1ª faixa do Anexo III — razoável como default, perigoso como regra permanente.
 
 **Pesquisa.** No Simples a alíquota efetiva cresce com o RBT12 (fórmula: `(RBT12×Alíq − PD)÷RBT12`). Fator R pode jogar a gráfica do Anexo III pro Anexo V mês a mês. Uma gráfica em crescimento continua precificando com 6% enquanto paga 9-11%, e a margem some sem aviso.
@@ -1269,6 +1353,8 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 **Proposta.** Não implementar motor tributário — fechar a lacuna de percepção: mostrar a faixa de referência do regime na tela de parâmetros. Pendência de configuração (mecanismo já existe) quando o RBT12 apurado (calculável a partir dos orçamentos/pagamentos dos últimos 12 meses) indicar alíquota efetiva acima do `impostoPercent` configurado.
 
 #### A11 — Custo financeiro de receber (maquininha, antecipação) não é apurado; formas de pagamento sem prazo de compensação
+**Custo estimado:** 🟡 Médio — `Pagamento.valorTaxa` aditivo mais 1 model novo simples (`TaxaFormaPagamento`), sem relação complexa, mais 2-3 valores novos de enum de forma de pagamento.
+
 **O que falta.** `taxaFinanceiraPercent` é só estimativa no preço — quando o pagamento chega por cartão/antecipação, a taxa real não é registrada, os ~3,5% de MDR simplesmente desaparecem do resultado. `FormaPagamento` não carrega prazo de compensação — PIX e cartão em 30 dias são radicalmente diferentes pro fluxo de caixa (A4) e hoje indistinguíveis.
 
 **Proposta.** `Pagamento.valorTaxa @default(0)`. `model TaxaFormaPagamento { forma, percentual, diasCompensacao }`. Promover `CHEQUE` de dentro do `OUTRO` (tem data de compensação, é funcionalmente um recebível) e separar `CARTAO_CREDITO`/`CARTAO_DEBITO` (taxas e prazos diferentes).
@@ -1276,6 +1362,8 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 ### D. Comissão
 
 #### A12 — Comissão é um único percentual por vendedor, sobre base global, gerada na aprovação
+**Custo estimado:** 🔴 Caro — 2 models novos (`RegraComissao`, `FatorComissaoDesconto`) com resolução por especificidade, mais liberação proporcional conforme baixas de `ContaReceber`; mudança de comportamento em área financeira sensível (comissão).
+
 **Confirmado.** Mais rígido que o esperado: um único `Usuario.comissaoPercent` (sem variação por produto/categoria/faixa), base global da gráfica (não por vendedor), gatilho fixo na aprovação (sem relação com o cliente ter pagado), `Comissao.usuarioId` obrigatório (vendedor cadastrado só como texto livre em `Orcamento.vendedor` não gera comissão, silenciosamente).
 
 **Pesquisa.** Mercado brasileiro usa: percentual escalonado por meta, comissão sobre margem/lucro, percentual diferente por produto conforme rentabilidade, comissão por faixa de desconto (100% no preço cheio, 70% com até 5% desconto, 40% com até 10%, zero acima disso).
@@ -1302,11 +1390,15 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 **Proposta.** Corrigir a cópia de `categoriaCustoId` primeiro (uma linha, pré-requisito de A2/A3). `Despesa.periodicidade` — `SEMANAL|QUINZENAL|MENSAL|BIMESTRAL|TRIMESTRAL|SEMESTRAL|ANUAL`. `recorrenciaAteEm DateTime?`. `valorVariavel Boolean` (gera ocorrência com valor 0, "a confirmar", em vez de mentir um valor).
 
 #### A15 — Não existe conta bancária/caixa, e nada é atribuível a conta ou filial
+**Custo estimado:** 🟡 Médio — 1 model novo (`ContaFinanceira`) com poucos campos e FK opcional direta em `Pagamento`/`Despesa`, mais `Despesa.filialId` aditivo; é cadastro de referência, não muta cálculo de saldo existente.
+
 **O que falta.** Nenhum `ContaBancaria`/`Caixa`. `Pagamento`/`Despesa` sabem a forma, não o destino — gráfica com 2 contas + caixa não consegue dizer onde o dinheiro está, e o fluxo de caixa projetado (A4) não tem saldo inicial. `Despesa` não tem `filialId` (mas `Orcamento.filialId` existe) — impossível resultado por filial mesmo do lado da receita.
 
 **Proposta.** `model ContaFinanceira { nome, tipo CONTA_CORRENTE|CAIXA|POUPANCA|CARTEIRA_DIGITAL|OUTRO, saldoInicial, saldoInicialEm, ativa }` + FK opcional em `Pagamento`/`Despesa`. `Despesa.filialId String?`.
 
 #### A16 — Exportação pro contador é foto mensal fixa, com risco de dupla contagem declarado no próprio código
+**Custo estimado:** 🟡 Médio — sem schema novo, é extensão de tela/exportação existente com lógica nova moderada (intervalo livre, blocos novos, agrupamento, bloco de possíveis duplicidades).
+
 **O que falta.** Só mês fechado, sem intervalo livre. Só 3 blocos (pagamentos, despesas pagas/pendentes) — não exporta contas a receber, comissões, custos por pedido. Não agrupa por `CategoriaCusto` estruturada. O comentário em `Pagamento.contaReceber` declara risco aceito sem mitigação: lançar `Pagamento` manual + marcar `ContaReceber` recebida conta o dinheiro duas vezes, sem deduplicação.
 
 **Proposta.** Intervalo livre, blocos novos (contas a receber com aging, comissões, custos por pedido), agrupamento por categoria com subtotal por natureza, coluna de filial, bloco DRE, bloco "possíveis duplicidades".
@@ -1373,6 +1465,8 @@ enum IndicadorInscricaoEstadual { CONTRIBUINTE, ISENTO, NAO_CONTRIBUINTE }
 
 ### A2. `documento` é texto livre não normalizado — e o CNPJ alfanumérico (vigente desde 31/07/2026) já quebra a emissão hoje — **BUG CORRIGIDO 2026-08-24 (parcial)**
 
+**Custo estimado (restante pendente):** 🟡 Médio — sem model novo, mas soma normalização/validação de DV + uma migração de dado one-off com risco de colisão (a própria proposta avisa que precisa tratar duplicata revelada, não é puramente aditiva) + um botão novo reaproveitando o padrão do ViaCEP já no repo.
+
 **Status:** o bug ativo (`focus-nfe.ts` mutilando CNPJ alfanumérico e mandando truncado como CPF) foi corrigido tanto pro destinatário (`normalizarDocumentoDestinatario`, rodada 1) quanto pro **emitente** — a própria gráfica (`normalizarCnpjEmitente`, rodada 4, 2026-08-24) — os dois testados. **Escopo restrito de propósito**: não implementado ainda — validação de dígito verificador, normalização do campo no cadastro (`src/lib/clientes.ts`), unicidade real, nem o botão "buscar por CNPJ". Isso continua gap, ver proposta completa abaixo.
 
 **O que falta:** `clienteSchema` (`src/lib/clientes.ts`) valida `documento` com o validador genérico `opcional` = `string().trim().max(160)`. Sem dígito verificador, sem máscara, sem normalização. Três consequências verificadas no código:
@@ -1390,6 +1484,8 @@ enum IndicadorInscricaoEstadual { CONTRIBUINTE, ISENTO, NAO_CONTRIBUINTE }
 - Botão "buscar dados pelo CNPJ" no `ClienteForm`, preenchendo razão social/nome fantasia/endereço/IE — **precedente já existe no próprio repo**: `EnderecoFields.tsx:66` faz exatamente isso com o ViaCEP, client-side, sem chave de API.
 
 ### A3. O CFOP é fixo por gráfica e ignora a UF e o status de contribuinte do cliente — **PARCIALMENTE CONSTRUÍDO 2026-08-24 (rodada 5)**
+
+**Custo estimado (restante pendente):** 🟡 Médio — sem model/campo novo (o indicador de contribuinte já veio do A1), é lógica nova moderada dentro de `resolverCfop`, função pura já existente, mais a pendência de configuração correspondente.
 
 **O que faltava:** `DadosFiscaisGrafica.cfopPadrao` nasce `"5102"` e é usado tal e qual em toda emissão — `src/app/orcamento/[id]/actions.ts:2709` faz `cfop: dadosFiscais.cfopPadrao` para **todo item de toda nota**. `5xxx` é operação **dentro do estado**. Nenhum ponto do código compara `dadosFiscais.enderecoUf` com `cliente.enderecoUf`.
 
@@ -1484,6 +1580,8 @@ model EnderecoCliente {
 
 ### A7. Não existe segmento de cliente nem tabela de preço diferenciada — e a gráfica que vende para revenda/agência é um mercado inteiro — **PARCIALMENTE CONSTRUÍDO 2026-08-24 (rodada 10)**
 
+**Custo estimado (restante pendente):** 🔴 Caro — o Nível 2 que falta é 2 models novos (`TabelaPreco` + `TabelaPrecoItem`), e a própria proposta o marca como "se e quando aparecer demanda real", não pra agora.
+
 **Status:** só o "Nível 1" da proposta (o "Nível 2", `model TabelaPreco`, fica de fora de propósito). `Cliente.segmento`/`segmentoOutro`/`margemPadraoOverride` + ligação real ao gancho dormente `ContextoPrecificacao.margemLucroOverride` (já plumbado em todos os 7 branches do motor, nunca usado até agora) — `Cliente.margemPadraoOverride`, quando preenchido, substitui `ParametrosGrafica.margemPadrao` no preço final de todo item do orçamento daquele cliente. Confirmado com teste de integração real (não só checagem de tipo): preço final muda de fato com o override. **Escopo aceito conscientemente**: a prévia de preço da Calculadora (antes do orçamento existir/de escolher cliente) sempre usa a margem padrão da gráfica — só o cálculo persistido (criação/edição/duplicação do orçamento) aplica o override do cliente corretamente.
 
 **O que falta:** todo cliente é precificado igual. `ParametrosGrafica.margemPadrao` é uma margem única para a gráfica inteira; `ItemGrafica.precoVenda` é um preço único por produto. Não existe `tipoCliente`/`segmento`, nem tabela de preço, nem qualquer forma de dizer "esse aqui é revendedor, aplica a tabela B".
@@ -1575,6 +1673,8 @@ Cliente.margemPadraoOverride Decimal? @db.Decimal(5,4)
 
 ### A13. A listagem de clientes não escala: sem busca, sem paginação, e 4 telas carregam a base inteira — **PARCIALMENTE CONSTRUÍDO 2026-08-24 (rodada 4)**
 
+**Custo estimado (restante pendente):** 🟡 Médio — sem schema novo, é trocar `findMany` completo por combobox com busca server-side em 4 telas existentes, lógica nova moderada repetida.
+
 **Status:** `/clientes` (`src/app/clientes/page.tsx`) ganhou busca por nome/documento + paginação real (50/página) via `searchParams`, mantendo o filtro `desativadoEm: null`. **Ficou de fora, de propósito**: os outros 4 lugares que ainda carregam a base inteira pra popular `<select>` (`/orcamento`, `/orcamento/[id]`, `/producao`, `/meu-negocio/relatorios`) — isso é combobox com busca server-side, escopo maior, continua gap.
 
 **O que falta (nos 4 lugares acima):** `/clientes` faz `prisma.cliente.findMany({ where: { graficaId } })` sem `take`, sem busca, sem filtro, e renderiza todos numa lista. E não é só ali: `/orcamento` (`page.tsx:60`), `/orcamento/[id]` (`page.tsx:116`), `/producao` (`page.tsx:127`) e `/meu-negocio/relatorios` (`page.tsx:80`) também carregam **todos** os clientes da gráfica para montar `<select>`s. Uma gráfica de bairro com 60 clientes não sente; uma gráfica com 5 anos de histórico e 1.500 cadastros transforma cada uma dessas páginas num payload enorme e num `<select>` inutilizável.
@@ -1587,6 +1687,8 @@ Cliente.margemPadraoOverride Decimal? @db.Decimal(5,4)
 - Nota de implementação para quem for executar: qualquer campo novo desta parte precisa passar também por `src/lib/importacao/campos.ts` e `src/lib/importacao/escritor-clientes.ts` (a importação de planilha reusa `clienteSchema` byte-a-byte, e é justamente por ali que uma gráfica nova migra 800 clientes do sistema antigo — se os campos novos não estiverem mapeados, eles nascem vazios em toda migração).
 
 ### A14. Portal do cliente: hoje existem tokens por objeto, mas não existe identidade do cliente
+
+**Custo estimado:** 🔴 Caro — model novo `AcessoPortalCliente` reaproveita padrão de token existente, mas é magic-link de identidade contínua (área sensível de autenticação), com múltiplas telas (pedidos, NF, cobrança, "pedir de novo") e depende de A4/A9/A10.
 
 **O que falta:** o sistema já tem dois acessos externos sem login — `/o/[token]` (aprovar/recusar orçamento) e `/a/[token]` (aprovar arte) — cada um amarrado a **um objeto**, com identidade declarada e não verificada (`Orcamento.respostaPublicaNome`: "vale como registro, não como prova de identidade", conforme o próprio comentário do schema). Não existe nada que ligue uma pessoa ao `Cliente` e dê a ela uma visão contínua: histórico de pedidos, status de produção, 2ª via de boleto/NF, repetir pedido, baixar a arte aprovada da última vez.
 
@@ -1700,6 +1802,8 @@ Achado secundário do mesmo bloco: a única tela que **lê** `LogAuditoria` é `
 
 ## A4 — Não existe cadastro de alçada: a única trava é global e "quem aprova" está hardcoded; Compras não tem alçada nenhuma
 
+**Custo estimado:** 🔴 Caro — 1 model novo (`AlcadaAprovacao`) é simples isolado, mas muda o comportamento de aprovação de desconto e de compra, área sensível de autorização.
+
 **O que falta.** Duas lacunas relacionadas:
 
 1. **Desconto**: `src/app/orcamento/[id]/actions.ts:1751-1760` compara o desconto contra `descontoMaxSemAprovacao` e, se estourar, permite só `papel === "DONO" || papel === "ADMIN"`. Isso é um limite único pra gráfica inteira e um único nível de aprovação, com o "quem" fixo em código. Não há como dizer "vendedor júnior 5%, sênior 10%, gerente 20%, acima disso só o dono". (E, por A1, o limite está travado em 100% na prática.)
@@ -1734,6 +1838,8 @@ model AlcadaAprovacao {
 Resolução: alçada do usuário > alçada do papel > `descontoMaxSemAprovacao` (fallback, mantendo o comportamento atual pra quem nunca configurar nada). Aprovação em múltiplos níveis encadeados eu deixaria **fora** do escopo — é o que ERP grande faz, mas gráfica de 5 a 30 pessoas resolve com um nível e um teto (inferência minha, mas coerente com o porte do cliente-alvo).
 
 ## A5 — Permissão é por usuário, não por cargo; ADMIN passa por cima de tudo
+
+**Custo estimado:** 🔴 Caro — 2 models novos (`PerfilAcesso`/`PermissaoPerfil`) mudando o comportamento do sistema de permissões, área sensível de autorização.
 
 **O que falta.** `PermissaoUsuario` é `[usuarioId, modulo]` e, por `src/lib/auth/permissoes.ts:36` e `:45`, o controle fino **só se aplica a OPERADOR** — DONO e ADMIN retornam `true` sem consultar o banco. Consequências pra gráfica de porte médio: (a) admitir 3 operadores de acabamento no mesmo turno exige configurar 8 módulos × 3 usuários na mão, sem "copiar de outro usuário" nem perfil reutilizável; (b) não existe papel intermediário — quem precisa de mais que OPERADOR vira ADMIN e ganha acesso irrestrito, inclusive a `/configuracoes` (motor de preço) e à aprovação de desconto ilimitada; (c) `ResponsavelEstagio` (por status de pedido) já é uma segunda dimensão de permissão que vive fora desse modelo, com regra própria em `podeConfirmarEstagio`.
 
@@ -1804,6 +1910,8 @@ Perguntado uma vez em `/registro` ou `/comecar` (uma pergunta, não um wizard). 
 
 ## A7 — "Uma tabela + uma pasta de tela por tipo de máquina" já custa 5 FKs nullable em dois models; com os motores previstos vira 10
 
+**Custo estimado:** 🟡 Médio — a proposta descarta a migração polimórfica completa (seria Caro) e recomenda o meio-termo: trocar 5 FKs por um par tipo+id sem FK de banco (possível enum novo) e um componente de tela declarativo único, deliberadamente sem tocar em `ItemGrafica`.
+
 **O que falta.** Hoje: 5 models de máquina (`Prensa`, `MaquinaFlexografia`, `ImpressoraDigital`, `MaquinaSetupPorPeca`, `Equipamento`), 4 FKs nullable em `ItemGrafica` (`schema.prisma:1181-1198`), **5 FKs nullable em `RegistroManutencao`** (`:429-436`) com a regra "exatamente uma preenchida" validada em app (`validarSelecaoMaquina`), 5 índices só pra isso, 5 arquivos de `actions.ts`, 5 rotas de detalhe e uma `maquinas/page.tsx` de 412 linhas com 5 queries e 5 seções quase idênticas. Os achados A3–A7 da Parte 1 ainda pendentes (Personalização, Bordado, DTF, Tempo de Máquina, Chapa Rígida) somariam, no mesmo padrão, mais 5 tabelas, mais ~5 FKs nullable em cada um dos dois models e ~400 linhas na mesma página.
 
 Vale dizer que a escolha original foi consciente e bem justificada no schema (`:232-240`: não unificar `Prensa` pra não migrar dado real de produção) — e `MaquinaSetupPorPeca` já é a prova de que o projeto consegue consolidar quando o custo tem a mesma forma (3 processos, 1 tabela). O achado não é "estava errado"; é "o ponto de virada chegou".
@@ -1819,6 +1927,8 @@ Vale dizer que a escolha original foi consciente e bem justificada no schema (`:
 Prioridade média — é dívida de arquitetura que ainda não sangra, mas o momento certo de pagar é *antes* do 6º motor, não depois do 10º.
 
 ## A8 — Identidade visual e dados de contato: só existem no nível da gráfica, e o PDF nem tem CNPJ/endereço/telefone — **PARCIALMENTE CONSTRUÍDO 2026-08-24 (rodada 9)**
+
+**Custo estimado (restante pendente):** 🟢 Barato — campos aditivos nullable em `Filial` (model já existente), com resolução por fallback no mesmo padrão que `resolverDadosFiscais` já implementa.
 
 **Status:** construído o bloco de contato comercial no nível da GRÁFICA (`telefone`/`emailContato`/`site`/`enderecoResumido`, editável em `/configuracoes/identidade`, impresso no rodapé do PDF de orçamento). **Fora de escopo de propósito** (a própria pesquisa já marcava como prioridade baixa): identidade por filial (`logoUrl`/`corPrimaria`/contato próprios de `Filial`) continua gap.
 
@@ -1854,6 +1964,8 @@ Resolução por fallback: filial → gráfica → padrão da plataforma, exatame
 
 ## A9 — Roteamento de notificação não é configurável: destinatário, canal e escopo estão no código — **PARCIALMENTE CONSTRUÍDO 2026-08-24 (rodada 9)**
 
+**Custo estimado (restante pendente):** 🟢 Barato — 2 valores novos no enum `AreaAdministrativa` já existente (`ADD VALUE`) mais religar 2 call sites de e-mail existentes, exatamente o mesmo padrão já construído pra `PRAZO_PRODUCAO`.
+
 **Status:** `AreaAdministrativa.PRAZO_PRODUCAO` construído, reaproveitando o mecanismo já existente pra `NOTA_FISCAL`. `alerta-prazo-email.ts` agora manda pro(s) responsável(is) configurado(s) em vez de todo DONO, com fallback pro comportamento de hoje quando nenhum for cadastrado. `ResponsaveisAdministrativoForm.tsx` virou tabela funcionário × área (exatamente o "no dia que uma segunda área existir" que o próprio comentário do arquivo previa). **Fora de escopo**: `COBRANCA`/`COMPRAS` (as outras 2 áreas que a proposta original sugeria) não foram construídas — cada uma tem seu próprio call site de disparo de e-mail a mapear, deixado pra quando/se algum desses dois fluxos for revisado.
 
 **O que falta.** `AutomacaoGrafica` tem 1 `webhookUrl` + 3 booleans. Além dele: `src/lib/alerta-prazo-email.ts:198-203` monta os destinatários como "vendedor do orçamento + **todos** os DONOs da gráfica", fixo. `ResponsavelAdministrativo` existe e resolve o problema certo, mas o enum `AreaAdministrativa` (`schema.prisma:2928-2930`) tem **um único valor**, `NOTA_FISCAL` — o próprio comentário diz que foi deixado aberto pra "cobrança, etc.". Na prática, uma gráfica com um PCP dedicado não tem como fazer o alerta de prazo chegar nele sem promovê-lo a DONO, e o dono de uma gráfica de 30 pessoas recebe e-mail de todo pedido que se aproxima do prazo.
@@ -1875,6 +1987,8 @@ enum AreaAdministrativa {
 
 ## A10 — Onboarding de tenant novo: existe checklist, não existe template nem exportação de configuração
 
+**Custo estimado:** 🟢 Barato — a própria proposta recomenda não construir exportação/clonagem agora; o único pedaço de schema necessário (`Grafica.segmento`) já está contabilizado e construído no A6.
+
 **O que falta.** O que já existe é mais do que a pergunta sugeria: `/comecar` com checklist de 3 passos (`obterStatusOnboarding`), `carregarDadosExemplo` com limpeza reversível, `PendenciasConfiguracaoModal` proativo pro DONO, `garantirCategoriasCustoPadrao` lazy, e importador de planilha com IA (`TipoImportacaoPlanilha`). O que não existe: (a) qualquer variação disso por perfil de gráfica — é o A6; (b) importação de planilha pra **máquinas, fornecedores e categorias de custo** (o enum só cobre `CLIENTES`, `CATALOGO`, `PEDIDOS`); (c) qualquer forma de exportar/clonar a configuração de um tenant. `/admin/graficas` só concede e revoga cortesia (`concederCortesia`, `presentearPorEmail`, `revogarCortesia`) — não provisiona nem copia nada.
 
 **Pesquisa.** Ver A6 (registro de templates por tenant como prática de provisionamento multi-tenant). Especificamente sobre exportação, não achei fonte que a trate como expectativa de mercado em ERP SMB brasileiro — é mais uma ferramenta interna de quem opera a plataforma do que uma feature de cliente.
@@ -1883,6 +1997,8 @@ enum AreaAdministrativa {
 
 ## A11 — `UnidadeDimensao` não tem POLEGADA
 
+**Custo estimado:** 🟢 Barato — `ADD VALUE` num enum já existente (`UnidadeDimensao`) mais duas entradas num `Record` no código; a própria proposta já registra que não há dívida acumulando enquanto isso não é feito.
+
 **O que falta.** `enum UnidadeDimensao { MM, CM, M }` (`schema.prisma:18-22`) e `UNIDADES_DIMENSAO`/`FATOR_PARA_CM` em `src/lib/unidade-dimensao.ts:23,40`.
 
 **Pesquisa.** O padrão oficial brasileiro é métrico, e mesmo o segmento de bordado — o mais "americano" da lista, por causa das máquinas importadas — publica os bastidores em duplo padrão, com o tamanho nominal em polegada e a medida real em milímetro: "4x4, 5x7 e 6x10, cujas medidas correspondentes, de acordo com os padrões da indústria, são 100x100 mm, 130x180 mm e 160x200 mm" ([MaggieFrame — Guia de tamanhos de bastidores](https://www.maggieframes.com/pt/blogs/embroidery-blogs/guia-tamanhos-bastidores-bordado-maquina)). Ou seja: a polegada aparece como *rótulo de equipamento*, não como unidade de trabalho — o campo de costura real é cotado em mm.
@@ -1890,6 +2006,8 @@ enum AreaAdministrativa {
 **Proposta / opinião.** Adicionar `POLEGADA` é tecnicamente trivial e seguro: 1 pol = 2,54 cm é exato e a coluna canônica é `Decimal(8,2)` em cm, então a conversão não perde nada relevante (a resolução do banco, 0,01 cm, equivale a ~0,004 pol — bastaria acrescentar `POLEGADA: 3` em `CASAS_EXIBICAO`). Mas eu **não** faria agora: é a definição de over-engineering enquanto nenhuma gráfica pediu, e o custo de adicionar depois é uma linha de enum + duas entradas de `Record` — não há dívida acumulando. Registro como baixa prioridade, com nota de que a implementação está pré-mapeada caso apareça um cliente que peça.
 
 ## A12 — Multi-moeda (nota de uma linha)
+
+**Custo estimado:** 🔴 Caro — a própria proposta diz "não é um campo moeda, é reescrever precificação, financeiro e fiscal", e recomenda explicitamente não fazer.
 
 Fora de escopo e assim deve permanecer: o sistema é BR-fiscal de ponta a ponta (`RegimeTributario` fechado sem OUTRO por decisão explícita no schema, CSOSN/CFOP/NCM, Focus NFe, `formatoMoeda` pt-BR, `dataInputParaUTC` ancorado em Brasília). Multi-moeda não é um campo `moeda` — é reescrever precificação, financeiro e fiscal. Não fazer.
 
@@ -2010,6 +2128,8 @@ documento inteiro.
 ## A. Máquinas e equipamentos cadastráveis
 
 ### A1 — Máquina de bordado sem categoria própria
+**Custo estimado:** 🟢 Barato — pela proposta CORRIGIDA pela revisão Opus (`CategoriaEquipamento.BORDADO`, só cadastro, sem motor de custo), é só `ADD VALUE` num enum já existente; a proposta original (`ProcessoSetupPorPeca.BORDADO`) foi descartada por conflitar com o achado A4/Parte 1.
+
 **O que falta.** Não existe `BORDADO` em `CategoriaEquipamento` nem em `ProcessoSetupPorPeca` — uma gráfica de estamparia com máquina de bordado (mono ou multicabeça) cadastra como `OUTRO` genérico e perde a diferenciação de custo por número de cabeçotes (multicabeça reduz tempo de setup proporcionalmente).
 
 **Pesquisa.** Máquinas Juki/Brother/Tajima com 1, 6, 8 ou 12 cabeçotes são padrão de mercado ([Galpão das Máquinas](https://galpaodasmaquinas.com.br/categoria/textil/maquina-de-bordar)).
@@ -2017,6 +2137,8 @@ documento inteiro.
 **Proposta.** `ProcessoSetupPorPeca.BORDADO` (mesmo padrão dos 5 processos já adicionados no achado A3/Parte 1) + `MaquinaSetupPorPeca.numeroCabecotes Int? @default(1)`.
 
 ### A2 — Corte e vinco (cartonagem) sem categoria
+**Custo estimado:** 🟢 Barato — `ADD VALUE` num enum já existente (`CategoriaEquipamento`) mais uma entrada de conteúdo no dicionário de exemplos.
+
 **O que falta.** `CategoriaEquipamento` não tem opção pra máquina de corte-e-vinco (corta e vinca papel/papelão simultaneamente) — diferente de `CORTE_LASER_ROUTER`, que é outra tecnologia. Gráfica de embalagem cadastra como `OUTRO`.
 
 **Pesquisa.** Marcas brasileiras: Makpel, DellMarck, Slottec ([Flockcolor](https://flockcolor.com.br/maquina-de-corte-vinco-para-caixas-embalagens)).
@@ -2024,6 +2146,8 @@ documento inteiro.
 **Proposta.** Adicionar `CORTE_VINCO` a `CategoriaEquipamento` + entrada em `EXEMPLOS_MARCA_CATEGORIA_EQUIPAMENTO`.
 
 ### A3 — Impressora de grande formato sem tecnologia/largura/velocidade
+**Custo estimado:** 🟢 Barato — campos aditivos nullable em `Equipamento` (model já existente), sem enum novo (texto livre por ora); a revisão Opus só pede coordenar com A4 pra não duplicar campo de texto livre solto no mesmo model.
+
 **O que falta.** `Equipamento`/`ImpressoraDigital` não têm campo de tecnologia de impressão (solvente/eco-solvente/UV/sublimática) nem largura máxima — dado que muda o preço por m² de forma relevante.
 
 **Pesquisa.** (Inferência minha, baseada em catálogo de fabricante — Roland, Mimaki, HP Latex, Epson SureColor variam preço/m² por tecnologia e largura).
@@ -2031,6 +2155,8 @@ documento inteiro.
 **Proposta.** `Equipamento.larguraMaximaMm Int?` + `tecnologiaImpressao String?` (texto livre por ora, sem enum fechado).
 
 ### A4 — Prensa térmica/estampador sem tipo diferenciado
+**Custo estimado:** 🟢 Barato — mas só pela proposta CORRIGIDA pela revisão Opus: a original (`Equipamento.notas`) está no model errado, porque `Equipamento` "nunca influencia preço" e o achado descreve diferença real de custo; se o custo importa de verdade, o lugar é reaproveitar `custoPorSetup`/`custoPorPeca`, campos que já existem em `MaquinaSetupPorPeca` — nenhum campo novo necessário.
+
 **O que falta.** `ProcessoSetupPorPeca` (SUBLIMACAO/ESTAMPAGEM_QUENTE) não diferencia prensa plana, cap press (boné), caneca press e carrossel rotativo — setup e custo por peça mudam muito entre eles (carrossel multicolor é setup paralelo, ~8× mais eficiente que prensa plana).
 
 **Pesquisa.** (Inferência minha, baseada em equipamento industrial padrão do setor).
@@ -2038,6 +2164,8 @@ documento inteiro.
 **Proposta.** Campo simples `Equipamento.notas String?` pra a gráfica descrever o tipo (pragmático, evita over-engineering num enum fechado sem uso validado ainda).
 
 ### A5 — Gofradeira/vincadeira sem categoria
+**Custo estimado:** 🟢 Barato — `ADD VALUE` num enum já existente (`CategoriaEquipamento`).
+
 **O que falta.** Máquina que faz só vinco (sem cortar, comprime o papel pra dobra) — etapa anterior à dobra em cartonagem — não tem categoria, só `OUTRO`.
 
 **Pesquisa.** (Inferência minha).
@@ -2047,6 +2175,8 @@ documento inteiro.
 ## B. Matérias-primas, substratos e insumos cadastráveis
 
 ### B1 — Tecido em rolo pra estamparia (antes de virar peça)
+**Custo estimado:** 🟢 Barato — a revisão Opus recategoriza B1-B6 como trabalho de SEED (conteúdo do catálogo mestre), não gap de schema: `ItemCatalogo` privado por gráfica já permite cadastrar isso hoje.
+
 **O que falta.** Catálogo tem peças prontas ("Camiseta Branca") mas não o tecido em rolo (algodão, poliéster, dry-fit, malha PV, ribana) que uma gráfica de estamparia real compra como matéria-prima.
 
 **Pesquisa.** Fio (20s/30s) e composição são tabelados (NBR 12.748, ABIT); preço varia ~R$35-70/kg conforme composição.
@@ -2054,6 +2184,8 @@ documento inteiro.
 **Proposta.** Novos itens de catálogo mestre em categoria "Sublimação e Vestuário", unidade METRO_LINEAR (já existe).
 
 ### B2 — Filme DTF e insumos (pó adesivo, tinta DTF)
+**Custo estimado:** 🟢 Barato — mesma recategorização de B1: trabalho de SEED, sem gap de schema.
+
 **O que falta.** Existe "Papel Transfer Sublimático" mas não filme DTF (processo distinto), pó adesivo (powder) nem tinta DTF específica.
 
 **Pesquisa.** Filme em rolo 60/80cm × 100m (~R$120-180); pó adesivo por kg (~R$25-35).
@@ -2061,6 +2193,8 @@ documento inteiro.
 **Proposta.** 3 itens novos: Filme DTF (ROLO), Pó Adesivo DTF (KG), Tinta DTF CMYK (LITRO).
 
 ### B3 — Corpos de brinde em branco (antes de personalizar)
+**Custo estimado:** 🟢 Barato — mesma recategorização de B1: trabalho de SEED, usando `VarianteMateriaPrima` que já existe.
+
 **O que falta.** Catálogo só tem produto final ("Caneta Personalizada"), não o corpo em branco que uma gráfica-revenda de brindes compra e precifica com custo real do dia.
 
 **Pesquisa.** Fornecedores (Luminati, XBZ, DGL) vendem o corpo separado, por caixa/mil.
@@ -2068,6 +2202,8 @@ documento inteiro.
 **Proposta.** Categoria nova "Brindes (Corpos)": caneta/squeeze/copo/chaveiro/botton/sacola em branco, com `VarianteMateriaPrima` pra modelo/cor.
 
 ### B4 — Filme metalizado (hotfoil) pra hot stamping
+**Custo estimado:** 🟢 Barato — mesma recategorização de B1: trabalho de SEED, sem gap de schema.
+
 **O que falta.** Hot stamping é acabamento implementado, mas o insumo (filme metalizado — ouro/prata/cobre/holográfico) não está no catálogo.
 
 **Pesquisa.** Rolo 32-40cm × 200m, ~R$50-120/rolo conforme cor ([Sposi](https://www.sposi.com.br/)).
@@ -2075,6 +2211,8 @@ documento inteiro.
 **Proposta.** Categoria "Hot Stamping": 4 itens por cor, unidade ROLO.
 
 ### B5 — Papelão ondulado sem especificação de onda (B/C/BC/E)
+**Custo estimado:** 🟢 Barato — mesma recategorização de B1: trabalho de SEED, usando `VarianteMateriaPrima` que já existe.
+
 **O que falta.** Catálogo tem "Papelão Paraná" genérico (maciço, não ondulado). Cartonagem real usa onda B/C/BC/E, com resistência e preço bem diferentes (~30-50% de variação).
 
 **Pesquisa.** Normatizado pela ABNT NBR 14713; preço C ~R$1,5-2,5/m², BC ~R$2,5-3,5/m².
@@ -2082,6 +2220,8 @@ documento inteiro.
 **Proposta.** `VarianteMateriaPrima` pra "Papelão Ondulado" com 4 variantes de onda, preço próprio por variante.
 
 ### B6 — Materiais de bordado (tecido específico, entretela, linha, bobina)
+**Custo estimado:** 🟢 Barato — mesma recategorização de B1: trabalho de SEED, sem gap de schema.
+
 **O que falta.** Entretela (fusível/não-fusível, peso em oz), linha de bordar e bobina de bobbing não têm representação — críticos pra custo real de bordado.
 
 **Pesquisa.** (Inferência minha, baseada em insumo padrão do setor têxtil).
@@ -2091,6 +2231,8 @@ documento inteiro.
 ## C. Tipos de acabamento cadastráveis (opção existir, não precificação)
 
 ### C1 — TipoAdesivo sem hot melt, siliconado, durabilidade
+**Custo estimado:** 🟢 Barato, mas a proposta precisa ser corrigida antes de construir — a revisão Opus aponta contradição interna (HOT_MELT duplicaria BORRACHA; siliconado é atributo do substrato, não do adesivo, e a proposta erra o lugar mesmo admitindo isso). O que sobra depois de corrigido (campo de durabilidade) é campo aditivo nullable, sem model/enum novo.
+
 **O que falta.** Enum só tem acrílico/borracha em gramas — falta hot melt (nome técnico da "borracha" já existente, mas usado com outro nome no mercado), flag de liner siliconado (atributo de substrato, não de adesivo), e permanente×removível (critério de venda comum).
 
 **Pesquisa.** [Guia do Gráfico — tipos de adesivo](https://www.guiadografico.com.br/artigos/tipos-de-adesivo-aplicados-em-substratos-utilizados-pelos-convertedores-de-rotulos-e-etiquetas-autoadesivas).
@@ -2098,6 +2240,8 @@ documento inteiro.
 **Proposta.** Campo `durabilidadeAdesivo` opcional + flag `superficieComSilicone Boolean`.
 
 ### C2 — TipoLaminacao sem soft touch/metalizada
+**Custo estimado:** 🟢 Barato — `ADD VALUE` num enum já existente (`TipoLaminacao`), 2 valores.
+
 **O que falta.** Só BRILHO/FOSCO/OUTRO — soft touch (aveludado, sem marca de dedo) é categoria própria vendida com preço premium.
 
 **Pesquisa.** [EMBRAPA — acabamento gráfico](https://www.embrapa.br/manual-de-editoracao/conceitos-e-normas-editoriais/o-processo-e-o-fluxo-editorial/nocoes-e-tecnicas-para-producao-grafica/acabamento/) lista soft touch como tipo principal, ao lado de brilho/fosco.
@@ -2105,6 +2249,8 @@ documento inteiro.
 **Proposta.** Adicionar `SOFT_TOUCH` e `METALIZADA` a `TipoLaminacao`.
 
 ### C3 — TipoAcabamentoVerniz sem soft touch/UV explícito
+**Custo estimado:** 🟢 Barato — `ADD VALUE` num enum já existente (`TipoAcabamentoVerniz`).
+
 **O que falta.** Falta soft touch (mesma lógica de C2) e a aplicação UV×convencional não é selecionável (fica implícita).
 
 **Pesquisa.** (Mesma fonte de C2 — soft touch é comum a laminação e verniz).
@@ -2112,6 +2258,8 @@ documento inteiro.
 **Proposta.** Adicionar `SOFT_TOUCH` a `TipoAcabamentoVerniz`.
 
 ### C4 — TipoHotStamping sem efeito holográfico/colorido
+**Custo estimado:** 🟢 Barato — campo aditivo nullable (texto/enum simples), sem model novo.
+
 **O que falta.** Só HOT/COLD — não captura o efeito visual (holográfico, espelhado, colorido), que é vendido como serviço distinto.
 
 **Pesquisa.** (Inferência minha, baseada em catálogo de fornecedor de filme — ver B4 acima).
@@ -2119,6 +2267,8 @@ documento inteiro.
 **Proposta.** Campo `tipoEfeitoHotStamping` opcional (holográfico/espelhado/metalizado/colorido/outro).
 
 ### C5 — Sem NENHUM enum de acabamento fora de etiquetas (dobra, encadernação, colagem) — **gap estrutural, maior que C1-C4**
+**Custo estimado:** 🟡 Médio — 3 enums novos fechado+escape (`TipoDobra`/`TipoEncadernacao`/`TipoColagem`) mais lógica condicional de exibição por tipo de serviço; sem model novo e sem tocar o motor de preço (seção é "opção existir, não precificação").
+
 **O que falta.** `TipoAdesivo`/`TipoSerrilha`/`TipoLaminacao`/`TipoAcabamentoVerniz`/`TipoHotStamping` só existem em `OrcamentoItemEtiqueta` (motor M2/flexografia de rótulo). Pra embalagem, livro/editorial, comunicação visual, brinde — não existe NENHUM dropdown estruturado de acabamento; a gráfica cria um "serviço" com nome livre. Uma gráfica desses perfis vê seleção estruturada só pra etiqueta e assume que falta a feature pro resto.
 
 **Pesquisa.** Dobra (meia-dobra/sanfona/carta/paralela — [Zapgrafica](https://blog.zapgrafica.com.br/acabamentos-graficos-quais-sao-os-4-tipos-de-dobras-e-como-usa-los/)), encadernação (brochura/wire-o/espiral/capa dura — [Guia do Gráfico](https://www.guiadografico.com.br/produtos-e-servicos/categoria/acabamentos-de-livros)), colagem (cola fria/quente/PUR — cartonagem).
@@ -2128,6 +2278,8 @@ documento inteiro.
 ## D. Equipe e prestadores externos
 
 ### D1 — Sem conceito de "colaborador sem login" (motorista, operador de chão de fábrica)
+**Custo estimado:** 🟡 Médio — a proposta original (relaxar `email`/`senhaHash` de `Usuario`) está ERRADA segundo a revisão Opus, por contaminar toda a cadeia de auth/sessão/billing; a corrigida é um model novo simples `Colaborador` (ou reaproveitar o padrão de nome declarado já usado em `ApontamentoEtapa`/`Entrega.motorista`) — nunca mexer em `Usuario`.
+
 **O que falta.** `Usuario` é 100% acoplado a autenticação (`email`/`senhaHash` obrigatórios). `Entrega.motorista` é texto livre sem histórico auditado; `ApontamentoEtapa.operadorNomeDeclarado` (já construído, rodada 15) prova que o sistema já aceita "pessoa sem login" nesse ponto específico, mas não generalizou o conceito.
 
 **Pesquisa.** Motorista terceirizado e freelancer de design são modelo comum em gráfica de pequeno/médio porte ([Design com Café — terceirizar design](https://designcomcafe.com.br/terceirizar-design-grafico-ou-fazer-voce-mesmo/)).
@@ -2135,6 +2287,8 @@ documento inteiro.
 **Proposta.** `Entrega.motoristaUsuarioId String?` (FK opcional pra `Usuario` com `email`/`senhaHash` nulos — exige relaxar as colunas obrigatórias, mudança não-trivial) — **avaliar com cuidado antes de construir**, é mudança estrutural em `Usuario`, não um campo aditivo simples como o resto do documento.
 
 ### D2 — Prestador de serviço recorrente (≠ Fornecedor de insumo)
+**Custo estimado:** 🟡 Médio — 1 model novo (`PrestadorServico`) com poucos campos, análogo a `Fornecedor`, sem relação complexa.
+
 **O que falta.** `Fornecedor` é só pra compra de material. Acabamento terceirizado (laminação, encadernação feita por terceiro), logística/despachante, freelancer de design — não têm onde ser cadastrados como prestador recorrente; viram `Despesa` genérica sem estrutura.
 
 **Pesquisa.** (Inferência minha, mas alinhada ao próprio achado A9/Parte 3 já catalogado: "ERPs tratam requisição de material e de serviço no mesmo fluxo").
@@ -2142,6 +2296,8 @@ documento inteiro.
 **Proposta.** `model PrestadorServico` (nome, tipo fechado+OUTRO: ACABAMENTO/LOGISTICA/DESIGN/OUTRO, CPF/CNPJ, contato) — parecido com `Fornecedor` mas pra serviço, não insumo.
 
 ### D3 — Dados de pessoa incompletos pra pagamento (CPF, PIX, especialidade)
+**Custo estimado:** 🔴 Caro — os campos aditivos em si seriam baratos, mas a revisão Opus aponta que este achado se sobrepõe a F6 e ao A15/Parte 4 (3 achados de "dado de pagamento" chegando em lugares diferentes do schema) e pede explicitamente decidir 1 modelo antes de construir qualquer um dos três.
+
 **O que falta.** `Usuario` não tem CPF, dados bancários/PIX nem especialidade — necessário pra gerar recibo de comissão/serviço e saber pra onde pagar.
 
 **Pesquisa.** (Inferência minha — CPF é exigência fiscal básica pra qualquer recibo no Brasil).
@@ -2153,6 +2309,8 @@ documento inteiro.
 ## E. Primeira experiência (onboarding) de uma gráfica atípica
 
 ### E1 — Dashboard mostra "Pipeline de produção" mesmo pra quem não produz
+**Custo estimado:** 🟢 Barato — mas só pela versão CORRIGIDA pela revisão Opus: condicionar por USO real (ex.: "0 pedidos em produção nos últimos N dias"), não por `Grafica.segmento`, que é descritivo/opcional/mono-valorado e a própria revisão chama de potencialmente perigoso pra esse fim. É lógica condicional de UI sobre consulta que já existe, sem schema novo.
+
 **O que falta.** `/meu-negocio` sempre mostra os cards "Pipeline de produção" e "Previsão de estoque", mesmo pra uma gráfica REVENDA pura (achado A12/Parte 1, já construído — terceiriza 100%) que nunca vai ter nada nesses cards. Fica eternamente "Nenhum pedido em produção", confundindo mais que ajudando.
 
 **Pesquisa.** Gráfica de revenda (brinde, papelaria, etiqueta) compra pronto/semiacabado e não passa por etapa de produção interna nenhuma (inferência baseada no próprio modelo de revenda já reconhecido no achado A12/Parte 1).
@@ -2160,21 +2318,29 @@ documento inteiro.
 **Proposta.** Condicionar os 2 cards a `Grafica.segmento` — omitir ou trocar por "Últimas compras/terceirizações" quando o segmento for REVENDA/BRINDES_PERSONALIZADOS.
 
 ### E2 — Link "Produção" no menu oferecido mesmo pra quem não usa
+**Custo estimado:** 🟢 Barato — mesma correção de E1 (sinal de uso real, não `segmento`); reaproveita a mesma lógica condicional, só aplicada ao menu.
+
 **O que falta.** Mesmo problema de E1, no menu de navegação (`UserNav.tsx`) — o link é condicionado só a permissão de módulo, não a segmento.
 
 **Proposta.** Mesma condição de E1.
 
 ### E3 — Segmento é respondido DEPOIS do onboarding — dados de exemplo saem errados
+**Custo estimado:** 🟢 Barato — checagem condicional simples (`segmento === null`) + banner, sem schema novo; a revisão Opus pede só confirmar contra `onboarding.ts`/`dados-exemplo.ts` antes de construir (é o melhor achado da seção E, ainda não conferido).
+
 **O que falta.** `/comecar` carrega dados de exemplo a partir de `Grafica.segmento`, mas responder o segmento é uma tela opcional em Configurações, fora do fluxo inicial. Uma gráfica de estamparia que passa por `/comecar` antes de configurar o segmento recebe exemplos de Offset/Etiqueta (pacote padrão) — cria confusão de identidade logo na primeira experiência.
 
 **Proposta.** Checar `segmento === null` antes de carregar exemplo em `/comecar`; se nulo, mostrar banner linkando pra escolher o segmento primeiro (opção conservadora, não quebra conta existente).
 
 ### E4 — Segmentos "Brindes"/"Corte a laser" caem no pacote de exemplo errado (Offset)
+**Custo estimado:** 🟢 Barato — trabalho de conteúdo (novos pacotes de dados de exemplo por segmento já nomeado no enum), sem mudança de schema.
+
 **O que falta.** `PACOTES_POR_SEGMENTO` em `src/lib/dados-exemplo.ts` só tem entrada dedicada pra COMUNICACAO_VISUAL e ESTAMPARIA_VESTUARIO — os demais segmentos (já nomeados no enum, ex. BRINDES_PERSONALIZADOS, CORTE_LASER_ACRILICO) caem no pacote padrão de Offset comercial, sem nenhuma relação com o negócio real.
 
 **Proposta.** Criar pacotes de exemplo dedicados pros segmentos já nomeados no enum que ainda não têm um.
 
 ### E5 — Dados de exemplo sem marca visual, risco de virar orçamento real
+**Custo estimado:** 🟡 Médio — sem schema novo, mas exige badge em múltiplos seletores (produto/cliente) mais lógica nova de aviso na criação do orçamento.
+
 **O que falta.** O único sinal de que um cliente/produto é de exemplo é o prefixo de texto "[Exemplo] " no nome — sem badge/cor/ícone. Um usuário distraído pode incluir um cliente ou produto de exemplo num orçamento real.
 
 **Proposta.** Badge visual nos seletores de produto/cliente quando a origem for exemplo; aviso no momento de criar orçamento se algum item/cliente selecionado for de exemplo.
@@ -2190,6 +2356,8 @@ ferramental. Cada achado abaixo foi verificado contra o código real
 confirmando ausência — diferente de A-E, tratar com mais confiança.
 
 ### F1 — Ferramental reutilizável (faca, clichê, tela, matriz de bordado) não tem cadastro nenhum
+**Custo estimado:** 🔴 Caro — model novo `Ferramental` com 3 enums novos, múltiplas FKs (cliente, item de catálogo) e ciclo de vida com status (ATIVO/EM_MANUTENCAO/DESCARTADO/DEVOLVIDO_AO_CLIENTE) — workflow completo, não só cadastro simples.
+
 **O que falta.** Nenhum model representa a ferramenta física — só o dinheiro dela (`ConfiguracaoClicheEtiqueta`/`Flexografia`, `ConfiguracaoAcabamento.custoFerramental`, `OrcamentoItemPrecificacaoEtiqueta.custoFaca`). `ConfiguracaoClicheFlexografia` é OBRIGATÓRIA pra todo produto FLEXOGRAFIA, então toda repetição de tiragem recalcula o clichê como se fosse novo — `TipoPedidoOrcamento.REPETICAO_SEM_ALTERACAO` é só rótulo, nada por trás sabe que a matriz já existe. Também: sem localização física, sem registro de propriedade (cliente x gráfica), sem controle de vida útil por tiragem acumulada.
 
 **Pesquisa.** No web-to-print de baixa tiragem a faca é refeita a cada pedido ([Gráfica das Gráficas](https://instrucoes.graficadasgraficas.com.br/corte-especial/)); em flexo/rótulo industrial o clichê é lavado, guardado e reutilizado, com vida útil variando por cuidado de manuseio ([Clicheria Blumenau](https://www.clicheriablumenau.com.br/blog/mercado/quais-fatores-afetam-o-desempenho-do-cliche-flexografico/)). Clicherias/facas são categoria de fornecimento própria e recorrente ([Guia do Gráfico](https://www.guiadografico.com.br/produtos-e-servicos/categoria/clicherias)).
@@ -2197,6 +2365,8 @@ confirmando ausência — diferente de A-E, tratar com mais confiança.
 **Proposta.** `enum TipoFerramental { FACA_CORTE_VINCO CLICHE_FLEXO CLICHE_HOT_STAMPING TELA_SERIGRAFIA MATRIZ_BORDADO CILINDRO_ROTOGRAVURA FERRAMENTA_ACABAMENTO OUTRO }` + `ProprietarioFerramental { GRAFICA CLIENTE }` + `StatusFerramental { ATIVO EM_MANUTENCAO DESCARTADO DEVOLVIDO_AO_CLIENTE }`. `model Ferramental { graficaId, tipo, tipoOutro?, codigo, descricao, clienteId? (SetNull), itemGraficaId?, proprietario, localizacao?, tiragensAcumuladas Int @default(0), status, desativadoEm }`. `OrcamentoItem.ferramentalId String?` opcional, nunca automático — só sugere aviso ("esta faca já existe, considere não cobrar"), preço continua travado à mão.
 
 ### F2 — Sistema só emite NF-e de mercadoria; gráfica que fatura serviço não tem onde cadastrar
+**Custo estimado:** 🟡 Médio — campos aditivos em 3 models existentes mais 1 enum novo (`ModeloDocumentoFiscal`) e relaxar uma constraint `@@unique`; a própria proposta restringe o escopo desta rodada a cadastro (emissão de NFS-e em si fica pra fase 2).
+
 **O que falta.** `NotaFiscal`/`focus-nfe.ts` são inteiramente NF-e modelo 55. Zero campo de NFS-e (código de serviço, inscrição municipal do emitente, alíquota ISS). `Cliente.inscricaoMunicipal` já existe reservado com comentário "sistema só emite NF-e hoje". Atinge comunicação visual, design/arte, personalização, estamparia — e qualquer gráfica que imprima sobre material do cliente (`materialFornecidoPeloCliente`, já modelado), que é industrialização/serviço por definição.
 
 **Pesquisa.** Súmula 156/STJ: composição gráfica personalizada sob encomenda é ISS, não ICMS. LC 116/2003 item 13.05 (composição gráfica) e 24.01 (sinalização visual, banners, adesivos). STF ressalva embalagem que integra produto industrializado (fica ICMS) — os dois mundos coexistem numa gráfica média.
@@ -2204,6 +2374,8 @@ confirmando ausência — diferente de A-E, tratar com mais confiança.
 **Proposta.** Cadastro primeiro, emissão depois: `ItemCatalogo.itemListaServicoLc116`/`codigoServicoMunicipal` (só quando `tipo=SERVICO`). `DadosFiscaisGrafica.inscricaoMunicipal`/`codigoMunicipioIbge`/`aliquotaIssPercent`. `NotaFiscal.modelo ModeloDocumentoFiscal @default(NFE)` (`NFE`/`NFSE`/`NFCE`) + relaxar `@@unique([orcamentoId, modelo])` pra venda mista emitir os dois. `verificarProntidaoFiscal` passa a checar pendência por modelo. Emissão de NFS-e em si fica pra fase 2.
 
 ### F3 — Frete: existe a modalidade, não existe o valor, transportadora é texto livre, nota sai com transporte vazio
+**Custo estimado:** 🟡 Médio — 1 model novo (`Transportadora`) simples, análogo a `Fornecedor`, mais campos aditivos em `Orcamento`/`Entrega`; a proposta já sugere resposta pra sua única decisão em aberto (frete não entra na comissão).
+
 **O que falta.** `Orcamento.frete` é só a modalidade (já corrigido no B1/Parte 1); não existe `valorFrete` em lugar nenhum. `transportadora` é texto livre sem CNPJ/RNTRC. `focus-nfe.ts` manda `valor_frete: "0"` LITERAL e não tem grupo de transportadora nem volumes/peso no payload.
 
 **Pesquisa.** Grupo `transp` da NF-e 4.0 tem `transporta` (dados da transportadora) e `vol` (volumes, peso) — `modFrete` é só um elemento desse grupo ([DataFrete](https://www.datafrete.com/tipos-de-frete-na-nf-e-modalidades-codigos-e-novas-exigencias-fiscais/)).
@@ -2211,6 +2383,8 @@ confirmando ausência — diferente de A-E, tratar com mais confiança.
 **Proposta.** `model Transportadora` (mesmo formato de `Fornecedor`, já nascendo com `documento`). `Orcamento.transportadoraId` (FK opcional, convive com texto — padrão já estabelecido) + `valorFrete Decimal?` (null=hoje). `Entrega.volumes`/`pesoBrutoKg`/`especieVolume`/`transportadoraId`. Decisão explícita necessária: frete entra na base de comissão? (sugestão: não, mesmo espírito de `BaseComissao.LUCRO`).
 
 ### F4 — Estoque sem lote/validade — schema já cita exigência que não consegue atender
+**Custo estimado:** 🟡 Médio — campos aditivos opt-in em models existentes, mais 1 enum novo fechado+`OUTRO` (`certificacao`) e lógica de snapshot de lote entre entrada e saída (reaproveita padrão de snapshot já usado no repo).
+
 **O que falta.** `MovimentacaoEstoque` não tem lote nem validade. `Cliente.preferenciasProducao` usa como exemplo real "não aceita variação de tom entre lotes" — o sistema registra a EXIGÊNCIA e não tem onde registrar de qual lote saiu o pedido. Também sem alerta de validade (mecânica já existe em `alerta-estoque.ts`, só falta o dado) e sem certificação FSC.
 
 **Pesquisa.** Rastreabilidade por lote é exigência regulatória (Anvisa RDC 275/2002, RDC 655/2022) pra quem fornece indústria alimentícia/farma. Cadeia de custódia FSC é aplicável a gráficas/rotuladores, com código de licença exibido na peça ([SGS](https://www.sgs.com/pt-br/services/certificacao-de-cadeia-de-custodia-fsc-na-industria-grafica)).
@@ -2218,6 +2392,8 @@ confirmando ausência — diferente de A-E, tratar com mais confiança.
 **Proposta.** `ItemGrafica.controlaLote Boolean @default(false)` opt-in. `MovimentacaoEstoque.lote`/`validade` preenchidos na ENTRADA_COMPRA, copiados como snapshot na SAIDA_PRODUCAO (liga lote→pedido de graça). `ItemGrafica.certificacao` enum fechado+OUTRO. Não fazer agora: FEFO/apropriação automática — só registro/rastro.
 
 ### F5 — Arte é uma só por orçamento/pedido; não existe arte por item
+**Custo estimado:** 🟡 Médio — 1 model novo (`ArteItem`) com poucos campos e FK direta pra `OrcamentoItem`, sem workflow de múltiplas etapas, mais 1 valor novo de enum (`ADD VALUE`).
+
 **O que falta.** `Orcamento.arteUrl`/`Pedido.arteUrl` são um arquivo único no cabeçalho — `OrcamentoItem` não tem campo de arte nenhum. Quebra no caso mais comum do próprio perfil-piloto: 6 SKUs de rótulo num pedido só recebem UMA aprovação, e o preflight de DPI/sangria checa o arquivo único contra a geometria de um pedido com itens de dimensões diferentes.
 
 **Pesquisa.** (inferência minha, sustentada por 2 fatos do próprio repo) — `ArquivoArmazenado.referenciaId` já documenta `orcamentoItemId` como referência possível (a camada de storage previu isso); `OrcamentoItemTinta` já prova o formato "anexo por item".
@@ -2225,6 +2401,8 @@ confirmando ausência — diferente de A-E, tratar com mais confiança.
 **Proposta.** `model ArteItem { orcamentoItemId, pedidoId?, url, versao Int @default(1), aprovadaEm?, comentarioCliente?, preflightAvisos Json? }`. `Pedido.arteUrl` continua existindo (legado, nunca removido). Gate de avanço vira "toda `ArteItem` aprovada OU nenhuma existe" — zero mudança pra quem não usa. `TipoArquivoArmazenado.ARTE_ITEM` novo.
 
 ### F6 — Gráfica não tem onde cadastrar a própria chave PIX / dados de recebimento
+**Custo estimado:** 🟢 Barato — a própria proposta se autodescreve como "achado mais barato do relatório": campos aditivos em `Grafica` reaproveitando a tela `/configuracoes/identidade` que já existe e já é auditada.
+
 **O que falta.** `Grafica` tem logo/cor/contato — zero dado de recebimento. Ao mesmo tempo `FormaPagamento.PIX` existe no lançamento, `CondicaoPagamento` gera `ContaReceber`, e `/o/[token]` deixa o cliente aprovar SOZINHO sem login. O fluxo termina exatamente onde o dinheiro deveria começar. Achado mais barato e mais universal do relatório — afeta 100% dos tenants, toda venda.
 
 **Pesquisa.** (inferência minha — consequência direta de existir link público de aprovação sem nenhum dado de pagamento no documento).
@@ -2232,11 +2410,15 @@ confirmando ausência — diferente de A-E, tratar com mais confiança.
 **Proposta.** Em `Grafica` (identidade comercial, não `DadosFiscaisGrafica`): `chavePix`/`tipoChavePix` (enum fechado+OUTRO)/`favorecidoPix`/`dadosBancarios` (texto livre). Editável em `/configuracoes/identidade` (já existe, já auditada). Impresso no PDF e exibido em `/o/[token]` só quando preenchido. Nunca validar a chave, só exibir texto.
 
 ### F7 — Item de orçamento tem 2 dimensões; caixa/acrílico/livro têm 3
+**Custo estimado:** 🟢 Barato — campos `Decimal?` aditivos em `OrcamentoItem` (model já existente), a própria proposta diz "risco zero de mudar preço de ninguém" (ignorados por todos os motores hoje).
+
 **O que falta.** `OrcamentoItem` só tem `larguraCm`/`alturaCm`. Sem profundidade/espessura — gráfica de embalagem não consegue registrar "caixa 20×15×10", corte a laser não registra espessura da chapa no ITEM (só existe do lado da matéria-prima). Distinto do A11/Parte 1 (que trata a mesma geometria pelo lado do CUSTO/nesting) — aqui é sobre conseguir registrar o que foi vendido.
 
 **Proposta.** `OrcamentoItem.profundidadeCm`/`espessuraMm Decimal?` — opcionais, ignorados por 100% dos motores atuais (risco zero de mudar preço de ninguém). Sempre visíveis no formulário (mesma decisão do A12/Parte 5). `espessuraMm` em milímetro (chapa é vendida em mm no Brasil), não cm.
 
 ### F8 — Sem onde registrar cor especial/Pantone — só a QUANTIDADE de cores
+**Custo estimado:** 🟡 Médio — 2 models novos (`CorEspecialCliente`/`OrcamentoItemCor`), mas com relações diretas e simples seguindo um padrão já estabelecido no repo (`OrcamentoItemHotStamping`), sem tocar o motor de preço.
+
 **O que falta.** Todo campo de cor no schema é um número (`corFrente`/`numeroCoresFlexo`/`coresRotulo`) — nenhum diz QUAIS cores. Cor especial é simultaneamente tinta que se mistura por fórmula, clichê/tela a mais, e o critério nº1 de aprovação/reclamação do cliente. Repetição de pedido não carrega a receita de cor.
 
 **Pesquisa.** (inferência minha, sustentada pelo desenho interno — o produto já cobra por cor especial via `ConfiguracaoClicheEtiqueta`/`Flexografia`, só o identificador da cor ficou de fora).
@@ -2244,6 +2426,8 @@ confirmando ausência — diferente de A-E, tratar com mais confiança.
 **Proposta.** `model CorEspecialCliente { graficaId, clienteId?, nome, referencia ("PANTONE 485 C"), sistemaCor (enum fechado+OUTRO), formulaMistura? }` — biblioteca de cor da marca do cliente. `model OrcamentoItemCor { orcamentoItemId, corEspecialId?, nomeDeclarado }` (N:1, mesmo padrão de `OrcamentoItemHotStamping`). Nunca toca o motor — só descritivo, copiado no "Pedir de novo".
 
 ### F9 — `SegmentoGrafica` não cobre segmento que o motor já atende, e é mono-valorado
+**Custo estimado:** 🟢 Barato — `ADD VALUE` num enum já existente mais um campo array aditivo (`Grafica.segmentosSecundarios`) usando o mesmo enum, sem model nem enum novo.
+
 **O que falta.** Enum não tem `SERIGRAFIA` nem `FLEXOGRAFIA` — apesar de ambos terem `ModeloCalculo` próprio. Faltam também BORDADO, PAPELARIA_CONVITES, SINALIZACAO_ADESIVAGEM. Mais grave: `Grafica.segmento` é campo ÚNICO, mas gráfica real quase nunca é uma coisa só (offset + gráfica rápida + comunicação visual no mesmo CNPJ é a norma).
 
 **Proposta.** `ADD VALUE` puro (aditivo): SERIGRAFIA, FLEXOGRAFIA, BORDADO, PAPELARIA_CONVITES, SINALIZACAO_ADESIVAGEM. Adicionar `Grafica.segmentosSecundarios SegmentoGrafica[]`, consumido só pelo que é ADITIVO (dados de exemplo, categorias sugeridas) — mantendo `segmento` como principal, zero migração de comportamento. **Regra de ouro:** nada que RESTRINJA (esconder card/link — ver correção de E1/E2 acima) deve olhar pra `segmento`, que o próprio schema documenta como "descritivo, nunca restritivo".
@@ -2251,3 +2435,55 @@ confirmando ausência — diferente de A-E, tratar com mais confiança.
 ---
 
 **Como usar esta Parte 7:** ainda não passou pela reconciliação que as Partes 1-6 tiveram (thread principal lendo achado por achado contra o código antes de aceitar). Antes de construir qualquer um destes, vale uma verificação rápida contra o código atual — pesquisa em haiku é mais rápida mas também mais sujeita a imprecisão de detalhe (nome de arquivo/linha pode ter mudado ou estar levemente errado).
+
+---
+
+## Resumo de custo — achados pendentes
+
+Classificação de custo/esforço aplicada a todo achado ainda não marcado `CONSTRUÍDO` (inclui o restante pendente dos `PARCIALMENTE CONSTRUÍDO`), ao longo do documento inteiro (Partes 1-7). Critério: 🟢 Barato = campo aditivo nullable em model existente, `ADD VALUE` em enum existente, ou trabalho de seed/conteúdo; 🟡 Médio = 1 model novo simples ou 1 enum novo fechado+`OUTRO`, ou extensão moderada de tela existente; 🔴 Caro = 2+ models novos com relação não-trivial, workflow completo novo, área sensível (financeiro/CAS/autenticação), motor de cálculo novo, ou proposta que expressa incerteza/decisão pendente.
+
+**Contagem total (87 achados classificados):**
+
+| Custo | Contagem |
+|---|---|
+| 🟢 Barato | 32 |
+| 🟡 Médio | 29 |
+| 🔴 Caro | 26 |
+
+### Candidatos 🟢 Barato por Parte — próxima rodada de construção
+
+**Parte 1 — Orçamento + Catálogo**
+- B4 — Prazo é por orçamento, nunca por item
+
+**Parte 3 — Compras**
+- A2 — Frete/IPI/desconto no custo de aquisição (rota curta)
+- A10 — Alçada de valor + segregação de funções em Compras
+- A11 — OTIF/desempenho de fornecedor (depende de A7/A8 Médios)
+
+**Parte 4 — Financeiro**
+- A4 — Fluxo de caixa projetado
+- A10 — Aviso de alíquota efetiva do Simples acima do `impostoPercent` configurado
+
+**Parte 6 — Configurações**
+- A8 (restante) — Identidade/contato por filial
+- A9 (restante) — Roteamento de notificação: áreas COBRANÇA/COMPRAS
+- A10 — Onboarding de tenant (nada além do que A6 já cobre)
+- A11 — `UnidadeDimensao.POLEGADA`
+
+**Parte 7 — Completude de cadastro**
+- A1 — Máquina de bordado (`CategoriaEquipamento.BORDADO`, proposta corrigida)
+- A2 — Corte e vinco (cartonagem)
+- A3 — Impressora de grande formato: largura/tecnologia
+- A4 — Prensa térmica/estampador (proposta corrigida, reaproveita `MaquinaSetupPorPeca`)
+- A5 — Gofradeira/vincadeira
+- B1-B6 — Matérias-primas/insumos (recategorizados como SEED pela revisão Opus: tecido em rolo, filme DTF, corpos de brinde, filme hotfoil, papelão ondulado por onda, materiais de bordado)
+- C1 — TipoAdesivo (durabilidade, com ressalva: proposta precisa correção antes de construir)
+- C2 — TipoLaminacao: soft touch/metalizada
+- C3 — TipoAcabamentoVerniz: soft touch
+- C4 — TipoHotStamping: efeito holográfico/colorido
+- E1/E2 — Esconder card/menu de Produção por USO real (não por segmento — correção Opus)
+- E3 — Banner de segmento pendente no onboarding (checar contra o código antes)
+- E4 — Pacotes de dados de exemplo por segmento
+- F6 — Chave PIX / dados de recebimento da gráfica (achado mais barato do relatório)
+- F7 — Profundidade/espessura no item de orçamento
+- F9 — `SegmentoGrafica`: valores faltantes + `segmentosSecundarios[]`
