@@ -36,12 +36,13 @@ quem trava a próxima ação. Detalhe de cada item nas seções abaixo.
 - [ ] Criptografia de campo pra token sensível (`focusNfeToken`)
 - [ ] RLS (trava extra de isolamento direto no banco)
 - [ ] Role de banco de dados com permissão restrita (hoje usa acesso total)
-- [ ] 121 achados catalogados de abrangência de produto — 11 dos 33 da
-      Parte 7 já construídos (rodadas 17 e 18, 2026-08-31), 22 pendentes.
-      **76 achados pendentes no total têm custo estimado** (Barato/Médio/
-      Caro) direto no documento — 21 baratos, 29 médios, 26 caros. Os
-      baratos são os candidatos naturais pra próxima rodada de construção
-      (ver "Resumo de custo" no fim de `pesquisa-abrangencia-modulos.md`).
+- [ ] 121 achados catalogados de abrangência de produto — 18 dos 33 da
+      Parte 7 já construídos (rodadas 17-19, 2026-08-31), 15 pendentes.
+      Parte 6 A9 (roteamento de notificação) também fechado. **68 achados
+      pendentes no total têm custo estimado** — 13 baratos, 29 médios, 26
+      caros. Os baratos são os candidatos naturais pra próxima rodada de
+      construção (ver "Resumo de custo" no fim de
+      `pesquisa-abrangencia-modulos.md`).
 
 **O item 🔴 acima é o único marcado como urgente** (por você, não por mim —
 é ação manual no dashboard do Stripe, eu não tenho acesso pra fazer). O
@@ -155,11 +156,13 @@ embalagem, editorial, bordado, serigrafia, DTF, corte a laser...).
 - **Parte 7 é nova** (33 achados, adicionada 30-31/08/2026): pergunta
   diferente — não "o motor calcula certo?", e sim **"dá pra sequer
   CADASTRAR isso?"** (ex: seu próprio exemplo — falta de máquina pra
-  cadastrar). **11 dos 33 já construídos**: rodada 17 (31/08) — categorias
-  de máquina pra bordado/corte-e-vinco/impressora-grande-formato/
-  gofradeira, e 19 itens novos de matéria-prima (tecido em rolo, DTF,
-  corpos de brinde, filme metalizado, papelão ondulado); rodada 18 (31/08)
-  — chave PIX da gráfica (ver acima). 22 pendentes.
+  cadastrar). **18 dos 33 já construídos**: rodada 17 — categorias de
+  máquina pra bordado/corte-e-vinco/impressora-grande-formato/gofradeira, e
+  19 itens novos de matéria-prima; rodada 18 — chave PIX da gráfica; rodada
+  19 — materiais de bordado, acabamento de etiqueta (durabilidade de
+  adesivo, laminação/verniz soft touch, efeito de hot stamping), 3ª
+  dimensão/espessura no item de orçamento, e `SegmentoGrafica` ampliado (5
+  segmentos novos + múltiplos segmentos por gráfica). 15 pendentes.
 
 ### Os achados mais importantes da Parte 7, pra você bater o olho
 - ~~Chave PIX da própria gráfica não tem onde cadastrar~~ — **construído
@@ -184,12 +187,11 @@ antes, e já corrigi isso no documento.
 
 ## 6. Estado do git — atenção aqui
 
-**Tudo empurrado.** Os 13 commits que estavam só no seu computador (rodadas
-13-18 + documentação) foram pro GitHub (`origin/main`) em 2026-08-31 —
-`072dcf7..172710f`. Isso dispara o deploy automático na Vercel; as
-migrations das rodadas 13-18 já estavam aplicadas no banco de dev antes do
-push, então o schema já bate certo com o código novo. Sem pendência de git
-no momento.
+**5 commits estão só no seu computador, ainda não foram pro GitHub**
+(desde o último push em `172710f`): rodada 19 da auditoria (8 achados,
+código real) + os intervalos semestral/anual do Stripe (código real) + 3
+de documentação. Migrations da rodada 19 já aplicadas no banco de dev, sem
+pendência de schema. Só empurro quando você pedir.
 
 ---
 
