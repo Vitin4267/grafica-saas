@@ -73,18 +73,58 @@ const ROTULOS_ENTREGA: Record<string, string> = {
   PROBLEMA: "Problema",
 };
 
+// Achado E1 da auditoria de abrangência (Parte 2/Produção, 2026-09-01) —
+// SituacaoTerceirizacao. Cores por FUNÇÃO (não pela ordem do pipeline, ao
+// contrário de CORES_PEDIDO): cinza=parado esperando ação, azul=em trânsito
+// fora da gráfica, verde=resolvido, vermelho=lateral que precisa de atenção
+// (mesmo espírito de CORES_ENTREGA).
+const CORES_TERCEIRIZACAO: Record<string, string> = {
+  AGUARDANDO_ENVIO: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  ENVIADO: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
+  RETORNADO: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+  PROBLEMA: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
+};
+
+const ROTULOS_TERCEIRIZACAO: Record<string, string> = {
+  AGUARDANDO_ENVIO: "Aguardando envio",
+  ENVIADO: "No terceiro",
+  RETORNADO: "Retornado",
+  PROBLEMA: "Problema",
+};
+
 export function StatusBadge({
   status,
   tipo = "orcamento",
 }: {
   status: string;
-  tipo?: "orcamento" | "pedido" | "compra" | "entrega";
+  tipo?: "orcamento" | "pedido" | "compra" | "entrega" | "terceirizacao";
 }) {
-  const mapaCores = { pedido: CORES_PEDIDO, compra: CORES_COMPRA, entrega: CORES_ENTREGA, orcamento: CORES_ORCAMENTO };
-  const mapaRotulos = { pedido: ROTULOS_PEDIDO, compra: ROTULOS_COMPRA, entrega: ROTULOS_ENTREGA, orcamento: ROTULOS_ORCAMENTO };
+  const mapaCores = {
+    pedido: CORES_PEDIDO,
+    compra: CORES_COMPRA,
+    entrega: CORES_ENTREGA,
+    terceirizacao: CORES_TERCEIRIZACAO,
+    orcamento: CORES_ORCAMENTO,
+  };
+  const mapaRotulos = {
+    pedido: ROTULOS_PEDIDO,
+    compra: ROTULOS_COMPRA,
+    entrega: ROTULOS_ENTREGA,
+    terceirizacao: ROTULOS_TERCEIRIZACAO,
+    orcamento: ROTULOS_ORCAMENTO,
+  };
   const cores = mapaCores[tipo];
   const rotulos = mapaRotulos[tipo];
-  const fallback = tipo === "pedido" ? CORES_PEDIDO.ARTE : tipo === "compra" ? CORES_COMPRA.SOLICITADO : tipo === "entrega" ? CORES_ENTREGA.AGUARDANDO : CORES_ORCAMENTO.RASCUNHO;
+  const fallback =
+    tipo === "pedido"
+      ? CORES_PEDIDO.ARTE
+      : tipo === "compra"
+        ? CORES_COMPRA.SOLICITADO
+        : tipo === "entrega"
+          ? CORES_ENTREGA.AGUARDANDO
+          : tipo === "terceirizacao"
+            ? CORES_TERCEIRIZACAO.AGUARDANDO_ENVIO
+            : CORES_ORCAMENTO.RASCUNHO;
 
   return (
     <span

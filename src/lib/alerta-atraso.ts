@@ -69,4 +69,50 @@ export async function verificarEDispararAlertasAtraso(
       })
     );
   }
+
+  // Achado E1 da auditoria de abrangência (Parte 2/Produção, 2026-09-01) —
+  // MESMO motor de alerta acima (mesma automacao/webhookUrl/toggle
+  // notificarPedidoAtrasado já resolvidos, mesma filosofia sob-demanda +
+  // CAS de dedup), agora pra EtapaTerceirizada.previsaoRetorno vencida
+  // enquanto ainda ENVIADO — o pedido em si pode não estar atrasado
+  // (prazoEntrega ainda longe), mas o terceiro está sumido. Dedup em
+  // EtapaTerceirizada.alertaAtrasoEnviadoEm (campo próprio, não
+  // Pedido.alertaAtrasoEnviadoEm — os dois vencimentos são independentes).
+  const terceirizacoesAtrasadas = await prisma.etapaTerceirizada.findMany({
+    where: {
+      graficaId,
+      situacao: "ENVIADO",
+      previsaoRetorno: { lt: hojeUTC },
+      alertaAtrasoEnviadoEm: null,
+    },
+    include: {
+      fornecedor: { select: { nome: true } },
+      pedido: { include: { orcamento: { include: { cliente: true } } } },
+    },
+  });
+
+  for (const etapa of terceirizacoesAtrasadas) {
+    const previsaoRetorno = etapa.previsaoRetorno!;
+
+    // Mesmo CAS de pedidosAtrasados acima — evita disparo duplicado quando
+    // duas requisições concorrentes carregam /producao quase juntas.
+    const cas = await prisma.etapaTerceirizada.updateMany({
+      where: { id: etapa.id, alertaAtrasoEnviadoEm: null },
+      data: { alertaAtrasoEnviadoEm: new Date() },
+    });
+    if (cas.count === 0) continue;
+
+    after(() =>
+      dispararEventoAutomacao(webhookUrl, {
+        tipo: "terceirizacao_atrasada",
+        graficaNome,
+        clienteNome: etapa.pedido.orcamento.cliente.nome,
+        clienteTelefone: normalizarTelefone(etapa.pedido.orcamento.cliente.telefone),
+        fornecedorNome: etapa.fornecedor?.nome ?? etapa.fornecedorNome ?? "Fornecedor não informado",
+        previsaoRetorno: previsaoRetorno.toISOString().slice(0, 10),
+        diasAtraso: Math.floor((hojeUTC.getTime() - previsaoRetorno.getTime()) / MS_POR_DIA),
+        orcamentoId: etapa.pedido.orcamentoId,
+      })
+    );
+  }
 }

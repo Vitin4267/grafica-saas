@@ -11,7 +11,7 @@ import {
   obterModulosVisiveis,
 } from "@/lib/auth/permissoes";
 import { verificarEDispararAlertasAtraso } from "@/lib/alerta-atraso";
-import { dataEhPassado, limitesDiaBrasilia } from "@/lib/data";
+import { dataEhPassado, limitesDiaBrasilia, dataParaInputValue } from "@/lib/data";
 import { resolverOrigemPublica } from "@/lib/url-publica";
 import { listarMaquinasSelecionaveis, sugerirMaquinaPedido } from "@/lib/apontamento-etapa";
 import { UserNav } from "@/components/UserNav";
@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { PrinterIcon, LayersIcon } from "@/components/icons";
+import type { TerceirizacaoResumo } from "./TerceirizacaoPedidoSecao";
 import { PedidoLinha } from "./PedidoLinha";
 import { ProducaoVisualizacao } from "./ProducaoVisualizacao";
 import type { PedidoKanban } from "./KanbanBoard";
@@ -54,6 +55,64 @@ function chipAtraso(prazoEntrega: Date | null, status: string) {
       Atrasado ({diasAtraso}d)
     </span>
   );
+}
+
+// Achado E1 da auditoria de abrangência (Parte 2/Produção, 2026-09-01) —
+// indicador "No terceiro — retorna dd/mm" (ou "sem previsão") quando existe
+// uma EtapaTerceirizada ENVIADO pra este pedido, mesma ideia de chipAtraso
+// acima, usado tanto na lista (PedidoLinha) quanto no Kanban.
+function chipTerceirizacao(etapas: { situacao: string; previsaoRetorno: Date | null }[]) {
+  const ativa = etapas.find((e) => e.situacao === "ENVIADO");
+  if (!ativa) return null;
+
+  return (
+    <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
+      No terceiro
+      {ativa.previsaoRetorno
+        ? ` — retorna ${ativa.previsaoRetorno.toLocaleDateString("pt-BR", { timeZone: "UTC", day: "2-digit", month: "2-digit" })}`
+        : " — sem previsão"}
+    </span>
+  );
+}
+
+// Formato que TerceirizacaoPedidoSecao.tsx espera — resolve o nome de
+// exibição (Fornecedor cadastrado > nome livre digitado > fallback) e
+// converte Decimal/Date pro formato serializável que cruza a fronteira
+// server→client. valorAcordado/valorFinal só viajam pro client quando
+// podeVerCustos (mesma regra de custos/lucro já aplicada no resto desta
+// tela) — nunca no payload da página pra quem só tem PRODUCAO sem CUSTOS.
+function mapearTerceirizacoes(
+  etapas: {
+    id: string;
+    situacao: string;
+    fornecedorId: string | null;
+    fornecedorNome: string | null;
+    fornecedor: { nome: string } | null;
+    enviadoEm: Date | null;
+    previsaoRetorno: Date | null;
+    retornadoEm: Date | null;
+    valorAcordado: unknown;
+    valorFinal: unknown;
+    notaRemessa: string | null;
+    notaRetorno: string | null;
+    observacao: string | null;
+  }[],
+  podeVerCustos: boolean
+): TerceirizacaoResumo[] {
+  return etapas.map((etapa) => ({
+    id: etapa.id,
+    situacao: etapa.situacao as TerceirizacaoResumo["situacao"],
+    fornecedorId: etapa.fornecedorId,
+    fornecedorNome: etapa.fornecedor?.nome ?? etapa.fornecedorNome ?? "Fornecedor não informado",
+    enviadoEm: etapa.enviadoEm ? etapa.enviadoEm.toISOString() : null,
+    previsaoRetorno: etapa.previsaoRetorno ? dataParaInputValue(etapa.previsaoRetorno) : null,
+    retornadoEm: etapa.retornadoEm ? etapa.retornadoEm.toISOString() : null,
+    valorAcordado: podeVerCustos && etapa.valorAcordado !== null ? Number(etapa.valorAcordado) : null,
+    valorFinal: podeVerCustos && etapa.valorFinal !== null ? Number(etapa.valorFinal) : null,
+    notaRemessa: etapa.notaRemessa,
+    notaRetorno: etapa.notaRetorno,
+    observacao: etapa.observacao,
+  }));
 }
 
 export default async function ProducaoPage({
@@ -101,7 +160,7 @@ export default async function ProducaoPage({
   await verificarEDispararAlertasAtraso(usuario.graficaId, usuario.grafica.nome);
   const origem = await resolverOrigemPublica();
 
-  const [todosPedidos, clientes, responsaveisEstagio, maquinasSelecionaveis] = await Promise.all([
+  const [todosPedidos, clientes, responsaveisEstagio, maquinasSelecionaveis, fornecedoresAtivos] = await Promise.all([
     prisma.pedido.findMany({
       where: {
         graficaId: usuario.graficaId,
@@ -122,6 +181,13 @@ export default async function ProducaoPage({
           orderBy: { createdAt: "desc" },
         },
         entrega: true,
+        // Achado E1 da auditoria de abrangência (Parte 2/Produção) — todas
+        // as terceirizações deste pedido (não só a ativa, ver
+        // TerceirizacaoPedidoSecao.tsx), mais recente primeiro.
+        etapasTerceirizadas: {
+          include: { fornecedor: { select: { nome: true } } },
+          orderBy: { createdAt: "desc" },
+        },
       },
       orderBy: { createdAt: "asc" },
     }),
@@ -144,6 +210,14 @@ export default async function ProducaoPage({
     // Achado B2 — buscada UMA VEZ (grafica-wide, não por pedido) pra
     // alimentar o seletor de máquina de cada linha (ver SeletorMaquina.tsx).
     listarMaquinasSelecionaveis(usuario.graficaId),
+    // Achado E1 — mesmo espírito de listarMaquinasSelecionaveis acima:
+    // buscada UMA VEZ pra alimentar o select de fornecedor de
+    // TerceirizacaoPedidoSecao em toda linha, sem N+1.
+    prisma.fornecedor.findMany({
+      where: { graficaId: usuario.graficaId, ativo: true },
+      select: { id: true, nome: true },
+      orderBy: { nome: "asc" },
+    }),
   ]);
 
   const responsaveisPorEtapa: Partial<Record<StatusPedido, string[]>> = {};
@@ -209,6 +283,7 @@ export default async function ProducaoPage({
     itensResumo: pedido.orcamento.itens.map((i) => i.itemGrafica.itemCatalogo.nome).join(", "),
     status: pedido.status,
     chipAtraso: chipAtraso(pedido.prazoEntrega, pedido.status),
+    chipTerceirizacao: chipTerceirizacao(pedido.etapasTerceirizadas),
     valorTotal: podeVerCustos ? Number(pedido.orcamento.total) : null,
     lucro: podeVerCustos ? lucroDoPedidoListado(pedido) : null,
     souResponsavelDesteStatus: etapasResponsavel.has(pedido.status),
@@ -267,6 +342,7 @@ export default async function ProducaoPage({
                 podeVerCustos={podeVerCustos}
                 souResponsavelDesteStatus={etapasResponsavel.has(pedido.status)}
                 chipAtraso={chipAtraso(pedido.prazoEntrega, pedido.status)}
+                chipTerceirizacao={chipTerceirizacao(pedido.etapasTerceirizadas)}
                 arteUrl={pedido.arteUrl}
                 arteAprovadaEm={pedido.arteAprovadaEm}
                 arteRespondidaPor={pedido.arteRespondidaPor}
@@ -301,6 +377,8 @@ export default async function ProducaoPage({
                       }
                     : null
                 }
+                terceirizacoes={mapearTerceirizacoes(pedido.etapasTerceirizadas, podeVerCustos)}
+                fornecedores={fornecedoresAtivos}
               />
             </div>
           );

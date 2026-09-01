@@ -147,6 +147,9 @@ model Grafica {
   custosPedido          CustoPedido[]
   custosPrevisto        PedidoCustoPrevisto[]
   fornecedores          Fornecedor[]
+  // Achado E1 da auditoria de abrangência (Parte 2/Produção) — ver model
+  // EtapaTerceirizada.
+  etapasTerceirizadas   EtapaTerceirizada[]
   contasPrepagas        ContaPrepaga[]
   contasReceber         ContaReceber[]
   condicoesPagamento    CondicaoPagamento[]
@@ -2493,6 +2496,9 @@ model Fornecedor {
   // Achado A9 da auditoria de abrangência (Parte 3/Compras, 2026-08-30) —
   // ver model ContratoFornecimento.
   contratosFornecimento ContratoFornecimento[]
+  // Achado E1 da auditoria de abrangência (Parte 2/Produção) — ver model
+  // EtapaTerceirizada.
+  etapasTerceirizadas EtapaTerceirizada[]
 
   @@unique([graficaId, nome])
   @@index([graficaId])
@@ -4173,6 +4179,10 @@ model Pedido {
   // especificamente pra este pedido (origem=PEDIDO_ESPECIFICO, achado A3 da
   // auditoria de abrangência, Parte 3/Compras).
   solicitacoesCompra SolicitacaoCompra[]
+  // Achado E1 da auditoria de abrangência (Parte 2/Produção) — etapas deste
+  // pedido enviadas pra terceirização (laminação, UV, acabamento de livro
+  // etc.), ver model EtapaTerceirizada.
+  etapasTerceirizadas EtapaTerceirizada[]
 
   @@index([graficaId])
   @@map("pedidos")
@@ -4270,6 +4280,10 @@ enum OrigemCusto {
   // auditoria de abrangência (Parte 3/Compras). Ver criarCustoAutomaticoCompra
   // em src/lib/custo-pedido.ts.
   COMPRA
+  // Terceirização de etapa (EtapaTerceirizada.valorFinal preenchido) —
+  // achado E1 da auditoria de abrangência (Parte 2/Produção, 2026-09-01). Ver
+  // criarCustoAutomaticoTerceirizacao em src/lib/custo-pedido.ts.
+  TERCEIRIZACAO
 }
 
 // Um lançamento de custo REAL incorrido num pedido específico — diferente do
@@ -4303,6 +4317,11 @@ model CustoPedido {
   // solicitação nunca gera dois CustoPedido (dedup, mesmo raciocínio de uma
   // solicitação gerar no máximo uma MovimentacaoEstoque).
   solicitacaoCompraId   String?     @unique
+  // Mesmo padrão de solicitacaoCompraId acima, agora pro achado E1 (Parte 2/
+  // Produção): qual EtapaTerceirizada gerou este lançamento origem=
+  // TERCEIRIZACAO ao ter valorFinal preenchido — único porque uma
+  // terceirização nunca gera dois CustoPedido (mesmo dedup).
+  etapaTerceirizadaId   String?     @unique
   valorCalculado        Decimal?    @db.Decimal(12, 2) // o que o sistema apurou, antes de qualquer edição manual
   editadoManualmente    Boolean     @default(false)
   possivelDuplicidade   Boolean     @default(false)
@@ -4325,11 +4344,105 @@ model CustoPedido {
   // solicitação (hoje não existe fluxo que apague) não pode apagar o custo
   // já lançado, só perde a referência de qual solicitação o gerou.
   solicitacaoCompra   SolicitacaoCompra?   @relation(fields: [solicitacaoCompraId], references: [id], onDelete: SetNull)
+  // SetNull, mesmo raciocínio de solicitacaoCompra acima: apagar a
+  // terceirização (hoje não existe fluxo que apague) não pode apagar o custo
+  // já lançado, só perde a referência de qual terceirização o gerou.
+  etapaTerceirizada   EtapaTerceirizada?   @relation(fields: [etapaTerceirizadaId], references: [id], onDelete: SetNull)
 
   @@index([graficaId])
   @@index([pedidoId])
   @@index([categoriaCustoId])
   @@map("custos_pedido")
+}
+
+// Achado E1 da auditoria de abrangência (Parte 2/Produção,
+// pesquisa-abrangencia-modulos.md, 2026-09-01): nada no schema modelava um
+// pedido que sai FISICAMENTE da gráfica pra uma operação terceirizada
+// (laminação, UV, acabamento de livro etc.) e volta depois — o card ficava
+// parado numa etapa (geralmente ACABAMENTO) por dias sem ninguém saber se é
+// lentidão interna ou se está no terceiro, e o custo do terceiro só entrava
+// como CustoPedido origem=MANUAL, sem prazo, sem fornecedor vinculado, sem
+// alerta. Forma fiscal correspondente no Brasil: remessa para
+// industrialização por encomenda (CFOP 5901/6901), retorno (5902/6902) —
+// notaRemessa/notaRetorno abaixo guardam só o Nº da nota, mesmo papel de
+// SolicitacaoCompra.documento (não emitem nota, só registram).
+enum SituacaoTerceirizacao {
+  AGUARDANDO_ENVIO
+  ENVIADO
+  RETORNADO
+  PROBLEMA
+}
+
+model EtapaTerceirizada {
+  id        String @id @default(cuid())
+  graficaId String
+  pedidoId  String
+
+  // Etapa do PEDIDO em que a terceirização aconteceu (ex: ACABAMENTO) —
+  // congelado no momento da criação deste registro, nunca acompanha se o
+  // Pedido avançar de status depois (mesmo princípio de
+  // ApontamentoEtapa.status).
+  status StatusPedido
+
+  // Fornecedor formal (Fornecedor já existe no schema, usado por
+  // SolicitacaoCompra) OU nome livre pra terceiro não cadastrado — mesmo par
+  // estruturado/escape já usado em vários textos livres do schema (ex:
+  // Despesa.categoria). Validado na action pra nunca nascer com os dois
+  // vazios ao mesmo tempo (não é constraint de banco).
+  fornecedorId   String?
+  fornecedorNome String?
+
+  situacao SituacaoTerceirizacao @default(AGUARDANDO_ENVIO)
+
+  enviadoEm DateTime?
+  // Data pura (meia-noite UTC), mesmo padrão de Pedido.prazoEntrega — ver
+  // src/lib/data.ts.
+  previsaoRetorno DateTime?
+  retornadoEm     DateTime?
+
+  valorAcordado Decimal? @db.Decimal(10, 2)
+  valorFinal    Decimal? @db.Decimal(10, 2)
+
+  // CFOP 5901/6901 (remessa) e 5902/6902 (retorno) — só o Nº da nota, mesmo
+  // papel informativo de SolicitacaoCompra.documento.
+  notaRemessa String?
+  notaRetorno String?
+
+  // Preenchido quando situacao=PROBLEMA — mesmo princípio de
+  // Entrega.observacoes (a tela exige preenchido antes de mandar pra
+  // PROBLEMA, ver avancarStatusEntrega em producao/entrega-transicao.ts).
+  observacao String? @db.Text
+
+  // Dedup do alerta de retorno atrasado (verificarEDispararAlertasAtraso,
+  // src/lib/alerta-atraso.ts) — mesmo papel de Pedido.alertaAtrasoEnviadoEm,
+  // campo PRÓPRIO porque o vencimento aqui é previsaoRetorno (não
+  // Pedido.prazoEntrega): os dois podem estar atrasados em momentos
+  // diferentes, e uma terceirização atrasada não implica pedido atrasado.
+  alertaAtrasoEnviadoEm DateTime?
+
+  criadoPorId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  // Cascade: pedidoId é obrigatório (mesmo raciocínio de CustoPedido.pedido
+  // acima) — hoje não existe fluxo que apague um Pedido, mas um FK NOT NULL
+  // não pode usar SetNull de qualquer forma.
+  pedido Pedido @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  // SetNull, mesmo raciocínio de SolicitacaoCompra.fornecedor: apagar/
+  // desativar um Fornecedor não pode apagar o histórico da terceirização, só
+  // perde a referência de qual fornecedor formal a atendeu (fornecedorNome
+  // preserva o registro textual independente disso).
+  fornecedor Fornecedor? @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
+  // Lado inverso de CustoPedido.etapaTerceirizadaId — o CustoPedido origem
+  // TERCEIRIZACAO gerado quando valorFinal é preenchido.
+  custoPedidoGerado CustoPedido?
+
+  @@index([graficaId])
+  @@index([pedidoId])
+  @@index([fornecedorId])
+  @@map("etapas_terceirizadas")
 }
 
 enum OrigemPrevisao {

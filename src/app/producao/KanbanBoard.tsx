@@ -32,6 +32,11 @@ export type PedidoKanban = {
   itensResumo: string;
   status: StatusPedido;
   chipAtraso: ReactNode;
+  // Achado E1 da auditoria de abrangência (Parte 2/Produção, 2026-09-01) —
+  // "No terceiro — retorna dd/mm" quando existe uma EtapaTerceirizada
+  // ENVIADO pra este pedido, mesmo indicador de PedidoLinha.tsx. null quando
+  // não há nenhuma terceirização ativa.
+  chipTerceirizacao: ReactNode;
   // null quando o usuário não tem CUSTOS.podeVer — mesma regra de
   // producao/page.tsx (nunca manda o valor real pro client nesse caso).
   valorTotal: number | null;
@@ -375,6 +380,7 @@ function KanbanCardConteudo({
       </div>
       <p className="text-xs text-slate-500">{pedido.itensResumo}</p>
       {pedido.chipAtraso}
+      {pedido.chipTerceirizacao}
       {podeVerCustos && pedido.valorTotal !== null && (
         <p className="text-xs text-slate-600 dark:text-slate-300">
           {formatoMoeda.format(pedido.valorTotal)}

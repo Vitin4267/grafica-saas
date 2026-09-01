@@ -330,6 +330,86 @@ export async function criarCustoAutomaticoCompra(
   });
 }
 
+// Gera o CustoPedido origem=TERCEIRIZACAO quando uma EtapaTerceirizada tem
+// valorFinal preenchido (achado E1 da auditoria de abrangência, Parte 2/
+// Produção, 2026-09-01) — mesmo estilo defensivo de criarCustoAutomaticoCompra
+// e criarCustoAutomaticoComissao acima: NUNCA lança, a transição de situação
+// não pode falhar por causa disto. Dedup via CustoPedido.etapaTerceirizadaId
+// @unique — chamar de novo pra mesma terceirização (reentrância, duplo
+// clique, valorFinal editado de novo) é no-op, nunca substitui/soma.
+export async function criarCustoAutomaticoTerceirizacao(
+  tx: Prisma.TransactionClient,
+  params: {
+    graficaId: string;
+    pedidoId: string;
+    etapaTerceirizadaId: string;
+    valor: number;
+  }
+): Promise<void> {
+  if (params.valor <= 0) return;
+
+  const jaExiste = await tx.custoPedido.findUnique({
+    where: { etapaTerceirizadaId: params.etapaTerceirizadaId },
+    select: { id: true },
+  });
+  if (jaExiste) return;
+
+  // Mesma cascata de fallback de criarCustoAutomaticoComissao acima: prefere
+  // uma categoria chamada "Terceirização" (não faz parte de nenhuma lista de
+  // CATEGORIAS_CUSTO_SUGERIDAS ainda, mas a gráfica pode ter criado a sua),
+  // senão a categoria padrão de consumo da gráfica, senão a primeira ativa.
+  const categoria =
+    (await tx.categoriaCusto.findFirst({
+      where: { graficaId: params.graficaId, ativa: true, nome: { equals: "Terceirização", mode: "insensitive" } },
+      select: { id: true },
+    })) ??
+    (await (async () => {
+      const parametros = await tx.parametrosGrafica.findUnique({
+        where: { graficaId: params.graficaId },
+        select: { categoriaCustoConsumoPadraoId: true },
+      });
+      if (!parametros?.categoriaCustoConsumoPadraoId) return null;
+      return tx.categoriaCusto.findFirst({
+        where: { id: parametros.categoriaCustoConsumoPadraoId, graficaId: params.graficaId, ativa: true },
+        select: { id: true },
+      });
+    })()) ??
+    (await tx.categoriaCusto.findFirst({
+      where: { graficaId: params.graficaId, ativa: true },
+      orderBy: { ordem: "asc" },
+      select: { id: true },
+    }));
+
+  if (!categoria) {
+    console.error(
+      `[custo-automatico] Gráfica ${params.graficaId} sem nenhuma CategoriaCusto ativa — CustoPedido de terceirização ${params.etapaTerceirizadaId} (pedido ${params.pedidoId}) não foi criado.`
+    );
+    return;
+  }
+
+  // Mesmo cuidado de criarCustoAutomaticoConsumo: nunca soma calado em cima
+  // de um custo MANUAL já lançado na mesma categoria — só marca
+  // possivelDuplicidade pra UI resolver (ex: a gráfica já tinha lançado o
+  // custo do terceiro manualmente antes desta feature existir).
+  const existeManualMesmaCategoria = await tx.custoPedido.findFirst({
+    where: { pedidoId: params.pedidoId, categoriaCustoId: categoria.id, origem: "MANUAL" },
+    select: { id: true },
+  });
+
+  await tx.custoPedido.create({
+    data: {
+      graficaId: params.graficaId,
+      pedidoId: params.pedidoId,
+      categoriaCustoId: categoria.id,
+      origem: "TERCEIRIZACAO",
+      etapaTerceirizadaId: params.etapaTerceirizadaId,
+      valor: params.valor,
+      valorCalculado: params.valor,
+      possivelDuplicidade: existeManualMesmaCategoria !== null,
+    },
+  });
+}
+
 // Idempotente: só cria as categorias sugeridas se a gráfica ainda não tem
 // NENHUMA linha cadastrada. Se a gráfica já tinha categorias e apagou todas
 // de propósito, isto NUNCA recria sozinho — ausência de linhas depois da

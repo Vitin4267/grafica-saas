@@ -20,6 +20,11 @@ import {
 import { EnviarArteForm } from "./EnviarArteForm";
 import { CustosPedidoSecao } from "./CustosPedidoSecao";
 import { EntregaPedidoSecao, type EntregaResumo } from "./EntregaPedidoSecao";
+import {
+  TerceirizacaoPedidoSecao,
+  type TerceirizacaoResumo,
+  type FornecedorOpcao,
+} from "./TerceirizacaoPedidoSecao";
 import type { MaquinaOpcaoUI } from "./SeletorMaquina";
 import { cancelarPedido, avancarPedido } from "./actions";
 
@@ -49,6 +54,7 @@ export function PedidoLinha({
   souResponsavelDesteStatus,
   responsaveisEtapa,
   chipAtraso,
+  chipTerceirizacao,
   arteUrl,
   arteAprovadaEm,
   arteComentarioCliente,
@@ -59,6 +65,8 @@ export function PedidoLinha({
   custos,
   lucro,
   entrega,
+  terceirizacoes,
+  fornecedores,
   maquinas = [],
   sugestaoMaquinaValor = "",
 }: {
@@ -85,6 +93,11 @@ export function PedidoLinha({
   // Sempre [] pra ARTE/CLICHE_FACA/ENTREGUE/CANCELADO (ver ESTAGIOS_ATRIBUIVEIS).
   responsaveisEtapa: string[];
   chipAtraso: ReactNode;
+  // Achado E1 da auditoria de abrangência (Parte 2/Produção, 2026-09-01) —
+  // "No terceiro — retorna dd/mm" quando existe uma EtapaTerceirizada
+  // ENVIADO pra este pedido (ver chipTerceirizacao em producao/page.tsx).
+  // null quando não há nenhuma terceirização ativa.
+  chipTerceirizacao: ReactNode;
   arteUrl: string | null;
   arteAprovadaEm: Date | null;
   arteComentarioCliente: string | null;
@@ -109,6 +122,12 @@ export function PedidoLinha({
   // nem é renderizada nesse caso, mesmo critério de "ainda não construído"
   // que o resto da tela usa.
   entrega: EntregaResumo | null;
+  // Achado E1 — terceirizações registradas pra este pedido (todas, não só a
+  // ativa — ver TerceirizacaoPedidoSecao.tsx) e as opções de Fornecedor
+  // ativas da gráfica (grafica-wide, buscadas uma vez em producao/page.tsx)
+  // pra popular o select do formulário.
+  terceirizacoes: TerceirizacaoResumo[];
+  fornecedores: FornecedorOpcao[];
   // Achado B2 — máquinas ATIVAS da gráfica (grafica-wide, buscada uma vez em
   // producao/page.tsx) e a sugestão pré-calculada a partir da máquina que os
   // ITENS deste pedido usaram na precificação (ver sugerirMaquinaPedido em
@@ -197,6 +216,7 @@ export function PedidoLinha({
         </div>
         <div className="flex items-center gap-3">
           {chipAtraso}
+          {chipTerceirizacao}
           <StatusBadge status={status} tipo="pedido" />
           {status === "CLICHE_FACA"
             ? podeEditar && (
@@ -271,6 +291,19 @@ export function PedidoLinha({
           confundir com "criar entrega" num pedido que ainda nem começou. */}
       {status !== "ARTE" && status !== "CLICHE_FACA" && (
         <EntregaPedidoSecao pedidoId={pedidoId} entrega={entrega} podeEditar={podeEditar} />
+      )}
+
+      {/* Terceirização (achado E1) — diferente de Entrega, não é gated por
+          ESTAGIOS_PRE_PRODUCAO: uma gráfica pode mandar clichê pra
+          terceirizar já em CLICHE_FACA, então a seção fica disponível em
+          qualquer status não-cancelado. */}
+      {status !== "CANCELADO" && (
+        <TerceirizacaoPedidoSecao
+          pedidoId={pedidoId}
+          terceirizacoes={terceirizacoes}
+          fornecedores={fornecedores}
+          podeEditar={podeEditar}
+        />
       )}
 
       {iniciarImpressao.estado.tipo === "confirmando" && (

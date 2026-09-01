@@ -34,6 +34,21 @@ export type EventoAutomacao =
       prazoEntrega: string;
       diasAtraso: number;
       orcamentoId: string;
+    }
+  | {
+      // Achado E1 da auditoria de abrangência (Parte 2/Produção,
+      // 2026-09-01) — mesmo motor de alerta de pedido_atrasado acima
+      // (verificarEDispararAlertasAtraso, src/lib/alerta-atraso.ts), só que
+      // pra EtapaTerceirizada.previsaoRetorno vencida com situacao=ENVIADO:
+      // o pedido em si pode não estar atrasado, mas o terceiro está.
+      tipo: "terceirizacao_atrasada";
+      graficaNome: string;
+      clienteNome: string;
+      clienteTelefone: string | null;
+      fornecedorNome: string;
+      previsaoRetorno: string;
+      diasAtraso: number;
+      orcamentoId: string;
     };
 
 const TIMEOUT_MS = 5_000; // bem menor que o do chat (15s) — ninguém na UI está esperando resposta
