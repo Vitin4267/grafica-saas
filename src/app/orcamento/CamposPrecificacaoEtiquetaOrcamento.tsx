@@ -77,36 +77,45 @@ export function CamposPrecificacaoEtiquetaOrcamento({
         required
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Input
-          label={
-            <>
-              Custo da faca (R$)
-              <CampoAjuda texto="Custo da faca de corte (o molde/clichê usado pra recortar o formato da etiqueta). É um ferramental que se paga uma vez só, mas normalmente é cobrado dentro do primeiro pedido que usa esse formato." />
-            </>
-          }
-          type="number"
-          min={0}
-          step="0.01"
-          value={valores.custoFaca}
-          onChange={set("custoFaca")}
-          placeholder="opcional"
-        />
-        <Input
-          label={
-            <>
-              Custo de frete (R$)
-              <CampoAjuda texto="Frete específico pra trazer o material ou a faca desta etiqueta — não é o frete de entrega do pedido pronto pro cliente (esse fica nos dados gerais do orçamento, em 'Frete')." />
-            </>
-          }
-          type="number"
-          min={0}
-          step="0.01"
-          value={valores.custoFrete}
-          onChange={set("custoFrete")}
-          placeholder="opcional"
-        />
-      </div>
+      {/* Custo de faca/frete: R$ livres, opcionais, raramente preenchidos —
+          diferente de papel/quantidade de cores acima (que entram na conta
+          de preço e costumam ser necessários), por isso ficam escondidos
+          atrás de um "Mais opções" fechado por padrão. */}
+      <details className="group rounded-xl border border-slate-200 dark:border-slate-800">
+        <summary className="flex cursor-pointer list-none items-center px-3 py-2 text-xs font-medium text-slate-500 marker:content-none dark:text-slate-400">
+          Mais opções
+        </summary>
+        <div className="grid grid-cols-1 gap-4 border-t border-slate-100 p-3 dark:border-slate-800 sm:grid-cols-2">
+          <Input
+            label={
+              <>
+                Custo da faca (R$)
+                <CampoAjuda texto="Custo da faca de corte (o molde/clichê usado pra recortar o formato da etiqueta). É um ferramental que se paga uma vez só, mas normalmente é cobrado dentro do primeiro pedido que usa esse formato." />
+              </>
+            }
+            type="number"
+            min={0}
+            step="0.01"
+            value={valores.custoFaca}
+            onChange={set("custoFaca")}
+            placeholder="opcional"
+          />
+          <Input
+            label={
+              <>
+                Custo de frete (R$)
+                <CampoAjuda texto="Frete específico pra trazer o material ou a faca desta etiqueta — não é o frete de entrega do pedido pronto pro cliente (esse fica nos dados gerais do orçamento, em 'Frete')." />
+              </>
+            }
+            type="number"
+            min={0}
+            step="0.01"
+            value={valores.custoFrete}
+            onChange={set("custoFrete")}
+            placeholder="opcional"
+          />
+        </div>
+      </details>
     </div>
   );
 }

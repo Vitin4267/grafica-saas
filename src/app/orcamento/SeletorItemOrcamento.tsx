@@ -198,6 +198,15 @@ export function SeletorItemOrcamento({
   const temAcabamentoHora = valores.acabamentoIds.some(
     (id) => acabamentosDisponiveis.find((a) => a.id === id)?.baseCobranca === "HORA"
   );
+  // Agrupa visualmente os campos de cor/setup específicos de cada modelo de
+  // cálculo (formulário crescido demais — ficavam soltos, todos juntos,
+  // assim que apareciam) num único <details> "Cor e preparo de máquina" —
+  // só renderiza quando algum desses campos se aplica ao item escolhido.
+  // Nasce aberto (diferente do grupo "Mais opções" abaixo) porque, quando
+  // aparece, costuma trazer campo obrigatório pro modelo em questão (ex:
+  // corFrente no Offset).
+  const mostrarGrupoCorPreparo =
+    usaModeloOffset || usaModeloFlexografia || usaModeloDigital || usaModeloSetupPorPeca || usaModeloRevenda;
 
   const set =
     (campo: keyof CamposItemOrcamento) =>
@@ -320,138 +329,121 @@ export function SeletorItemOrcamento({
         </Select>
       </div>
 
-      {/* Achado F7 — profundidade (caixa/embalagem, acrílico, livro) e
-          espessura de chapa (corte a laser/router) do item VENDIDO. SEMPRE
-          visíveis, independente do modeloCalculo do produto (uma caixa pode
-          ser vendida como SIMPLES) — nunca entram no motor de preço, só
-          descritivas. */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Input
-          label={`Profundidade (${rotuloUnidade})`}
-          type="number"
-          step={passoDimensao}
-          value={valores.profundidade}
-          onChange={set("profundidade")}
-          placeholder="opcional"
-          hint="Ex: caixa/embalagem, acrílico, livro — terceira dimensão."
-        />
-        <Input
-          label="Espessura (mm)"
-          type="number"
-          step="1"
-          value={valores.espessuraMm}
-          onChange={set("espessuraMm")}
-          placeholder="opcional"
-          hint="Ex: chapa de corte a laser/router — sempre em milímetro."
-        />
-      </div>
+      {mostrarGrupoCorPreparo && (
+        <details open className="group rounded-xl border border-slate-300 dark:border-slate-700">
+          <summary className="flex cursor-pointer list-none items-center px-4 py-2.5 text-sm font-medium text-slate-700 marker:content-none dark:text-slate-200">
+            Cor e preparo de máquina
+          </summary>
+          <div className="flex flex-col gap-4 border-t border-slate-100 px-4 py-4 dark:border-slate-800">
+            {usaModeloOffset && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Input
+                  label={
+                    <>
+                      Cores de frente
+                      <CampoAjuda texto="Quantas cores de tinta são usadas na frente e no verso da peça (ex: 4x4 = 4 cores nos dois lados, 4x0 = colorido só na frente, preto e branco no verso). Cada cor extra é uma chapa a mais na máquina, então aumenta o custo." />
+                    </>
+                  }
+                  type="number"
+                  min={1}
+                  value={valores.corFrente}
+                  onChange={set("corFrente")}
+                />
+                <Input
+                  label="Cores de verso"
+                  type="number"
+                  min={0}
+                  value={valores.corVerso}
+                  onChange={set("corVerso")}
+                  hint="0 se for só frente"
+                />
+              </div>
+            )}
 
-      {usaModeloOffset && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Input
-            label={
-              <>
-                Cores de frente
-                <CampoAjuda texto="Quantas cores de tinta são usadas na frente e no verso da peça (ex: 4x4 = 4 cores nos dois lados, 4x0 = colorido só na frente, preto e branco no verso). Cada cor extra é uma chapa a mais na máquina, então aumenta o custo." />
-              </>
-            }
-            type="number"
-            min={1}
-            value={valores.corFrente}
-            onChange={set("corFrente")}
-          />
-          <Input
-            label="Cores de verso"
-            type="number"
-            min={0}
-            value={valores.corVerso}
-            onChange={set("corVerso")}
-            hint="0 se for só frente"
-          />
-        </div>
-      )}
+            {usaModeloFlexografia && (
+              <Input
+                label={
+                  <>
+                    Número de cores
+                    <CampoAjuda texto="Na flexografia, cada cor sai numa estação separada da máquina (geralmente cores especiais/Pantone, não CMYK como no digital ou offset). Informe o total de cores usadas na arte — cada cor a mais aumenta o custo de preparação." />
+                  </>
+                }
+                type="number"
+                min={1}
+                value={valores.numeroCoresFlexo}
+                onChange={set("numeroCoresFlexo")}
+              />
+            )}
 
-      {usaModeloFlexografia && (
-        <Input
-          label={
-            <>
-              Número de cores
-              <CampoAjuda texto="Na flexografia, cada cor sai numa estação separada da máquina (geralmente cores especiais/Pantone, não CMYK como no digital ou offset). Informe o total de cores usadas na arte — cada cor a mais aumenta o custo de preparação." />
-            </>
-          }
-          type="number"
-          min={1}
-          value={valores.numeroCoresFlexo}
-          onChange={set("numeroCoresFlexo")}
-        />
-      )}
+            {usaModeloDigital && (
+              <Input
+                label={
+                  <>
+                    Número de cliques
+                    <CampoAjuda texto="Em impressão digital, cada passada da máquina pra imprimir uma peça é chamada de 'clique' — é assim que o custo do equipamento é cobrado. Normalmente é 1 clique por peça; só mude se seu equipamento contar diferente (ex: frente e verso separados)." />
+                  </>
+                }
+                type="number"
+                min={1}
+                value={valores.numeroCliques}
+                onChange={set("numeroCliques")}
+                placeholder="opcional — padrão 1 por peça"
+                hint="Deixe em branco pra usar 1 clique por peça (padrão)."
+              />
+            )}
 
-      {usaModeloDigital && (
-        <Input
-          label={
-            <>
-              Número de cliques
-              <CampoAjuda texto="Em impressão digital, cada passada da máquina pra imprimir uma peça é chamada de 'clique' — é assim que o custo do equipamento é cobrado. Normalmente é 1 clique por peça; só mude se seu equipamento contar diferente (ex: frente e verso separados)." />
-            </>
-          }
-          type="number"
-          min={1}
-          value={valores.numeroCliques}
-          onChange={set("numeroCliques")}
-          placeholder="opcional — padrão 1 por peça"
-          hint="Deixe em branco pra usar 1 clique por peça (padrão)."
-        />
-      )}
+            {usaModeloSetupPorPeca && (
+              <Input
+                label={
+                  <>
+                    Número de setups
+                    <CampoAjuda texto="Setup é o tempo de preparar a máquina pra rodar esta arte — trocar tela, matriz ou ajustar a cor. Cada arte diferente neste item conta como 1 setup, e isso entra no custo porque a máquina fica parada preparando, não produzindo." />
+                  </>
+                }
+                type="number"
+                min={1}
+                value={valores.numeroSetups}
+                onChange={set("numeroSetups")}
+                hint="Quantas telas/matrizes/artes esta arte usa."
+              />
+            )}
 
-      {usaModeloSetupPorPeca && (
-        <Input
-          label={
-            <>
-              Número de setups
-              <CampoAjuda texto="Setup é o tempo de preparar a máquina pra rodar esta arte — trocar tela, matriz ou ajustar a cor. Cada arte diferente neste item conta como 1 setup, e isso entra no custo porque a máquina fica parada preparando, não produzindo." />
-            </>
-          }
-          type="number"
-          min={1}
-          value={valores.numeroSetups}
-          onChange={set("numeroSetups")}
-          hint="Quantas telas/matrizes/artes esta arte usa."
-        />
-      )}
+            {(usaModeloDigital || usaModeloSetupPorPeca) && (
+              <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={valores.materialFornecidoPeloCliente}
+                  onChange={(e) =>
+                    onChange({ ...valores, materialFornecidoPeloCliente: e.target.checked })
+                  }
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                />
+                <span>
+                  <span className="inline-flex items-center gap-1.5">
+                    Material fornecido pelo cliente
+                    <CampoAjuda texto="Marque quando o CLIENTE já traz a peça em branco (camiseta, caneca, brinde) pronta pra aplicar a estampa ou gravação. Nesse caso a gráfica cobra só o serviço de aplicação, sem cobrar o custo da peça em si." />
+                  </span>
+                  <span className="block text-xs font-normal text-slate-500">
+                    A gráfica não cobra o custo da peça em branco — só a aplicação.
+                  </span>
+                </span>
+              </label>
+            )}
 
-      {(usaModeloDigital || usaModeloSetupPorPeca) && (
-        <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
-          <input
-            type="checkbox"
-            checked={valores.materialFornecidoPeloCliente}
-            onChange={(e) =>
-              onChange({ ...valores, materialFornecidoPeloCliente: e.target.checked })
-            }
-            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-          />
-          <span>
-            <span className="inline-flex items-center gap-1.5">
-              Material fornecido pelo cliente
-              <CampoAjuda texto="Marque quando o CLIENTE já traz a peça em branco (camiseta, caneca, brinde) pronta pra aplicar a estampa ou gravação. Nesse caso a gráfica cobra só o serviço de aplicação, sem cobrar o custo da peça em si." />
-            </span>
-            <span className="block text-xs font-normal text-slate-500">
-              A gráfica não cobra o custo da peça em branco — só a aplicação.
-            </span>
-          </span>
-        </label>
-      )}
-
-      {usaModeloRevenda && (
-        <Input
-          label="Custo de aquisição (R$)"
-          type="number"
-          min={0}
-          step="0.01"
-          value={valores.custoAquisicaoUnitario}
-          onChange={set("custoAquisicaoUnitario")}
-          placeholder="opcional"
-          hint="Deixe em branco pra usar o custo de compra cadastrado no catálogo."
-        />
+            {usaModeloRevenda && (
+              <Input
+                label="Custo de aquisição (R$)"
+                type="number"
+                min={0}
+                step="0.01"
+                value={valores.custoAquisicaoUnitario}
+                onChange={set("custoAquisicaoUnitario")}
+                placeholder="opcional"
+                hint="Deixe em branco pra usar o custo de compra cadastrado no catálogo."
+              />
+            )}
+          </div>
+        </details>
       )}
 
       <Input
@@ -514,6 +506,38 @@ export function SeletorItemOrcamento({
           onChange={(etiqueta) => onChange({ ...valores, etiqueta })}
         />
       )}
+
+      {/* Achado F7 — profundidade (caixa/embalagem, acrílico, livro) e
+          espessura de chapa (corte a laser/router) do item VENDIDO. SEMPRE
+          disponíveis, independente do modeloCalculo do produto (uma caixa
+          pode ser vendida como SIMPLES) — nunca entram no motor de preço, só
+          descritivas. Raramente preenchidas, por isso ficam num grupo
+          fechado por padrão em vez de sempre visíveis. */}
+      <details className="group rounded-xl border border-slate-300 dark:border-slate-700">
+        <summary className="flex cursor-pointer list-none items-center px-4 py-2.5 text-sm font-medium text-slate-700 marker:content-none dark:text-slate-200">
+          Mais opções
+        </summary>
+        <div className="grid grid-cols-1 gap-4 border-t border-slate-100 px-4 py-4 dark:border-slate-800 sm:grid-cols-2">
+          <Input
+            label={`Profundidade (${rotuloUnidade})`}
+            type="number"
+            step={passoDimensao}
+            value={valores.profundidade}
+            onChange={set("profundidade")}
+            placeholder="opcional"
+            hint="Ex: caixa/embalagem, acrílico, livro — terceira dimensão."
+          />
+          <Input
+            label="Espessura (mm)"
+            type="number"
+            step="1"
+            value={valores.espessuraMm}
+            onChange={set("espessuraMm")}
+            placeholder="opcional"
+            hint="Ex: chapa de corte a laser/router — sempre em milímetro."
+          />
+        </div>
+      </details>
     </div>
   );
 }

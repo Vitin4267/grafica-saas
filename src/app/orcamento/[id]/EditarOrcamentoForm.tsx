@@ -155,6 +155,15 @@ export function EditarOrcamentoForm({
     modeloCalculo === "ESTAMPAGEM_QUENTE" ||
     modeloCalculo === "PERSONALIZACAO" ||
     modeloCalculo === "REVENDA";
+  // Mesmo agrupamento visual de SeletorItemOrcamento.tsx (fluxo de criação)
+  // — o formulário de edição tem exatamente os mesmos campos duplicados, e a
+  // tarefa pede a mesma estrutura nos dois pra não confundir o usuário.
+  const mostrarGrupoCorPreparo =
+    modeloCalculo === "OFFSET" ||
+    modeloCalculo === "FLEXOGRAFIA" ||
+    usaModeloDigital ||
+    usaModeloSetupPorPeca ||
+    modeloCalculo === "REVENDA";
   const [largura, setLargura] = useState(() =>
     paraExibicao(valoresIniciais.larguraCm, unidadeDimensao)
   );
@@ -251,149 +260,130 @@ export function EditarOrcamentoForm({
           </div>
         )}
 
-        {/* Achado F7 — profundidade/espessura do item vendido, sempre
-            visíveis (independente de mostraDimensao: uma caixa pode ser
-            vendida como SIMPLES também). */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Input
-            label={
-              <>
-                {`Profundidade (${ROTULO_UNIDADE_DIMENSAO[unidadeDimensao]})`}
-                <CampoAjuda texto="Terceira dimensão do produto, além de largura e altura — usada pra descrever caixas, embalagens, acrílico ou objetos com volume. É só informativo (não entra na conta do preço); deixe em branco se não se aplica." />
-              </>
-            }
-            type="number"
-            step={passoInputDimensao(unidadeDimensao)}
-            placeholder="opcional"
-            value={profundidade}
-            onChange={(e) => setProfundidade(e.target.value)}
-          />
-          <Input
-            label={
-              <>
-                Espessura (mm)
-                <CampoAjuda texto="Espessura de chapas, placas ou materiais rígidos, sempre em milímetro (ex: acrílico, MDF, chapa de corte a laser). É só informativo (não entra na conta do preço); deixe em branco se não se aplica." />
-              </>
-            }
-            name="espessuraMm"
-            type="number"
-            step="0.01"
-            placeholder="opcional — ex: chapa de corte a laser"
-            value={espessuraMm}
-            onChange={(e) => setEspessuraMm(e.target.value)}
-          />
-          <input type="hidden" name="profundidadeCm" value={paraCm(profundidade, unidadeDimensao)} />
-        </div>
+        {/* Campo escondido de profundidade (F7) — o input visível ficou no
+            grupo "Mais opções" no fim do formulário (junto de espessura),
+            mas o hidden precisa continuar aqui dentro do <form> como
+            qualquer outro. */}
+        <input type="hidden" name="profundidadeCm" value={paraCm(profundidade, unidadeDimensao)} />
 
-        {modeloCalculo === "OFFSET" && (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input
-              label={
-                <>
-                  Cores de frente
-                  <CampoAjuda texto="Quantas cores de tinta são usadas na frente e no verso da peça (ex: 4x4 = 4 cores nos dois lados, 4x0 = colorido só na frente, preto e branco no verso). Cada cor extra é uma chapa a mais na máquina, então aumenta o custo." />
-                </>
-              }
-              name="corFrente"
-              type="number"
-              min={1}
-              required
-              defaultValue={valoresIniciais.corFrente}
-            />
-            <Input
-              label="Cores de verso"
-              name="corVerso"
-              type="number"
-              min={0}
-              defaultValue={valoresIniciais.corVerso}
-            />
-          </div>
-        )}
+        {mostrarGrupoCorPreparo && (
+          <details open className="group rounded-xl border border-slate-300 dark:border-slate-700">
+            <summary className="flex cursor-pointer list-none items-center px-4 py-2.5 text-sm font-medium text-slate-700 marker:content-none dark:text-slate-200">
+              Cor e preparo de máquina
+            </summary>
+            <div className="flex flex-col gap-4 border-t border-slate-100 px-4 py-4 dark:border-slate-800">
+              {modeloCalculo === "OFFSET" && (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Input
+                    label={
+                      <>
+                        Cores de frente
+                        <CampoAjuda texto="Quantas cores de tinta são usadas na frente e no verso da peça (ex: 4x4 = 4 cores nos dois lados, 4x0 = colorido só na frente, preto e branco no verso). Cada cor extra é uma chapa a mais na máquina, então aumenta o custo." />
+                      </>
+                    }
+                    name="corFrente"
+                    type="number"
+                    min={1}
+                    required
+                    defaultValue={valoresIniciais.corFrente}
+                  />
+                  <Input
+                    label="Cores de verso"
+                    name="corVerso"
+                    type="number"
+                    min={0}
+                    defaultValue={valoresIniciais.corVerso}
+                  />
+                </div>
+              )}
 
-        {modeloCalculo === "FLEXOGRAFIA" && (
-          <Input
-            label={
-              <>
-                Número de cores
-                <CampoAjuda texto="Na flexografia, cada cor sai numa estação separada da máquina (geralmente cores especiais/Pantone, não CMYK como no digital ou offset). Informe o total de cores usadas na arte — cada cor a mais aumenta o custo de preparação." />
-              </>
-            }
-            name="numeroCoresFlexo"
-            type="number"
-            min={1}
-            required
-            defaultValue={valoresIniciais.numeroCoresFlexo}
-          />
-        )}
+              {modeloCalculo === "FLEXOGRAFIA" && (
+                <Input
+                  label={
+                    <>
+                      Número de cores
+                      <CampoAjuda texto="Na flexografia, cada cor sai numa estação separada da máquina (geralmente cores especiais/Pantone, não CMYK como no digital ou offset). Informe o total de cores usadas na arte — cada cor a mais aumenta o custo de preparação." />
+                    </>
+                  }
+                  name="numeroCoresFlexo"
+                  type="number"
+                  min={1}
+                  required
+                  defaultValue={valoresIniciais.numeroCoresFlexo}
+                />
+              )}
 
-        {modeloCalculo === "DIGITAL" && (
-          <Input
-            label={
-              <>
-                Número de cliques
-                <CampoAjuda texto="Em impressão digital, cada passada da máquina pra imprimir uma peça é chamada de 'clique' — é assim que o custo do equipamento é cobrado. Normalmente é 1 clique por peça; só mude se seu equipamento contar diferente (ex: frente e verso separados)." />
-              </>
-            }
-            name="numeroCliques"
-            type="number"
-            min={1}
-            defaultValue={valoresIniciais.numeroCliques}
-            placeholder="opcional — padrão 1 por peça"
-            hint="Deixe em branco pra usar 1 clique por peça (padrão)."
-          />
-        )}
+              {modeloCalculo === "DIGITAL" && (
+                <Input
+                  label={
+                    <>
+                      Número de cliques
+                      <CampoAjuda texto="Em impressão digital, cada passada da máquina pra imprimir uma peça é chamada de 'clique' — é assim que o custo do equipamento é cobrado. Normalmente é 1 clique por peça; só mude se seu equipamento contar diferente (ex: frente e verso separados)." />
+                    </>
+                  }
+                  name="numeroCliques"
+                  type="number"
+                  min={1}
+                  defaultValue={valoresIniciais.numeroCliques}
+                  placeholder="opcional — padrão 1 por peça"
+                  hint="Deixe em branco pra usar 1 clique por peça (padrão)."
+                />
+              )}
 
-        {(modeloCalculo === "SERIGRAFIA" ||
-          modeloCalculo === "SUBLIMACAO" ||
-          modeloCalculo === "ESTAMPAGEM_QUENTE" ||
-          modeloCalculo === "PERSONALIZACAO") && (
-          <Input
-            label={
-              <>
-                Número de setups
-                <CampoAjuda texto="Setup é o tempo de preparar a máquina pra rodar esta arte — trocar tela, matriz ou ajustar a cor. Cada arte diferente neste item conta como 1 setup, e isso entra no custo porque a máquina fica parada preparando, não produzindo." />
-              </>
-            }
-            name="numeroSetups"
-            type="number"
-            min={1}
-            required
-            defaultValue={valoresIniciais.numeroSetups}
-            hint="Quantas telas/matrizes/artes esta arte usa."
-          />
-        )}
+              {(modeloCalculo === "SERIGRAFIA" ||
+                modeloCalculo === "SUBLIMACAO" ||
+                modeloCalculo === "ESTAMPAGEM_QUENTE" ||
+                modeloCalculo === "PERSONALIZACAO") && (
+                <Input
+                  label={
+                    <>
+                      Número de setups
+                      <CampoAjuda texto="Setup é o tempo de preparar a máquina pra rodar esta arte — trocar tela, matriz ou ajustar a cor. Cada arte diferente neste item conta como 1 setup, e isso entra no custo porque a máquina fica parada preparando, não produzindo." />
+                    </>
+                  }
+                  name="numeroSetups"
+                  type="number"
+                  min={1}
+                  required
+                  defaultValue={valoresIniciais.numeroSetups}
+                  hint="Quantas telas/matrizes/artes esta arte usa."
+                />
+              )}
 
-        {(usaModeloDigital || usaModeloSetupPorPeca) && (
-          <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
-            <input
-              type="checkbox"
-              name="materialFornecidoPeloCliente"
-              defaultChecked={valoresIniciais.materialFornecidoPeloCliente}
-              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-            />
-            <span>
-              <span className="inline-flex items-center gap-1.5">
-                Material fornecido pelo cliente
-                <CampoAjuda texto="Marque quando o CLIENTE já traz a peça em branco (camiseta, caneca, brinde) pronta pra aplicar a estampa ou gravação. Nesse caso a gráfica cobra só o serviço de aplicação, sem cobrar o custo da peça em si." />
-              </span>
-              <span className="block text-xs font-normal text-slate-500">
-                A gráfica não cobra o custo da peça em branco — só a aplicação.
-              </span>
-            </span>
-          </label>
-        )}
+              {(usaModeloDigital || usaModeloSetupPorPeca) && (
+                <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
+                  <input
+                    type="checkbox"
+                    name="materialFornecidoPeloCliente"
+                    defaultChecked={valoresIniciais.materialFornecidoPeloCliente}
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                  />
+                  <span>
+                    <span className="inline-flex items-center gap-1.5">
+                      Material fornecido pelo cliente
+                      <CampoAjuda texto="Marque quando o CLIENTE já traz a peça em branco (camiseta, caneca, brinde) pronta pra aplicar a estampa ou gravação. Nesse caso a gráfica cobra só o serviço de aplicação, sem cobrar o custo da peça em si." />
+                    </span>
+                    <span className="block text-xs font-normal text-slate-500">
+                      A gráfica não cobra o custo da peça em branco — só a aplicação.
+                    </span>
+                  </span>
+                </label>
+              )}
 
-        {modeloCalculo === "REVENDA" && (
-          <Input
-            label="Custo de aquisição (R$)"
-            name="custoAquisicaoUnitario"
-            type="number"
-            min={0}
-            step="0.01"
-            defaultValue={valoresIniciais.custoAquisicaoUnitario}
-            placeholder="opcional"
-            hint="Deixe em branco pra usar o custo de compra cadastrado no catálogo."
-          />
+              {modeloCalculo === "REVENDA" && (
+                <Input
+                  label="Custo de aquisição (R$)"
+                  name="custoAquisicaoUnitario"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  defaultValue={valoresIniciais.custoAquisicaoUnitario}
+                  placeholder="opcional"
+                  hint="Deixe em branco pra usar o custo de compra cadastrado no catálogo."
+                />
+              )}
+            </div>
+          </details>
         )}
 
         <Input
@@ -503,36 +493,47 @@ export function EditarOrcamentoForm({
               defaultValue={valoresIniciais.quantidadeCores}
               hint="Um clichê por cor da arte — custo fixo, não muda com a tiragem."
             />
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Input
-                label={
-                  <>
-                    Custo da faca (R$)
-                    <CampoAjuda texto="Custo da faca de corte (o molde/clichê usado pra recortar o formato da etiqueta). É um ferramental que se paga uma vez só, mas normalmente é cobrado dentro do primeiro pedido que usa esse formato." />
-                  </>
-                }
-                name="custoFaca"
-                type="number"
-                min={0}
-                step="0.01"
-                defaultValue={valoresIniciais.custoFaca}
-                placeholder="opcional"
-              />
-              <Input
-                label={
-                  <>
-                    Custo de frete (R$)
-                    <CampoAjuda texto="Frete específico pra trazer o material ou a faca desta etiqueta — não é o frete de entrega do pedido pronto pro cliente (esse fica nos dados gerais do orçamento, em 'Frete')." />
-                  </>
-                }
-                name="custoFrete"
-                type="number"
-                min={0}
-                step="0.01"
-                defaultValue={valoresIniciais.custoFrete}
-                placeholder="opcional"
-              />
-            </div>
+            {/* Custo de faca/frete: R$ livres, opcionais, raramente
+                preenchidos — diferente de papel/quantidade de cores acima
+                (que entram na conta de preço e costumam ser necessários),
+                por isso ficam escondidos atrás de um "Mais opções" fechado
+                por padrão (mesmo agrupamento de
+                CamposPrecificacaoEtiquetaOrcamento.tsx). */}
+            <details className="group rounded-xl border border-slate-200 dark:border-slate-800">
+              <summary className="flex cursor-pointer list-none items-center px-3 py-2 text-xs font-medium text-slate-500 marker:content-none dark:text-slate-400">
+                Mais opções
+              </summary>
+              <div className="grid grid-cols-1 gap-4 border-t border-slate-100 p-3 dark:border-slate-800 sm:grid-cols-2">
+                <Input
+                  label={
+                    <>
+                      Custo da faca (R$)
+                      <CampoAjuda texto="Custo da faca de corte (o molde/clichê usado pra recortar o formato da etiqueta). É um ferramental que se paga uma vez só, mas normalmente é cobrado dentro do primeiro pedido que usa esse formato." />
+                    </>
+                  }
+                  name="custoFaca"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  defaultValue={valoresIniciais.custoFaca}
+                  placeholder="opcional"
+                />
+                <Input
+                  label={
+                    <>
+                      Custo de frete (R$)
+                      <CampoAjuda texto="Frete específico pra trazer o material ou a faca desta etiqueta — não é o frete de entrega do pedido pronto pro cliente (esse fica nos dados gerais do orçamento, em 'Frete')." />
+                    </>
+                  }
+                  name="custoFrete"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  defaultValue={valoresIniciais.custoFrete}
+                  placeholder="opcional"
+                />
+              </div>
+            </details>
           </div>
         )}
 
@@ -602,6 +603,48 @@ export function EditarOrcamentoForm({
             />
           </>
         )}
+
+        {/* Achado F7 — profundidade/espessura do item vendido, sempre
+            disponíveis (independente de mostraDimensao: uma caixa pode ser
+            vendida como SIMPLES também). Raramente preenchidas, por isso
+            ficam num grupo fechado por padrão em vez de sempre visíveis
+            (mesmo agrupamento de SeletorItemOrcamento.tsx). O hidden
+            profundidadeCm que carrega o valor convertido pro submit já está
+            mais acima, junto do restante do <form>. */}
+        <details className="group rounded-xl border border-slate-300 dark:border-slate-700">
+          <summary className="flex cursor-pointer list-none items-center px-4 py-2.5 text-sm font-medium text-slate-700 marker:content-none dark:text-slate-200">
+            Mais opções
+          </summary>
+          <div className="grid grid-cols-1 gap-4 border-t border-slate-100 px-4 py-4 dark:border-slate-800 sm:grid-cols-2">
+            <Input
+              label={
+                <>
+                  {`Profundidade (${ROTULO_UNIDADE_DIMENSAO[unidadeDimensao]})`}
+                  <CampoAjuda texto="Terceira dimensão do produto, além de largura e altura — usada pra descrever caixas, embalagens, acrílico ou objetos com volume. É só informativo (não entra na conta do preço); deixe em branco se não se aplica." />
+                </>
+              }
+              type="number"
+              step={passoInputDimensao(unidadeDimensao)}
+              placeholder="opcional"
+              value={profundidade}
+              onChange={(e) => setProfundidade(e.target.value)}
+            />
+            <Input
+              label={
+                <>
+                  Espessura (mm)
+                  <CampoAjuda texto="Espessura de chapas, placas ou materiais rígidos, sempre em milímetro (ex: acrílico, MDF, chapa de corte a laser). É só informativo (não entra na conta do preço); deixe em branco se não se aplica." />
+                </>
+              }
+              name="espessuraMm"
+              type="number"
+              step="0.01"
+              placeholder="opcional — ex: chapa de corte a laser"
+              value={espessuraMm}
+              onChange={(e) => setEspessuraMm(e.target.value)}
+            />
+          </div>
+        </details>
 
         {state && <Alert variant={state.ok ? "success" : "error"}>{state.mensagem}</Alert>}
 
