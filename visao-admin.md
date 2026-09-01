@@ -29,7 +29,7 @@ quem trava a próxima ação. Detalhe de cada item nas seções abaixo.
       combinado (máquinas/usuários/orçamentos). (seção 2)
 - [ ] **Prensa fantasma "[Exemplo] Prensa Offset"** na conta real da Assus
       — resíduo de dado de exemplo, nunca confirmou se quer que eu apague.
-      (seção 7)
+      (seção 8)
 
 ### Backlog técnico rastreado (sem decisão pendente, só fila de prioridade)
 - [ ] Configurar Dependabot (scan de dependência automatizado)
@@ -185,16 +185,40 @@ antes, e já corrigi isso no documento.
 
 ---
 
-## 6. Estado do git — atenção aqui
+## 6. Cards de ajuda "?" e Central de Ajuda — construído 2026-08-31
 
-**Tudo empurrado.** `172710f..df3426c` foi pro GitHub em 2026-08-31 —
-rodada 19 da auditoria + os intervalos semestral/anual do Stripe, tudo
-código real em produção agora. Migrations já estavam aplicadas no banco
-de dev antes do push, schema bate certo. Sem pendência de git.
+Pedido seu: um ícone "?" clicável do lado de campo confuso, explicando o
+que ele faz (funciona em touque/celular, não só passar mouse). Cobre hoje
+~50 campos técnicos em Orçamento, Produção, Catálogo, Clientes, Compras,
+Financeiro, Máquinas/Equipamentos e Configurações — cada texto verificado
+contra a fórmula/lógica real do código antes de escrever, nunca frase
+genérica, e sem duplicar explicação que já existia na tela.
+
+Saiu junto uma página nova dentro do sistema, **Central de Ajuda**
+(ícone "Ajuda" no menu, `/ajuda`) — um guia por módulo de como fazer as
+ações do dia a dia (criar orçamento, avançar um pedido em Produção,
+cadastrar catálogo etc.), também escrito a partir do código real.
+
+**Achado lateral, não corrigido ainda:** existe uma action
+`solicitarAjusteOrcamento` no código (`src/app/o/[token]/actions.ts`) mas
+nenhum botão da tela pública do cliente chama ela — parece uma feature que
+ficou pela metade, nunca conectada na interface. Não documentei isso na
+Central de Ajuda como se funcionasse. Baixa prioridade, só ficou anotada
+pra você decidir se termina de conectar ou descarta.
 
 ---
 
-## 7. Pendência solta (baixa prioridade, mas ficou anotada)
+## 7. Estado do git — atenção aqui
+
+**Tudo empurrado.** `df3426c..de42053` foi pro GitHub em 2026-08-31 — os
+cards de ajuda "?" (Orçamento/Produção primeiro, depois expandido pro
+resto do sistema) + a Central de Ajuda + uma cobertura de teste que
+faltava pro guard de METRO_LINEAR/HORA. Tudo mudança aditiva de
+UI/texto, sem tocar lógica de negócio/schema. Sem pendência de git.
+
+---
+
+## 8. Pendência solta (baixa prioridade, mas ficou anotada)
 
 Tem uma **"[Exemplo] Prensa Offset"** fantasma cadastrada na conta real da
 Assus — resíduo de quando alguém carregou os dados de exemplo do
