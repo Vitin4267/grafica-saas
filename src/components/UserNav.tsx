@@ -6,7 +6,7 @@ import Link from "next/link";
 import { logout } from "@/app/logout/actions";
 import { obterResumoAssinatura } from "@/app/configuracoes/assinatura/actions";
 import { Logo } from "@/components/Logo";
-import { LogOutIcon, MenuIcon, XIcon } from "@/components/icons";
+import { LogOutIcon, MenuIcon, XIcon, InfoIcon } from "@/components/icons";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import type { PapelUsuario, ModuloPermissao } from "@/generated/prisma/enums";
 
@@ -150,6 +150,14 @@ export function UserNav({
             <p className="text-xs text-slate-500">{graficaNome}</p>
           </div>
           <div className="hidden items-center gap-2 sm:flex">
+            <Link
+              href="/ajuda"
+              aria-label="Ajuda"
+              title="Ajuda"
+              className="rounded-xl border border-slate-200 p-2 text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              <InfoIcon className="h-4 w-4" />
+            </Link>
             <SuporteLink />
             <ThemeToggle />
           </div>
@@ -234,6 +242,15 @@ export function UserNav({
               <p className="text-xs text-slate-500">{graficaNome}</p>
             </div>
             <div className="flex items-center gap-2">
+              <Link
+                href="/ajuda"
+                onClick={() => setMenuAberto(false)}
+                aria-label="Ajuda"
+                title="Ajuda"
+                className="rounded-xl border border-slate-200 p-2 text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                <InfoIcon className="h-4 w-4" />
+              </Link>
               <SuporteLink />
               <ThemeToggle />
               <form action={logout}>
