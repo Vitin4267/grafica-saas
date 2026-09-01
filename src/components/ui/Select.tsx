@@ -8,7 +8,10 @@ export function Select({
   className = "",
   ...props
 }: SelectHTMLAttributes<HTMLSelectElement> & {
-  label: string;
+  // ReactNode (não só string) pra permitir `label={<>Texto <CampoAjuda .../></>}`
+  // — ver src/components/ui/CampoAjuda.tsx. Uma string continua funcionando
+  // igual antes.
+  label: ReactNode;
   hint?: string;
   children: ReactNode;
 }) {
@@ -16,7 +19,7 @@ export function Select({
 
   return (
     <label htmlFor={selectId} className="flex flex-col gap-1.5">
-      <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+      <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
         {label}
       </span>
       <div className="relative">

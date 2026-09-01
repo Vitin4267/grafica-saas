@@ -2,6 +2,7 @@
 
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { CampoAjuda } from "@/components/ui/CampoAjuda";
 
 // Papel escolhido como matéria-prima NESTE orçamento (não fixo no produto,
 // diferente do papelId do modelo Offset) — ver ConfiguracaoClicheEtiqueta e
@@ -78,7 +79,12 @@ export function CamposPrecificacaoEtiquetaOrcamento({
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Input
-          label="Custo da faca (R$)"
+          label={
+            <>
+              Custo da faca (R$)
+              <CampoAjuda texto="Custo da faca de corte (o molde/clichê usado pra recortar o formato da etiqueta). É um ferramental que se paga uma vez só, mas normalmente é cobrado dentro do primeiro pedido que usa esse formato." />
+            </>
+          }
           type="number"
           min={0}
           step="0.01"
@@ -87,7 +93,12 @@ export function CamposPrecificacaoEtiquetaOrcamento({
           placeholder="opcional"
         />
         <Input
-          label="Custo de frete (R$)"
+          label={
+            <>
+              Custo de frete (R$)
+              <CampoAjuda texto="Frete específico pra trazer o material ou a faca desta etiqueta — não é o frete de entrega do pedido pronto pro cliente (esse fica nos dados gerais do orçamento, em 'Frete')." />
+            </>
+          }
           type="number"
           min={0}
           step="0.01"

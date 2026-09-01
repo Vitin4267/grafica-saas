@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { formatoMoeda } from "@/lib/moeda";
 import { previsaoBaixaEstoque, type PrevisaoBaixaEstoqueResult } from "./actions";
 import { SeletorMaquina, type MaquinaOpcaoUI } from "./SeletorMaquina";
@@ -153,7 +154,10 @@ export function PainelConfirmacaoImpressao({
                   </span>
                 </label>
                 <label className="flex flex-col gap-1">
-                  <span className="text-xs text-slate-500">Perda fixa de calibragem</span>
+                  <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                    Perda fixa de calibragem
+                    <CampoAjuda texto="É a quantidade de material que normalmente se perde ao calibrar a máquina antes de imprimir de verdade (ajustar cor, registro, foco) — considerada perda 'normal' do processo, não erro. Vem pré-preenchida com o padrão do material; aumente só se este pedido específico exigir mais ajuste que o normal." />
+                  </span>
                   <input
                     type="number"
                     step="0.0001"

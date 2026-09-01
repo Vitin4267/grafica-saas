@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
+import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { gerarChave } from "@/lib/chave-local";
 import type { CamposEtiqueta, CamposHotStamping } from "./etiqueta-campos";
 
@@ -125,7 +126,16 @@ function LinhaHotStamping({
         </Select>
       </div>
       <div className="w-28">
-        <Select label="Tipo" value={linha.tipo} onChange={(e) => onAlterar("tipo", e.target.value)}>
+        <Select
+          label={
+            <>
+              Tipo
+              <CampoAjuda texto="Hot stamping é a aplicação de uma folha metálica ou colorida na etiqueta usando calor e pressão — é o efeito dourado/prateado brilhante que aparece em alguns rótulos. 'Cold' é a versão sem calor, mais comum em tiragens grandes." />
+            </>
+          }
+          value={linha.tipo}
+          onChange={(e) => onAlterar("tipo", e.target.value)}
+        >
           {OPCOES_TIPO_HOT_STAMPING.map(([v, rotulo]) => (
             <option key={v} value={v}>
               {rotulo}
@@ -259,7 +269,12 @@ export function CamposEtiquetaOrcamento({
           />
         )}
         <Input
-          label="Durabilidade do adesivo"
+          label={
+            <>
+              Durabilidade do adesivo
+              <CampoAjuda texto="Quanto tempo e onde o adesivo aguenta ficar colado. 'Permanente' é pra uso definitivo, que não sai sem rasgar; 'Removível' é pra quando a etiqueta vai ser trocada depois (ex: preço, promoção) sem estragar a superfície." />
+            </>
+          }
           value={valores.durabilidadeAdesivo}
           onChange={(e) => set("durabilidadeAdesivo", e.target.value)}
           placeholder="ex: Permanente, Removível"

@@ -3,6 +3,7 @@
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
+import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { CamposEtiquetaOrcamento, etiquetaInicial, type CamposEtiqueta } from "./CamposEtiquetaOrcamento";
 import {
   CamposPrecificacaoEtiquetaOrcamento,
@@ -348,7 +349,12 @@ export function SeletorItemOrcamento({
       {usaModeloOffset && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input
-            label="Cores de frente"
+            label={
+              <>
+                Cores de frente
+                <CampoAjuda texto="Quantas cores de tinta são usadas na frente e no verso da peça (ex: 4x4 = 4 cores nos dois lados, 4x0 = colorido só na frente, preto e branco no verso). Cada cor extra é uma chapa a mais na máquina, então aumenta o custo." />
+              </>
+            }
             type="number"
             min={1}
             value={valores.corFrente}
@@ -367,7 +373,12 @@ export function SeletorItemOrcamento({
 
       {usaModeloFlexografia && (
         <Input
-          label="Número de cores"
+          label={
+            <>
+              Número de cores
+              <CampoAjuda texto="Na flexografia, cada cor sai numa estação separada da máquina (geralmente cores especiais/Pantone, não CMYK como no digital ou offset). Informe o total de cores usadas na arte — cada cor a mais aumenta o custo de preparação." />
+            </>
+          }
           type="number"
           min={1}
           value={valores.numeroCoresFlexo}
@@ -377,7 +388,12 @@ export function SeletorItemOrcamento({
 
       {usaModeloDigital && (
         <Input
-          label="Número de cliques"
+          label={
+            <>
+              Número de cliques
+              <CampoAjuda texto="Em impressão digital, cada passada da máquina pra imprimir uma peça é chamada de 'clique' — é assim que o custo do equipamento é cobrado. Normalmente é 1 clique por peça; só mude se seu equipamento contar diferente (ex: frente e verso separados)." />
+            </>
+          }
           type="number"
           min={1}
           value={valores.numeroCliques}
@@ -389,7 +405,12 @@ export function SeletorItemOrcamento({
 
       {usaModeloSetupPorPeca && (
         <Input
-          label="Número de setups"
+          label={
+            <>
+              Número de setups
+              <CampoAjuda texto="Setup é o tempo de preparar a máquina pra rodar esta arte — trocar tela, matriz ou ajustar a cor. Cada arte diferente neste item conta como 1 setup, e isso entra no custo porque a máquina fica parada preparando, não produzindo." />
+            </>
+          }
           type="number"
           min={1}
           value={valores.numeroSetups}
@@ -409,7 +430,10 @@ export function SeletorItemOrcamento({
             className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
           />
           <span>
-            Material fornecido pelo cliente
+            <span className="inline-flex items-center gap-1.5">
+              Material fornecido pelo cliente
+              <CampoAjuda texto="Marque quando o CLIENTE já traz a peça em branco (camiseta, caneca, brinde) pronta pra aplicar a estampa ou gravação. Nesse caso a gráfica cobra só o serviço de aplicação, sem cobrar o custo da peça em si." />
+            </span>
             <span className="block text-xs font-normal text-slate-500">
               A gráfica não cobra o custo da peça em branco — só a aplicação.
             </span>

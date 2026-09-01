@@ -1,7 +1,10 @@
-import type { TextareaHTMLAttributes } from "react";
+import type { ReactNode, TextareaHTMLAttributes } from "react";
 
 type TextareaProps = TextareaHTMLAttributes<HTMLTextAreaElement> & {
-  label: string;
+  // ReactNode (não só string) pra permitir `label={<>Texto <CampoAjuda .../></>}`
+  // — ver src/components/ui/CampoAjuda.tsx. Uma string continua funcionando
+  // igual antes.
+  label: ReactNode;
   hint?: string;
 };
 
@@ -10,7 +13,9 @@ export function Textarea({ label, hint, id, className = "", rows = 3, ...props }
 
   return (
     <label htmlFor={textareaId} className="flex flex-col gap-1.5">
-      <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{label}</span>
+      <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">
+        {label}
+      </span>
       <textarea
         id={textareaId}
         rows={rows}
