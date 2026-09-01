@@ -1084,8 +1084,10 @@ Gate opt-in **no mesmo formato do gate de arte que já existe** (elegante justam
 
 ### E. Terceirização
 
-#### E1 — Não há como representar "esta etapa saiu da gráfica e volta depois"
+#### E1 — Não há como representar "esta etapa saiu da gráfica e volta depois" — **CONSTRUÍDO 2026-09-01**
 **Custo estimado:** 🔴 Caro — model novo `EtapaTerceirizada` com workflow completo de múltiplos status (`AGUARDANDO_ENVIO`/`ENVIADO`/`RETORNADO`/`PROBLEMA`), mais integração com alerta de prazo e geração automática de custo.
+
+**Status:** os 3 primeiros efeitos da proposta construídos (indicador no card/Kanban, `CustoPedido` automático origem `TERCEIRIZACAO`, alerta de prazo com dedup próprio). O 4º efeito (`ItemGrafica.terceirizadoPadrao`/`fornecedorPadraoId` pra Ordem de Produção já sugerir o fornecedor de costume) ficou de fora — era opcional na proposta original.
 
 **O que falta.** Nada no schema modela um pedido que fisicamente saiu do prédio para uma operação e vai voltar. Hoje o card fica parado em `ACABAMENTO` por cinco dias e ninguém sabe se é lentidão interna, se está no laminador, ou se sumiu. Custo do terceiro só entra como `CustoPedido` origem `MANUAL`, sem prazo, sem fornecedor vinculado, sem previsão de retorno, sem alerta.
 
@@ -2440,8 +2442,10 @@ ferramental. Cada achado abaixo foi verificado contra o código real
 (`prisma/schema.prisma`, `src/lib/`) antes de ser escrito, com grep
 confirmando ausência — diferente de A-E, tratar com mais confiança.
 
-### F1 — Ferramental reutilizável (faca, clichê, tela, matriz de bordado) não tem cadastro nenhum
+### F1 — Ferramental reutilizável (faca, clichê, tela, matriz de bordado) não tem cadastro nenhum — **CONSTRUÍDO 2026-09-01**
 **Custo estimado:** 🔴 Caro — model novo `Ferramental` com 3 enums novos, múltiplas FKs (cliente, item de catálogo) e ciclo de vida com status (ATIVO/EM_MANUTENCAO/DESCARTADO/DEVOLVIDO_AO_CLIENTE) — workflow completo, não só cadastro simples.
+
+**Status:** cadastro completo (CRUD em `/configuracoes/ferramentais`), exatamente a proposta abaixo. `OrcamentoItem.ferramentalId` existe como vínculo informativo, mas a sugestão de aviso ("esta faca já existe, considere não cobrar de novo") dentro do formulário de item de orçamento ficou de fora desta rodada — o vínculo existe no schema, só não tem UI que o preencha automaticamente ainda.
 
 **O que falta.** Nenhum model representa a ferramenta física — só o dinheiro dela (`ConfiguracaoClicheEtiqueta`/`Flexografia`, `ConfiguracaoAcabamento.custoFerramental`, `OrcamentoItemPrecificacaoEtiqueta.custoFaca`). `ConfiguracaoClicheFlexografia` é OBRIGATÓRIA pra todo produto FLEXOGRAFIA, então toda repetição de tiragem recalcula o clichê como se fosse novo — `TipoPedidoOrcamento.REPETICAO_SEM_ALTERACAO` é só rótulo, nada por trás sabe que a matriz já existe. Também: sem localização física, sem registro de propriedade (cliente x gráfica), sem controle de vida útil por tiragem acumulada.
 
@@ -2539,13 +2543,15 @@ Classificação de custo/esforço aplicada a todo achado ainda não marcado `CON
 
 **Atualização 2026-08-31 (rodada 19):** +8 — Parte 7 B6/C1/C2/C3/C4/F7/F9 + Parte 6 A9 (restante, com ressalva COBRANCA). Restam 13 🟢 Barato pendentes de todo o documento.
 
-**Contagem total (87 achados classificados, 68 ainda pendentes):**
+**Atualização 2026-09-01 (rodada 20):** +2 🔴 Caro — Parte 7 F1 (cadastro de Ferramental) e Parte 2 E1 (terceirização de etapa). Primeira rodada que ataca a fila cara de propósito, em vez dos baratos — os dois foram escolhidos por já terem proposta concreta sem ressalva de "não construir agora" e por não mexerem em cálculo de preço/margem (só cadastro + registro de custo manual, mesmo padrão defensivo de outros custos automáticos do sistema).
+
+**Contagem total (87 achados classificados, 66 ainda pendentes):**
 
 | Custo | Contagem |
 |---|---|
 | 🟢 Barato | 13 (19 construídos) |
 | 🟡 Médio | 29 |
-| 🔴 Caro | 26 |
+| 🔴 Caro | 24 (2 construídos) |
 
 ### Candidatos 🟢 Barato por Parte — próxima rodada de construção
 

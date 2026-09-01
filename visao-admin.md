@@ -29,20 +29,21 @@ quem trava a próxima ação. Detalhe de cada item nas seções abaixo.
       combinado (máquinas/usuários/orçamentos). (seção 2)
 - [ ] **Prensa fantasma "[Exemplo] Prensa Offset"** na conta real da Assus
       — resíduo de dado de exemplo, nunca confirmou se quer que eu apague.
-      (seção 8)
+      (seção 9)
 
 ### Backlog técnico rastreado (sem decisão pendente, só fila de prioridade)
 - [ ] Configurar Dependabot (scan de dependência automatizado)
 - [ ] Criptografia de campo pra token sensível (`focusNfeToken`)
 - [ ] RLS (trava extra de isolamento direto no banco)
 - [ ] Role de banco de dados com permissão restrita (hoje usa acesso total)
-- [ ] 121 achados catalogados de abrangência de produto — 18 dos 33 da
-      Parte 7 já construídos (rodadas 17-19, 2026-08-31), 15 pendentes.
-      Parte 6 A9 (roteamento de notificação) também fechado. **68 achados
-      pendentes no total têm custo estimado** — 13 baratos, 29 médios, 26
-      caros. Os baratos são os candidatos naturais pra próxima rodada de
-      construção (ver "Resumo de custo" no fim de
-      `pesquisa-abrangencia-modulos.md`).
+- [ ] 121 achados catalogados de abrangência de produto — 19 dos 33 da
+      Parte 7 já construídos (rodadas 17-20), 14 pendentes. Parte 6 A9
+      (roteamento de notificação) também fechado, e a Parte 2 ganhou E1
+      (terceirização de etapa) na rodada 20. **66 achados pendentes no
+      total têm custo estimado** — 13 baratos, 29 médios, 24 caros (2
+      resolvidos na rodada 20 — ver seção 7). Os baratos continuam os
+      candidatos mais rápidos pra próxima rodada (ver "Resumo de custo" no
+      fim de `pesquisa-abrangencia-modulos.md`).
 
 **O item 🔴 acima é o único marcado como urgente** (por você, não por mim —
 é ação manual no dashboard do Stripe, eu não tenho acesso pra fazer). O
@@ -146,31 +147,37 @@ implicitamente "toda gráfica é igual à Assus" e não é verdade pro mercado
 brasileiro real (offset, digital, comunicação visual, estamparia, brindes,
 embalagem, editorial, bordado, serigrafia, DTF, corte a laser...).
 
-**Placar em 2026-08-31:**
+**Placar em 2026-09-01:**
 - **121 achados catalogados** no total, em `pesquisa-abrangencia-modulos.md`
   (raiz do repo — esse arquivo é a fonte de verdade, este documento aqui é
   só o resumo executivo).
 - Das Partes 1-6 (88 achados originais, sobre o motor de preço/orçamento/
-  produção/financeiro/compras/clientes/config): **34 já construídos + 8
-  parciais** — uns 39% resolvido (48% contando parcial).
-- **Parte 7 é nova** (33 achados, adicionada 30-31/08/2026): pergunta
-  diferente — não "o motor calcula certo?", e sim **"dá pra sequer
-  CADASTRAR isso?"** (ex: seu próprio exemplo — falta de máquina pra
-  cadastrar). **18 dos 33 já construídos**: rodada 17 — categorias de
-  máquina pra bordado/corte-e-vinco/impressora-grande-formato/gofradeira, e
-  19 itens novos de matéria-prima; rodada 18 — chave PIX da gráfica; rodada
-  19 — materiais de bordado, acabamento de etiqueta (durabilidade de
-  adesivo, laminação/verniz soft touch, efeito de hot stamping), 3ª
-  dimensão/espessura no item de orçamento, e `SegmentoGrafica` ampliado (5
-  segmentos novos + múltiplos segmentos por gráfica). 15 pendentes.
+  produção/financeiro/compras/clientes/config): **35 já construídos + 8
+  parciais** — a Parte 2 ganhou a terceirização de etapa (achado E1) na
+  rodada 20.
+- **Parte 7** (33 achados, adicionada 30-31/08/2026): pergunta diferente —
+  não "o motor calcula certo?", e sim **"dá pra sequer CADASTRAR isso?"**
+  (ex: seu próprio exemplo — falta de máquina pra cadastrar). **19 dos 33
+  já construídos**: rodada 17 — categorias de máquina pra bordado/
+  corte-e-vinco/impressora-grande-formato/gofradeira, e 19 itens novos de
+  matéria-prima; rodada 18 — chave PIX da gráfica; rodada 19 — materiais de
+  bordado, acabamento de etiqueta (durabilidade de adesivo, laminação/
+  verniz soft touch, efeito de hot stamping), 3ª dimensão/espessura no item
+  de orçamento, e `SegmentoGrafica` ampliado (5 segmentos novos + múltiplos
+  segmentos por gráfica); rodada 20 — cadastro de Ferramental. 14 pendentes.
+- **Rodada 20 (2026-09-01) foi a primeira a atacar achados 🔴 Caro de
+  propósito**, a seu pedido — 2 resolvidos (Ferramental + terceirização de
+  etapa), ver seção 6 abaixo.
 
 ### Os achados mais importantes da Parte 7, pra você bater o olho
 - ~~Chave PIX da própria gráfica não tem onde cadastrar~~ — **construído
   2026-08-31**: agora dá pra cadastrar em Configurações > Identidade, e
   aparece no PDF do orçamento e no link público depois de aprovado. Só
   exibição — sem validar a chave, sem confirmar pagamento automático.
-- **Ferramental (faca, clichê, tela) não tem cadastro** — toda repetição de
-  pedido recalcula o clichê como se fosse novo, mesmo já existindo.
+- ~~Ferramental (faca, clichê, tela) não tem cadastro~~ — **construído
+  2026-09-01**: cadastro completo em Configurações > Ferramentais. O
+  vínculo no item de orçamento existe no banco, mas ainda sem sugestão
+  automática de aviso ("esta faca já existe") na tela — fica pra depois.
 - **Sistema só emite NF-e**, não NFS-e — gráfica que presta serviço
   (comunicação visual, design, personalização) não tem onde emitir.
 - **Frete: falta o valor.** A modalidade existe, mas não o valor cobrado
@@ -224,18 +231,38 @@ avaliar depois se ainda incomodar.
 
 ---
 
-## 7. Estado do git — atenção aqui
+## 7. Dois achados 🔴 Caro resolvidos — construído 2026-09-01 (rodada 20)
 
-**Tudo empurrado.** `df3426c..2e1f9de` foi pro GitHub em 2026-08-31 — os
-cards de ajuda "?" (Orçamento/Produção primeiro, depois expandido pro
-resto do sistema), a Central de Ajuda, o agrupamento de Configurações e
-do item de orçamento em seções colapsáveis, e uma cobertura de teste que
-faltava pro guard de METRO_LINEAR/HORA. Tudo mudança aditiva de
-UI/texto, sem tocar lógica de negócio/schema. Sem pendência de git.
+Primeira rodada que atacou achados caros de propósito, a seu pedido. Os
+dois têm migration aplicada no banco de dev (revisei schema + SQL linha a
+linha antes, você aprovou, testei contra o banco real depois).
+
+- **Cadastro de Ferramental** (faca de corte e vinco, clichê, tela de
+  serigrafia, matriz de bordado): antes o sistema só guardava o CUSTO da
+  ferramenta, nunca ela em si — toda repetição de pedido recalculava o
+  clichê como se fosse novo. Agora dá pra cadastrar em Configurações >
+  Ferramentais (código único, dono — gráfica ou cliente —, item do
+  catálogo vinculado, status ativo/manutenção/descartado/devolvido). O
+  preço continua 100% manual — o sistema não desconta nada sozinho.
+- **Terceirização de etapa de produção**: antes não tinha como registrar
+  "este pedido saiu pra um terceiro (laminação, UV, acabamento externo) e
+  volta depois" — o card ficava parado sem ninguém saber se era demora
+  interna ou se estava fora. Agora dá pra registrar fornecedor, data
+  prevista de retorno e valor; o card mostra "no terceiro — retorna
+  dd/mm", o valor final vira custo do pedido automaticamente, e atraso de
+  retorno dispara o mesmo alerta que atraso de pedido já usa.
 
 ---
 
-## 8. Pendência solta (baixa prioridade, mas ficou anotada)
+## 8. Estado do git — atenção aqui
+
+**Tudo empurrado até `2bee6d9`** (2026-08-31). **Ainda NÃO empurrado:**
+os 2 commits desta seção (`63446ab` Ferramental, `1dcbe66` terceirização)
+mais a atualização deste documento — pergunte se quiser que eu empurre.
+
+---
+
+## 9. Pendência solta (baixa prioridade, mas ficou anotada)
 
 Tem uma **"[Exemplo] Prensa Offset"** fantasma cadastrada na conta real da
 Assus — resíduo de quando alguém carregou os dados de exemplo do
