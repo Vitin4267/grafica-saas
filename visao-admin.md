@@ -206,13 +206,30 @@ ficou pela metade, nunca conectada na interface. Não documentei isso na
 Central de Ajuda como se funcionasse. Baixa prioridade, só ficou anotada
 pra você decidir se termina de conectar ou descarta.
 
+**Complemento — telas menos densas (mesmo dia):** você notou que o site
+tinha informação demais de uma vez ("os clientes são leigos, nunca viram
+o sistema, tem que ser bem suave"). Reorganizei (sem mudar nenhuma lógica,
+só a estrutura visual) os dois piores casos:
+- **Configurações > Parâmetros**: 29 cards que ficavam todos abertos numa
+  rolagem enorme viraram 8 grupos colapsáveis por tema (Precificação
+  abre por padrão, o resto fica fechado até você clicar).
+- **Item de orçamento** (criar e editar): os campos raros (dimensão extra,
+  hot stamping, custo de faca/frete) foram pra um grupo "Mais opções"
+  fechado por padrão; os campos de cor/preparo de máquina viraram um
+  grupo "Cor e preparo de máquina" (esse já abre sozinho, porque costuma
+  ser obrigatório pro modelo escolhido).
+
+Catálogo ficou de fora por enquanto (já tem abas, talvez já esteja OK) —
+avaliar depois se ainda incomodar.
+
 ---
 
 ## 7. Estado do git — atenção aqui
 
-**Tudo empurrado.** `df3426c..de42053` foi pro GitHub em 2026-08-31 — os
+**Tudo empurrado.** `df3426c..2e1f9de` foi pro GitHub em 2026-08-31 — os
 cards de ajuda "?" (Orçamento/Produção primeiro, depois expandido pro
-resto do sistema) + a Central de Ajuda + uma cobertura de teste que
+resto do sistema), a Central de Ajuda, o agrupamento de Configurações e
+do item de orçamento em seções colapsáveis, e uma cobertura de teste que
 faltava pro guard de METRO_LINEAR/HORA. Tudo mudança aditiva de
 UI/texto, sem tocar lógica de negócio/schema. Sem pendência de git.
 
