@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Alert } from "@/components/ui/Alert";
+import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { ROTULO_UNIDADE, rotuloUnidade } from "@/lib/unidade";
 import { gerarChave } from "@/lib/chave-local";
 import {
@@ -78,7 +79,7 @@ function CampoNumero({
   prefixo,
 }: {
   name: string;
-  placeholder: string;
+  placeholder: React.ReactNode;
   defaultValue?: string;
   // Controlado (value+onChange) só é usado pelo campo de preço principal —
   // precisa disso pra "aplicar preço a todos" (CatalogoForm) conseguir
@@ -285,7 +286,12 @@ function VariantesInlineEditor({
           />
           <CampoNumero
             name={`__perdaFixaPadrao_${linha.chave}`}
-            placeholder="Perda fixa de calibragem"
+            placeholder={
+              <>
+                Perda fixa de calibragem
+                <CampoAjuda texto="Quanto desta variante se perde toda vez que a máquina é calibrada pra começar a imprimir — um valor FIXO que não muda com a quantidade do pedido. Deixe em branco se não quiser controlar essa perda automaticamente no estoque." />
+              </>
+            }
             value={linha.perdaFixaPadrao}
             onChange={(v) => atualizar(linha.chave, "perdaFixaPadrao", v)}
           />
@@ -500,7 +506,12 @@ const ItemLinha = memo(function ItemLinha({
                       />
                       <CampoNumero
                         name={`perdaFixaPadrao_${item.id}`}
-                        placeholder="Perda fixa de calibragem"
+                        placeholder={
+                          <>
+                            Perda fixa de calibragem
+                            <CampoAjuda texto="Quanto desse material é perdido toda vez que a máquina é calibrada pra começar a imprimir — um valor FIXO que não muda com a quantidade do pedido. Deixe em branco se não quiser controlar essa perda automaticamente no estoque." />
+                          </>
+                        }
                         defaultValue={selecaoInicial?.perdaFixaPadrao}
                       />
                     </>

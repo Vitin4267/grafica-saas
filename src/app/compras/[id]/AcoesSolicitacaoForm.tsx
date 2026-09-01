@@ -6,6 +6,7 @@ import { Select } from "@/components/ui/Select";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { avancarSolicitacaoCompra } from "../actions";
 import { ROTULOS_STATUS_SOLICITACAO_COMPRA, type StatusSolicitacaoCompra } from "@/lib/compras-status";
 
@@ -68,7 +69,12 @@ export function AcoesSolicitacaoForm({
 
             {proximosStatus.length > 1 ? (
               <Select
-                label="Mudar para"
+                label={
+                  <>
+                    Mudar para
+                    <CampoAjuda texto="Cada opção é uma etapa do processo de compra. Aprovado libera a compra pra ser efetivada, Comprado indica que o pedido já foi feito ao fornecedor, Recebido confirma que o material chegou (e atualiza o estoque sozinho), e Conferido é a etapa final — depois de conferida, a solicitação fica travada e não pode mais ser alterada." />
+                  </>
+                }
                 name="proximoStatus"
                 value={proximoStatus}
                 onChange={(e) => setProximoStatus(e.target.value as StatusSolicitacaoCompra)}

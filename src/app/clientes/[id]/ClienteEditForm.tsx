@@ -9,6 +9,7 @@ import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
+import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { UserIcon, MailIcon } from "@/components/icons";
 import {
   atualizarCliente,
@@ -208,7 +209,12 @@ export function ClienteEditForm({
               />
               <Input label="Nome fantasia" name="nomeFantasia" defaultValue={valoresIniciais.nomeFantasia} />
               <Select
-                label="Indicador de Inscrição Estadual"
+                label={
+                  <>
+                    Indicador de Inscrição Estadual
+                    <CampoAjuda texto="Diz pra Receita se o cliente paga ICMS. 'Contribuinte' exige a Inscrição Estadual preenchida abaixo; 'isento' e 'não contribuinte' não têm Inscrição Estadual — esse campo decide como a nota fiscal é emitida pra ele." />
+                  </>
+                }
                 name="indicadorInscricaoEstadual"
                 defaultValue={valoresIniciais.indicadorInscricaoEstadual}
               >
@@ -425,7 +431,12 @@ export function ClienteEditForm({
               />
             )}
             <Input
-              label="Margem diferenciada (%)"
+              label={
+                <>
+                  Margem diferenciada (%)
+                  <CampoAjuda texto="Troca a margem de lucro padrão da gráfica só pra este cliente — use pra um cliente grande com margem negociada menor, ou um cliente de risco onde você quer cobrar uma margem maior. Em branco usa o padrão de Configurações." />
+                </>
+              }
               name="margemPadraoOverride"
               type="number"
               step="0.0001"

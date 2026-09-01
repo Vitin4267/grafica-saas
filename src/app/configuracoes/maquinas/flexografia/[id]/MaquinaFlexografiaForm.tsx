@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
+import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { salvarMaquinaFlexografia, excluirMaquinaFlexografia } from "../actions";
 
 type ValoresMaquinaFlexografia = {
@@ -69,7 +70,12 @@ export function MaquinaFlexografiaForm({
           </h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Input
-              label="Largura útil da máquina (m)"
+              label={
+                <>
+                  Largura útil da máquina (m)
+                  <CampoAjuda texto="Largura máxima de bobina que esta máquina consegue imprimir — usada pra saber se ela serve pra um pedido e pra calcular quanto material é gasto." />
+                </>
+              }
               name="larguraMaquinaM"
               type="number"
               step="0.001"
@@ -77,7 +83,12 @@ export function MaquinaFlexografiaForm({
               defaultValue={valoresIniciais.larguraMaquinaM}
             />
             <Input
-              label="Passo do cilindro (m)"
+              label={
+                <>
+                  Passo do cilindro (m)
+                  <CampoAjuda texto="Comprimento de uma volta completa do cilindro de impressão — define o tamanho máximo que a arte pode repetir ao longo da bobina nesta máquina." />
+                </>
+              }
               name="passoCilindroM"
               type="number"
               step="0.001"
@@ -85,7 +96,12 @@ export function MaquinaFlexografiaForm({
               defaultValue={valoresIniciais.passoCilindroM}
             />
             <Input
-              label="Nº de estações de cor"
+              label={
+                <>
+                  Nº de estações de cor
+                  <CampoAjuda texto="Quantas cores esta máquina imprime numa única passada — cada estação aplica uma cor. Um trabalho com mais cores do que estações precisa de mais de uma passada pela máquina." />
+                </>
+              }
               name="numeroEstacoesCores"
               type="number"
               step="1"
@@ -93,7 +109,12 @@ export function MaquinaFlexografiaForm({
               defaultValue={valoresIniciais.numeroEstacoesCores}
             />
             <Input
-              label="Custo hora-máquina (R$)"
+              label={
+                <>
+                  Custo hora-máquina (R$)
+                  <CampoAjuda texto="Quanto custa manter esta máquina ligada e rodando por uma hora — energia, manutenção, depreciação, operador. Esse valor multiplica o tempo de acerto pra compor o custo de preparar a máquina antes de produzir." />
+                </>
+              }
               name="custoHoraMaq"
               type="number"
               step="0.01"
@@ -101,7 +122,12 @@ export function MaquinaFlexografiaForm({
               defaultValue={valoresIniciais.custoHoraMaq}
             />
             <Input
-              label="Tempo de acerto (h)"
+              label={
+                <>
+                  Tempo de acerto (h)
+                  <CampoAjuda texto="Tempo que a máquina fica sendo ajustada e calibrada até a impressão sair correta — nesse período nenhuma peça boa é produzida, mas o tempo custa (energia, operador parado), então entra no preço final." />
+                </>
+              }
               name="tempoAcertoH"
               type="number"
               step="0.01"
@@ -109,7 +135,12 @@ export function MaquinaFlexografiaForm({
               defaultValue={valoresIniciais.tempoAcertoH}
             />
             <Input
-              label="Metros de bobina perdidos no acerto"
+              label={
+                <>
+                  Metros de bobina perdidos no acerto
+                  <CampoAjuda texto="Quantos metros de bobina são gastos só ajustando a máquina até a impressão sair correta, antes de começar a produzir peças boas — não viram produto vendável, mas entram no custo." />
+                </>
+              }
               name="metrosAcerto"
               type="number"
               step="0.01"
@@ -117,7 +148,12 @@ export function MaquinaFlexografiaForm({
               defaultValue={valoresIniciais.metrosAcerto}
             />
             <Input
-              label="Custo por metro linear rodado (R$)"
+              label={
+                <>
+                  Custo por metro linear rodado (R$)
+                  <CampoAjuda texto="Custo variável cobrado por metro de bobina efetivamente impresso, já descontado o acerto — multiplicado pela metragem do pedido pra compor o preço." />
+                </>
+              }
               name="custoMetroLinearRod"
               type="number"
               step="0.01"
@@ -125,7 +161,12 @@ export function MaquinaFlexografiaForm({
               defaultValue={valoresIniciais.custoMetroLinearRod}
             />
             <Input
-              label="Rodagem mínima (R$)"
+              label={
+                <>
+                  Rodagem mínima (R$)
+                  <CampoAjuda texto="Valor mínimo cobrado pela produção, mesmo que o cálculo normal (custo por metro × quantidade) resulte num valor menor — evita rodar um trabalho pequeno demais pra compensar ligar a máquina." />
+                </>
+              }
               name="rodagemMinima"
               type="number"
               step="0.01"
@@ -133,7 +174,12 @@ export function MaquinaFlexografiaForm({
               defaultValue={valoresIniciais.rodagemMinima}
             />
             <Input
-              label="Perda padrão (%)"
+              label={
+                <>
+                  Perda padrão (%)
+                  <CampoAjuda texto="Percentual de material que normalmente se perde no processo (metros com defeito, ajuste de cor etc.) — aplicado automaticamente no cálculo pra já embutir essa perda esperada no preço." />
+                </>
+              }
               name="perdaPercentPadrao"
               type="number"
               step="0.0001"

@@ -5,6 +5,7 @@ import { Select } from "@/components/ui/Select";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { lancarMovimentacaoCreditoCliente } from "../actions";
 
 // CONSUMO não aparece aqui de propósito — só nasce automaticamente quando um
@@ -18,7 +19,12 @@ export function LancarMovimentacaoCreditoClienteForm({ clienteId }: { clienteId:
       <input type="hidden" name="clienteId" value={clienteId} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
         <Select
-          label="Tipo"
+          label={
+            <>
+              Tipo
+              <CampoAjuda texto="Depósito é quando o cliente adianta dinheiro pra usar depois. Estorno devolve um valor ao saldo dele (ex: pedido cancelado). Ajuste corrige o saldo manualmente pra mais ou menos. O crédito é abatido sozinho quando o cliente aprova um orçamento usando esse saldo — não precisa lançar isso aqui." />
+            </>
+          }
           name="tipo"
           defaultValue="DEPOSITO"
           onChange={(e) => setTipo(e.target.value)}

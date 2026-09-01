@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { formatoMoeda } from "@/lib/moeda";
 import { formatoInstanteReal, formatoData } from "@/lib/data";
 import { chaveComparativo } from "@/lib/comparativo-fornecedores";
@@ -174,7 +175,12 @@ export function NovaSolicitacaoForm({
         </Select>
 
         <Select
-          label="Origem da compra"
+          label={
+            <>
+              Origem da compra
+              <CampoAjuda texto="Diz por que esta compra está sendo feita. Reposição de estoque é quando o nível do material ficou baixo, Pedido específico é quando a compra é pra atender um pedido de um cliente, e Contrato programado usa um contrato já negociado com o fornecedor. Ajuda a acompanhar de onde vêm as compras da gráfica ao longo do tempo." />
+            </>
+          }
           name="origem"
           value={origem}
           onChange={(e) => {
@@ -262,7 +268,12 @@ export function NovaSolicitacaoForm({
 
         <div className="w-52">
           <Select
-            label="Unidade de compra (opcional)"
+            label={
+              <>
+                Unidade de compra (opcional)
+                <CampoAjuda texto="Use quando você compra este material numa unidade diferente da que usa no estoque — por exemplo, compra em rolo ou fardo, mas controla o estoque em metro ou unidade. Ao escolher, o sistema pede o fator de conversão e calcula sozinho quanto isso representa no estoque." />
+              </>
+            }
             name="unidadeCompra"
             value={unidadeCompra}
             onChange={(e) => setUnidadeCompra(e.target.value)}

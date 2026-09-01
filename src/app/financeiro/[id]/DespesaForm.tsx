@@ -8,6 +8,7 @@ import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
+import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { CampoCategoriaDespesa } from "../CampoCategoriaDespesa";
 import { ROTULO_PERIODICIDADE } from "../periodicidade";
 import { editarDespesa, excluirDespesa, marcarComoPaga, marcarComoPendente } from "../actions";
@@ -134,7 +135,12 @@ export function DespesaForm({
                 exatamente como antes; reduzir o valor registra um pagamento
                 parcial. */}
             <Input
-              label="Valor pago (R$)"
+              label={
+                <>
+                  Valor pago (R$)
+                  <CampoAjuda texto="Deixe como está pra marcar a despesa inteira como paga. Se reduzir o valor, registra só uma parte — a despesa fica 'Parcial' até você lançar o restante depois." />
+                </>
+              }
               name="valor"
               type="number"
               step="0.01"

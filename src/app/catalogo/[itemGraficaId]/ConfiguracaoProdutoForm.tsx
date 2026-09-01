@@ -7,6 +7,7 @@ import { Select } from "@/components/ui/Select";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { gerarChave } from "@/lib/chave-local";
 import { ROTULO_UNIDADE } from "@/lib/unidade";
 import { salvarModeloProduto } from "./actions";
@@ -104,7 +105,10 @@ function BobinasEditor({
             />
           </label>
           <label className="flex flex-1 flex-col gap-1">
-            <span className="text-xs text-slate-500">Refile por lado (m)</span>
+            <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+              Refile por lado (m)
+              <CampoAjuda texto="Quanto de bobina é cortado e descartado em cada lado por imperfeição de fabricação ou de impressão — reduz a largura útil real que sobra pra imprimir. Ex: bobina de 1,60m com refile de 0,02m por lado deixa 1,56m aproveitáveis." />
+            </span>
             <CampoLinha
               value={bobina.refile}
               onChange={(v) => atualizar(bobina.chave, "refile", v)}
@@ -351,7 +355,12 @@ export function ConfiguracaoProdutoForm({
 
       <Card className="flex flex-col gap-5 p-6">
         <Select
-          label="Modelo de cálculo"
+          label={
+            <>
+              Modelo de cálculo
+              <CampoAjuda texto="Define como a máquina realmente produz este item e como o preço é calculado. M2 e Flexografia imprimem em bobina (rolo contínuo) com aproveitamento de largura; Offset imprime em folha, com custo de chapa por tiragem; Digital cobra por clique da impressora, sem aproveitamento de bobina ou folha; Serigrafia, Sublimação, Estampagem a quente e Personalização cobram um setup fixo (tela, matriz ou arte) mais um valor por peça; Simples é preço fixo direto, sem cálculo de máquina; Revenda é para produto comprado pronto de outro fornecedor." />
+            </>
+          }
           name="modeloCalculo"
           value={modeloCalculo}
           onChange={(e) => setModeloCalculo(e.target.value as ModeloCalculo)}
@@ -371,7 +380,12 @@ export function ConfiguracaoProdutoForm({
 
         <div className="grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 dark:border-slate-800">
           <Select
-            label="Vender por (opcional)"
+            label={
+              <>
+                Vender por (opcional)
+                <CampoAjuda texto="Deixa o preço aparecer numa unidade diferente da usada no cálculo interno, sem mudar o valor calculado — por exemplo, calcular por unidade mas exibir o preço por milheiro no orçamento e no PDF." />
+              </>
+            }
             name="unidadeContagem"
             defaultValue={unidadeContagemInicial}
             hint="Só muda como o preço é MOSTRADO — o cálculo continua igual."

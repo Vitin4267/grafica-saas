@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { gerarChave } from "@/lib/chave-local";
 import { salvarVariantesMateriaPrima } from "./actions";
 
@@ -190,7 +191,10 @@ export function VariantesMateriaPrimaForm({
                 />
               </label>
               <label className="flex w-32 flex-col gap-1">
-                <span className="text-xs text-slate-500">Perda fixa de calibragem</span>
+                <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                  Perda fixa de calibragem
+                  <CampoAjuda texto="Quanto desta variante se perde toda vez que a máquina é calibrada pra começar a imprimir — um valor FIXO que não muda com a quantidade do pedido (1 peça ou 1000 peças perdem o mesmo tanto). Deixe em branco se não quiser controlar essa perda automaticamente no estoque." />
+                </span>
                 <CampoLinha
                   value={linha.perdaFixaPadrao}
                   onChange={(v) => atualizar(linha.chave, "perdaFixaPadrao", v)}

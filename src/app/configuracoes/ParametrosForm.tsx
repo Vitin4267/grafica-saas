@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { salvarParametros } from "./actions";
 import type { ParametrosTenant } from "@/lib/pricing";
 import type { BaseComissao } from "@/generated/prisma/enums";
@@ -94,7 +95,12 @@ export function ParametrosForm({
         </h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input
-            label="Overhead (%)"
+            label={
+              <>
+                Overhead (%)
+                <CampoAjuda texto="Custos fixos da gráfica que não entram na conta de material e mão de obra de cada pedido — aluguel, luz, manutenção de máquina. Esse percentual é somado ao custo direto antes de calcular o preço final, pra esses gastos também serem cobertos pelas vendas." />
+              </>
+            }
             name="overheadPercent"
             type="number"
             step="0.0001"
@@ -103,7 +109,12 @@ export function ParametrosForm({
             hint="ex: 0.15 = 15% sobre o custo direto"
           />
           <Input
-            label="Margem padrão (%)"
+            label={
+              <>
+                Margem padrão (%)
+                <CampoAjuda texto="Percentual de lucro embutido no preço quando o cliente não tem uma margem própria configurada no cadastro dele. É só o padrão geral da gráfica — clientes específicos podem usar uma margem diferente." />
+              </>
+            }
             name="margemPadrao"
             type="number"
             step="0.0001"
@@ -111,7 +122,12 @@ export function ParametrosForm({
             defaultValue={parametros.margemPadrao}
           />
           <Input
-            label="Imposto (%)"
+            label={
+              <>
+                Imposto (%)
+                <CampoAjuda texto="Fatia reservada dentro do preço de venda pra cobrir o imposto que sua gráfica paga sobre a venda. É uma estimativa embutida no cálculo do preço — não é lançado como despesa nem rastreado automaticamente." />
+              </>
+            }
             name="impostoPercent"
             type="number"
             step="0.0001"
@@ -119,7 +135,12 @@ export function ParametrosForm({
             defaultValue={parametros.impostoPercent}
           />
           <Input
-            label="Comissão (%)"
+            label={
+              <>
+                Comissão (%)
+                <CampoAjuda texto="Não é a comissão paga a cada vendedor (isso é configurado por pessoa em Usuários, com a base de cálculo definida mais abaixo) — é um percentual embutido no preço final pra garantir que sobre margem suficiente pra cobrir a comissão sem reduzir seu lucro." />
+              </>
+            }
             name="comissaoPercent"
             type="number"
             step="0.0001"
@@ -127,7 +148,12 @@ export function ParametrosForm({
             defaultValue={parametros.comissaoPercent}
           />
           <Input
-            label="Taxa financeira (%)"
+            label={
+              <>
+                Taxa financeira (%)
+                <CampoAjuda texto="Custo de receber o pagamento — taxa de cartão, boleto ou parcelamento cobrada pela maquininha/banco. Some esse percentual no preço pra ele não sair do seu bolso quando o cliente paga parcelado ou no cartão." />
+              </>
+            }
             name="taxaFinanceiraPercent"
             type="number"
             step="0.0001"
@@ -870,7 +896,12 @@ export function ParametrosForm({
         </h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input
-            label="Margem de segurança padrão (%)"
+            label={
+              <>
+                Margem de segurança padrão (%)
+                <CampoAjuda texto="Espaço extra que o sistema soma em volta de cada peça (largura e altura) antes de calcular quantas cabem na bobina — cobre a imprecisão de corte da máquina. Usado no cálculo automático de aproveitamento de M2 e Flexografia." />
+              </>
+            }
             name="margemSegurancaPadrao"
             type="number"
             step="0.0001"
@@ -878,7 +909,12 @@ export function ParametrosForm({
             defaultValue={parametros.margemSegurancaPadrao}
           />
           <Input
-            label="Gap entre peças padrão (m)"
+            label={
+              <>
+                Gap entre peças padrão (m)
+                <CampoAjuda texto="Distância mínima deixada entre uma peça e outra na bobina, pra sobrar espaço de corte entre elas. Também entra no cálculo de quantas peças cabem e quanto material é consumido." />
+              </>
+            }
             name="gapPecasPadrao"
             type="number"
             step="0.0001"

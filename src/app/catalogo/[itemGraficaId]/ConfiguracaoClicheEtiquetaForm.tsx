@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { salvarConfiguracaoClicheEtiqueta } from "./actions";
 
 export function ConfiguracaoClicheEtiquetaForm({
@@ -27,7 +28,12 @@ export function ConfiguracaoClicheEtiquetaForm({
         </Alert>
 
         <Input
-          label="Custo do clichê por cm² (R$)"
+          label={
+            <>
+              Custo do clichê por cm² (R$)
+              <CampoAjuda texto="Clichê é a matriz/chapa de impressão feita sob medida pra cada arte de etiqueta — toda vez que o cliente muda o desenho, tamanho ou número de cores, é preciso confeccionar um clichê novo. Este valor é o custo desse clichê, por cm² de área da etiqueta." />
+            </>
+          }
           name="custoClichePorCm2"
           type="number"
           step="0.0001"

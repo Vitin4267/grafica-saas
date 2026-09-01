@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
+import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { salvarImpressoraDigital, excluirImpressoraDigital } from "../actions";
 
 type ValoresImpressoraDigital = {
@@ -60,7 +61,12 @@ export function ImpressoraDigitalForm({
             Custo de máquina
           </h2>
           <Input
-            label="Custo por clique (R$)"
+            label={
+              <>
+                Custo por clique (R$)
+                <CampoAjuda texto="'Clique' é como o fabricante da impressora cobra pelo uso da máquina — geralmente o valor por página impressa dentro do contrato de manutenção, já incluindo tinta/toner e assistência técnica. É o custo desse contrato, não o preço de venda pro cliente." />
+              </>
+            }
             name="custoPorClique"
             type="number"
             step="0.0001"

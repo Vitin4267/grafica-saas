@@ -6,6 +6,7 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { UserIcon, MailIcon } from "@/components/icons";
 import { criarCliente } from "./actions";
 import { EnderecoFields, ENDERECO_VAZIO } from "./EnderecoFields";
@@ -75,7 +76,16 @@ export function ClienteForm({ vendedores }: { vendedores: { id: string; nome: st
               hint="Usada na nota fiscal em vez do nome — o nome fantasia não tem validade jurídica pra NF-e"
             />
             <Input label="Nome fantasia" name="nomeFantasia" />
-            <Select label="Indicador de Inscrição Estadual" name="indicadorInscricaoEstadual" defaultValue="">
+            <Select
+              label={
+                <>
+                  Indicador de Inscrição Estadual
+                  <CampoAjuda texto="Diz pra Receita se o cliente paga ICMS. 'Contribuinte' exige a Inscrição Estadual preenchida abaixo; 'isento' e 'não contribuinte' não têm Inscrição Estadual — esse campo decide como a nota fiscal é emitida pra ele." />
+                </>
+              }
+              name="indicadorInscricaoEstadual"
+              defaultValue=""
+            >
               <option value="">Não informado</option>
               {ORDEM_INDICADOR_INSCRICAO_ESTADUAL.map((valor) => (
                 <option key={valor} value={valor}>
@@ -140,7 +150,12 @@ export function ClienteForm({ vendedores }: { vendedores: { id: string; nome: st
             <Input label="Descreva o segmento" name="segmentoOutro" placeholder="ex: cooperativa..." required />
           )}
           <Input
-            label="Margem diferenciada (%)"
+            label={
+              <>
+                Margem diferenciada (%)
+                <CampoAjuda texto="Troca a margem de lucro padrão da gráfica só pra este cliente — use pra um cliente grande com margem negociada menor, ou um cliente de risco onde você quer cobrar uma margem maior. Em branco usa o padrão de Configurações." />
+              </>
+            }
             name="margemPadraoOverride"
             type="number"
             step="0.0001"

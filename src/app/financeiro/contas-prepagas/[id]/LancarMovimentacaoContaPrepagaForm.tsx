@@ -5,6 +5,7 @@ import { Select } from "@/components/ui/Select";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { lancarMovimentacaoContaPrepaga } from "../actions";
 
 const ROTULO_FORMA: Record<string, string> = {
@@ -27,7 +28,16 @@ export function LancarMovimentacaoContaPrepagaForm({ contaId }: { contaId: strin
     <form action={formAction} className="flex flex-col gap-4">
       <input type="hidden" name="contaId" value={contaId} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-        <Select label="Tipo" name="tipo" defaultValue="RECARGA">
+        <Select
+          label={
+            <>
+              Tipo
+              <CampoAjuda texto="Recarga é quando você deposita dinheiro nessa carteira no fornecedor — gera uma despesa automática, porque saiu dinheiro de verdade do caixa. Débito é quando você usa o saldo já depositado (ex: uma corrida do Lalamove) — só abate o saldo, sem criar despesa nova." />
+            </>
+          }
+          name="tipo"
+          defaultValue="RECARGA"
+        >
           <option value="RECARGA">Recarga</option>
           <option value="DEBITO">Débito</option>
         </Select>

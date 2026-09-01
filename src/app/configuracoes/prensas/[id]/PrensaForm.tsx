@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
+import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { salvarPrensa, excluirPrensa } from "../actions";
 
 type ValoresPrensa = {
@@ -65,7 +66,12 @@ export function PrensaForm({
           </h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Input
-              label="Custo por hora de máquina (R$)"
+              label={
+                <>
+                  Custo por hora de máquina (R$)
+                  <CampoAjuda texto="Quanto custa manter esta prensa ligada e rodando por uma hora — energia, manutenção, depreciação, operador. Esse valor multiplica o tempo de acerto pra compor o custo de preparar a máquina antes de imprimir." />
+                </>
+              }
               name="custoHoraMaq"
               type="number"
               step="0.01"
@@ -90,7 +96,12 @@ export function PrensaForm({
               defaultValue={valoresIniciais.custoChapa}
             />
             <Input
-              label="Folhas de acerto"
+              label={
+                <>
+                  Folhas de acerto
+                  <CampoAjuda texto="Quantas folhas são gastas só ajustando a prensa até a impressão sair correta, antes de começar a produzir peças boas — não viram produto vendável, mas entram no custo." />
+                </>
+              }
               name="folhasAcerto"
               type="number"
               step="1"
@@ -98,7 +109,12 @@ export function PrensaForm({
               defaultValue={valoresIniciais.folhasAcerto}
             />
             <Input
-              label="Tempo de acerto (horas)"
+              label={
+                <>
+                  Tempo de acerto (horas)
+                  <CampoAjuda texto="Tempo que a prensa fica sendo ajustada e calibrada até a impressão sair correta — nesse período nenhuma peça boa é produzida, mas o tempo custa (energia, operador parado), então entra no preço final." />
+                </>
+              }
               name="tempoAcertoH"
               type="number"
               step="0.01"
@@ -106,7 +122,12 @@ export function PrensaForm({
               defaultValue={valoresIniciais.tempoAcertoH}
             />
             <Input
-              label="Custo por milheiro de rodagem (R$)"
+              label={
+                <>
+                  Custo por milheiro de rodagem (R$)
+                  <CampoAjuda texto="Custo variável cobrado a cada mil folhas impressas, já descontado o acerto — multiplicado pela quantidade do pedido pra compor o preço." />
+                </>
+              }
               name="custoMilheiroRod"
               type="number"
               step="0.01"
@@ -114,7 +135,12 @@ export function PrensaForm({
               defaultValue={valoresIniciais.custoMilheiroRod}
             />
             <Input
-              label="Rodagem mínima (R$)"
+              label={
+                <>
+                  Rodagem mínima (R$)
+                  <CampoAjuda texto="Valor mínimo cobrado pela produção, mesmo que o cálculo normal (custo por milheiro × quantidade) resulte num valor menor — evita rodar um trabalho pequeno demais pra compensar ligar a máquina." />
+                </>
+              }
               name="rodagemMinima"
               type="number"
               step="0.01"
@@ -122,7 +148,12 @@ export function PrensaForm({
               defaultValue={valoresIniciais.rodagemMinima}
             />
             <Input
-              label="Perda padrão (%)"
+              label={
+                <>
+                  Perda padrão (%)
+                  <CampoAjuda texto="Percentual de material que normalmente se perde no processo (folhas com defeito, ajuste de cor etc.) — aplicado automaticamente no cálculo pra já embutir essa perda esperada no preço." />
+                </>
+              }
               name="perdaPercentPadrao"
               type="number"
               step="0.0001"

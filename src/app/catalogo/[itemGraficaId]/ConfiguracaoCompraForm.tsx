@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { UNIDADES_COMPRA, ROTULO_UNIDADE_COMPRA, type UnidadeCompra } from "@/lib/unidade-compra";
 import { salvarConfiguracaoCompra } from "./actions";
 
@@ -88,7 +89,12 @@ export function ConfiguracaoCompraForm({
         <div className="flex flex-wrap gap-3">
           <div className="w-48">
             <Input
-              label="Lote mínimo de compra (opcional)"
+              label={
+                <>
+                  Lote mínimo de compra (opcional)
+                  <CampoAjuda texto="Quantidade mínima que o fornecedor exige por pedido, na unidade de compra escolhida acima (ex: só vende a partir de 100 kg). Só avisa na tela de nova solicitação — nunca impede de pedir uma quantidade menor." />
+                </>
+              }
               name="loteMinimoCompra"
               type="number"
               step="0.0001"
@@ -98,7 +104,12 @@ export function ConfiguracaoCompraForm({
           </div>
           <div className="w-48">
             <Input
-              label="Múltiplo de embalagem (opcional)"
+              label={
+                <>
+                  Múltiplo de embalagem (opcional)
+                  <CampoAjuda texto="Fornecedor só vende em múltiplos dessa quantidade (ex: caixas de 12 — só dá pra pedir 12, 24, 36...). Só avisa arredondamento na tela de nova solicitação — nunca bloqueia o pedido." />
+                </>
+              }
               name="multiploCompra"
               type="number"
               step="0.0001"

@@ -6,6 +6,7 @@ import { Select } from "@/components/ui/Select";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { salvarConfiguracaoAcabamento } from "./actions";
 
 type BaseCobranca =
@@ -81,7 +82,12 @@ export function ConfiguracaoAcabamentoForm({
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input
-            label="Custo de setup (R$)"
+            label={
+              <>
+                Custo de setup (R$)
+                <CampoAjuda texto="Valor fixo cobrado uma vez por orçamento, somado ao custo variável (preço de compra deste serviço × quantidade). Representa o tempo de preparar a máquina pra este acabamento, independente de quantas peças forem produzidas." />
+              </>
+            }
             name="custoSetup"
             type="number"
             step="0.0001"
@@ -89,7 +95,12 @@ export function ConfiguracaoAcabamentoForm({
             defaultValue={configuracao?.custoSetup ?? "0"}
           />
           <Input
-            label="Custo mínimo (R$)"
+            label={
+              <>
+                Custo mínimo (R$)
+                <CampoAjuda texto="Valor mínimo cobrado por este acabamento no orçamento — se o setup mais o custo variável ficar abaixo disso, o sistema cobra este valor no lugar. Serve como piso pra jobs pequenos não saírem baratos demais." />
+              </>
+            }
             name="custoMinimo"
             type="number"
             step="0.0001"
