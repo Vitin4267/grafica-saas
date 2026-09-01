@@ -806,7 +806,7 @@ export function ParametrosForm({
 
       <GrupoParametros
         titulo="Cadastros auxiliares"
-        resumo="Filiais, máquinas, categorias de custo, feriados e fornecedores."
+        resumo="Filiais, máquinas, categorias de custo, feriados, fornecedores e ferramentais."
       >
         <Card className="flex items-center justify-between gap-4 p-6">
           <div>
@@ -891,6 +891,23 @@ export function ParametrosForm({
           <Link href="/configuracoes/fornecedores">
             <Button type="button" variant="outline">
               Gerenciar fornecedores
+            </Button>
+          </Link>
+        </Card>
+
+        <Card className="flex items-center justify-between gap-4 p-6">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+              Ferramentais
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Faca de corte e vinco, clichê, tela de serigrafia, matriz de
+              bordado — a ferramenta física reutilizável, não só o custo dela.
+            </p>
+          </div>
+          <Link href="/configuracoes/ferramentais">
+            <Button type="button" variant="outline">
+              Gerenciar ferramentais
             </Button>
           </Link>
         </Card>

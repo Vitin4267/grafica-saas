@@ -129,6 +129,8 @@ model Grafica {
   impressorasDigitais   ImpressoraDigital[]
   maquinasSetupPorPeca  MaquinaSetupPorPeca[]
   registrosManutencao   RegistroManutencao[]
+  // Achado F1 da Parte 7 da auditoria de abrangência — ver model Ferramental.
+  ferramentais          Ferramental[]
   // Achado B1/B2 da Parte 2 (Produção) — histórico de transição de etapa
   // por pedido, ver ApontamentoEtapa.
   apontamentosEtapa     ApontamentoEtapa[]
@@ -651,6 +653,109 @@ model RegistroManutencao {
   @@index([impressoraDigitalId])
   @@index([maquinaSetupPorPecaId])
   @@map("registros_manutencao")
+}
+
+// Achado F1 da Parte 7 da auditoria de abrangência
+// (pesquisa-abrangencia-modulos.md, "F. Documento e transação") — lista
+// fechada com OUTRO de escape (mesmo padrão de CategoriaEquipamento/
+// MaterialSubstrato/etc.), cobrindo o ferramental reutilizável que hoje só
+// existe como CUSTO (ConfiguracaoClicheEtiqueta/Flexografia.
+// custoClichePorCm2, ConfiguracaoAcabamento.custoFerramental,
+// OrcamentoItemPrecificacaoEtiqueta.custoFaca), nunca como a ferramenta
+// física em si.
+enum TipoFerramental {
+  FACA_CORTE_VINCO // corte e vinco de caixa/embalagem/cartão
+  CLICHE_FLEXO // clichê de flexografia — lavado e reaproveitado em repetição
+  CLICHE_HOT_STAMPING // clichê/matriz de estampagem a quente
+  TELA_SERIGRAFIA // tela de serigrafia, por arte/cor
+  MATRIZ_BORDADO // matriz/programa de bordado digitalizado
+  CILINDRO_ROTOGRAVURA
+  FERRAMENTA_ACABAMENTO // molde/dispositivo de acabamento que não se encaixa nos tipos acima
+  OUTRO
+}
+
+// De quem é a ferramenta física — GRAFICA (patrimônio da própria gráfica,
+// reutilizável em qualquer cliente que peça o mesmo produto) ou CLIENTE
+// (encomendada e paga pelo cliente, guardada pela gráfica pra repetição —
+// não pode ser usada pra outro cliente, e pode precisar ser devolvida, ver
+// StatusFerramental.DEVOLVIDO_AO_CLIENTE).
+enum ProprietarioFerramental {
+  GRAFICA
+  CLIENTE
+}
+
+enum StatusFerramental {
+  ATIVO
+  EM_MANUTENCAO
+  DESCARTADO
+  DEVOLVIDO_AO_CLIENTE
+}
+
+// Cadastro da ferramenta física (faca, clichê, tela, matriz...) — distinto
+// de tudo que já existe no schema, que só guarda o CUSTO dela. Puramente
+// informativo/cadastral: NUNCA entra automaticamente na precificação (ver
+// OrcamentoItem.ferramentalId abaixo) — o vendedor pode vincular um item de
+// orçamento a um Ferramental já existente só como referência/aviso, o preço
+// continua 100% manual (custoFaca/custoClichePorCm2 etc. não mudam de
+// comportamento). Nunca hard delete (mesmo princípio de Cliente/Usuario):
+// desativadoEm marca remoção reversível sem apagar o vínculo histórico em
+// OrcamentoItem.ferramentalId.
+model Ferramental {
+  id        String          @id @default(cuid())
+  graficaId String
+  tipo      TipoFerramental
+  // Só usado quando tipo=OUTRO — mesmo padrão de categoriaOutro/segmentoOutro.
+  tipoOutro String?
+  // Identificação interna curta (ex: "FC-0042") — não é obrigatoriamente
+  // único no mundo real (duas gráficas podem ter o mesmo código de
+  // etiqueta interna), mas é único DENTRO da gráfica pra evitar confusão.
+  codigo    String
+  descricao String? @db.Text
+
+  // Dono da ferramenta física — ver comentário de ProprietarioFerramental.
+  // SetNull: desativar/remover o cliente não pode apagar o cadastro da
+  // ferramenta, só perde a referência de dono (mesmo padrão de
+  // ItemGrafica.categoriaCusto).
+  clienteId    String?
+  proprietario ProprietarioFerramental @default(GRAFICA)
+
+  // Qual produto do catálogo usa esta ferramenta — opcional (algumas
+  // ferramentas, ex: tela de serigrafia por arte avulsa, não têm um produto
+  // fixo associado). SetNull, mesmo raciocínio de clienteId acima.
+  itemGraficaId String?
+
+  localizacao String?
+
+  // Contador manual de repetições/tiragens já produzidas com esta
+  // ferramenta — puramente informativo (ex: acompanhar vida útil de clichê
+  // flexográfico, ver pesquisa no achado F1), nunca incrementado
+  // automaticamente por nenhum motor ainda. @default(0) preserva
+  // comportamento pra toda ferramenta cadastrada sem esse dado.
+  tiragensAcumuladas Int @default(0)
+
+  status StatusFerramental @default(ATIVO)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // null = ativo/visível nas listas de seleção. Preenchido = removido
+  // (soft delete, reversível) — mesmo precedente de Cliente.desativadoEm.
+  // Distinto de `status`: status descreve o ESTADO FÍSICO da ferramenta
+  // (em manutenção, descartada, devolvida...), desativadoEm é sobre
+  // aparecer ou não nas listas/seleções da gráfica.
+  desativadoEm DateTime?
+
+  grafica     Grafica      @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  cliente     Cliente?     @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  itemGrafica ItemGrafica? @relation(fields: [itemGraficaId], references: [id], onDelete: SetNull)
+
+  itensOrcamento OrcamentoItem[]
+
+  @@unique([graficaId, codigo])
+  @@index([graficaId])
+  @@index([graficaId, status])
+  @@index([clienteId])
+  @@index([itemGraficaId])
+  @@map("ferramentais")
 }
 
 // Como o Pedido soube da transição de etapa — achado B1/B2 da Parte 2
@@ -1484,6 +1589,9 @@ model Cliente {
   enderecos      EnderecoCliente[]
   // Achado A10 da Parte 5 da auditoria de abrangência — ver ContaReceber.clienteId.
   contasReceber  ContaReceber[]
+  // Achado F1 da Parte 7 da auditoria de abrangência — ferramental (faca,
+  // clichê...) de propriedade deste cliente, ver model Ferramental.
+  ferramentais   Ferramental[]
 
   // NULL não colide com NULL em unique index do Postgres — várias gráficas
   // podem ter clientes sem documento cadastrado sem problema. Escopado por
@@ -2056,6 +2164,9 @@ model ItemGrafica {
   // especificamente esta matéria-prima — achado A9 da auditoria de
   // abrangência (Parte 3/Compras, 2026-08-30). Ver model ContratoFornecimento.
   contratosFornecimento ContratoFornecimento[]
+  // Achado F1 da Parte 7 da auditoria de abrangência — ferramentais (faca,
+  // clichê...) que produzem este item do catálogo, ver model Ferramental.
+  ferramentais          Ferramental[]
 
   @@unique([graficaId, itemCatalogoId])
   @@index([graficaId])
@@ -3702,9 +3813,19 @@ model OrcamentoItem {
   descricaoLivre               String?       @db.Text
   breakdown                    Json?
 
+  // Achado F1 da Parte 7 da auditoria de abrangência — vínculo INFORMATIVO,
+  // opcional, nunca automático na precificação: quando o vendedor escolhe
+  // um Ferramental já cadastrado (do mesmo cliente/produto), a UI pode
+  // sugerir um aviso ("esta faca/clichê já existe, considere não cobrar de
+  // novo") — mas custoFaca/custoClichePorCm2 e o preço final continuam
+  // 100% manuais, ninguém zera isso sozinho. SetNull: desativar/remover o
+  // Ferramental não pode apagar o item de orçamento que só referenciava ele.
+  ferramentalId String?
+
   orcamento   Orcamento       @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
   opcao       OrcamentoOpcao? @relation(fields: [opcaoId], references: [id], onDelete: Cascade)
   itemGrafica ItemGrafica     @relation(fields: [itemGraficaId], references: [id])
+  ferramental Ferramental?    @relation(fields: [ferramentalId], references: [id], onDelete: SetNull)
 
   acabamentos          OrcamentoItemAcabamento[]
   etiqueta             OrcamentoItemEtiqueta?
@@ -3714,6 +3835,7 @@ model OrcamentoItem {
 
   @@index([orcamentoId])
   @@index([opcaoId])
+  @@index([ferramentalId])
   @@map("orcamento_itens")
 }
 
