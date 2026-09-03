@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
@@ -18,14 +19,22 @@ export default async function UsuariosPage() {
   await exigirAssinaturaAtiva(usuario);
   exigirPapel(usuario, ["DONO"]);
 
-  const todosUsuarios = await prisma.usuario.findMany({
-    where: { graficaId: usuario.graficaId },
-    orderBy: { nome: "asc" },
-    include: {
-      responsaveisEstagio: { select: { status: true } },
-      responsaveisAdministrativo: { select: { area: true } },
-    },
-  });
+  const [todosUsuarios, perfisAcesso] = await Promise.all([
+    prisma.usuario.findMany({
+      where: { graficaId: usuario.graficaId },
+      orderBy: { nome: "asc" },
+      include: {
+        responsaveisEstagio: { select: { status: true } },
+        responsaveisAdministrativo: { select: { area: true } },
+      },
+    }),
+    // Achado A5 da auditoria de abrangência — ver PerfilAcessoCell.
+    prisma.perfilAcesso.findMany({
+      where: { graficaId: usuario.graficaId },
+      select: { id: true, nome: true },
+      orderBy: { nome: "asc" },
+    }),
+  ]);
 
   // Particionado em memória (não duas queries): volume baixo por gráfica, e
   // as duas listas precisam dos mesmos campos (responsaveisEstagio incluído)
@@ -69,17 +78,42 @@ export default async function UsuariosPage() {
                 nome: u.nome,
                 email: u.email,
                 papel: u.papel,
+                perfilAcessoId: u.perfilAcessoId,
               }))}
               usuariosDesativados={usuariosDesativados.map((u) => ({
                 id: u.id,
                 nome: u.nome,
                 email: u.email,
                 papel: u.papel,
+                perfilAcessoId: u.perfilAcessoId,
                 desativadoEm: u.desativadoEm!.toISOString(),
               }))}
+              perfisAcesso={perfisAcesso}
             />
           </div>
         </div>
+
+        <section className="mt-12">
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+                Perfis de acesso
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Monte um conjunto de permissões reutilizável e atribua a
+                quantos Operadores quiser, em vez de configurar módulo por
+                módulo pra cada pessoa (o select &quot;Sem perfil&quot; ao
+                lado de cada Operador acima).
+              </p>
+            </div>
+            <Link
+              href="/configuracoes/perfis-acesso"
+              className="shrink-0 text-sm font-medium text-teal-700 hover:underline dark:text-teal-400"
+            >
+              Gerenciar perfis
+            </Link>
+          </div>
+        </section>
 
         <section className="mt-12">
           <h2 className="mb-1 text-lg font-semibold text-slate-900 dark:text-white">

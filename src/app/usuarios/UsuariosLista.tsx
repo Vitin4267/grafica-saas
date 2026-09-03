@@ -10,12 +10,16 @@ import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
 import { UsersIcon } from "@/components/icons";
 import { ROTULO_PAPEL } from "@/lib/papel-usuario";
 import { desativarUsuario, reativarUsuario } from "./actions";
+import { PerfilAcessoCell } from "./PerfilAcessoCell";
 
 type FuncionarioAtivo = {
   id: string;
   nome: string;
   email: string;
   papel: string;
+  // Achado A5 da auditoria de abrangência — só é lido/mostrado pra OPERADOR
+  // (ver PerfilAcessoCell); DONO/ADMIN sempre têm o campo, mas ignoram.
+  perfilAcessoId: string | null;
 };
 
 type FuncionarioDesativado = FuncionarioAtivo & {
@@ -31,9 +35,11 @@ type FuncionarioDesativado = FuncionarioAtivo & {
 export function UsuariosLista({
   usuariosAtivos,
   usuariosDesativados,
+  perfisAcesso,
 }: {
   usuariosAtivos: FuncionarioAtivo[];
   usuariosDesativados: FuncionarioDesativado[];
+  perfisAcesso: { id: string; nome: string }[];
 }) {
   const [estadoDesativar, desativarAction, desativando] = useActionState(desativarUsuario, null);
   const [estadoReativar, reativarAction, reativando] = useActionState(reativarUsuario, null);
@@ -76,12 +82,21 @@ export function UsuariosLista({
                   {ROTULO_PAPEL[u.papel] ?? u.papel}
                 </span>
                 {u.papel === "OPERADOR" ? (
-                  <Link
-                    href={`/usuarios/${u.id}/permissoes`}
-                    className="text-sm font-medium text-teal-700 hover:underline dark:text-teal-400"
-                  >
-                    Permissões
-                  </Link>
+                  <>
+                    {perfisAcesso.length > 0 && (
+                      <PerfilAcessoCell
+                        usuarioId={u.id}
+                        perfilAcessoIdAtual={u.perfilAcessoId}
+                        perfis={perfisAcesso}
+                      />
+                    )}
+                    <Link
+                      href={`/usuarios/${u.id}/permissoes`}
+                      className="text-sm font-medium text-teal-700 hover:underline dark:text-teal-400"
+                    >
+                      Permissões
+                    </Link>
+                  </>
                 ) : u.papel === "ADMIN" ? (
                   <span className="text-xs text-slate-400">Acesso total</span>
                 ) : null}

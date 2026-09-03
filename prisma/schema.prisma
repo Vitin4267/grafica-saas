@@ -131,6 +131,9 @@ model Grafica {
   registrosManutencao   RegistroManutencao[]
   // Achado F1 da Parte 7 da auditoria de abrangência — ver model Ferramental.
   ferramentais          Ferramental[]
+  // Achado A5 da auditoria de abrangência (Parte 6/Configurações) — ver
+  // model PerfilAcesso.
+  perfisAcesso          PerfilAcesso[]
   // Achado B1/B2 da Parte 2 (Produção) — histórico de transição de etapa
   // por pedido, ver ApontamentoEtapa.
   apontamentosEtapa     ApontamentoEtapa[]
@@ -1196,7 +1199,23 @@ model Usuario {
   // reativa.
   desativadoEm DateTime?
 
+  // Achado A5 da auditoria de abrangência (Parte 6/Configurações,
+  // pesquisa-abrangencia-modulos.md, 2026-08-27) — perfil reutilizável de
+  // permissão por módulo, pra não configurar OPERADOR por OPERADOR quando
+  // vários fazem a mesma função (ex: 3 de acabamento no mesmo turno). Só tem
+  // efeito pra papel OPERADOR (mesma restrição de PermissaoUsuario) e só é
+  // CONSULTADO quando não existe override individual em PermissaoUsuario pro
+  // módulo em questão — ver resolverPermissaoOperador em
+  // src/lib/auth/permissoes.ts pra ordem exata de resolução. null = sem
+  // perfil atribuído, comportamento 100% igual ao de hoje (só PermissaoUsuario
+  // individual, ausência = sem acesso). onDelete: SetNull (não Restrict nem
+  // Cascade): apagar um PerfilAcesso nunca pode apagar usuário nem travar a
+  // exclusão do perfil — o usuário só volta a depender exclusivamente de
+  // PermissaoUsuario individual, o fallback mais seguro.
+  perfilAcessoId String?
+
   grafica                       Grafica                     @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  perfilAcesso                  PerfilAcesso?               @relation(fields: [perfilAcessoId], references: [id], onDelete: SetNull)
   orcamentos                    Orcamento[]
   sessoes                       Sessao[]
   permissoes                    PermissaoUsuario[]
@@ -1214,6 +1233,7 @@ model Usuario {
   cotacoesFornecedorRegistradas CotacaoFornecedor[]
 
   @@index([graficaId])
+  @@index([perfilAcessoId])
   @@map("usuarios")
 }
 
@@ -1250,6 +1270,46 @@ model PermissaoUsuario {
 
   @@unique([usuarioId, modulo])
   @@map("permissoes_usuario")
+}
+
+// Achado A5 da auditoria de abrangência (Parte 6/Configurações,
+// pesquisa-abrangencia-modulos.md, 2026-08-27) — perfil de acesso reutilizável
+// ("Impressor", "Acabamento", "Vendedor externo"): em vez de configurar
+// PermissaoUsuario módulo por módulo pra cada OPERADOR novo, o DONO monta o
+// perfil uma vez e atribui a quantos usuários quiser (Usuario.perfilAcessoId).
+// Aditivo de propósito — PermissaoUsuario continua existindo do jeito que
+// está e continua vencendo o perfil quando as duas coexistem pro mesmo
+// usuário+módulo (override individual, ver resolverPermissaoOperador em
+// src/lib/auth/permissoes.ts). Só se aplica a OPERADOR, igual PermissaoUsuario
+// — DONO/ADMIN nunca consultam nem esta tabela nem a de override individual.
+model PerfilAcesso {
+  id        String @id @default(cuid())
+  graficaId String
+  nome      String // "Impressor", "Acabamento", "Vendedor externo"
+
+  grafica     Grafica            @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  permissoes  PermissaoPerfil[]
+  // Usuários que têm este perfil atribuído (Usuario.perfilAcessoId) — usado
+  // pra avisar/bloquear a exclusão do perfil quando ainda está em uso, e pra
+  // listar "quem usa este perfil" na tela de detalhe.
+  usuarios    Usuario[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("perfis_acesso")
+}
+
+model PermissaoPerfil {
+  id         String          @id @default(cuid())
+  perfilId   String
+  modulo     ModuloPermissao
+  podeVer    Boolean         @default(false)
+  podeEditar Boolean         @default(false)
+
+  perfil PerfilAcesso @relation(fields: [perfilId], references: [id], onDelete: Cascade)
+
+  @@unique([perfilId, modulo])
+  @@map("permissoes_perfil")
 }
 
 // Sessão opaca: o cookie do usuário guarda só o token bruto, nunca persistido em texto puro aqui.

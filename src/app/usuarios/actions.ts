@@ -245,6 +245,70 @@ export async function salvarPermissoes(
   return { ok: true, mensagem: `Permissões de "${alvo.nome}" atualizadas com sucesso!` };
 }
 
+export type SalvarPerfilUsuarioResult = { ok: boolean; mensagem: string };
+
+// Achado A5 da auditoria de abrangência (Parte 6/Configurações,
+// pesquisa-abrangencia-modulos.md, 2026-08-27) — atribui/troca o
+// PerfilAcesso de UM usuário por vez (ver PerfilAcessoCell, auto-salva no
+// onChange do select). Só se aplica a OPERADOR (mesma restrição de
+// PermissaoUsuario/perfilAcessoId em toda a resolução de permissão) — DONO/
+// ADMIN não têm o select renderizado na tela, mas o servidor não confia
+// nisso: rejeita explicitamente se o alvo não for OPERADOR, mesmo que o form
+// seja adulterado.
+export async function salvarPerfilUsuario(
+  _estadoAnterior: SalvarPerfilUsuarioResult | null,
+  formData: FormData
+): Promise<SalvarPerfilUsuarioResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  exigirPapel(usuario, ["DONO"]);
+
+  const usuarioAlvoId = String(formData.get("usuarioId") ?? "");
+  const alvo = await prisma.usuario.findFirst({
+    where: { id: usuarioAlvoId, graficaId: usuario.graficaId, papel: "OPERADOR" },
+  });
+  if (!alvo) {
+    return { ok: false, mensagem: "Usuário não encontrado (ou não é Operador)." };
+  }
+
+  const bruto = String(formData.get("perfilAcessoId") ?? "").trim();
+  let perfilNovo: { id: string; nome: string } | null = null;
+  if (bruto) {
+    perfilNovo = await prisma.perfilAcesso.findFirst({
+      where: { id: bruto, graficaId: usuario.graficaId },
+      select: { id: true, nome: true },
+    });
+    if (!perfilNovo) {
+      return { ok: false, mensagem: "Perfil de acesso não encontrado." };
+    }
+  }
+
+  const perfilAntigo = alvo.perfilAcessoId
+    ? await prisma.perfilAcesso.findUnique({ where: { id: alvo.perfilAcessoId }, select: { nome: true } })
+    : null;
+
+  await prisma.usuario.update({
+    where: { id: alvo.id },
+    data: { perfilAcessoId: perfilNovo?.id ?? null },
+  });
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "usuario.salvar_perfil_acesso",
+    entidade: "Usuario",
+    entidadeId: alvo.id,
+    descricao: `Perfil de acesso de "${alvo.nome}" atualizado`,
+    valorAnterior: perfilAntigo?.nome ?? "Sem perfil",
+    valorNovo: perfilNovo?.nome ?? "Sem perfil",
+  });
+
+  revalidatePath("/usuarios");
+  return { ok: true, mensagem: `Perfil de "${alvo.nome}" atualizado com sucesso!` };
+}
+
 export type SalvarComissaoResult = { ok: boolean; mensagem: string };
 
 // Mesmo padrão de salvarAcessoMeuNegocio: um form só com todos os usuários,
