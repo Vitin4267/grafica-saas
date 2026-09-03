@@ -21,7 +21,11 @@ export type CodigoErroPrecificacao =
   | "MAQUINA_SETUP_POR_PECA_NAO_CONFIGURADA"
   | "NUMERO_CLIQUES_INVALIDO"
   | "NUMERO_SETUPS_INVALIDO"
-  | "CUSTO_AQUISICAO_NAO_CONFIGURADO";
+  | "CUSTO_AQUISICAO_NAO_CONFIGURADO"
+  | "MAQUINA_BORDADO_NAO_CONFIGURADA"
+  | "NUMERO_PONTOS_INVALIDO"
+  | "MAQUINA_TEMPO_NAO_CONFIGURADA"
+  | "TEMPO_OU_METRO_CORTE_OBRIGATORIO";
 
 // Erro estruturado: o motor nunca retorna NaN ou um preço silenciosamente errado —
 // sempre um código + mensagem + detalhes que a UI pode mostrar de forma útil.

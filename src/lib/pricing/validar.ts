@@ -1,5 +1,6 @@
 import { ErroPrecificacao } from "./erros";
 import type {
+  ContextoBordado,
   ContextoDigital,
   ContextoFlexografia,
   ContextoM2,
@@ -8,9 +9,11 @@ import type {
   PedidoDigital,
   PedidoFlexografia,
   PedidoM2,
+  PedidoBordado,
   PedidoOffset,
   PedidoRevenda,
   PedidoSetupPorPeca,
+  PedidoTempoMaquina,
 } from "./tipos";
 
 // Extraído pra ser reaproveitado por todo pedido (M2/OFFSET/FLEXOGRAFIA via
@@ -173,6 +176,68 @@ export function validarPedidoRevenda(pedido: PedidoRevenda, contexto: ContextoRe
       "CUSTO_AQUISICAO_NAO_CONFIGURADO",
       "O custo de aquisição precisa ser maior que zero — informe o custo neste orçamento ou cadastre o preço de compra no catálogo.",
       { custoAquisicaoUnitario: contexto.custoAquisicaoUnitario }
+    );
+  }
+}
+
+// Bordado (achado A4) — mesma ausência de dimensões do Digital/setup-por-
+// peça acima. numeroPontos é o driver de custo POR PEDIDO (diferente de
+// numeroSetups, que é fixo na máquina) — obrigatório e maior que zero, sem
+// default possível (não tem "1 ponto padrão" que faça sentido).
+// materialFornecidoPeloCliente=true (achado B7) zera custoSubstratoPorPeca
+// DE PROPÓSITO, mesma regra de validarPedidoDigital.
+export function validarPedidoBordado(pedido: PedidoBordado, contexto: ContextoBordado) {
+  validarQuantidade(pedido.quantidade);
+
+  if (!Number.isInteger(pedido.numeroPontos) || pedido.numeroPontos < 1) {
+    throw new ErroPrecificacao(
+      "NUMERO_PONTOS_INVALIDO",
+      "O número de pontos da arte precisa ser um inteiro maior ou igual a 1.",
+      { numeroPontos: pedido.numeroPontos }
+    );
+  }
+  if (contexto.custoSubstratoPorPeca <= 0 && !contexto.materialFornecidoPeloCliente) {
+    throw new ErroPrecificacao(
+      "CUSTO_INVALIDO",
+      "O preço de compra do substrato precisa ser maior que zero.",
+      { custoSubstratoPorPeca: contexto.custoSubstratoPorPeca }
+    );
+  }
+}
+
+// Tempo de máquina (achado A6) — sem dimensões, sem substrato (não
+// representa material, só tempo de máquina). A gráfica escolhe a base na
+// máquina: ao menos um de tempoEstimadoMin/metrosCorte precisa estar
+// preenchido, senão o item custaria só custoSetupPorJob/custoMinimo em
+// silêncio — mesmo espírito das guardas de "sem isso o custo sai zero" do
+// resto do motor. Quando metrosCorte é informado sem a máquina cobrar por
+// metro (custoPorMetroCorte=0), o motor não lança erro — é um custo zero
+// legítimo (a gráfica só cobra por tempo nessa máquina), coerente com o
+// resto do arquivo.
+export function validarPedidoTempoMaquina(pedido: PedidoTempoMaquina) {
+  validarQuantidade(pedido.quantidade);
+
+  if (pedido.tempoEstimadoMin === undefined && pedido.metrosCorte === undefined) {
+    throw new ErroPrecificacao(
+      "TEMPO_OU_METRO_CORTE_OBRIGATORIO",
+      "Informe o tempo estimado de máquina (minutos) ou os metros de corte deste item."
+    );
+  }
+  if (
+    pedido.tempoEstimadoMin !== undefined &&
+    (!Number.isFinite(pedido.tempoEstimadoMin) || pedido.tempoEstimadoMin <= 0)
+  ) {
+    throw new ErroPrecificacao(
+      "DIMENSAO_INVALIDA",
+      "O tempo estimado de máquina precisa ser maior que zero.",
+      { tempoEstimadoMin: pedido.tempoEstimadoMin }
+    );
+  }
+  if (pedido.metrosCorte !== undefined && (!Number.isFinite(pedido.metrosCorte) || pedido.metrosCorte <= 0)) {
+    throw new ErroPrecificacao(
+      "DIMENSAO_INVALIDA",
+      "Os metros de corte precisam ser maiores que zero.",
+      { metrosCorte: pedido.metrosCorte }
     );
   }
 }

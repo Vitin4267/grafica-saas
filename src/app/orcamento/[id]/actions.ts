@@ -635,6 +635,13 @@ export async function editarOrcamento(
   const numeroCliques = formData.get("numeroCliques") ? Number(formData.get("numeroCliques")) : null;
   // Motores Serigrafia/Sublimação/Estampagem a quente (compartilham este campo).
   const numeroSetups = formData.get("numeroSetups") ? Number(formData.get("numeroSetups")) : null;
+  // Motor Bordado (achado A4) — nº de pontos da arte deste pedido.
+  const numeroPontos = formData.get("numeroPontos") ? Number(formData.get("numeroPontos")) : null;
+  // Motor Tempo de máquina (achado A6) — a gráfica escolhe a base na máquina.
+  const tempoEstimadoMin = formData.get("tempoEstimadoMin")
+    ? Number(formData.get("tempoEstimadoMin"))
+    : null;
+  const metrosCorte = formData.get("metrosCorte") ? Number(formData.get("metrosCorte")) : null;
   // Acabamento cobrado por hora (ex: instalação, criação de arte) — não é
   // model-gated, independente do modeloCalculo do item.
   const horasEstimadas = formData.get("horasEstimadas") ? Number(formData.get("horasEstimadas")) : null;
@@ -706,6 +713,9 @@ export async function editarOrcamento(
     numeroCoresFlexo,
     numeroCliques,
     numeroSetups,
+    numeroPontos,
+    tempoEstimadoMin,
+    metrosCorte,
     horasEstimadas,
     acabamentoIds,
     papelId,
@@ -781,6 +791,9 @@ export async function editarOrcamento(
             numeroCoresFlexo: resultado.numeroCoresFlexo,
             numeroCliques: resultado.numeroCliques,
             numeroSetups: resultado.numeroSetups,
+            numeroPontos: resultado.numeroPontos,
+            tempoEstimadoMin: resultado.tempoEstimadoMin,
+            metrosCorte: resultado.metrosCorte,
             horasEstimadas: resultado.horasEstimadas,
             custoAquisicaoUnitario: resultado.custoAquisicaoUnitario,
             materialFornecidoPeloCliente: resultado.materialFornecidoPeloCliente,
@@ -1598,6 +1611,13 @@ export async function adicionarItemOrcamento(
   const numeroCliques = formData.get("numeroCliques") ? Number(formData.get("numeroCliques")) : null;
   // Motores Serigrafia/Sublimação/Estampagem a quente (compartilham este campo).
   const numeroSetups = formData.get("numeroSetups") ? Number(formData.get("numeroSetups")) : null;
+  // Motor Bordado (achado A4) — nº de pontos da arte deste pedido.
+  const numeroPontos = formData.get("numeroPontos") ? Number(formData.get("numeroPontos")) : null;
+  // Motor Tempo de máquina (achado A6) — a gráfica escolhe a base na máquina.
+  const tempoEstimadoMin = formData.get("tempoEstimadoMin")
+    ? Number(formData.get("tempoEstimadoMin"))
+    : null;
+  const metrosCorte = formData.get("metrosCorte") ? Number(formData.get("metrosCorte")) : null;
   // Acabamento cobrado por hora (ex: instalação, criação de arte) — não é
   // model-gated, independente do modeloCalculo do item.
   const horasEstimadas = formData.get("horasEstimadas") ? Number(formData.get("horasEstimadas")) : null;
@@ -1673,6 +1693,9 @@ export async function adicionarItemOrcamento(
     numeroCoresFlexo,
     numeroCliques,
     numeroSetups,
+    numeroPontos,
+    tempoEstimadoMin,
+    metrosCorte,
     horasEstimadas,
     acabamentoIds,
     papelId,
@@ -1727,6 +1750,9 @@ export async function adicionarItemOrcamento(
             numeroCoresFlexo: resultado.numeroCoresFlexo,
             numeroCliques: resultado.numeroCliques,
             numeroSetups: resultado.numeroSetups,
+            numeroPontos: resultado.numeroPontos,
+            tempoEstimadoMin: resultado.tempoEstimadoMin,
+            metrosCorte: resultado.metrosCorte,
             horasEstimadas: resultado.horasEstimadas,
             custoAquisicaoUnitario: resultado.custoAquisicaoUnitario,
             materialFornecidoPeloCliente: resultado.materialFornecidoPeloCliente,
@@ -2365,12 +2391,17 @@ export async function duplicarOrcamento(
       | "SUBLIMACAO"
       | "ESTAMPAGEM_QUENTE"
       | "PERSONALIZACAO"
-      | "REVENDA";
+      | "REVENDA"
+      | "BORDADO"
+      | "TEMPO_MAQUINA";
     corFrente: number | null;
     corVerso: number | null;
     numeroCoresFlexo: number | null;
     numeroCliques: number | null;
     numeroSetups: number | null;
+    numeroPontos: number | null;
+    tempoEstimadoMin: number | null;
+    metrosCorte: number | null;
     horasEstimadas: number | null;
     custoAquisicaoUnitario: number | null;
     materialFornecidoPeloCliente: boolean;
@@ -2417,6 +2448,9 @@ export async function duplicarOrcamento(
       numeroCoresFlexo: itemOriginal.numeroCoresFlexo,
       numeroCliques: itemOriginal.numeroCliques,
       numeroSetups: itemOriginal.numeroSetups,
+      numeroPontos: itemOriginal.numeroPontos,
+      tempoEstimadoMin: itemOriginal.tempoEstimadoMin,
+      metrosCorte: itemOriginal.metrosCorte,
       horasEstimadas: itemOriginal.horasEstimadas,
       custoAquisicaoUnitario: itemOriginal.custoAquisicaoUnitario,
       materialFornecidoPeloCliente: itemOriginal.materialFornecidoPeloCliente,
@@ -2503,6 +2537,9 @@ export async function duplicarOrcamento(
       numeroCoresFlexo: resultado.numeroCoresFlexo,
       numeroCliques: resultado.numeroCliques,
       numeroSetups: resultado.numeroSetups,
+      numeroPontos: resultado.numeroPontos,
+      tempoEstimadoMin: resultado.tempoEstimadoMin,
+      metrosCorte: resultado.metrosCorte,
       horasEstimadas: resultado.horasEstimadas,
       custoAquisicaoUnitario: resultado.custoAquisicaoUnitario,
       materialFornecidoPeloCliente: resultado.materialFornecidoPeloCliente,
@@ -2554,6 +2591,9 @@ export async function duplicarOrcamento(
           numeroCoresFlexo: item.numeroCoresFlexo,
           numeroCliques: item.numeroCliques,
           numeroSetups: item.numeroSetups,
+          numeroPontos: item.numeroPontos,
+          tempoEstimadoMin: item.tempoEstimadoMin,
+          metrosCorte: item.metrosCorte,
           horasEstimadas: item.horasEstimadas,
           custoAquisicaoUnitario: item.custoAquisicaoUnitario,
           materialFornecidoPeloCliente: item.materialFornecidoPeloCliente,

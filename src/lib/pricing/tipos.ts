@@ -8,7 +8,9 @@ export type ModeloCalculo =
   | "SUBLIMACAO"
   | "ESTAMPAGEM_QUENTE"
   | "PERSONALIZACAO"
-  | "REVENDA";
+  | "REVENDA"
+  | "BORDADO"
+  | "TEMPO_MAQUINA";
 export type BaseCobranca =
   | "UNIDADE"
   | "M2"
@@ -238,4 +240,58 @@ export type PedidoRevenda = {
 // src/lib/pricing/carregar.ts).
 export type ContextoRevenda = {
   custoAquisicaoUnitario: number;
+};
+
+// ---------- Cenário 8 (bordado — achado A4, sem nesting) ----------
+
+export type PedidoBordado = {
+  quantidade: number; // Q
+  numeroPontos: number; // pontos da arte deste pedido — driver de custo POR PEDIDO
+  // Mesma razão de PedidoDigital/PedidoSetupPorPeca/PedidoRevenda acima —
+  // opcionais, só pra alimentar um eventual acabamento M2-based.
+  larguraM?: number;
+  alturaM?: number;
+};
+
+// Mesmo papel de ContextoSetupPorPeca (achado A2/B7) — custo da peça em
+// branco (camiseta, boné) sobre a qual o bordado é aplicado, vindo de
+// ItemGrafica.precoCompra. materialFornecidoPeloCliente (achado B7) zera
+// esse custo quando o cliente já traz a peça.
+export type ContextoBordado = {
+  custoSubstratoPorPeca: number;
+  materialFornecidoPeloCliente?: boolean;
+};
+
+// ---------- Parâmetros da máquina de bordado (custo de máquina, só BORDADO) ----------
+
+export type ParametrosMaquinaBordado = {
+  custoPorMilPontos: number;
+  custoMatrizDigitalizacao: number; // 1× por pedido, não escala com Q — mesmo princípio do clichê de etiqueta
+  custoMinimo: number; // piso do job — 0 quando a máquina não tem piso cadastrado
+};
+
+// ---------- Cenário 9 (tempo de máquina — achado A6, sem nesting) ----------
+
+export type PedidoTempoMaquina = {
+  quantidade: number; // Q
+  // A gráfica escolhe a base na máquina (tempo, metro de corte, ou os dois
+  // somados) — ambos opcionais e independentes, ver calcularTempoMaquina.
+  // Ao menos um dos dois precisa estar preenchido (validado em validar.ts).
+  tempoEstimadoMin?: number;
+  metrosCorte?: number;
+  // Mesma razão de PedidoDigital acima — opcionais, só pra alimentar um
+  // eventual acabamento M2-based.
+  larguraM?: number;
+  alturaM?: number;
+};
+
+export type ContextoTempoMaquina = Record<string, never>;
+
+// ---------- Parâmetros da máquina de tempo (custo de máquina, só TEMPO_MAQUINA) ----------
+
+export type ParametrosMaquinaTempo = {
+  custoHoraMaq: number;
+  custoSetupPorJob: number; // 1× por item, não escala com Q
+  custoMinimo: number; // piso do job — 0 quando a máquina não tem piso cadastrado
+  custoPorMetroCorte: number; // 0 quando a máquina não cobra por metro de corte
 };

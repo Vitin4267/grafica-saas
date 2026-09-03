@@ -13,13 +13,16 @@ type ModeloCalculoPrecificavel =
   | "SUBLIMACAO"
   | "ESTAMPAGEM_QUENTE"
   | "PERSONALIZACAO"
-  | "REVENDA";
+  | "REVENDA"
+  | "BORDADO"
+  | "TEMPO_MAQUINA";
 
 // Os 4 modelos de "setup por peça" — SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE/
 // PERSONALIZACAO (achado A3 da auditoria de abrangência: tampografia,
-// gravação a laser, DTG, transfer e OUTRO) — e DIGITAL não têm nesting (sem
-// largura/altura pro CUSTO em si), diferente de M2/OFFSET/FLEXOGRAFIA. Usado
-// tanto pra pular a guarda de dimensão obrigatória quanto, na montagem do
+// gravação a laser, DTG, transfer e OUTRO) — DIGITAL, REVENDA e os novos
+// BORDADO/TEMPO_MAQUINA (achados A4/A6) não têm nesting (sem largura/altura
+// pro CUSTO em si), diferente de M2/OFFSET/FLEXOGRAFIA. Usado tanto pra
+// pular a guarda de dimensão obrigatória quanto, na montagem do
 // PedidoPrecificacao, pra escolher o branch certo.
 const MODELOS_SEM_NESTING = new Set<ModeloCalculoPrecificavel>([
   "DIGITAL",
@@ -28,6 +31,8 @@ const MODELOS_SEM_NESTING = new Set<ModeloCalculoPrecificavel>([
   "ESTAMPAGEM_QUENTE",
   "PERSONALIZACAO",
   "REVENDA",
+  "BORDADO",
+  "TEMPO_MAQUINA",
 ]);
 const MODELOS_SETUP_POR_PECA = new Set<ModeloCalculoPrecificavel>([
   "SERIGRAFIA",
@@ -67,6 +72,15 @@ export type DadosItemOrcamento = {
   // Só usado por SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE/PERSONALIZACAO (os 4
   // compartilham este campo, mesma razão de compartilharem calcularSetupPorPeca).
   numeroSetups: number | null;
+  // Só usado por BORDADO (achado A4) — nº de pontos da arte deste pedido,
+  // driver de custo POR PEDIDO (diferente de numeroSetups acima, fixo na
+  // máquina).
+  numeroPontos: number | null;
+  // Só usados por TEMPO_MAQUINA (achado A6) — a gráfica escolhe a base na
+  // máquina (tempo, metro de corte, ou os dois somados); ambos opcionais e
+  // independentes, mas ao menos um precisa estar preenchido (guarda abaixo).
+  tempoEstimadoMin: number | null;
+  metrosCorte: number | null;
   // Só usado quando o item tem um acabamento anexado com baseCobranca=HORA
   // (ex: instalação, criação de arte) — independente do modeloCalculo do
   // item, ao contrário de numeroSetups acima.
@@ -76,10 +90,11 @@ export type DadosItemOrcamento = {
   // ItemGrafica.precoCompra do catálogo (ver src/lib/pricing/carregar.ts).
   custoAquisicaoUnitario: number | null;
   // Achado B7 (correção de regressão do A2) — quando true, o cliente já
-  // trouxe a peça em branco e a gráfica só aplica a estampa/gravação: zera
-  // ContextoDigital/ContextoSetupPorPeca.custoSubstratoPorPeca pra este item.
-  // Só relevante pra DIGITAL/SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE/
-  // PERSONALIZACAO — ignorado (sem efeito) em qualquer outro modelo.
+  // trouxe a peça em branco e a gráfica só aplica a estampa/gravação/bordado:
+  // zera ContextoDigital/ContextoSetupPorPeca/ContextoBordado.
+  // custoSubstratoPorPeca pra este item. Só relevante pra DIGITAL/SERIGRAFIA/
+  // SUBLIMACAO/ESTAMPAGEM_QUENTE/PERSONALIZACAO/BORDADO — ignorado (sem
+  // efeito) em qualquer outro modelo.
   materialFornecidoPeloCliente: boolean;
   // Achado A7 da auditoria de abrangência — sobrescreve
   // ParametrosGrafica.margemPadrao com Cliente.margemPadraoOverride. Ao
@@ -109,6 +124,9 @@ export type ResultadoItemOrcamento =
       numeroCoresFlexo: number | null;
       numeroCliques: number | null;
       numeroSetups: number | null;
+      numeroPontos: number | null;
+      tempoEstimadoMin: number | null;
+      metrosCorte: number | null;
       horasEstimadas: number | null;
       custoAquisicaoUnitario: number | null;
       materialFornecidoPeloCliente: boolean;
@@ -225,6 +243,41 @@ export async function calcularItemOrcamento(
     };
   }
 
+  // Guarda de BORDADO (achado A4) — nº de pontos é obrigatório (sem
+  // default), mesmo padrão do guard de numeroSetups acima.
+  if (
+    itemGrafica.modeloCalculo === "BORDADO" &&
+    (!Number.isInteger(dados.numeroPontos) || (dados.numeroPontos ?? 0) < 1)
+  ) {
+    return {
+      ok: false,
+      mensagem: "Informe o número de pontos da arte (mínimo 1) — item de cálculo bordado.",
+    };
+  }
+
+  // Guarda de TEMPO_MAQUINA (achado A6) — a gráfica escolhe a base na
+  // máquina (tempo, metro de corte, ou os dois somados), mas ao menos um
+  // precisa estar preenchido, senão o item custaria só o setup/piso da
+  // máquina em silêncio (mesmo espírito das guardas acima).
+  if (itemGrafica.modeloCalculo === "TEMPO_MAQUINA") {
+    if (dados.tempoEstimadoMin === null && dados.metrosCorte === null) {
+      return {
+        ok: false,
+        mensagem:
+          "Informe o tempo estimado de máquina (minutos) ou os metros de corte — item de cálculo tempo de máquina.",
+      };
+    }
+    if (
+      dados.tempoEstimadoMin !== null &&
+      (!Number.isFinite(dados.tempoEstimadoMin) || dados.tempoEstimadoMin <= 0)
+    ) {
+      return { ok: false, mensagem: "Tempo estimado de máquina inválido (deve ser maior que zero)." };
+    }
+    if (dados.metrosCorte !== null && (!Number.isFinite(dados.metrosCorte) || dados.metrosCorte <= 0)) {
+      return { ok: false, mensagem: "Metros de corte inválidos (deve ser maior que zero)." };
+    }
+  }
+
   if (itemGrafica.modeloCalculo === "SIMPLES") {
     // Number(null) é 0, não erro — sem esta guarda, um produto que ficou sem
     // preço no catálogo (ex: campo limpo por engano numa edição em lote)
@@ -257,6 +310,9 @@ export async function calcularItemOrcamento(
       numeroCoresFlexo: null,
       numeroCliques: null,
       numeroSetups: null,
+      numeroPontos: null,
+      tempoEstimadoMin: null,
+      metrosCorte: null,
       horasEstimadas: null,
       custoAquisicaoUnitario: null,
       materialFornecidoPeloCliente: false,
@@ -316,9 +372,11 @@ export async function calcularItemOrcamento(
     if (dados.margemLucroOverride !== null) contexto.margemLucroOverride = dados.margemLucroOverride;
     // Achado B7 (correção de regressão do A2) — "material fornecido pelo
     // cliente": o cliente já trouxe a peça em branco, a gráfica só aplica a
-    // estampa/gravação. Zera o substrato do contexto que estiver ativo
-    // (DIGITAL ou um dos 4 de setup-por-peça) — nunca contexto.revenda, onde
-    // o "custo de aquisição" É o produto inteiro, não um substrato aplicado.
+    // estampa/gravação/bordado. Zera o substrato do contexto que estiver
+    // ativo (DIGITAL, um dos 4 de setup-por-peça, ou BORDADO — achado A4) —
+    // nunca contexto.revenda, onde o "custo de aquisição" É o produto
+    // inteiro, não um substrato aplicado; nunca contexto.tempoMaquina, que
+    // não tem substrato nenhum (achado A6).
     if (dados.materialFornecidoPeloCliente) {
       if (contexto.digital) {
         contexto.digital = {
@@ -329,6 +387,13 @@ export async function calcularItemOrcamento(
       }
       if (contexto.setupPorPeca) {
         contexto.setupPorPeca = { ...contexto.setupPorPeca, custoSubstratoPorPeca: 0 };
+      }
+      if (contexto.bordado) {
+        contexto.bordado = {
+          ...contexto.bordado,
+          custoSubstratoPorPeca: 0,
+          materialFornecidoPeloCliente: true,
+        };
       }
     }
 
@@ -464,6 +529,29 @@ export async function calcularItemOrcamento(
         },
         acabamentos,
       };
+    } else if (itemGrafica.modeloCalculo === "BORDADO") {
+      pedido = {
+        tipo: "BORDADO",
+        pedido: {
+          quantidade,
+          numeroPontos: dados.numeroPontos!,
+          larguraM: larguraMOpcional,
+          alturaM: alturaMOpcional,
+        },
+        acabamentos,
+      };
+    } else if (itemGrafica.modeloCalculo === "TEMPO_MAQUINA") {
+      pedido = {
+        tipo: "TEMPO_MAQUINA",
+        pedido: {
+          quantidade,
+          tempoEstimadoMin: dados.tempoEstimadoMin ?? undefined,
+          metrosCorte: dados.metrosCorte ?? undefined,
+          larguraM: larguraMOpcional,
+          alturaM: alturaMOpcional,
+        },
+        acabamentos,
+      };
     } else {
       pedido = {
         tipo: "M2",
@@ -498,6 +586,12 @@ export async function calcularItemOrcamento(
           ? resultado.metricas.numeroCliques
           : null,
       numeroSetups: MODELOS_SETUP_POR_PECA.has(itemGrafica.modeloCalculo) ? dados.numeroSetups! : null,
+      numeroPontos: itemGrafica.modeloCalculo === "BORDADO" ? dados.numeroPontos! : null,
+      // Ecoa o valor de entrada como veio — TEMPO_MAQUINA aceita os dois
+      // campos independentes (a guarda acima já garantiu que ao menos um
+      // está presente).
+      tempoEstimadoMin: itemGrafica.modeloCalculo === "TEMPO_MAQUINA" ? dados.tempoEstimadoMin : null,
+      metrosCorte: itemGrafica.modeloCalculo === "TEMPO_MAQUINA" ? dados.metrosCorte : null,
       // Não é model-gated como numeroSetups acima — acabamento por hora pode
       // ser anexado a qualquer motor avançado. Ecoa o valor validado (guarda
       // já garantiu presença quando há acabamento HORA anexado).

@@ -80,13 +80,15 @@ export async function listarPendenciasConfiguracao(
   }
 
   // Produto OFFSET/FLEXOGRAFIA/DIGITAL/SERIGRAFIA/SUBLIMACAO/
-  // ESTAMPAGEM_QUENTE/PERSONALIZACAO ativo sem a máquina correspondente
-  // vinculada — o motor de preço lança ErroPrecificacao pra qualquer um
-  // desses (ver PRENSA_NAO_CONFIGURADA/MAQUINA_FLEXO_NAO_CONFIGURADA/
-  // IMPRESSORA_DIGITAL_NAO_CONFIGURADA/MAQUINA_SETUP_POR_PECA_NAO_CONFIGURADA
-  // em src/lib/pricing/carregar.ts), mas hoje só aparece pro vendedor na
-  // hora de montar um orçamento. Igual à checagem de bobina acima: pega
-  // antes, independente do segmento da gráfica — vale pra qualquer perfil.
+  // ESTAMPAGEM_QUENTE/PERSONALIZACAO/BORDADO/TEMPO_MAQUINA ativo sem a
+  // máquina correspondente vinculada — o motor de preço lança
+  // ErroPrecificacao pra qualquer um desses (ver PRENSA_NAO_CONFIGURADA/
+  // MAQUINA_FLEXO_NAO_CONFIGURADA/IMPRESSORA_DIGITAL_NAO_CONFIGURADA/
+  // MAQUINA_SETUP_POR_PECA_NAO_CONFIGURADA/MAQUINA_BORDADO_NAO_CONFIGURADA/
+  // MAQUINA_TEMPO_NAO_CONFIGURADA em src/lib/pricing/carregar.ts), mas hoje
+  // só aparece pro vendedor na hora de montar um orçamento. Igual à
+  // checagem de bobina acima: pega antes, independente do segmento da
+  // gráfica — vale pra qualquer perfil.
   const itensSemMaquina = await prisma.itemGrafica.findMany({
     where: {
       graficaId,
@@ -99,6 +101,8 @@ export async function listarPendenciasConfiguracao(
           modeloCalculo: { in: ["SERIGRAFIA", "SUBLIMACAO", "ESTAMPAGEM_QUENTE", "PERSONALIZACAO"] },
           maquinaSetupPorPecaId: null,
         },
+        { modeloCalculo: "BORDADO", maquinaBordadoId: null },
+        { modeloCalculo: "TEMPO_MAQUINA", maquinaTempoId: null },
       ],
     },
     include: { itemCatalogo: true },

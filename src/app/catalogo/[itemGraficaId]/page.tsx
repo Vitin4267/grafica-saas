@@ -71,6 +71,8 @@ export default async function ConfiguracaoItemPage({
     maquinasFlexografia,
     impressorasDigitais,
     maquinasSetupPorPeca,
+    maquinasBordado,
+    maquinasTempo,
     fornecedores,
     registrosAtivos,
   ] = await Promise.all([
@@ -120,6 +122,14 @@ export default async function ConfiguracaoItemPage({
         orderBy: { nome: "asc" },
       }),
       prisma.maquinaSetupPorPeca.findMany({
+        where: { graficaId: usuario.graficaId, ativa: true },
+        orderBy: { nome: "asc" },
+      }),
+      prisma.maquinaBordado.findMany({
+        where: { graficaId: usuario.graficaId, ativa: true },
+        orderBy: { nome: "asc" },
+      }),
+      prisma.maquinaTempo.findMany({
         where: { graficaId: usuario.graficaId, ativa: true },
         orderBy: { nome: "asc" },
       }),
@@ -292,6 +302,18 @@ export default async function ConfiguracaoItemPage({
                 nome: m.nome,
                 emManutencao: idsMaquinasEmManutencao.has(m.id),
                 tipoProcesso: m.tipoProcesso,
+              }))}
+              maquinaBordadoId={itemGrafica.maquinaBordadoId ?? ""}
+              maquinasBordado={maquinasBordado.map((m) => ({
+                id: m.id,
+                nome: m.nome,
+                emManutencao: idsMaquinasEmManutencao.has(m.id),
+              }))}
+              maquinaTempoId={itemGrafica.maquinaTempoId ?? ""}
+              maquinasTempo={maquinasTempo.map((m) => ({
+                id: m.id,
+                nome: m.nome,
+                emManutencao: idsMaquinasEmManutencao.has(m.id),
               }))}
             />
             {itemGrafica.modeloCalculo === "M2" && (

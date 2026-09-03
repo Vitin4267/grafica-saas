@@ -35,7 +35,9 @@ export type ItemVenda = {
     | "SUBLIMACAO"
     | "ESTAMPAGEM_QUENTE"
     | "PERSONALIZACAO"
-    | "REVENDA";
+    | "REVENDA"
+    | "BORDADO"
+    | "TEMPO_MAQUINA";
   // ConfiguracaoClicheEtiqueta presente pra este produto — só produtos M2
   // marcados assim mostram o seletor de papel/cores/faca/frete abaixo.
   usaClicheEtiqueta: boolean;
@@ -80,6 +82,14 @@ export type CamposItemOrcamento = {
   numeroCliques: string;
   // Só SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE (compartilham este campo).
   numeroSetups: string;
+  // Só BORDADO (achado A4) — nº de pontos da arte deste pedido, driver de
+  // custo POR PEDIDO (diferente de numeroSetups acima, fixo na máquina).
+  numeroPontos: string;
+  // Só TEMPO_MAQUINA (achado A6) — a gráfica escolhe a base na máquina
+  // (tempo, metro de corte, ou os dois somados); ambos opcionais e
+  // independentes, mas ao menos um precisa ser preenchido.
+  tempoEstimadoMin: string;
+  metrosCorte: string;
   // Só relevante quando algum dos acabamentoIds abaixo tem baseCobranca=HORA
   // — independente do modeloCalculo do item, ao contrário de numeroSetups.
   horasEstimadas: string;
@@ -87,9 +97,10 @@ export type CamposItemOrcamento = {
   // aquisição; em branco = motor cai no preço de compra cadastrado no
   // catálogo.
   custoAquisicaoUnitario: string;
-  // Só DIGITAL/SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE/PERSONALIZACAO (achado
-  // B7) — quando true, o cliente já trouxe a peça em branco e a gráfica só
-  // aplica a estampa/gravação; zera o custo do substrato pra este item.
+  // Só DIGITAL/SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE/PERSONALIZACAO/BORDADO
+  // (achado B7) — quando true, o cliente já trouxe a peça em branco e a
+  // gráfica só aplica a estampa/gravação/bordado; zera o custo do substrato
+  // pra este item.
   materialFornecidoPeloCliente: boolean;
   cores: string;
   // Texto livre — só usado quando o item é SIMPLES (ver comentário em
@@ -137,6 +148,9 @@ export function camposIniciais(
     numeroCoresFlexo: "4",
     numeroCliques: "",
     numeroSetups: "1",
+    numeroPontos: "",
+    tempoEstimadoMin: "",
+    metrosCorte: "",
     horasEstimadas: "",
     custoAquisicaoUnitario: "",
     materialFornecidoPeloCliente: false,
@@ -182,13 +196,20 @@ export function SeletorItemOrcamento({
   // o preview client-side simples): custoBase precisa passar por
   // comporPreco pra ganhar overhead/margem/piso.
   const usaModeloRevenda = itemSelecionado?.modeloCalculo === "REVENDA";
+  // Bordado (achado A4) e tempo de máquina (achado A6) — mesma ausência de
+  // nesting/máquina fixa por peça do Digital/setup-por-peça acima, mas
+  // SEMPRE motor avançado (mesma razão de usaModeloRevenda).
+  const usaModeloBordado = itemSelecionado?.modeloCalculo === "BORDADO";
+  const usaModeloTempoMaquina = itemSelecionado?.modeloCalculo === "TEMPO_MAQUINA";
   const usaMotorAvancado =
     usaModeloM2 ||
     usaModeloOffset ||
     usaModeloFlexografia ||
     usaModeloDigital ||
     usaModeloSetupPorPeca ||
-    usaModeloRevenda;
+    usaModeloRevenda ||
+    usaModeloBordado ||
+    usaModeloTempoMaquina;
   // DIGITAL e os 3 de setup-por-peça não precisam de largura/altura pro custo
   // em si (sem nesting) — só M2/OFFSET/FLEXOGRAFIA exigem dimensão aqui.
   const exigeDimensao = usaModeloM2 || usaModeloOffset || usaModeloFlexografia;
@@ -206,7 +227,13 @@ export function SeletorItemOrcamento({
   // aparece, costuma trazer campo obrigatório pro modelo em questão (ex:
   // corFrente no Offset).
   const mostrarGrupoCorPreparo =
-    usaModeloOffset || usaModeloFlexografia || usaModeloDigital || usaModeloSetupPorPeca || usaModeloRevenda;
+    usaModeloOffset ||
+    usaModeloFlexografia ||
+    usaModeloDigital ||
+    usaModeloSetupPorPeca ||
+    usaModeloRevenda ||
+    usaModeloBordado ||
+    usaModeloTempoMaquina;
 
   const set =
     (campo: keyof CamposItemOrcamento) =>
@@ -235,6 +262,9 @@ export function SeletorItemOrcamento({
       numeroCoresFlexo: "4",
       numeroCliques: "",
       numeroSetups: "1",
+      numeroPontos: "",
+      tempoEstimadoMin: "",
+      metrosCorte: "",
       horasEstimadas: "",
       custoAquisicaoUnitario: "",
       materialFornecidoPeloCliente: false,
@@ -408,7 +438,56 @@ export function SeletorItemOrcamento({
               />
             )}
 
-            {(usaModeloDigital || usaModeloSetupPorPeca) && (
+            {usaModeloBordado && (
+              <Input
+                label={
+                  <>
+                    Número de pontos da arte
+                    <CampoAjuda texto="Quantos pontos a máquina de bordado vai dar pra fazer esta arte — quanto maior a arte (logo pequeno vs. bordado grande de costas), mais pontos, mais tempo de máquina e mais linha gasta. Costuma vir do programa de digitalização da arte." />
+                  </>
+                }
+                type="number"
+                min={1}
+                value={valores.numeroPontos}
+                onChange={set("numeroPontos")}
+                hint="Ex: um logo pequeno tem ~3.000 pontos; um bordado grande de costas pode passar de 15.000."
+              />
+            )}
+
+            {usaModeloTempoMaquina && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Input
+                  label={
+                    <>
+                      Tempo estimado de máquina (min)
+                      <CampoAjuda texto="Quanto tempo a máquina fica rodando pra produzir este item inteiro (todas as peças da quantidade), em minutos. Preencha este campo, os metros de corte abaixo, ou os dois — a máquina cobra pelo que estiver preenchido." />
+                    </>
+                  }
+                  type="number"
+                  min={0.01}
+                  step="0.01"
+                  value={valores.tempoEstimadoMin}
+                  onChange={set("tempoEstimadoMin")}
+                  placeholder="opcional"
+                />
+                <Input
+                  label={
+                    <>
+                      Metros de corte
+                      <CampoAjuda texto="Total de metros lineares que a faca/laser vai cortar pra produzir este item inteiro — só preencha se a máquina escolhida cobra por metro de corte." />
+                    </>
+                  }
+                  type="number"
+                  min={0.01}
+                  step="0.01"
+                  value={valores.metrosCorte}
+                  onChange={set("metrosCorte")}
+                  placeholder="opcional"
+                />
+              </div>
+            )}
+
+            {(usaModeloDigital || usaModeloSetupPorPeca || usaModeloBordado) && (
               <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
                 <input
                   type="checkbox"
@@ -421,7 +500,7 @@ export function SeletorItemOrcamento({
                 <span>
                   <span className="inline-flex items-center gap-1.5">
                     Material fornecido pelo cliente
-                    <CampoAjuda texto="Marque quando o CLIENTE já traz a peça em branco (camiseta, caneca, brinde) pronta pra aplicar a estampa ou gravação. Nesse caso a gráfica cobra só o serviço de aplicação, sem cobrar o custo da peça em si." />
+                    <CampoAjuda texto="Marque quando o CLIENTE já traz a peça em branco (camiseta, caneca, brinde) pronta pra aplicar a estampa, gravação ou bordado. Nesse caso a gráfica cobra só o serviço de aplicação, sem cobrar o custo da peça em si." />
                   </span>
                   <span className="block text-xs font-normal text-slate-500">
                     A gráfica não cobra o custo da peça em branco — só a aplicação.

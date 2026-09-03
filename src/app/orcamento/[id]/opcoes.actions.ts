@@ -114,12 +114,17 @@ export async function adicionarOpcaoOrcamento(
       | "SUBLIMACAO"
       | "ESTAMPAGEM_QUENTE"
       | "PERSONALIZACAO"
-      | "REVENDA";
+      | "REVENDA"
+      | "BORDADO"
+      | "TEMPO_MAQUINA";
     corFrente: number | null;
     corVerso: number | null;
     numeroCoresFlexo: number | null;
     numeroCliques: number | null;
     numeroSetups: number | null;
+    numeroPontos: number | null;
+    tempoEstimadoMin: number | null;
+    metrosCorte: number | null;
     horasEstimadas: number | null;
     custoAquisicaoUnitario: number | null;
     materialFornecidoPeloCliente: boolean;
@@ -171,6 +176,9 @@ export async function adicionarOpcaoOrcamento(
       numeroCoresFlexo: entrada.numeroCoresFlexo,
       numeroCliques: entrada.numeroCliques,
       numeroSetups: entrada.numeroSetups,
+      numeroPontos: entrada.numeroPontos,
+      tempoEstimadoMin: entrada.tempoEstimadoMin,
+      metrosCorte: entrada.metrosCorte,
       horasEstimadas: entrada.horasEstimadas,
       acabamentoIds: entrada.acabamentoIds,
       papelId: entrada.papelId,
@@ -205,6 +213,9 @@ export async function adicionarOpcaoOrcamento(
       numeroCoresFlexo: resultado.numeroCoresFlexo,
       numeroCliques: resultado.numeroCliques,
       numeroSetups: resultado.numeroSetups,
+      numeroPontos: resultado.numeroPontos,
+      tempoEstimadoMin: resultado.tempoEstimadoMin,
+      metrosCorte: resultado.metrosCorte,
       horasEstimadas: resultado.horasEstimadas,
       custoAquisicaoUnitario: resultado.custoAquisicaoUnitario,
       materialFornecidoPeloCliente: resultado.materialFornecidoPeloCliente,
@@ -250,6 +261,9 @@ export async function adicionarOpcaoOrcamento(
           numeroCoresFlexo: item.numeroCoresFlexo,
           numeroCliques: item.numeroCliques,
           numeroSetups: item.numeroSetups,
+          numeroPontos: item.numeroPontos,
+          tempoEstimadoMin: item.tempoEstimadoMin,
+          metrosCorte: item.metrosCorte,
           horasEstimadas: item.horasEstimadas,
           custoAquisicaoUnitario: item.custoAquisicaoUnitario,
           materialFornecidoPeloCliente: item.materialFornecidoPeloCliente,

@@ -22,7 +22,9 @@ type ModeloCalculo =
   | "SUBLIMACAO"
   | "ESTAMPAGEM_QUENTE"
   | "PERSONALIZACAO"
-  | "REVENDA";
+  | "REVENDA"
+  | "BORDADO"
+  | "TEMPO_MAQUINA";
 
 // Mesmo conjunto de unidadeContagemSchema em actions.ts — sem OUTRO (sem
 // campo de texto livre pra essa, ficaria só "outro" na exibição de preço).
@@ -226,6 +228,10 @@ export function ConfiguracaoProdutoForm({
   impressorasDigitais,
   maquinaSetupPorPecaId: maquinaSetupPorPecaIdInicial,
   maquinasSetupPorPeca,
+  maquinaBordadoId: maquinaBordadoIdInicial,
+  maquinasBordado,
+  maquinaTempoId: maquinaTempoIdInicial,
+  maquinasTempo,
 }: {
   itemGraficaId: string;
   modeloCalculo: ModeloCalculo;
@@ -268,6 +274,10 @@ export function ConfiguracaoProdutoForm({
       | "TRANSFER"
       | "OUTRO";
   }[];
+  maquinaBordadoId: string;
+  maquinasBordado: { id: string; nome: string; emManutencao: boolean }[];
+  maquinaTempoId: string;
+  maquinasTempo: { id: string; nome: string; emManutencao: boolean }[];
 }) {
   const [modeloCalculo, setModeloCalculo] = useState<ModeloCalculo>(modeloCalculoInicial);
   const [bobinas, setBobinas] = useState<BobinaLinha[]>(() =>
@@ -281,6 +291,8 @@ export function ConfiguracaoProdutoForm({
   const [maquinaFlexografiaId, setMaquinaFlexografiaId] = useState(maquinaFlexografiaIdInicial);
   const [impressoraDigitalId, setImpressoraDigitalId] = useState(impressoraDigitalIdInicial);
   const [maquinaSetupPorPecaId, setMaquinaSetupPorPecaId] = useState(maquinaSetupPorPecaIdInicial);
+  const [maquinaBordadoId, setMaquinaBordadoId] = useState(maquinaBordadoIdInicial);
+  const [maquinaTempoId, setMaquinaTempoId] = useState(maquinaTempoIdInicial);
   const [state, formAction, isPending] = useActionState(salvarModeloProduto, null);
   const [mostrarAvancadoM2, setMostrarAvancadoM2] = useState(
     Boolean(areaMinimaFaturavelInicial)
@@ -324,6 +336,14 @@ export function ConfiguracaoProdutoForm({
     () => maquinasSetupPorPeca.find((m) => m.id === maquinaSetupPorPecaId)?.emManutencao ?? false,
     [maquinasSetupPorPeca, maquinaSetupPorPecaId]
   );
+  const maquinaBordadoEmManutencao = useMemo(
+    () => maquinasBordado.find((m) => m.id === maquinaBordadoId)?.emManutencao ?? false,
+    [maquinasBordado, maquinaBordadoId]
+  );
+  const maquinaTempoEmManutencao = useMemo(
+    () => maquinasTempo.find((m) => m.id === maquinaTempoId)?.emManutencao ?? false,
+    [maquinasTempo, maquinaTempoId]
+  );
 
   const gramaturasDoPapel = papeis.find((p) => p.id === papelId)?.gramaturas ?? [];
 
@@ -358,7 +378,7 @@ export function ConfiguracaoProdutoForm({
           label={
             <>
               Modelo de cálculo
-              <CampoAjuda texto="Define como a máquina realmente produz este item e como o preço é calculado. M2 e Flexografia imprimem em bobina (rolo contínuo) com aproveitamento de largura; Offset imprime em folha, com custo de chapa por tiragem; Digital cobra por clique da impressora, sem aproveitamento de bobina ou folha; Serigrafia, Sublimação, Estampagem a quente e Personalização cobram um setup fixo (tela, matriz ou arte) mais um valor por peça; Simples é preço fixo direto, sem cálculo de máquina; Revenda é para produto comprado pronto de outro fornecedor." />
+              <CampoAjuda texto="Define como a máquina realmente produz este item e como o preço é calculado. M2 e Flexografia imprimem em bobina (rolo contínuo) com aproveitamento de largura; Offset imprime em folha, com custo de chapa por tiragem; Digital cobra por clique da impressora, sem aproveitamento de bobina ou folha; Serigrafia, Sublimação, Estampagem a quente e Personalização cobram um setup fixo (tela, matriz ou arte) mais um valor por peça; Bordado cobra pelo número de pontos da arte de cada pedido; Tempo de máquina cobra pelo tempo de uso e/ou pelos metros cortados (corte a laser, router, plotter); Simples é preço fixo direto, sem cálculo de máquina; Revenda é para produto comprado pronto de outro fornecedor." />
             </>
           }
           name="modeloCalculo"
@@ -375,6 +395,8 @@ export function ConfiguracaoProdutoForm({
           <option value="SUBLIMACAO">Sublimação</option>
           <option value="ESTAMPAGEM_QUENTE">Estampagem a quente (hot stamping)</option>
           <option value="PERSONALIZACAO">Personalização (tampografia, laser, DTG, transfer)</option>
+          <option value="BORDADO">Bordado</option>
+          <option value="TEMPO_MAQUINA">Tempo de máquina (corte a laser, router, plotter)</option>
           <option value="REVENDA">Revenda / terceirização</option>
         </Select>
 
@@ -710,6 +732,100 @@ export function ConfiguracaoProdutoForm({
             <p className="text-xs text-slate-500">
               Sem nesting — custo fixo de setup por tela/matriz/arte + custo variável por
               peça, com um piso mínimo de job. Largura/altura ficam opcionais no orçamento.
+            </p>
+          </div>
+        )}
+
+        {modeloCalculo === "BORDADO" && (
+          <div className="flex flex-col gap-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+            {maquinasBordado.length === 0 ? (
+              <Alert variant="error">
+                Nenhuma máquina de bordado cadastrada ainda. Cadastre uma em{" "}
+                <Link href="/configuracoes/maquinas" className="underline">
+                  Configurações → Máquinas
+                </Link>{" "}
+                antes de usar o modelo Bordado.
+              </Alert>
+            ) : (
+              <>
+                <Select
+                  label="Máquina de bordado"
+                  name="maquinaBordadoId"
+                  value={maquinaBordadoId}
+                  onChange={(e) => setMaquinaBordadoId(e.target.value)}
+                  hint="Define o custo por mil pontos e a taxa de digitalização de matriz usados no cálculo deste produto."
+                >
+                  <option value="">Selecione uma máquina</option>
+                  {maquinasBordado.map((maquina) => (
+                    <option key={maquina.id} value={maquina.id}>
+                      {maquina.nome}
+                      {maquina.emManutencao ? " (em manutenção)" : ""}
+                    </option>
+                  ))}
+                </Select>
+                {maquinaBordadoEmManutencao && (
+                  <Alert variant="warning">
+                    Esta máquina está com uma parada em andamento agora. Você ainda pode
+                    salvar o produto assim configurado, mas confira em{" "}
+                    <Link href="/configuracoes/maquinas/manutencao" className="underline">
+                      Configurações → Máquinas → Manutenção
+                    </Link>{" "}
+                    antes de produzir.
+                  </Alert>
+                )}
+              </>
+            )}
+            <p className="text-xs text-slate-500">
+              Sem nesting — custo por mil pontos da arte (informado por pedido) + taxa de
+              digitalização de matriz (1× por arte) + custo do substrato (peça em branco).
+              Largura/altura ficam opcionais no orçamento.
+            </p>
+          </div>
+        )}
+
+        {modeloCalculo === "TEMPO_MAQUINA" && (
+          <div className="flex flex-col gap-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+            {maquinasTempo.length === 0 ? (
+              <Alert variant="error">
+                Nenhuma máquina cadastrada ainda para este modelo. Cadastre uma em{" "}
+                <Link href="/configuracoes/maquinas" className="underline">
+                  Configurações → Máquinas
+                </Link>{" "}
+                antes de usar o modelo Tempo de máquina.
+              </Alert>
+            ) : (
+              <>
+                <Select
+                  label="Máquina"
+                  name="maquinaTempoId"
+                  value={maquinaTempoId}
+                  onChange={(e) => setMaquinaTempoId(e.target.value)}
+                  hint="Define o custo por hora de máquina, setup por job e (opcional) custo por metro de corte usados no cálculo deste produto."
+                >
+                  <option value="">Selecione uma máquina</option>
+                  {maquinasTempo.map((maquina) => (
+                    <option key={maquina.id} value={maquina.id}>
+                      {maquina.nome}
+                      {maquina.emManutencao ? " (em manutenção)" : ""}
+                    </option>
+                  ))}
+                </Select>
+                {maquinaTempoEmManutencao && (
+                  <Alert variant="warning">
+                    Esta máquina está com uma parada em andamento agora. Você ainda pode
+                    salvar o produto assim configurado, mas confira em{" "}
+                    <Link href="/configuracoes/maquinas/manutencao" className="underline">
+                      Configurações → Máquinas → Manutenção
+                    </Link>{" "}
+                    antes de produzir.
+                  </Alert>
+                )}
+              </>
+            )}
+            <p className="text-xs text-slate-500">
+              Sem nesting — custo pelo tempo estimado de máquina e/ou pelos metros de corte
+              (informados por pedido) + setup fixo por job, com um piso mínimo. Largura/altura
+              ficam opcionais no orçamento.
             </p>
           </div>
         )}

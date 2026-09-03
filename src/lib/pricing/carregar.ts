@@ -7,8 +7,10 @@ import type {
   ConfigAcabamento,
   ContextoPrecificacao,
   ParametrosImpressoraDigital,
+  ParametrosMaquinaBordado,
   ParametrosMaquinaFlexo,
   ParametrosMaquinaSetupPorPeca,
+  ParametrosMaquinaTempo,
   ParametrosPrensa,
   ParametrosTenant,
 } from "./index";
@@ -122,6 +124,47 @@ export async function carregarParametrosMaquinaSetupPorPeca(
   };
 }
 
+// Diferente de carregarParametrosTenant, não é self-healing — uma máquina de
+// bordado só existe se o usuário criou uma em Configurações > Máquinas >
+// Bordado (achado A4 da auditoria de abrangência). Chamador
+// (carregarContextoPrecificacao) já garante que só chama isso com um
+// maquinaBordadoId real.
+export async function carregarParametrosMaquinaBordado(
+  maquinaBordadoId: string,
+  graficaId: string
+): Promise<ParametrosMaquinaBordado> {
+  const registro = await prisma.maquinaBordado.findFirstOrThrow({
+    where: { id: maquinaBordadoId, graficaId },
+  });
+
+  return {
+    custoPorMilPontos: Number(registro.custoPorMilPontos),
+    custoMatrizDigitalizacao: Number(registro.custoMatrizDigitalizacao),
+    custoMinimo: Number(registro.custoMinimo ?? 0),
+  };
+}
+
+// Diferente de carregarParametrosTenant, não é self-healing — uma máquina de
+// tempo só existe se o usuário criou uma em Configurações > Máquinas >
+// Tempo de máquina (achado A6 da auditoria de abrangência). Chamador
+// (carregarContextoPrecificacao) já garante que só chama isso com um
+// maquinaTempoId real.
+export async function carregarParametrosMaquinaTempo(
+  maquinaTempoId: string,
+  graficaId: string
+): Promise<ParametrosMaquinaTempo> {
+  const registro = await prisma.maquinaTempo.findFirstOrThrow({
+    where: { id: maquinaTempoId, graficaId },
+  });
+
+  return {
+    custoHoraMaq: Number(registro.custoHoraMaq),
+    custoSetupPorJob: Number(registro.custoSetupPorJob),
+    custoMinimo: Number(registro.custoMinimo ?? 0),
+    custoPorMetroCorte: Number(registro.custoPorMetroCorte ?? 0),
+  };
+}
+
 // Nesta fase, um PRODUTO em modo M2/OFFSET carrega suas próprias BobinaMaterial/
 // FormatoFolha e seu próprio precoCompra como custo de material — ainda não existe
 // um vínculo formal "produto usa esta outra matéria-prima do catálogo", EXCETO
@@ -148,6 +191,8 @@ export async function carregarContextoPrecificacao(
       configuracaoClicheFlexografia: true,
       impressoraDigital: true,
       maquinaSetupPorPeca: true,
+      maquinaBordado: true,
+      maquinaTempo: true,
     },
   });
 
@@ -328,6 +373,37 @@ export async function carregarContextoPrecificacao(
     contexto.revenda = {
       custoAquisicaoUnitario: Number(item.precoCompra ?? 0),
     };
+  } else if (item.modeloCalculo === "BORDADO") {
+    // Achado A4 — mesmo papel de ContextoSetupPorPeca/ContextoDigital: custo
+    // da peça em branco (camiseta, boné) vindo de ItemGrafica.precoCompra.
+    if (!item.maquinaBordado) {
+      throw new ErroPrecificacao(
+        "MAQUINA_BORDADO_NAO_CONFIGURADA",
+        "Este produto usa o modelo Bordado mas não tem uma máquina selecionada — configure isso na tela do produto, no catálogo."
+      );
+    }
+
+    contexto.bordado = {
+      custoSubstratoPorPeca: Number(item.precoCompra ?? 0),
+    };
+    contexto.parametrosMaquinaBordado = await carregarParametrosMaquinaBordado(
+      item.maquinaBordado.id,
+      graficaId
+    );
+    contexto.maquinaBordadoUsada = { id: item.maquinaBordado.id, nome: item.maquinaBordado.nome };
+  } else if (item.modeloCalculo === "TEMPO_MAQUINA") {
+    // Achado A6 — sem substrato: TEMPO_MAQUINA não representa material, só
+    // tempo de máquina (ver comentário em tempo-maquina.ts).
+    if (!item.maquinaTempo) {
+      throw new ErroPrecificacao(
+        "MAQUINA_TEMPO_NAO_CONFIGURADA",
+        "Este produto usa o modelo Tempo de máquina mas não tem uma máquina selecionada — configure isso na tela do produto, no catálogo."
+      );
+    }
+
+    contexto.tempoMaquina = {};
+    contexto.parametrosMaquinaTempo = await carregarParametrosMaquinaTempo(item.maquinaTempo.id, graficaId);
+    contexto.maquinaTempoUsada = { id: item.maquinaTempo.id, nome: item.maquinaTempo.nome };
   }
 
   return contexto;

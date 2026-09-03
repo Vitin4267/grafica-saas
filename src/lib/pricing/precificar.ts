@@ -5,30 +5,38 @@ import { calcularFlexografia } from "./flexografia";
 import { calcularDigital } from "./digital";
 import { calcularSetupPorPeca } from "./setup-por-peca";
 import { calcularRevenda } from "./revenda";
+import { calcularBordado } from "./bordado";
+import { calcularTempoMaquina } from "./tempo-maquina";
 import { calcularAcabamentos } from "./acabamento";
 import { comporPreco, type ResultadoComposicao } from "./compor";
 import { ErroPrecificacao } from "./erros";
 import type {
   ConfigAcabamento,
   ContextoAcabamento,
+  ContextoBordado,
   ContextoDigital,
   ContextoFlexografia,
   ContextoM2,
   ContextoOffset,
   ContextoRevenda,
   ContextoSetupPorPeca,
+  ContextoTempoMaquina,
   ModeloCalculo,
   ParametrosImpressoraDigital,
+  ParametrosMaquinaBordado,
   ParametrosMaquinaFlexo,
   ParametrosMaquinaSetupPorPeca,
+  ParametrosMaquinaTempo,
   ParametrosPrensa,
   ParametrosTenant,
+  PedidoBordado,
   PedidoDigital,
   PedidoFlexografia,
   PedidoM2,
   PedidoOffset,
   PedidoRevenda,
   PedidoSetupPorPeca,
+  PedidoTempoMaquina,
 } from "./tipos";
 
 export type PedidoPrecificacao =
@@ -52,7 +60,11 @@ export type PedidoPrecificacao =
   // Revenda/terceirização (achado A12) — produto comprado pronto de um
   // fornecedor ou terceirizado, sem máquina e sem nesting, mesma ausência de
   // dimensões do DIGITAL acima.
-  | { tipo: "REVENDA"; pedido: PedidoRevenda; acabamentos: ConfigAcabamento[] };
+  | { tipo: "REVENDA"; pedido: PedidoRevenda; acabamentos: ConfigAcabamento[] }
+  // Bordado (achado A4) e tempo de máquina (achado A6) — sem nesting, mesma
+  // família do DIGITAL/setup-por-peça/REVENDA acima.
+  | { tipo: "BORDADO"; pedido: PedidoBordado; acabamentos: ConfigAcabamento[] }
+  | { tipo: "TEMPO_MAQUINA"; pedido: PedidoTempoMaquina; acabamentos: ConfigAcabamento[] };
 
 export type ContextoPrecificacao = {
   itemGraficaId: string;
@@ -64,6 +76,8 @@ export type ContextoPrecificacao = {
   digital?: ContextoDigital;
   setupPorPeca?: ContextoSetupPorPeca;
   revenda?: ContextoRevenda;
+  bordado?: ContextoBordado;
+  tempoMaquina?: ContextoTempoMaquina;
   parametros: ParametrosTenant;
   parametrosPrensa?: ParametrosPrensa;
   prensaUsada?: { id: string; nome: string };
@@ -73,6 +87,10 @@ export type ContextoPrecificacao = {
   impressoraDigitalUsada?: { id: string; nome: string };
   parametrosMaquinaSetupPorPeca?: ParametrosMaquinaSetupPorPeca;
   maquinaSetupPorPecaUsada?: { id: string; nome: string };
+  parametrosMaquinaBordado?: ParametrosMaquinaBordado;
+  maquinaBordadoUsada?: { id: string; nome: string };
+  parametrosMaquinaTempo?: ParametrosMaquinaTempo;
+  maquinaTempoUsada?: { id: string; nome: string };
   margemLucroOverride?: number;
   custoEmbalagem?: number;
   custoFreteEstimado?: number;
@@ -357,6 +375,100 @@ export function precificar(
       metricas: {
         custoAquisicaoUnitario: contexto.revenda.custoAquisicaoUnitario,
         custoAquisicaoTotal: resultado.custoBase.toNumber(),
+      },
+    };
+  }
+
+  if (pedido.tipo === "BORDADO") {
+    if (!contexto.bordado) {
+      throw new ErroPrecificacao(
+        "MAQUINA_BORDADO_NAO_CONFIGURADA",
+        "Contexto de substrato não fornecido para um item com modeloCalculo=BORDADO."
+      );
+    }
+    if (!contexto.parametrosMaquinaBordado) {
+      throw new ErroPrecificacao(
+        "MAQUINA_BORDADO_NAO_CONFIGURADA",
+        "Parâmetros de máquina não fornecidos para um item com modeloCalculo=BORDADO."
+      );
+    }
+
+    const resultado = calcularBordado(pedido.pedido, contexto.bordado, contexto.parametrosMaquinaBordado);
+
+    // Sem nesting — mesma lógica do Digital/setup-por-peça acima.
+    const ctxAcabamento: ContextoAcabamento = {
+      quantidade: pedido.pedido.quantidade,
+      larguraEfetivaM: pedido.pedido.larguraM ?? 0,
+      alturaEfetivaM: pedido.pedido.alturaM ?? 0,
+      ...ctxAcabamentoExtra(contexto, pedido.pedido.larguraM ?? 0, pedido.pedido.alturaM ?? 0),
+    };
+    const acabamentos = calcularAcabamentos(pedido.acabamentos, ctxAcabamento);
+
+    const composicao = comporPreco({
+      quantidade: pedido.pedido.quantidade,
+      custoBase: resultado.custoBase,
+      custoAcabamentos: acabamentos.total,
+      acabamentosDetalhe: acabamentos.itens,
+      custoEmbalagem: contexto.custoEmbalagem !== undefined ? paraDecimal(contexto.custoEmbalagem) : undefined,
+      custoFreteEstimado:
+        contexto.custoFreteEstimado !== undefined ? paraDecimal(contexto.custoFreteEstimado) : undefined,
+      custoFaca: contexto.custoFaca !== undefined ? paraDecimal(contexto.custoFaca) : undefined,
+      parametros: contexto.parametros,
+      margemLucroOverride: contexto.margemLucroOverride,
+      detalhesExtras: { setup: resultado.custoMatriz },
+    });
+
+    return {
+      ...composicao,
+      metricas: {
+        custoMatriz: resultado.custoMatriz.toNumber(),
+        custoPontos: resultado.custoPontos.toNumber(),
+        custoSubstrato: resultado.custoSubstrato.toNumber(),
+        maquinaBordadoUsada: contexto.maquinaBordadoUsada ?? null,
+      },
+    };
+  }
+
+  if (pedido.tipo === "TEMPO_MAQUINA") {
+    if (!contexto.parametrosMaquinaTempo) {
+      throw new ErroPrecificacao(
+        "MAQUINA_TEMPO_NAO_CONFIGURADA",
+        "Parâmetros de máquina não fornecidos para um item com modeloCalculo=TEMPO_MAQUINA."
+      );
+    }
+
+    const resultado = calcularTempoMaquina(pedido.pedido, contexto.parametrosMaquinaTempo);
+
+    // Sem nesting, sem substrato — mesma lógica do Digital/setup-por-peça acima.
+    const ctxAcabamento: ContextoAcabamento = {
+      quantidade: pedido.pedido.quantidade,
+      larguraEfetivaM: pedido.pedido.larguraM ?? 0,
+      alturaEfetivaM: pedido.pedido.alturaM ?? 0,
+      ...ctxAcabamentoExtra(contexto, pedido.pedido.larguraM ?? 0, pedido.pedido.alturaM ?? 0),
+    };
+    const acabamentos = calcularAcabamentos(pedido.acabamentos, ctxAcabamento);
+
+    const composicao = comporPreco({
+      quantidade: pedido.pedido.quantidade,
+      custoBase: resultado.custoBase,
+      custoAcabamentos: acabamentos.total,
+      acabamentosDetalhe: acabamentos.itens,
+      custoEmbalagem: contexto.custoEmbalagem !== undefined ? paraDecimal(contexto.custoEmbalagem) : undefined,
+      custoFreteEstimado:
+        contexto.custoFreteEstimado !== undefined ? paraDecimal(contexto.custoFreteEstimado) : undefined,
+      custoFaca: contexto.custoFaca !== undefined ? paraDecimal(contexto.custoFaca) : undefined,
+      parametros: contexto.parametros,
+      margemLucroOverride: contexto.margemLucroOverride,
+      detalhesExtras: { setup: resultado.custoSetup },
+    });
+
+    return {
+      ...composicao,
+      metricas: {
+        custoTempo: resultado.custoTempo.toNumber(),
+        custoCorte: resultado.custoCorte.toNumber(),
+        custoSetup: resultado.custoSetup.toNumber(),
+        maquinaTempoUsada: contexto.maquinaTempoUsada ?? null,
       },
     };
   }

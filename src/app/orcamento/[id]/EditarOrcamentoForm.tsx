@@ -69,7 +69,9 @@ export function EditarOrcamentoForm({
     | "SUBLIMACAO"
     | "ESTAMPAGEM_QUENTE"
     | "PERSONALIZACAO"
-    | "REVENDA";
+    | "REVENDA"
+    | "BORDADO"
+    | "TEMPO_MAQUINA";
   // ConfiguracaoClicheEtiqueta presente pro produto deste item — só então
   // mostra o seletor de papel/cores/faca/frete.
   usaClicheEtiqueta: boolean;
@@ -97,6 +99,9 @@ export function EditarOrcamentoForm({
     numeroCoresFlexo: string;
     numeroCliques: string;
     numeroSetups: string;
+    numeroPontos: string;
+    tempoEstimadoMin: string;
+    metrosCorte: string;
     horasEstimadas: string;
     custoAquisicaoUnitario: string;
     materialFornecidoPeloCliente: boolean;
@@ -133,20 +138,24 @@ export function EditarOrcamentoForm({
     modeloCalculo === "SUBLIMACAO" ||
     modeloCalculo === "ESTAMPAGEM_QUENTE" ||
     modeloCalculo === "PERSONALIZACAO" ||
-    modeloCalculo === "REVENDA";
+    modeloCalculo === "REVENDA" ||
+    modeloCalculo === "BORDADO" ||
+    modeloCalculo === "TEMPO_MAQUINA";
   // Diferente de usaMotorAvancado: só M2/OFFSET/FLEXOGRAFIA EXIGEM largura/
-  // altura pro cálculo em si (nesting) — Digital, os 3 de setup-por-peça e
-  // Revenda têm a dimensão opcional (ver design "dimensões opcionais" do
-  // plano).
+  // altura pro cálculo em si (nesting) — Digital, os 3 de setup-por-peça,
+  // Revenda, Bordado e Tempo de máquina têm a dimensão opcional (ver design
+  // "dimensões opcionais" do plano).
   const exigeDimensao = modeloCalculo === "M2" || modeloCalculo === "OFFSET" || modeloCalculo === "FLEXOGRAFIA";
   const usaModeloDigital = modeloCalculo === "DIGITAL";
-  // Achado B7 — mesmo agrupamento de SeletorItemOrcamento.tsx (os 4
+  // Achado B7 — mesmo agrupamento de SeletorItemOrcamento.tsx (os 5
   // compartilham a mesma checkbox "material fornecido pelo cliente").
   const usaModeloSetupPorPeca =
     modeloCalculo === "SERIGRAFIA" ||
     modeloCalculo === "SUBLIMACAO" ||
     modeloCalculo === "ESTAMPAGEM_QUENTE" ||
     modeloCalculo === "PERSONALIZACAO";
+  const usaModeloBordado = modeloCalculo === "BORDADO";
+  const usaModeloTempoMaquina = modeloCalculo === "TEMPO_MAQUINA";
   const mostraDimensao =
     exigeDimensao ||
     modeloCalculo === "DIGITAL" ||
@@ -154,7 +163,9 @@ export function EditarOrcamentoForm({
     modeloCalculo === "SUBLIMACAO" ||
     modeloCalculo === "ESTAMPAGEM_QUENTE" ||
     modeloCalculo === "PERSONALIZACAO" ||
-    modeloCalculo === "REVENDA";
+    modeloCalculo === "REVENDA" ||
+    modeloCalculo === "BORDADO" ||
+    modeloCalculo === "TEMPO_MAQUINA";
   // Mesmo agrupamento visual de SeletorItemOrcamento.tsx (fluxo de criação)
   // — o formulário de edição tem exatamente os mesmos campos duplicados, e a
   // tarefa pede a mesma estrutura nos dois pra não confundir o usuário.
@@ -163,7 +174,9 @@ export function EditarOrcamentoForm({
     modeloCalculo === "FLEXOGRAFIA" ||
     usaModeloDigital ||
     usaModeloSetupPorPeca ||
-    modeloCalculo === "REVENDA";
+    modeloCalculo === "REVENDA" ||
+    usaModeloBordado ||
+    usaModeloTempoMaquina;
   const [largura, setLargura] = useState(() =>
     paraExibicao(valoresIniciais.larguraCm, unidadeDimensao)
   );
@@ -350,7 +363,57 @@ export function EditarOrcamentoForm({
                 />
               )}
 
-              {(usaModeloDigital || usaModeloSetupPorPeca) && (
+              {usaModeloBordado && (
+                <Input
+                  label={
+                    <>
+                      Número de pontos da arte
+                      <CampoAjuda texto="Quantos pontos a máquina de bordado vai dar pra fazer esta arte — quanto maior a arte (logo pequeno vs. bordado grande de costas), mais pontos, mais tempo de máquina e mais linha gasta. Costuma vir do programa de digitalização da arte." />
+                    </>
+                  }
+                  name="numeroPontos"
+                  type="number"
+                  min={1}
+                  required
+                  defaultValue={valoresIniciais.numeroPontos}
+                  hint="Ex: um logo pequeno tem ~3.000 pontos; um bordado grande de costas pode passar de 15.000."
+                />
+              )}
+
+              {usaModeloTempoMaquina && (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Input
+                    label={
+                      <>
+                        Tempo estimado de máquina (min)
+                        <CampoAjuda texto="Quanto tempo a máquina fica rodando pra produzir este item inteiro (todas as peças da quantidade), em minutos. Preencha este campo, os metros de corte ao lado, ou os dois — a máquina cobra pelo que estiver preenchido." />
+                      </>
+                    }
+                    name="tempoEstimadoMin"
+                    type="number"
+                    min={0.01}
+                    step="0.01"
+                    defaultValue={valoresIniciais.tempoEstimadoMin}
+                    placeholder="opcional"
+                  />
+                  <Input
+                    label={
+                      <>
+                        Metros de corte
+                        <CampoAjuda texto="Total de metros lineares que a faca/laser vai cortar pra produzir este item inteiro — só preencha se a máquina escolhida cobra por metro de corte." />
+                      </>
+                    }
+                    name="metrosCorte"
+                    type="number"
+                    min={0.01}
+                    step="0.01"
+                    defaultValue={valoresIniciais.metrosCorte}
+                    placeholder="opcional"
+                  />
+                </div>
+              )}
+
+              {(usaModeloDigital || usaModeloSetupPorPeca || usaModeloBordado) && (
                 <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
                   <input
                     type="checkbox"

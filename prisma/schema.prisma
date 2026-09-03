@@ -128,6 +128,10 @@ model Grafica {
   equipamentos          Equipamento[]
   impressorasDigitais   ImpressoraDigital[]
   maquinasSetupPorPeca  MaquinaSetupPorPeca[]
+  // Achados A4/A6 da Parte 1 da auditoria de abrangência
+  // (pesquisa-abrangencia-modulos.md) — ver model MaquinaBordado/MaquinaTempo.
+  maquinasBordado       MaquinaBordado[]
+  maquinasTempo         MaquinaTempo[]
   registrosManutencao   RegistroManutencao[]
   // Achado F1 da Parte 7 da auditoria de abrangência — ver model Ferramental.
   ferramentais          Ferramental[]
@@ -522,6 +526,80 @@ model MaquinaSetupPorPeca {
   @@index([graficaId])
   @@index([tipoProcesso])
   @@map("maquinas_setup_por_peca")
+}
+
+// Achado A4 da Parte 1 da auditoria de abrangência (pesquisa-abrangencia-
+// modulos.md): bordado não cabe em MaquinaSetupPorPeca (calcularSetupPorPeca)
+// porque lá o custo por peça é FIXO na máquina (custoPorPeca) — em bordado o
+// custo por peça varia com o número de PONTOS da arte de cada pedido, um
+// logo de 3.000 pontos e uma arte de costas de 15.000 pontos custam 5×
+// diferente na mesma máquina, na mesma camiseta. Por isso é um model (e um
+// ModeloCalculo) próprio, não mais um tipoProcesso de MaquinaSetupPorPeca —
+// mesmo padrão de FK/índice/@@map desse model, mas sem tipoProcesso (não há
+// "sabor" de bordado, é sempre a mesma fórmula por pontos).
+// custoPorMilPontos/custoMatrizDigitalizacao são o custo VARIÁVEL por pedido
+// (ver OrcamentoItem.numeroPontos) — @default(0) só pra permitir criar a
+// máquina com nome e ajustar os custos na tela seguinte (mesmo padrão de
+// criarMaquinaSetupPorPeca/criarImpressoraDigital: "Nova máquina" grava só o
+// nome, os custos ficam zerados até o usuário editar). cabecas é
+// informativo/produtivo (não entra na fórmula de custo desta v1) —
+// @default(1) pela mesma razão de criação com o mínimo de campos.
+// custoHoraMaq/custoMinimo nullable = opcionais de verdade (nem todo bordado
+// cobra hora de máquina separada nem tem piso de job).
+model MaquinaBordado {
+  id                       String   @id @default(cuid())
+  graficaId                String
+  nome                     String
+  custoPorMilPontos        Decimal  @default(0) @db.Decimal(10, 2)
+  custoMatrizDigitalizacao Decimal  @default(0) @db.Decimal(10, 2)
+  cabecas                  Int      @default(1)
+  custoHoraMaq             Decimal? @db.Decimal(10, 2)
+  custoMinimo              Decimal? @db.Decimal(10, 2)
+  ativa                    Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica  Grafica       @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  produtos ItemGrafica[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("maquinas_bordado")
+}
+
+// Achado A6 da Parte 1 da auditoria de abrangência (pesquisa-abrangencia-
+// modulos.md): corte/gravação a laser, router CNC, plotter de recorte,
+// montagem de letra caixa/totem — nenhum modelo cobra por TEMPO DE MÁQUINA
+// hoje (Equipamento.CORTE_LASER_ROUTER/PLOTTER_RECORTE existem só como
+// cadastro informativo, nunca influenciam preço — ver comentário do model
+// Equipamento). Mesmo padrão de FK/índice/@@map de MaquinaSetupPorPeca, sem
+// tipoProcesso (não há "sabor" — a gráfica escolhe cobrar por tempo, por
+// metro de corte, ou os dois somados, tudo na mesma máquina). custoHoraMaq/
+// custoSetupPorJob são o custo VARIÁVEL por pedido (ver
+// OrcamentoItem.tempoEstimadoMin/metrosCorte) — @default(0) pela mesma razão
+// de MaquinaBordado acima (criar só com nome, ajustar custo depois).
+// custoMinimo/custoPorMetroCorte nullable = opcionais de verdade (corte a
+// metro só faz sentido pra plotter/router; nem toda máquina tem piso).
+model MaquinaTempo {
+  id                 String   @id @default(cuid())
+  graficaId          String
+  nome               String
+  custoHoraMaq       Decimal  @default(0) @db.Decimal(10, 2)
+  custoSetupPorJob   Decimal  @default(0) @db.Decimal(10, 2)
+  custoMinimo        Decimal? @db.Decimal(10, 2)
+  custoPorMetroCorte Decimal? @db.Decimal(10, 2)
+  ativa              Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica  Grafica       @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  produtos ItemGrafica[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("maquinas_tempo")
 }
 
 // Categorias reais de equipamento de gráfica levantadas por pesquisa
@@ -2049,6 +2127,20 @@ enum ModeloCalculo {
   // comporPreco de todo mundo — ganha overhead/imposto/margem/piso e
   // breakdown auditável, ao contrário de SIMPLES (preço digitado, custo zero).
   REVENDA
+  // Achados A4/A6 da Parte 1 da auditoria de abrangência
+  // (pesquisa-abrangencia-modulos.md, 2026-09-02). BORDADO: custoBase =
+  // custoMatrizDigitalizacao (1×, não escala com tiragem — mesmo princípio
+  // já usado no clichê de etiqueta) + Q × (numeroPontos/1000 ×
+  // custoPorMilPontos) + Q × custoSubstrato (ver MaquinaBordado,
+  // OrcamentoItem.numeroPontos). TEMPO_MAQUINA: custoBase = tempo
+  // (tempoEstimadoMin/60 × custoHoraMaq) + corte (metrosCorte ×
+  // custoPorMetroCorte, se preenchido) + custoSetupPorJob (1× por item) com
+  // custoMinimo como piso — cobre corte/gravação a laser, router CNC,
+  // plotter de recorte, montagem de letra caixa/totem (ver MaquinaTempo,
+  // OrcamentoItem.tempoEstimadoMin/metrosCorte). Sem nesting, mesma família
+  // de DIGITAL/setup-por-peça/REVENDA acima.
+  BORDADO
+  TEMPO_MAQUINA
 }
 
 // Como um acabamento (SERVICO) é cobrado — spec §3. FOLHA_IMPRESSA é o caso mais sutil:
@@ -2200,6 +2292,17 @@ model ItemGrafica {
   // (onDelete=Restrict).
   maquinaSetupPorPecaId String?
 
+  // Qual máquina de bordado produz este item — só relevante/obrigatório (na
+  // aplicação) quando modeloCalculo=BORDADO (achado A4). Mesma regra de
+  // prensaId (onDelete=Restrict).
+  maquinaBordadoId String?
+
+  // Qual máquina de tempo (corte/gravação a laser, router CNC, plotter de
+  // recorte...) produz este item — só relevante/obrigatório (na aplicação)
+  // quando modeloCalculo=TEMPO_MAQUINA (achado A6). Mesma regra de prensaId
+  // (onDelete=Restrict).
+  maquinaTempoId String?
+
   // Gramatura escolhida — só relevante quando modeloCalculo=OFFSET (produto) ou
   // quando este item é usado como papel de outro produto (matéria-prima). No
   // produto, alimenta tanto o peso físico real da folha quanto a busca (com
@@ -2239,6 +2342,8 @@ model ItemGrafica {
   maquinaFlexografia  MaquinaFlexografia?  @relation(fields: [maquinaFlexografiaId], references: [id], onDelete: Restrict)
   impressoraDigital   ImpressoraDigital?   @relation(fields: [impressoraDigitalId], references: [id], onDelete: Restrict)
   maquinaSetupPorPeca MaquinaSetupPorPeca? @relation(fields: [maquinaSetupPorPecaId], references: [id], onDelete: Restrict)
+  maquinaBordado      MaquinaBordado?      @relation(fields: [maquinaBordadoId], references: [id], onDelete: Restrict)
+  maquinaTempo        MaquinaTempo?        @relation(fields: [maquinaTempoId], references: [id], onDelete: Restrict)
   papel               ItemGrafica?         @relation("PapelDoProdutoOffset", fields: [papelId], references: [id], onDelete: Restrict)
   // SetNull: desativar/remover a categoria de custo não pode travar a
   // matéria-prima — ela só volta a cair na categoria padrão da gráfica.
@@ -2287,6 +2392,8 @@ model ItemGrafica {
   @@index([categoriaCustoId])
   @@index([impressoraDigitalId])
   @@index([maquinaSetupPorPecaId])
+  @@index([maquinaBordadoId])
+  @@index([maquinaTempoId])
   @@map("itens_grafica")
 }
 
@@ -3895,6 +4002,19 @@ model OrcamentoItem {
   // SUBLIMACAO/ESTAMPAGEM_QUENTE only, os 3 compartilham este mesmo campo
   // (mesma razão de compartilharem calcularSetupPorPeca).
   numeroSetups                 Int?
+  // Nº de pontos da arte de bordado — modeloCalculo=BORDADO only (achado A4).
+  // Driver de custo POR PEDIDO (diferente de numeroSetups acima, que é fixo
+  // na máquina): a mesma máquina, na mesma camiseta, custa 5× diferente
+  // entre um logo de 3.000 pontos e uma arte de costas de 15.000 pontos.
+  numeroPontos                 Int?
+  // Tempo estimado de máquina (minutos) e metros de corte — modeloCalculo=
+  // TEMPO_MAQUINA only (achado A6). A gráfica escolhe a base na máquina
+  // (tempo, metro de corte, ou os dois somados) — ambos opcionais e
+  // independentes; o motor só cobra o que estiver preenchido (ver
+  // calcularTempoMaquina em src/lib/pricing/tempo-maquina.ts). Decimal (não
+  // Int) porque o vendedor pode estimar em fração de minuto/metro.
+  tempoEstimadoMin             Decimal?      @db.Decimal(10, 2)
+  metrosCorte                  Decimal?      @db.Decimal(10, 2)
   // Estimativa de horas — só usada quando o item tem um acabamento anexado
   // com ConfiguracaoAcabamento.baseCobranca=HORA (ex: instalação, criação de
   // arte). Independente de modeloCalculo, ao contrário de numeroSetups

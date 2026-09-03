@@ -164,6 +164,14 @@ export const itemEntradaSchema = z.object({
   // Motores Serigrafia/Sublimação/Estampagem a quente — os 3 compartilham
   // este campo (ver src/lib/orcamento-precificacao.ts).
   numeroSetups: z.number().int().nullable(),
+  // Motor Bordado (achado A4) — nº de pontos da arte deste pedido, driver de
+  // custo POR PEDIDO (diferente de numeroSetups acima, fixo na máquina).
+  numeroPontos: z.number().int().nullable(),
+  // Motor Tempo de máquina (achado A6) — a gráfica escolhe a base na máquina
+  // (tempo, metro de corte, ou os dois somados); ambos opcionais, mas
+  // calcularItemOrcamento exige ao menos um preenchido.
+  tempoEstimadoMin: z.number().positive().nullable(),
+  metrosCorte: z.number().positive().nullable(),
   // Acabamento cobrado por hora (ex: instalação, criação de arte) — não é
   // model-gated, independente do modeloCalculo do item.
   horasEstimadas: z.number().positive().nullable(),
@@ -187,8 +195,8 @@ export const itemEntradaSchema = z.object({
   // cai no ItemGrafica.precoCompra do catálogo (ver src/lib/pricing/carregar.ts).
   custoAquisicaoUnitario: z.number().nonnegative().nullable(),
   // "Material fornecido pelo cliente" (achado B7) — DIGITAL/SERIGRAFIA/
-  // SUBLIMACAO/ESTAMPAGEM_QUENTE/PERSONALIZACAO only; zera o custo do
-  // substrato pra este item (ver src/lib/orcamento-precificacao.ts).
+  // SUBLIMACAO/ESTAMPAGEM_QUENTE/PERSONALIZACAO/BORDADO only; zera o custo
+  // do substrato pra este item (ver src/lib/orcamento-precificacao.ts).
   materialFornecidoPeloCliente: z.boolean(),
 });
 

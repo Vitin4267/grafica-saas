@@ -147,6 +147,9 @@ type ItemCarrinho = {
   numeroCoresFlexo: number | null;
   numeroCliques: number | null;
   numeroSetups: number | null;
+  numeroPontos: number | null;
+  tempoEstimadoMin: number | null;
+  metrosCorte: number | null;
   horasEstimadas: number | null;
   custoAquisicaoUnitario: number | null;
   materialFornecidoPeloCliente: boolean;
@@ -166,7 +169,9 @@ type ItemCarrinho = {
     | "SUBLIMACAO"
     | "ESTAMPAGEM_QUENTE"
     | "PERSONALIZACAO"
-    | "REVENDA";
+    | "REVENDA"
+    | "BORDADO"
+    | "TEMPO_MAQUINA";
   etiqueta: CamposEtiqueta;
   precificacaoEtiqueta: CamposPrecificacaoEtiqueta;
 };
@@ -235,10 +240,13 @@ export function CalculadoraForm({
     itemSelecionado?.modeloCalculo === "SUBLIMACAO" ||
     itemSelecionado?.modeloCalculo === "ESTAMPAGEM_QUENTE" ||
     itemSelecionado?.modeloCalculo === "PERSONALIZACAO" ||
-    // Revenda/terceirização (achado A12) — sem nesting, mas SEMPRE motor
-    // avançado: custoBase precisa passar por comporPreco (overhead/margem/
-    // piso), nunca o preview client-side de SIMPLES abaixo.
-    itemSelecionado?.modeloCalculo === "REVENDA";
+    // Revenda/terceirização (achado A12), bordado (achado A4) e tempo de
+    // máquina (achado A6) — sem nesting, mas SEMPRE motor avançado:
+    // custoBase precisa passar por comporPreco (overhead/margem/piso), nunca
+    // o preview client-side de SIMPLES abaixo.
+    itemSelecionado?.modeloCalculo === "REVENDA" ||
+    itemSelecionado?.modeloCalculo === "BORDADO" ||
+    itemSelecionado?.modeloCalculo === "TEMPO_MAQUINA";
 
   // Prévia instantânea, sem round-trip, só pra itens SIMPLES (matemática pura,
   // igual a src/lib/orcamento.ts). M2/Offset só têm preço real depois de
@@ -291,6 +299,9 @@ export function CalculadoraForm({
       campos.numeroCoresFlexo !== "" ? Number(campos.numeroCoresFlexo) : null;
     const numeroCliques = campos.numeroCliques !== "" ? Number(campos.numeroCliques) : null;
     const numeroSetups = campos.numeroSetups !== "" ? Number(campos.numeroSetups) : null;
+    const numeroPontos = campos.numeroPontos !== "" ? Number(campos.numeroPontos) : null;
+    const tempoEstimadoMin = campos.tempoEstimadoMin !== "" ? Number(campos.tempoEstimadoMin) : null;
+    const metrosCorte = campos.metrosCorte !== "" ? Number(campos.metrosCorte) : null;
     const horasEstimadas = campos.horasEstimadas !== "" ? Number(campos.horasEstimadas) : null;
     const custoAquisicaoUnitario =
       campos.custoAquisicaoUnitario !== "" ? Number(campos.custoAquisicaoUnitario) : null;
@@ -321,6 +332,9 @@ export function CalculadoraForm({
       numeroCoresFlexo,
       numeroCliques,
       numeroSetups,
+      numeroPontos,
+      tempoEstimadoMin,
+      metrosCorte,
       horasEstimadas,
       acabamentoIds: campos.acabamentoIds,
       papelId,
@@ -355,6 +369,9 @@ export function CalculadoraForm({
         numeroCoresFlexo,
         numeroCliques,
         numeroSetups,
+        numeroPontos,
+        tempoEstimadoMin,
+        metrosCorte,
         horasEstimadas,
         custoAquisicaoUnitario,
         materialFornecidoPeloCliente,
@@ -390,6 +407,9 @@ export function CalculadoraForm({
       numeroCoresFlexo: i.numeroCoresFlexo,
       numeroCliques: i.numeroCliques,
       numeroSetups: i.numeroSetups,
+      numeroPontos: i.numeroPontos,
+      tempoEstimadoMin: i.tempoEstimadoMin,
+      metrosCorte: i.metrosCorte,
       horasEstimadas: i.horasEstimadas,
       custoAquisicaoUnitario: i.custoAquisicaoUnitario,
       materialFornecidoPeloCliente: i.materialFornecidoPeloCliente,

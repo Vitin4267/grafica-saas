@@ -184,6 +184,8 @@ function componentesCustoBreakdown(
     | "ESTAMPAGEM_QUENTE"
     | "PERSONALIZACAO"
     | "REVENDA"
+    | "BORDADO"
+    | "TEMPO_MAQUINA"
 ): ComponenteCusto[] | null {
   if (!breakdown || typeof breakdown !== "object" || Array.isArray(breakdown)) return null;
   const raiz = breakdown as Record<string, unknown>;
@@ -242,6 +244,30 @@ function componentesCustoBreakdown(
 
   if (modeloCalculo === "REVENDA") {
     return materialTotal.gt(0) ? [{ chave: "material", valor: materialTotal }] : [];
+  }
+
+  // Bordado (achado A4) — mesmo raciocínio de DIGITAL acima: `setup` no
+  // breakdown é a taxa de digitalização de matriz (custoMatrizDigitalizacao,
+  // 1× por pedido — ver src/lib/pricing/precificar.ts), o resto do total é
+  // substrato + custo por pontos, roteado como "material" (a peça em
+  // branco + a linha/entretela consumida na máquina).
+  if (modeloCalculo === "BORDADO") {
+    const custoMatriz = lerDecimalDeJson(detalhes.setup) ?? paraDecimal(0);
+    const restante = materialTotal.minus(custoMatriz);
+
+    const componentes: ComponenteCusto[] = [];
+    if (restante.gt(0)) componentes.push({ chave: "material", valor: restante });
+    if (custoMatriz.gt(0)) componentes.push({ chave: "impressao", valor: custoMatriz });
+    return componentes;
+  }
+
+  // Tempo de máquina (achado A6) — sem substrato (não representa material,
+  // só tempo/corte de máquina — ver comentário em
+  // src/lib/pricing/tempo-maquina.ts), então o total inteiro é custo de
+  // "impressao" (máquina/serviço), mesmo raciocínio de SERIGRAFIA/
+  // SUBLIMACAO/ESTAMPAGEM_QUENTE/PERSONALIZACAO acima.
+  if (modeloCalculo === "TEMPO_MAQUINA") {
+    return materialTotal.gt(0) ? [{ chave: "impressao", valor: materialTotal }] : [];
   }
 
   // OFFSET
@@ -407,8 +433,9 @@ export async function calcularPrevisaoAprovacaoPedido(
       continue;
     }
 
-    // M2, OFFSET, FLEXOGRAFIA, DIGITAL ou setup-por-peça (SERIGRAFIA/
-    // SUBLIMACAO/ESTAMPAGEM_QUENTE)
+    // M2, OFFSET, FLEXOGRAFIA, DIGITAL, setup-por-peça (SERIGRAFIA/
+    // SUBLIMACAO/ESTAMPAGEM_QUENTE/PERSONALIZACAO), REVENDA, BORDADO ou
+    // TEMPO_MAQUINA.
     const componentes = item.breakdown ? componentesCustoBreakdown(item.breakdown, item.modeloCalculo) : null;
     if (!componentes) {
       itensSemPrevisao.push(`${nomeItem} (breakdown do motor de precificação ausente ou inválido)`);

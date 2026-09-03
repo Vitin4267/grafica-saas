@@ -55,6 +55,8 @@ const modeloCalculoSchema = z.enum([
   "ESTAMPAGEM_QUENTE",
   "PERSONALIZACAO",
   "REVENDA",
+  "BORDADO",
+  "TEMPO_MAQUINA",
 ]);
 // Sem OUTRO de propósito: unidadeContagem não tem campo "outro" livre (só
 // ItemCatalogo.unidade tem), então OUTRO aqui só mostraria o rótulo genérico
@@ -184,6 +186,8 @@ export async function salvarModeloProduto(
     ESTAMPAGEM_QUENTE: "Estampagem a quente",
     PERSONALIZACAO: "Personalização (tampografia, laser, DTG, transfer)",
     REVENDA: "Revenda / terceirização",
+    BORDADO: "Bordado",
+    TEMPO_MAQUINA: "Tempo de máquina (corte a laser, router, plotter)",
   };
   const modeloAntes = ROTULO_MODELO[itemGrafica.modeloCalculo as typeof modeloCalculo] ?? itemGrafica.modeloCalculo;
 
@@ -528,6 +532,88 @@ export async function salvarModeloProduto(
         descricao: `Modelo de cálculo do item atualizado para ${ROTULO_MODELO.REVENDA}`,
         valorAnterior: `Modelo: ${modeloAntes}`,
         valorNovo: `Modelo: ${ROTULO_MODELO.REVENDA}`,
+      });
+    } else if (modeloCalculo === "BORDADO") {
+      // Achado A4 da auditoria de abrangência — bordado cobra por PONTO da
+      // arte de cada pedido (ver OrcamentoItem.numeroPontos), não por peça
+      // fixa como setup-por-peça: máquina própria (MaquinaBordado), sem
+      // bobina/papel/formato.
+      const maquinaBordadoId = String(formData.get("maquinaBordadoId") ?? "");
+      if (!maquinaBordadoId) {
+        return {
+          ok: false,
+          mensagem: "Selecione uma máquina para habilitar o cálculo Bordado.",
+        };
+      }
+      const maquinaValida = await prisma.maquinaBordado.findFirst({
+        where: { id: maquinaBordadoId, graficaId: usuario.graficaId, ativa: true },
+        select: { id: true },
+      });
+      if (!maquinaValida) {
+        return { ok: false, mensagem: "Máquina selecionada é inválida." };
+      }
+
+      await prisma.itemGrafica.update({
+        where: { id: itemGraficaId },
+        data: {
+          modeloCalculo: "BORDADO",
+          maquinaBordadoId,
+          unidadeContagem: unidadeContagemFinal,
+          fatorConversao: fatorConversaoFinal,
+        },
+      });
+
+      await registrarAuditoria({
+        graficaId: usuario.graficaId,
+        usuarioId: usuario.id,
+        usuarioNome: usuario.nome,
+        acao: "catalogo.salvar_modelo_calculo",
+        entidade: "ItemGrafica",
+        entidadeId: itemGraficaId,
+        descricao: `Modelo de cálculo do item atualizado para ${ROTULO_MODELO.BORDADO}`,
+        valorAnterior: `Modelo: ${modeloAntes}`,
+        valorNovo: `Modelo: ${ROTULO_MODELO.BORDADO}`,
+      });
+    } else if (modeloCalculo === "TEMPO_MAQUINA") {
+      // Achado A6 da auditoria de abrangência — corte/gravação a laser,
+      // router CNC, plotter de recorte: cobra por tempo de máquina e/ou
+      // metro de corte (ver OrcamentoItem.tempoEstimadoMin/metrosCorte),
+      // máquina própria (MaquinaTempo), sem bobina/papel/formato.
+      const maquinaTempoId = String(formData.get("maquinaTempoId") ?? "");
+      if (!maquinaTempoId) {
+        return {
+          ok: false,
+          mensagem: "Selecione uma máquina para habilitar o cálculo Tempo de máquina.",
+        };
+      }
+      const maquinaValida = await prisma.maquinaTempo.findFirst({
+        where: { id: maquinaTempoId, graficaId: usuario.graficaId, ativa: true },
+        select: { id: true },
+      });
+      if (!maquinaValida) {
+        return { ok: false, mensagem: "Máquina selecionada é inválida." };
+      }
+
+      await prisma.itemGrafica.update({
+        where: { id: itemGraficaId },
+        data: {
+          modeloCalculo: "TEMPO_MAQUINA",
+          maquinaTempoId,
+          unidadeContagem: unidadeContagemFinal,
+          fatorConversao: fatorConversaoFinal,
+        },
+      });
+
+      await registrarAuditoria({
+        graficaId: usuario.graficaId,
+        usuarioId: usuario.id,
+        usuarioNome: usuario.nome,
+        acao: "catalogo.salvar_modelo_calculo",
+        entidade: "ItemGrafica",
+        entidadeId: itemGraficaId,
+        descricao: `Modelo de cálculo do item atualizado para ${ROTULO_MODELO.TEMPO_MAQUINA}`,
+        valorAnterior: `Modelo: ${modeloAntes}`,
+        valorNovo: `Modelo: ${ROTULO_MODELO.TEMPO_MAQUINA}`,
       });
     }
   } catch {

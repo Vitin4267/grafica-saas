@@ -17,6 +17,8 @@ import { NovaMaquinaFlexografiaForm } from "./flexografia/NovaMaquinaFlexografia
 import { NovoEquipamentoForm } from "./equipamentos/NovoEquipamentoForm";
 import { NovaImpressoraDigitalForm } from "./impressao-digital/NovaImpressoraDigitalForm";
 import { NovaMaquinaSetupPorPecaForm } from "./setup-por-peca/NovaMaquinaSetupPorPecaForm";
+import { NovaMaquinaBordadoForm } from "./bordado/NovaMaquinaBordadoForm";
+import { NovaMaquinaTempoForm } from "./tempo-maquina/NovaMaquinaTempoForm";
 import { indexarManutencoesAtivasPorMaquina } from "@/lib/manutencao-maquina";
 import { ROTULO_CATEGORIA_EQUIPAMENTO, ROTULO_PROCESSO_SETUP_POR_PECA } from "@/lib/tipos-equipamento";
 
@@ -33,6 +35,8 @@ export default async function MaquinasPage() {
     equipamentos,
     impressorasDigitais,
     maquinasSetupPorPeca,
+    maquinasBordado,
+    maquinasTempo,
     registrosAtivos,
   ] = await Promise.all([
     prisma.prensa.findMany({
@@ -52,6 +56,14 @@ export default async function MaquinasPage() {
       orderBy: { nome: "asc" },
     }),
     prisma.maquinaSetupPorPeca.findMany({
+      where: { graficaId: usuario.graficaId },
+      orderBy: { nome: "asc" },
+    }),
+    prisma.maquinaBordado.findMany({
+      where: { graficaId: usuario.graficaId },
+      orderBy: { nome: "asc" },
+    }),
+    prisma.maquinaTempo.findMany({
       where: { graficaId: usuario.graficaId },
       orderBy: { nome: "asc" },
     }),
@@ -403,6 +415,127 @@ export default async function MaquinasPage() {
                 Nova máquina
               </h3>
               <NovaMaquinaSetupPorPecaForm />
+            </Card>
+          )}
+        </div>
+
+        <div className="mb-8">
+          <h2 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">
+            Bordado
+          </h2>
+          <p className="mb-4 text-sm text-slate-500">
+            O custo por pedido varia com o número de pontos da arte — diferente das
+            máquinas acima, que cobram um valor fixo por peça.
+          </p>
+          <div className="mb-6 flex flex-col gap-3">
+            {maquinasBordado.length === 0 && (
+              <Card className="p-5">
+                <p className="text-sm text-slate-500">
+                  Nenhuma máquina de bordado cadastrada ainda — crie a primeira abaixo.
+                </p>
+              </Card>
+            )}
+            {maquinasBordado.map((maquina) => (
+              <Link key={maquina.id} href={`/configuracoes/maquinas/bordado/${maquina.id}`}>
+                <Card className="flex items-center justify-between p-5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                  <div>
+                    <p className="font-medium text-slate-900 dark:text-white">
+                      {maquina.nome}
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      R$ {Number(maquina.custoPorMilPontos).toFixed(2)}/mil pontos · R${" "}
+                      {Number(maquina.custoMatrizDigitalizacao).toFixed(2)} matriz · {maquina.cabecas}{" "}
+                      cabeça{maquina.cabecas > 1 ? "s" : ""}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {ativasPorMaquina.has(maquina.id) && (
+                      <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+                        Em manutenção
+                      </span>
+                    )}
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                        maquina.ativa
+                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+                          : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                      }`}
+                    >
+                      {maquina.ativa ? "Ativa" : "Inativa"}
+                    </span>
+                  </div>
+                </Card>
+              </Link>
+            ))}
+          </div>
+
+          {podeEditar && (
+            <Card className="p-6">
+              <h3 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">
+                Nova máquina de bordado
+              </h3>
+              <NovaMaquinaBordadoForm />
+            </Card>
+          )}
+        </div>
+
+        <div className="mb-8">
+          <h2 className="mb-4 text-lg font-semibold text-slate-900 dark:text-white">
+            Tempo de máquina
+          </h2>
+          <p className="mb-4 text-sm text-slate-500">
+            Corte/gravação a laser, router CNC, plotter de recorte — cobra por tempo de
+            máquina e/ou por metro de corte, sem aproveitamento de bobina ou folha.
+          </p>
+          <div className="mb-6 flex flex-col gap-3">
+            {maquinasTempo.length === 0 && (
+              <Card className="p-5">
+                <p className="text-sm text-slate-500">
+                  Nenhuma máquina cadastrada ainda — crie a primeira abaixo.
+                </p>
+              </Card>
+            )}
+            {maquinasTempo.map((maquina) => (
+              <Link key={maquina.id} href={`/configuracoes/maquinas/tempo-maquina/${maquina.id}`}>
+                <Card className="flex items-center justify-between p-5 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                  <div>
+                    <p className="font-medium text-slate-900 dark:text-white">
+                      {maquina.nome}
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      R$ {Number(maquina.custoHoraMaq).toFixed(2)}/h · R${" "}
+                      {Number(maquina.custoSetupPorJob).toFixed(2)} setup
+                      {maquina.custoPorMetroCorte !== null &&
+                        ` · R$ ${Number(maquina.custoPorMetroCorte).toFixed(2)}/m de corte`}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {ativasPorMaquina.has(maquina.id) && (
+                      <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+                        Em manutenção
+                      </span>
+                    )}
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                        maquina.ativa
+                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+                          : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                      }`}
+                    >
+                      {maquina.ativa ? "Ativa" : "Inativa"}
+                    </span>
+                  </div>
+                </Card>
+              </Link>
+            ))}
+          </div>
+
+          {podeEditar && (
+            <Card className="p-6">
+              <h3 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">
+                Nova máquina de tempo
+              </h3>
+              <NovaMaquinaTempoForm />
             </Card>
           )}
         </div>

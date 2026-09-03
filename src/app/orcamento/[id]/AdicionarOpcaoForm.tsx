@@ -84,6 +84,9 @@ type ItemCarrinho = {
   numeroCoresFlexo: number | null;
   numeroCliques: number | null;
   numeroSetups: number | null;
+  numeroPontos: number | null;
+  tempoEstimadoMin: number | null;
+  metrosCorte: number | null;
   horasEstimadas: number | null;
   custoAquisicaoUnitario: number | null;
   materialFornecidoPeloCliente: boolean;
@@ -161,6 +164,9 @@ export function AdicionarOpcaoForm({
     const numeroCoresFlexo = campos.numeroCoresFlexo !== "" ? Number(campos.numeroCoresFlexo) : null;
     const numeroCliques = campos.numeroCliques !== "" ? Number(campos.numeroCliques) : null;
     const numeroSetups = campos.numeroSetups !== "" ? Number(campos.numeroSetups) : null;
+    const numeroPontos = campos.numeroPontos !== "" ? Number(campos.numeroPontos) : null;
+    const tempoEstimadoMin = campos.tempoEstimadoMin !== "" ? Number(campos.tempoEstimadoMin) : null;
+    const metrosCorte = campos.metrosCorte !== "" ? Number(campos.metrosCorte) : null;
     const horasEstimadas = campos.horasEstimadas !== "" ? Number(campos.horasEstimadas) : null;
     const custoAquisicaoUnitario =
       campos.custoAquisicaoUnitario !== "" ? Number(campos.custoAquisicaoUnitario) : null;
@@ -187,6 +193,9 @@ export function AdicionarOpcaoForm({
       numeroCoresFlexo,
       numeroCliques,
       numeroSetups,
+      numeroPontos,
+      tempoEstimadoMin,
+      metrosCorte,
       horasEstimadas,
       acabamentoIds: campos.acabamentoIds,
       papelId,
@@ -220,6 +229,9 @@ export function AdicionarOpcaoForm({
         numeroCoresFlexo,
         numeroCliques,
         numeroSetups,
+        numeroPontos,
+        tempoEstimadoMin,
+        metrosCorte,
         horasEstimadas,
         custoAquisicaoUnitario,
         materialFornecidoPeloCliente,
@@ -254,6 +266,9 @@ export function AdicionarOpcaoForm({
       numeroCoresFlexo: i.numeroCoresFlexo,
       numeroCliques: i.numeroCliques,
       numeroSetups: i.numeroSetups,
+      numeroPontos: i.numeroPontos,
+      tempoEstimadoMin: i.tempoEstimadoMin,
+      metrosCorte: i.metrosCorte,
       horasEstimadas: i.horasEstimadas,
       custoAquisicaoUnitario: i.custoAquisicaoUnitario,
       materialFornecidoPeloCliente: i.materialFornecidoPeloCliente,

@@ -60,7 +60,9 @@ export type PrecificarItemResult =
         | "SUBLIMACAO"
         | "ESTAMPAGEM_QUENTE"
         | "PERSONALIZACAO"
-        | "REVENDA";
+        | "REVENDA"
+        | "BORDADO"
+        | "TEMPO_MAQUINA";
     }
   | { ok: false; mensagem: string };
 
@@ -83,6 +85,9 @@ export async function precificarItem(input: {
   numeroCoresFlexo: number | null;
   numeroCliques: number | null;
   numeroSetups: number | null;
+  numeroPontos: number | null;
+  tempoEstimadoMin: number | null;
+  metrosCorte: number | null;
   horasEstimadas: number | null;
   acabamentoIds: string[];
   papelId: string | null;
@@ -145,6 +150,9 @@ export async function precificarItem(input: {
     numeroCoresFlexo: input.numeroCoresFlexo,
     numeroCliques: input.numeroCliques,
     numeroSetups: input.numeroSetups,
+    numeroPontos: input.numeroPontos,
+    tempoEstimadoMin: input.tempoEstimadoMin,
+    metrosCorte: input.metrosCorte,
     horasEstimadas: input.horasEstimadas,
     acabamentoIds: input.acabamentoIds,
     papelId: input.papelId,
@@ -340,12 +348,17 @@ export async function criarOrcamento(
       | "SUBLIMACAO"
       | "ESTAMPAGEM_QUENTE"
       | "PERSONALIZACAO"
-      | "REVENDA";
+      | "REVENDA"
+      | "BORDADO"
+      | "TEMPO_MAQUINA";
     corFrente: number | null;
     corVerso: number | null;
     numeroCoresFlexo: number | null;
     numeroCliques: number | null;
     numeroSetups: number | null;
+    numeroPontos: number | null;
+    tempoEstimadoMin: number | null;
+    metrosCorte: number | null;
     horasEstimadas: number | null;
     custoAquisicaoUnitario: number | null;
     materialFornecidoPeloCliente: boolean;
@@ -413,6 +426,9 @@ export async function criarOrcamento(
       numeroCoresFlexo: entrada.numeroCoresFlexo,
       numeroCliques: entrada.numeroCliques,
       numeroSetups: entrada.numeroSetups,
+      numeroPontos: entrada.numeroPontos,
+      tempoEstimadoMin: entrada.tempoEstimadoMin,
+      metrosCorte: entrada.metrosCorte,
       horasEstimadas: entrada.horasEstimadas,
       acabamentoIds: entrada.acabamentoIds,
       papelId: entrada.papelId,
@@ -447,6 +463,9 @@ export async function criarOrcamento(
       numeroCoresFlexo: resultado.numeroCoresFlexo,
       numeroCliques: resultado.numeroCliques,
       numeroSetups: resultado.numeroSetups,
+      numeroPontos: resultado.numeroPontos,
+      tempoEstimadoMin: resultado.tempoEstimadoMin,
+      metrosCorte: resultado.metrosCorte,
       horasEstimadas: resultado.horasEstimadas,
       custoAquisicaoUnitario: resultado.custoAquisicaoUnitario,
       materialFornecidoPeloCliente: resultado.materialFornecidoPeloCliente,
@@ -485,6 +504,9 @@ export async function criarOrcamento(
           numeroCoresFlexo: item.numeroCoresFlexo,
           numeroCliques: item.numeroCliques,
           numeroSetups: item.numeroSetups,
+          numeroPontos: item.numeroPontos,
+          tempoEstimadoMin: item.tempoEstimadoMin,
+          metrosCorte: item.metrosCorte,
           horasEstimadas: item.horasEstimadas,
           custoAquisicaoUnitario: item.custoAquisicaoUnitario,
           materialFornecidoPeloCliente: item.materialFornecidoPeloCliente,

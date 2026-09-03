@@ -22,6 +22,9 @@ export type ItemOrigemParaRecalculo = {
   numeroCoresFlexo: number | null;
   numeroCliques: number | null;
   numeroSetups: number | null;
+  numeroPontos: number | null;
+  tempoEstimadoMin: Decimalish | null;
+  metrosCorte: Decimalish | null;
   horasEstimadas: Decimalish | null;
   custoAquisicaoUnitario: Decimalish | null;
   materialFornecidoPeloCliente: boolean;
@@ -60,6 +63,9 @@ export function montarDadosItemParaRecalculo(
     numeroCoresFlexo: item.numeroCoresFlexo,
     numeroCliques: item.numeroCliques,
     numeroSetups: item.numeroSetups,
+    numeroPontos: item.numeroPontos,
+    tempoEstimadoMin: item.tempoEstimadoMin !== null ? Number(item.tempoEstimadoMin) : null,
+    metrosCorte: item.metrosCorte !== null ? Number(item.metrosCorte) : null,
     horasEstimadas: item.horasEstimadas !== null ? Number(item.horasEstimadas) : null,
     custoAquisicaoUnitario:
       item.custoAquisicaoUnitario !== null ? Number(item.custoAquisicaoUnitario) : null,

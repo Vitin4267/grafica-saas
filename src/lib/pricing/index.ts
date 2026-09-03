@@ -6,6 +6,8 @@ export { calcularFlexografia, type ResultadoFlexografia } from "./flexografia";
 export { calcularDigital, type ResultadoDigital } from "./digital";
 export { calcularSetupPorPeca, type ResultadoSetupPorPeca } from "./setup-por-peca";
 export { calcularRevenda, type ResultadoRevenda } from "./revenda";
+export { calcularBordado, type ResultadoBordado } from "./bordado";
+export { calcularTempoMaquina, type ResultadoTempoMaquina } from "./tempo-maquina";
 export {
   calcularQtdBase,
   calcularCustoAcabamento,

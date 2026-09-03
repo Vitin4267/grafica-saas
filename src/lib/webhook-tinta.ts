@@ -23,7 +23,9 @@ export type JobParaAnaliseTinta = {
     | "SUBLIMACAO"
     | "ESTAMPAGEM_QUENTE"
     | "PERSONALIZACAO"
-    | "REVENDA";
+    | "REVENDA"
+    | "BORDADO"
+    | "TEMPO_MAQUINA";
   quantidade: number;
   larguraCm: number | null;
   alturaCm: number | null;
