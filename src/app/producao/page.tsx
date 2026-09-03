@@ -14,6 +14,7 @@ import { verificarEDispararAlertasAtraso } from "@/lib/alerta-atraso";
 import { dataEhPassado, limitesDiaBrasilia, dataParaInputValue } from "@/lib/data";
 import { resolverOrigemPublica } from "@/lib/url-publica";
 import { listarMaquinasSelecionaveis, sugerirMaquinaPedido } from "@/lib/apontamento-etapa";
+import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -160,7 +161,7 @@ export default async function ProducaoPage({
   await verificarEDispararAlertasAtraso(usuario.graficaId, usuario.grafica.nome);
   const origem = await resolverOrigemPublica();
 
-  const [todosPedidos, clientes, responsaveisEstagio, maquinasSelecionaveis, fornecedoresAtivos] = await Promise.all([
+  const [todosPedidos, clientes, responsaveisEstagio, maquinasSelecionaveis, fornecedoresAtivos, etapas] = await Promise.all([
     prisma.pedido.findMany({
       where: {
         graficaId: usuario.graficaId,
@@ -218,6 +219,12 @@ export default async function ProducaoPage({
       select: { id: true, nome: true },
       orderBy: { nome: "asc" },
     }),
+    // Achado A1 (Fase 1) — sequência/rótulos DESTA gráfica (liga/desliga e
+    // renomeia etapa, ver EtapaGrafica) — resolvida uma única vez aqui,
+    // repassada pra PedidoLinha (lista) e KanbanBoard (quadro), os dois
+    // client components que hoje importavam SEQUENCIA_STATUS_PEDIDO/
+    // ROTULOS_STATUS_PEDIDO diretamente.
+    resolverEtapasGrafica(usuario.graficaId),
   ]);
 
   const responsaveisPorEtapa: Partial<Record<StatusPedido, string[]>> = {};
@@ -365,6 +372,8 @@ export default async function ProducaoPage({
                 lucro={podeVerCustos ? lucroDoPedidoListado(pedido) : null}
                 maquinas={maquinasSelecionaveis}
                 sugestaoMaquinaValor={sugestaoMaquinaValor}
+                sequencia={etapas.sequencia}
+                rotulos={etapas.rotulos}
                 entrega={
                   pedido.entrega
                     ? {
@@ -468,6 +477,8 @@ export default async function ProducaoPage({
           podeEditar={podeEditar}
           podeVerCustos={podeVerCustos}
           responsaveisPorEtapa={responsaveisPorEtapa}
+          sequencia={etapas.sequencia}
+          rotulos={etapas.rotulos}
         />
       </main>
     </div>

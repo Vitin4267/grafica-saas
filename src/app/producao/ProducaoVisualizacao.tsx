@@ -15,12 +15,18 @@ export function ProducaoVisualizacao({
   podeEditar,
   podeVerCustos,
   responsaveisPorEtapa,
+  sequencia,
+  rotulos,
 }: {
   lista: ReactNode;
   pedidosKanban: PedidoKanban[];
   podeEditar: boolean;
   podeVerCustos: boolean;
   responsaveisPorEtapa: Partial<Record<StatusPedido, string[]>>;
+  // Achado A1 (Fase 1) — repassado direto pro KanbanBoard, ver comentário
+  // lá (src/app/producao/KanbanBoard.tsx).
+  sequencia: StatusPedido[];
+  rotulos: Record<StatusPedido, string>;
 }) {
   const [visao, setVisao] = useState<"lista" | "quadro">("lista");
 
@@ -60,6 +66,8 @@ export function ProducaoVisualizacao({
           podeEditar={podeEditar}
           podeVerCustos={podeVerCustos}
           responsaveisPorEtapa={responsaveisPorEtapa}
+          sequencia={sequencia}
+          rotulos={rotulos}
         />
       </div>
     </div>

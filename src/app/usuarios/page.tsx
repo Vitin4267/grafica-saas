@@ -12,6 +12,7 @@ import { AcessoMeuNegocioForm } from "./AcessoMeuNegocioForm";
 import { ComissaoUsuarioForm } from "./ComissaoUsuarioForm";
 import { ResponsaveisEstagioForm } from "./ResponsaveisEstagioForm";
 import { ResponsaveisAdministrativoForm } from "./ResponsaveisAdministrativoForm";
+import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
 
 export default async function UsuariosPage() {
   const usuario = await exigirUsuarioAutenticado();
@@ -19,7 +20,7 @@ export default async function UsuariosPage() {
   await exigirAssinaturaAtiva(usuario);
   exigirPapel(usuario, ["DONO"]);
 
-  const [todosUsuarios, perfisAcesso] = await Promise.all([
+  const [todosUsuarios, perfisAcesso, etapas] = await Promise.all([
     prisma.usuario.findMany({
       where: { graficaId: usuario.graficaId },
       orderBy: { nome: "asc" },
@@ -34,6 +35,10 @@ export default async function UsuariosPage() {
       select: { id: true, nome: true },
       orderBy: { nome: "asc" },
     }),
+    // Achado A1 (Fase 1) — etapas atribuíveis DESTA gráfica (liga/desliga e
+    // renomeia etapa, ver EtapaGrafica), alimenta ResponsaveisEstagioForm
+    // (client component, não pode resolver isso sozinho).
+    resolverEtapasGrafica(usuario.graficaId),
   ]);
 
   // Particionado em memória (não duas queries): volume baixo por gráfica, e
@@ -174,6 +179,7 @@ export default async function UsuariosPage() {
               papel: u.papel,
               etapas: u.responsaveisEstagio.map((r) => r.status),
             }))}
+            estagiosAtribuiveis={etapas.estagiosAtribuiveis}
           />
         </section>
 

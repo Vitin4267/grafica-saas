@@ -2,11 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { Card } from "@/components/ui/Card";
 import { Logo } from "@/components/Logo";
-import {
-  ROTULOS_STATUS_PEDIDO,
-  ESTAGIOS_ATRIBUIVEIS,
-  SEQUENCIA_STATUS_PEDIDO,
-} from "@/lib/producao-estagios";
+import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
 import { AvancarStatusQr } from "./AvancarStatusQr";
 
 // Rota pública, sem exigirUsuarioAutenticado() — mesmo padrão de
@@ -38,14 +34,19 @@ export default async function EtiquetaPedidoPage({
     notFound();
   }
 
+  // Achado A1 (Fase 1) — sequência/etapas atribuíveis DESTA gráfica (ver
+  // EtapaGrafica), não mais os arrays literais fixos.
+  const etapas = await resolverEtapasGrafica(pedido.graficaId);
+
   // Só as etapas atribuíveis têm avanço de verdade por aqui (ver
-  // ESTAGIOS_ATRIBUIVEIS) — FILA fica de fora de propósito (a transição que
-  // baixa estoque exige a tela de confirmação de perda de material, que não
-  // existe nesta versão mobile), e ENTREGUE/CANCELADO são terminais.
-  const confirmavel = ESTAGIOS_ATRIBUIVEIS.some((estagio) => estagio.valor === pedido.status);
-  const indiceAtual = SEQUENCIA_STATUS_PEDIDO.indexOf(pedido.status);
+  // etapas.estagiosAtribuiveis) — FILA fica de fora de propósito (a
+  // transição que baixa estoque exige a tela de confirmação de perda de
+  // material, que não existe nesta versão mobile), e ENTREGUE/CANCELADO são
+  // terminais.
+  const confirmavel = etapas.estagiosAtribuiveis.some((estagio) => estagio.valor === pedido.status);
+  const indiceAtual = etapas.sequencia.indexOf(pedido.status);
   const proximoStatus =
-    confirmavel && indiceAtual !== -1 ? SEQUENCIA_STATUS_PEDIDO[indiceAtual + 1] : null;
+    confirmavel && indiceAtual !== -1 ? etapas.sequencia[indiceAtual + 1] : null;
 
   const itensResumo = pedido.orcamento.itens
     .map((item) => `${item.quantidade}x ${item.itemGrafica.itemCatalogo.nome}`)
@@ -77,12 +78,12 @@ export default async function EtiquetaPedidoPage({
           <div>
             <p className="text-sm text-slate-500">Etapa atual</p>
             <p className="text-xl font-bold text-slate-900 dark:text-white">
-              {ROTULOS_STATUS_PEDIDO[pedido.status]}
+              {etapas.rotulos[pedido.status]}
             </p>
           </div>
 
           {confirmavel && proximoStatus ? (
-            <AvancarStatusQr token={token} rotuloProximaEtapa={ROTULOS_STATUS_PEDIDO[proximoStatus]} />
+            <AvancarStatusQr token={token} rotuloProximaEtapa={etapas.rotulos[proximoStatus]} />
           ) : (
             <p className="text-sm text-slate-500">Nada pra avançar por aqui agora.</p>
           )}

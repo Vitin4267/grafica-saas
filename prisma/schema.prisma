@@ -168,6 +168,9 @@ model Grafica {
   // Achado A4 da Parte 6 da auditoria de abrangência
   // (pesquisa-abrangencia-modulos.md, 2026-09-02) — ver model AlcadaAprovacao.
   alcadasAprovacao      AlcadaAprovacao[]
+  // Achado A1 da auditoria de abrangência (Parte 2/Produção), Fase 1 — ver
+  // model EtapaGrafica.
+  etapasGrafica         EtapaGrafica[]
 
   @@map("graficas")
 }
@@ -4294,6 +4297,54 @@ model Pedido {
 
   @@index([graficaId])
   @@map("pedidos")
+}
+
+// Achado A1 da auditoria de abrangência (Parte 2/Produção, pesquisa-
+// abrangencia-modulos.md, 2026-09-01), Fase 1 (barata): liga/desliga e
+// renomeia, por tenant, cada um dos 8 estágios de StatusPedido que fazem
+// parte de SEQUENCIA_STATUS_PEDIDO (CANCELADO fica de fora — é terminal,
+// alcançável de qualquer estágio, nunca parte do caminho linear). Bootstrap
+// lazy na primeira leitura (ver garantirEtapasGraficaPadrao em
+// src/lib/etapa-grafica.ts), mesmo padrão de garantirCategoriasCustoPadrao
+// em src/lib/custo-pedido.ts: as 8 linhas só são criadas quando uma gráfica
+// realmente precisa, todas ativa=true/rotulo=null/ordem=posição atual — uma
+// gráfica que nunca abriu esta tela se comporta EXATAMENTE como antes desta
+// feature (resolverSequencia cai no array literal quando não há linha
+// nenhuma, ver mesmo arquivo).
+//
+// ativa=false remove o status da sequência que avancarStatusPedido usa pra
+// decidir "qual é o próximo válido" — pula direto pro próximo ativo.
+// ARTE/PRODUCAO/ENTREGUE NUNCA podem ficar ativa=false (ver
+// ETAPAS_SEMPRE_ATIVAS em src/lib/etapa-grafica.ts, validado nas actions
+// desta tela, não só na UI): ARTE é o status @default(ARTE) de todo Pedido
+// novo (desligá-lo quebraria a criação de pedido); PRODUCAO é a etapa de
+// destino cuja ENTRADA dispara a baixa de estoque automática (ver
+// status-transicao.ts) — sem ela sempre presente e sempre alcançável, a
+// baixa de estoque poderia nunca disparar; ENTREGUE é o status terminal que
+// vários outros pontos do código conferem literalmente (alertas de atraso,
+// filtro de "pedidos finalizados") — desligá-lo faria um pedido desta
+// gráfica nunca alcançar esse status de verdade.
+//
+// rotulo=null usa o rótulo padrão do sistema (ROTULOS_STATUS_PEDIDO); um
+// valor customizado aparece no Kanban, na lista de produção, no e-mail ao
+// responsável de etapa e nas telas públicas (/p/[token], /q/[token]) no
+// lugar do padrão — ex: serigrafia renomeia CLICHE_FACA pra "Queima de
+// tela", comunicação visual renomeia EXPEDICAO pra "Instalação".
+model EtapaGrafica {
+  id        String       @id @default(cuid())
+  graficaId String
+  status    StatusPedido
+  ativa     Boolean      @default(true)
+  rotulo    String?
+  ordem     Int
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+
+  @@unique([graficaId, status])
+  @@index([graficaId])
+  @@map("etapas_grafica")
 }
 
 enum StatusEntrega {

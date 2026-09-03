@@ -1,8 +1,20 @@
 import type { StatusPedido } from "@/generated/prisma/enums";
 
 // Sem "server-only" de propósito — importado tanto por código de servidor
-// (producao/status-transicao.ts) quanto por um client component
-// (usuarios/ResponsaveisEstagioForm.tsx), mesma razão de modulos-permissao.ts.
+// quanto por client components, mesma razão de modulos-permissao.ts.
+//
+// Achado A1 da auditoria de abrangência (Parte 2/Produção), Fase 1
+// (2026-09-02): estas 3 constantes deixaram de ser a fonte de verdade em
+// tempo de execução — viraram só o PADRÃO/DEFAULT do sistema (o "rótulo de
+// fábrica" e a sequência de uma gráfica que nunca configurou nada). Todo
+// código que decide "qual é a sequência/rótulo/estágio-pré-produção/
+// estágio-atribuível DESTA gráfica" deve chamar resolverEtapasGrafica (ou
+// um dos helpers) em src/lib/etapa-grafica.ts, que lê o override por tenant
+// em EtapaGrafica e cai automaticamente nestes valores aqui quando a
+// gráfica não tem nenhuma linha configurada (bootstrap lazy). Continuam
+// exportadas: são a semente do bootstrap e o fallback de qualquer lugar que
+// só precise mesmo do padrão fixo (ex: rótulo de e-mail/PDF genérico fora
+// do contexto de uma gráfica).
 
 // FSM linear completa (visão de produto 2026-08-21, ver StatusPedido em
 // prisma/schema.prisma): Arte → Clichê/Faca → Produção → Acabamento →

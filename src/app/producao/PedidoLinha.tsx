@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
 import { PreflightAvisos } from "@/components/ui/PreflightAvisos";
 import type { AvisoPreflight } from "@/lib/preflight";
+import type { StatusPedido } from "@/generated/prisma/enums";
 import { PrinterIcon } from "@/components/icons";
 import { AvancarPedidoButton } from "./AvancarPedidoButton";
 import {
@@ -69,6 +70,8 @@ export function PedidoLinha({
   fornecedores,
   maquinas = [],
   sugestaoMaquinaValor = "",
+  sequencia,
+  rotulos,
 }: {
   pedidoId: string;
   orcamentoId: string;
@@ -116,11 +119,10 @@ export function PedidoLinha({
   categoriasCustoAtivas: { id: string; nome: string }[];
   custos: Custo[];
   lucro: number | null;
-  // null quando o pedido ainda está em ARTE ou CLICHE_FACA (pré-produção —
-  // entrega ainda não faz sentido, ver EntregaPedidoSecao.tsx e
-  // ESTAGIOS_PRE_PRODUCAO em src/lib/producao-estagios.ts) — a seção inteira
-  // nem é renderizada nesse caso, mesmo critério de "ainda não construído"
-  // que o resto da tela usa.
+  // null quando o pedido ainda está em pré-produção (ver
+  // etapas.estagiosPreProducao em src/lib/etapa-grafica.ts — entrega ainda
+  // não faz sentido) — a seção inteira nem é renderizada nesse caso, mesmo
+  // critério de "ainda não construído" que o resto da tela usa.
   entrega: EntregaResumo | null;
   // Achado E1 — terceirizações registradas pra este pedido (todas, não só a
   // ativa — ver TerceirizacaoPedidoSecao.tsx) e as opções de Fornecedor
@@ -137,15 +139,38 @@ export function PedidoLinha({
   // storybook que só monte o componente com o mínimo).
   maquinas?: MaquinaOpcaoUI[];
   sugestaoMaquinaValor?: string;
+  // Achado A1 (Fase 1) — sequência/rótulos resolvidos DESTA gráfica (ver
+  // resolverEtapasGrafica em src/lib/etapa-grafica.ts), buscados uma vez em
+  // producao/page.tsx e repassados aqui. Substituem os antigos imports
+  // diretos de SEQUENCIA_STATUS_PEDIDO/ROTULOS_STATUS_PEDIDO — este é um
+  // client component, não pode ler o banco sozinho.
+  sequencia: StatusPedido[];
+  rotulos: Record<StatusPedido, string>;
 }) {
   const [state, formAction, isPending] = useActionState(cancelarPedido, null);
   const [confirmando, setConfirmando] = useState(false);
   const podeCancelar = status !== "ENTREGUE" && status !== "CANCELADO";
 
-  // CLICHE_FACA→PRODUCAO é a única transição que baixa estoque (ver
-  // avancarStatusPedido) — por isso é a única que passa por uma tela de
-  // confirmação editável em vez do botão de um clique só que
+  // Índice desta etapa na sequência RESOLVIDA (ativa, ordenada, por
+  // gráfica) — base de tudo que antes comparava literalmente com
+  // "CLICHE_FACA"/"ARTE" pra decidir fluxo de UI (ver comentários abaixo).
+  const indiceAtual = sequencia.indexOf(status as StatusPedido);
+  const proximoStatus = indiceAtual === -1 ? null : (sequencia[indiceAtual + 1] ?? null);
+  const indiceProducao = sequencia.indexOf("PRODUCAO");
+
+  // A transição que baixa estoque é sempre "entrar em PRODUCAO" (ver
+  // avancarStatusPedido/status-transicao.ts) — antes do achado A1 isso era
+  // literalmente `status === "CLICHE_FACA"`, mas CLICHE_FACA pode estar
+  // desativada pra esta gráfica; a etapa que de fato antecede PRODUCAO na
+  // sequência configurada é que precisa passar pela tela de confirmação
+  // editável (IniciarImpressaoBotao) em vez do botão de um clique só que
   // AvancarPedidoButton usa pros outros status.
+  const baixaEstoqueAoAvancar = proximoStatus === "PRODUCAO";
+
+  // Ver comentário completo no gate de EntregaPedidoSecao abaixo — "ainda
+  // não é produção física" generalizado a partir da sequência resolvida.
+  const emPreProducao = indiceAtual !== -1 && indiceProducao !== -1 && indiceAtual < indiceProducao;
+
   const iniciarImpressao = useIniciarImpressao(pedidoId);
   const [avancarState, avancarFormAction, avancarPending] = useActionState(avancarPedido, null);
   useAoMudar(avancarState, (estado) => {
@@ -217,8 +242,8 @@ export function PedidoLinha({
         <div className="flex items-center gap-3">
           {chipAtraso}
           {chipTerceirizacao}
-          <StatusBadge status={status} tipo="pedido" />
-          {status === "CLICHE_FACA"
+          <StatusBadge status={status} tipo="pedido" rotulo={rotulos[status as StatusPedido]} />
+          {baixaEstoqueAoAvancar
             ? podeEditar && (
                 <IniciarImpressaoBotao estado={iniciarImpressao.estado} onIniciar={iniciarImpressao.iniciar} />
               )
@@ -228,6 +253,7 @@ export function PedidoLinha({
                   status={status}
                   maquinas={maquinas}
                   sugestaoValor={sugestaoMaquinaValor}
+                  rotuloProximo={proximoStatus ? rotulos[proximoStatus] : null}
                 />
               )}
           {podeEditar && podeCancelar && (
@@ -285,18 +311,25 @@ export function PedidoLinha({
         podeVer={podeVerCustos}
       />
 
-      {/* Entrega só faz sentido depois que o pedido saiu da pré-produção
-          (ARTE/CLICHE_FACA — já tem algo físico produzido/em produção, ver
-          ESTAGIOS_PRE_PRODUCAO) — antes disso a seção nem renderiza, pra não
-          confundir com "criar entrega" num pedido que ainda nem começou. */}
-      {status !== "ARTE" && status !== "CLICHE_FACA" && (
+      {/* Entrega só faz sentido depois que o pedido saiu da pré-produção —
+          já tem algo físico produzido/em produção, ver
+          etapas.estagiosPreProducao em src/lib/etapa-grafica.ts — antes
+          disso a seção nem renderiza, pra não confundir com "criar entrega"
+          num pedido que ainda nem começou. Antes do achado A1 isso era
+          literalmente `status !== "ARTE" && status !== "CLICHE_FACA"`, mas
+          CLICHE_FACA pode estar desativada pra esta gráfica — o cálculo
+          abaixo (posição na sequência RESOLVIDA relativa a PRODUCAO) é
+          equivalente ao literal antigo pra uma gráfica sem nenhuma
+          EtapaGrafica configurada (regressão zero) e generaliza pras
+          demais. */}
+      {!emPreProducao && (
         <EntregaPedidoSecao pedidoId={pedidoId} entrega={entrega} podeEditar={podeEditar} />
       )}
 
       {/* Terceirização (achado E1) — diferente de Entrega, não é gated por
-          ESTAGIOS_PRE_PRODUCAO: uma gráfica pode mandar clichê pra
-          terceirizar já em CLICHE_FACA, então a seção fica disponível em
-          qualquer status não-cancelado. */}
+          pré-produção: uma gráfica pode mandar clichê pra terceirizar já em
+          CLICHE_FACA, então a seção fica disponível em qualquer status
+          não-cancelado. */}
       {status !== "CANCELADO" && (
         <TerceirizacaoPedidoSecao
           pedidoId={pedidoId}
@@ -322,7 +355,7 @@ export function PedidoLinha({
       {confirmando && (
         <ConfirmarExclusao
           pergunta={
-            status === "ARTE" || status === "CLICHE_FACA"
+            emPreProducao
               ? "Cancelar este pedido? Nenhuma matéria-prima foi baixada ainda."
               : "Cancelar este pedido? A matéria-prima já baixada pra produção volta pro estoque automaticamente."
           }

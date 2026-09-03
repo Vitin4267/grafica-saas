@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { ESTAGIOS_ATRIBUIVEIS } from "@/lib/producao-estagios";
+import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
 import { avancarStatusPedido } from "@/app/producao/status-transicao";
 import { assinaturaEstaLiberada } from "@/lib/billing/status";
 
@@ -56,8 +56,10 @@ export async function avancarStatusQr(
   // Só as etapas atribuíveis têm avanço de um clique só por aqui — mesma
   // regra de p/[token] (FILA fica de fora: baixa estoque e exige a tela de
   // confirmação de perda de material, que não existe nesta versão mobile;
-  // ENTREGUE/CANCELADO são terminais).
-  const confirmavel = ESTAGIOS_ATRIBUIVEIS.some((estagio) => estagio.valor === pedido.status);
+  // ENTREGUE/CANCELADO são terminais). Achado A1 (Fase 1) — resolvido por
+  // gráfica, ver EtapaGrafica.
+  const etapas = await resolverEtapasGrafica(pedido.graficaId);
+  const confirmavel = etapas.estagiosAtribuiveis.some((estagio) => estagio.valor === pedido.status);
   if (!confirmavel) {
     return { ok: false, mensagem: "Este pedido não tem nenhuma etapa pra avançar agora." };
   }

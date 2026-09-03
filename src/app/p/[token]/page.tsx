@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { Card } from "@/components/ui/Card";
 import { Logo } from "@/components/Logo";
-import { ROTULOS_STATUS_PEDIDO, ESTAGIOS_ATRIBUIVEIS } from "@/lib/producao-estagios";
+import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
 import { ConfirmarEstagioPublico } from "./ConfirmarEstagioPublico";
 
 export default async function ConfirmarEstagioPage({
@@ -30,12 +30,16 @@ export default async function ConfirmarEstagioPage({
     notFound();
   }
 
+  // Achado A1 (Fase 1) — etapas atribuíveis DESTA gráfica (ver
+  // EtapaGrafica), não mais a lista fixa.
+  const etapas = await resolverEtapasGrafica(pedido.graficaId);
+
   // Só as etapas atribuíveis têm uma confirmação de verdade pra fazer aqui
-  // (ver ESTAGIOS_ATRIBUIVEIS) — ARTE e CLICHE_FACA ficam de fora de
-  // propósito (CLICHE_FACA é a transição que baixa estoque e exige a tela
-  // de confirmação de perda de material, não dá pra fazer isso num link sem
-  // login), e ENTREGUE/CANCELADO são terminais.
-  const confirmavel = ESTAGIOS_ATRIBUIVEIS.some((estagio) => estagio.valor === pedido.status);
+  // — ARTE e CLICHE_FACA ficam de fora de propósito (CLICHE_FACA é a
+  // transição que baixa estoque e exige a tela de confirmação de perda de
+  // material, não dá pra fazer isso num link sem login), e ENTREGUE/
+  // CANCELADO são terminais.
+  const confirmavel = etapas.estagiosAtribuiveis.some((estagio) => estagio.valor === pedido.status);
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 dark:bg-slate-950">
@@ -55,14 +59,14 @@ export default async function ConfirmarEstagioPage({
           <div>
             <p className="text-sm text-slate-500">Etapa atual</p>
             <p className="text-xl font-bold text-slate-900 dark:text-white">
-              {ROTULOS_STATUS_PEDIDO[pedido.status]}
+              {etapas.rotulos[pedido.status]}
             </p>
           </div>
 
           {confirmavel ? (
             <ConfirmarEstagioPublico
               token={token}
-              rotuloEtapa={ROTULOS_STATUS_PEDIDO[pedido.status]}
+              rotuloEtapa={etapas.rotulos[pedido.status]}
               etapaEsperada={pedido.status}
             />
           ) : (

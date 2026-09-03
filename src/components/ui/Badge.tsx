@@ -95,9 +95,17 @@ const ROTULOS_TERCEIRIZACAO: Record<string, string> = {
 export function StatusBadge({
   status,
   tipo = "orcamento",
+  rotulo,
 }: {
   status: string;
   tipo?: "orcamento" | "pedido" | "compra" | "entrega" | "terceirizacao";
+  // Achado A1 da auditoria de abrangência (Parte 2/Produção), Fase 1 —
+  // override do texto exibido, usado só por tipo="pedido" quando a gráfica
+  // customizou o rótulo do estágio (ver EtapaGrafica/resolverEtapasGrafica
+  // em src/lib/etapa-grafica.ts). Cor continua vindo do mapa fixo por
+  // `status` — só o TEXTO muda; undefined preserva 100% o comportamento de
+  // hoje pra todo outro `tipo` e pra "pedido" sem customização.
+  rotulo?: string;
 }) {
   const mapaCores = {
     pedido: CORES_PEDIDO,
@@ -132,7 +140,7 @@ export function StatusBadge({
         cores[status] ?? fallback
       }`}
     >
-      {rotulos[status] ?? status}
+      {rotulo ?? rotulos[status] ?? status}
     </span>
   );
 }

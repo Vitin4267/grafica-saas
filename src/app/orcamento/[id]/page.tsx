@@ -12,6 +12,7 @@ import {
 } from "@/lib/auth/permissoes";
 import { resolverOrigemPublica } from "@/lib/url-publica";
 import { buscarCustoRealVsOrcado } from "@/lib/custo-producao";
+import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
 import { verificarProntidaoFiscal, resolverDadosFiscais } from "@/lib/nota-fiscal";
 import { formatoMoeda } from "@/lib/moeda";
 import { calcularConversoesPreco } from "@/lib/unidade-contagem";
@@ -283,6 +284,13 @@ export default async function OrcamentoDetalhePage({
 
   const custoComparado = orcamento.pedido
     ? await buscarCustoRealVsOrcado(orcamento.pedido.id, usuario.graficaId)
+    : null;
+
+  // Achado A1 (Fase 1) — rótulo do StatusBadge do pedido abaixo (liga/
+  // desliga e renomeia etapa, ver EtapaGrafica) — só resolvido quando há
+  // pedido, mesmo critério condicional de custoComparado acima.
+  const rotuloStatusPedido = orcamento.pedido
+    ? (await resolverEtapasGrafica(usuario.graficaId)).rotulos[orcamento.pedido.status]
     : null;
 
   let checagemFiscal: { pronto: boolean; pendencias: string[] } | null = null;
@@ -755,7 +763,7 @@ export default async function OrcamentoDetalhePage({
               <p className="text-sm text-slate-600 dark:text-slate-300">
                 Pedido de produção gerado — ver acompanhamento
               </p>
-              <StatusBadge status={orcamento.pedido.status} tipo="pedido" />
+              <StatusBadge status={orcamento.pedido.status} tipo="pedido" rotulo={rotuloStatusPedido ?? undefined} />
             </Card>
           </Link>
         )}

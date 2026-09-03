@@ -2,7 +2,7 @@ import "server-only";
 
 import { prisma } from "@/lib/prisma";
 import { ROTULOS_STATUS_ORCAMENTO, type StatusOrcamento } from "@/lib/orcamento-status";
-import { SEQUENCIA_STATUS_PEDIDO, ROTULOS_STATUS_PEDIDO } from "@/lib/producao-estagios";
+import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
 import { calcularPrevisaoEstoque } from "@/lib/previsao-estoque-db";
 import { LIMITE_DIAS_ALERTA } from "@/lib/previsao-estoque";
 import { D } from "@/lib/pricing/decimal";
@@ -46,12 +46,6 @@ const ORDEM_STATUS_ORCAMENTO: StatusOrcamento[] = [
   "APROVADO",
   "REJEITADO",
 ];
-
-// Reaproveita a sequência/rótulos canônicos de src/lib/producao-estagios.ts
-// (fonte de verdade única do StatusPedido) — não duplica os 8 estágios
-// aqui. CANCELADO fica de fora do funil de pipeline por vir de fora da
-// sequência linear (mesmo raciocínio de SEQUENCIA_STATUS_PEDIDO).
-const ORDEM_STATUS_PEDIDO = SEQUENCIA_STATUS_PEDIDO;
 
 export type FaixaStatus = { status: string; rotulo: string; quantidade: number };
 
@@ -132,6 +126,7 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
     despesasPagasAgregado,
     orcamentosParaSerie,
     orcamentosAprovadosParaTempoResposta,
+    etapas,
   ] = await Promise.all([
     prisma.orcamento.aggregate({
       where: { graficaId, status: "APROVADO", createdAt: { gte: inicioDoMesReal } },
@@ -184,6 +179,9 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
       where: { graficaId, status: "APROVADO" },
       select: { createdAt: true, respostaPublicaEm: true },
     }),
+    // Achado A1 (Fase 1) — sequência/rótulos por gráfica (liga/desliga e
+    // renomeia etapa, ver EtapaGrafica), não mais os arrays literais fixos.
+    resolverEtapasGrafica(graficaId),
   ]);
 
   const contagemPorStatusOrcamento = new Map(
@@ -201,9 +199,9 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
   );
 
   const contagemPorStatusPedido = new Map(pipelineBruto.map((g) => [g.status, g._count]));
-  const pipelineProducao = ORDEM_STATUS_PEDIDO.map((status) => ({
+  const pipelineProducao = etapas.sequencia.map((status) => ({
     status,
-    rotulo: ROTULOS_STATUS_PEDIDO[status],
+    rotulo: etapas.rotulos[status],
     quantidade: contagemPorStatusPedido.get(status) ?? 0,
   }));
   const totalPedidos = pipelineProducao.reduce((soma, f) => soma + f.quantidade, 0);

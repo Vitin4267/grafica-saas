@@ -9,7 +9,7 @@ import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { exigirPapel, MODULOS_PERMISSAO } from "@/lib/auth/permissoes";
 import { senhaSchema } from "@/lib/auth/validation";
 import { hashPassword } from "@/lib/auth/password";
-import { ESTAGIOS_ATRIBUIVEIS } from "@/lib/producao-estagios";
+import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
 import { AREAS_ADMINISTRATIVAS, ROTULO_AREA_ADMINISTRATIVA } from "@/lib/areas-administrativas";
 import { registrarAuditoria } from "@/lib/auditoria";
 import type { AreaAdministrativa } from "@/generated/prisma/enums";
@@ -416,15 +416,19 @@ export async function salvarResponsaveisEstagio(
   const funcionarioIds = funcionarios.map((f) => f.id);
   const nomePorId = new Map(funcionarios.map((f) => [f.id, f.nome]));
 
+  // Achado A1 (Fase 1) — etapas atribuíveis DESTA gráfica (liga/desliga e
+  // renomeia etapa, ver EtapaGrafica), não mais a lista fixa de 5.
+  const etapas = await resolverEtapasGrafica(usuario.graficaId);
+
   const responsaveisAntes = await prisma.responsavelEstagio.findMany({
     where: { usuarioId: { in: funcionarioIds } },
   });
   const chaveAntes = new Set(responsaveisAntes.map((r) => `${r.usuarioId}::${r.status}`));
 
   const paresNovos = funcionarioIds.flatMap((usuarioId) =>
-    ESTAGIOS_ATRIBUIVEIS.filter(({ valor }) => formData.get(`resp_${usuarioId}_${valor}`) === "on").map(
-      ({ valor }) => ({ usuarioId, status: valor })
-    )
+    etapas.estagiosAtribuiveis
+      .filter(({ valor }) => formData.get(`resp_${usuarioId}_${valor}`) === "on")
+      .map(({ valor }) => ({ usuarioId, status: valor }))
   );
   const chaveDepois = new Set(paresNovos.map((p) => `${p.usuarioId}::${p.status}`));
 
@@ -433,7 +437,7 @@ export async function salvarResponsaveisEstagio(
     prisma.responsavelEstagio.createMany({ data: paresNovos }),
   ]);
 
-  const rotuloEstagio = Object.fromEntries(ESTAGIOS_ATRIBUIVEIS.map((e) => [e.valor, e.rotulo]));
+  const rotuloEstagio = Object.fromEntries(etapas.estagiosAtribuiveis.map((e) => [e.valor, e.rotulo]));
   const descreverChave = (chave: string) => {
     const [usuarioId, status] = chave.split("::");
     return `${nomePorId.get(usuarioId) ?? usuarioId} → ${rotuloEstagio[status] ?? status}`;

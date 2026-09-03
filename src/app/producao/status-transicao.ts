@@ -19,7 +19,7 @@ import {
   chaveFisicaMaterial,
 } from "@/lib/perda-fixa-producao";
 import { fecharEAbrirApontamento, type ContextoOrigemAvanco } from "@/lib/apontamento-etapa";
-import { SEQUENCIA_STATUS_PEDIDO, ROTULOS_STATUS_PEDIDO, ESTAGIOS_ATRIBUIVEIS } from "@/lib/producao-estagios";
+import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
 import { resolverOrigemPublica } from "@/lib/url-publica";
 import { dispararEventoEmail } from "@/lib/email/webhook-email";
 import { templateEstagioResponsavel } from "@/lib/email/templates";
@@ -254,19 +254,29 @@ export async function avancarStatusPedido(
     };
   }
 
-  const indiceAtual = SEQUENCIA_STATUS_PEDIDO.indexOf(pedido.status);
+  // Achado A1 (Fase 1) — sequência resolvida por gráfica (liga/desliga e
+  // reordena etapa, ver EtapaGrafica), não mais o array literal fixo. Uma
+  // gráfica sem nenhuma linha configurada recebe de volta exatamente
+  // SEQUENCIA_STATUS_PEDIDO (bootstrap lazy, ver resolverEtapasGrafica) —
+  // regressão zero pra quem nunca abriu a tela nova.
+  const etapas = await resolverEtapasGrafica(pedido.graficaId);
+
+  const indiceAtual = etapas.sequencia.indexOf(pedido.status);
   if (indiceAtual === -1) {
-    // Defensivo: hoje inalcançável (status é enum do banco restrito aos 8
-    // valores de SEQUENCIA_STATUS_PEDIDO, fora CANCELADO), mas sem essa
-    // checagem um status fora da lista faria [-1+1] resolver silenciosamente
-    // pro índice 0 ("ARTE") — regredindo o pedido em vez de dar erro.
-    return { ok: false, mensagem: "Status do pedido inválido." };
+    // Defensivo: hoje só alcançável se a gráfica desativou a etapa em que
+    // este pedido está PARADO (não a etapa de destino) depois que ele já
+    // chegou lá — sem essa checagem, [-1+1] resolveria silenciosamente pro
+    // índice 0 da sequência ativa, regredindo o pedido em vez de dar erro.
+    return {
+      ok: false,
+      mensagem: "A etapa atual deste pedido está desativada nas configurações — reative-a em Configurações > Etapas de produção pra poder avançar.",
+    };
   }
-  if (indiceAtual === SEQUENCIA_STATUS_PEDIDO.length - 1) {
+  if (indiceAtual === etapas.sequencia.length - 1) {
     return { ok: false, mensagem: "Este pedido já está no status final." };
   }
 
-  const proximoStatus = SEQUENCIA_STATUS_PEDIDO[indiceAtual + 1];
+  const proximoStatus = etapas.sequencia[indiceAtual + 1];
   const statusAnterior = pedido.status;
 
   // Buscado uma única vez e reaproveitado pros eventos estoque_critico e
@@ -274,11 +284,23 @@ export async function avancarStatusPedido(
   const automacao = await buscarAutomacaoGrafica(pedido.graficaId);
 
   try {
-    // Baixa automática de estoque: só na entrada em produção física
-    // (CLICHE_FACA→PRODUCAO), e só nessa transição específica. Sem
-    // mecanismo de estorno automático aqui — ver cancelarPedido em
+    // Baixa automática de estoque: só na ENTRADA em produção física — ou
+    // seja, só quando o PRÓXIMO status é PRODUCAO, não importa de qual
+    // etapa o pedido está saindo. Antes do achado A1 isso era literalmente
+    // `pedido.status === "CLICHE_FACA"`, mas CLICHE_FACA pode estar
+    // desativada pra esta gráfica (ver EtapaGrafica) — quando está, a
+    // "última etapa ativa antes de PRODUCAO" é outra (ex: ARTE numa
+    // gráfica só-digital), e é dela que a transição de fato sai. Checar só
+    // `proximoStatus === "PRODUCAO"` cobre os dois casos sem duplicar nem
+    // pular a baixa: `proximoStatus` já vem de `etapas.sequencia[indiceAtual
+    // + 1]` acima, então só pode valer "PRODUCAO" quando `pedido.status` for
+    // exatamente a etapa ativa imediatamente anterior a ela — PRODUCAO
+    // nunca pode estar desativada (ver ETAPAS_SEMPRE_ATIVAS em
+    // src/lib/etapa-grafica.ts), então esta condição sempre dispara
+    // exatamente uma vez por pedido, não importa a configuração da gráfica.
+    // Sem mecanismo de estorno automático aqui — ver cancelarPedido em
     // producao/actions.ts, que cobre isso.
-    if (pedido.status === "CLICHE_FACA" && proximoStatus === "PRODUCAO") {
+    if (proximoStatus === "PRODUCAO") {
       // Leitura só-consulta (ficha técnica não muda por causa de uma corrida
       // desta função) — fica FORA da transação de propósito, pra manter a
       // transação curta e reduzir chance de conflito de serialização. O
@@ -749,9 +771,10 @@ export async function avancarStatusPedido(
   }
 
   // E-mail aos responsáveis pela etapa que o pedido acabou de ENTRAR — só
-  // pras 5 etapas atribuíveis (ver ESTAGIOS_ATRIBUIVEIS); ENTREGUE nunca
-  // dispara isso porque não há mais nenhuma transição a confirmar depois.
-  if (ESTAGIOS_ATRIBUIVEIS.some((estagio) => estagio.valor === proximoStatus)) {
+  // pras etapas atribuíveis DESTA gráfica (ver etapas.estagiosAtribuiveis
+  // acima); ENTREGUE nunca dispara isso porque não há mais nenhuma
+  // transição a confirmar depois.
+  if (etapas.estagiosAtribuiveis.some((estagio) => estagio.valor === proximoStatus)) {
     const responsaveis = await prisma.usuario.findMany({
       where: { graficaId: pedido.graficaId, responsaveisEstagio: { some: { status: proximoStatus } } },
       select: { email: true },
@@ -774,7 +797,7 @@ export async function avancarStatusPedido(
       const template = templateEstagioResponsavel(
         pedido.orcamento.grafica.nome,
         pedido.orcamento.cliente.nome,
-        ROTULOS_STATUS_PEDIDO[proximoStatus],
+        etapas.rotulos[proximoStatus],
         itensResumo,
         link,
         pedido.orcamento.grafica.corPrimaria
@@ -797,7 +820,7 @@ export async function avancarStatusPedido(
 
   return {
     ok: true,
-    mensagem: `Avançado para ${ROTULOS_STATUS_PEDIDO[proximoStatus]}.`,
+    mensagem: `Avançado para ${etapas.rotulos[proximoStatus]}.`,
     statusAnterior,
     proximoStatus,
   };

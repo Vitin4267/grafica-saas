@@ -807,7 +807,7 @@ export function ParametrosForm({
 
       <GrupoParametros
         titulo="Cadastros auxiliares"
-        resumo="Filiais, máquinas, categorias de custo, feriados, fornecedores e ferramentais."
+        resumo="Filiais, máquinas, categorias de custo, feriados, fornecedores, ferramentais, alçadas e etapas de produção."
       >
         <Card className="flex items-center justify-between gap-4 p-6">
           <div>
@@ -926,6 +926,27 @@ export function ParametrosForm({
           <Link href="/configuracoes/alcadas">
             <Button type="button" variant="outline">
               Gerenciar alçadas
+            </Button>
+          </Link>
+        </Card>
+
+        {/* Achado A1 da auditoria de abrangência (Parte 2/Produção), Fase 1
+            — liga/desliga e renomeia cada etapa de StatusPedido, ver
+            EtapaGrafica. */}
+        <Card className="flex items-center justify-between gap-4 p-6">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+              Etapas de produção
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Desligue etapas que sua gráfica não usa (ex: Clichê/Faca numa
+              gráfica só-digital) e renomeie as que usa com o nome do seu
+              processo (ex: &quot;Queima de tela&quot;, &quot;Instalação&quot;).
+            </p>
+          </div>
+          <Link href="/configuracoes/etapas-producao">
+            <Button type="button" variant="outline">
+              Gerenciar etapas
             </Button>
           </Link>
         </Card>

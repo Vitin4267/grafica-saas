@@ -15,7 +15,6 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import type { StatusPedido } from "@/generated/prisma/enums";
-import { SEQUENCIA_STATUS_PEDIDO, ROTULOS_STATUS_PEDIDO } from "@/lib/producao-estagios";
 import { formatoMoeda } from "@/lib/moeda";
 import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { avancarPedido } from "./actions";
@@ -47,27 +46,10 @@ export type PedidoKanban = {
   souResponsavelDesteStatus: boolean;
 };
 
-// Só as colunas "ativas" — Entregue/Cancelado são fim de linha, mesmo
-// espírito de STATUS_FINALIZADOS em producao/page.tsx, e não aparecem aqui
-// porque pedidosKanban (montado na page) já nem inclui esses status.
-const COLUNAS: StatusPedido[] = SEQUENCIA_STATUS_PEDIDO.filter((status) => status !== "ENTREGUE");
-
-// A máquina de estado é linear e só anda pra frente (StatusPedido: ARTE →
-// CLICHE_FACA → PRODUCAO → ACABAMENTO → CONFERENCIA → EMBALAGEM →
-// EXPEDICAO → ENTREGUE) — este é o único lugar do Kanban que decide "pra
-// onde este card pode ir", reaproveitando a mesma sequência que
-// avancarStatusPedido usa no servidor (defesa em profundidade, não a única
-// linha de defesa: o servidor rejeita de qualquer forma).
-function proximoStatus(status: StatusPedido): StatusPedido | null {
-  const indice = SEQUENCIA_STATUS_PEDIDO.indexOf(status);
-  if (indice === -1 || indice === SEQUENCIA_STATUS_PEDIDO.length - 1) return null;
-  return SEQUENCIA_STATUS_PEDIDO[indice + 1];
-}
-
 // Mesma regra de permissão que já decide se PedidoLinha.tsx mostra
 // IniciarImpressaoBotao/AvancarPedidoButton — ARTE e CLICHE_FACA não são
-// etapas "atribuíveis" (ver ESTAGIOS_ATRIBUIVEIS em
-// lib/producao-estagios.ts), então só quem tem PRODUCAO.podeEditar completo
+// etapas "atribuíveis" (ver estagiosAtribuiveis, resolvido por gráfica em
+// src/lib/etapa-grafica.ts), então só quem tem PRODUCAO.podeEditar completo
 // pode arrastar esses dois cards. Nas outras colunas, um responsável só por
 // aquela etapa também pode arrastar.
 function podeArrastar(pedido: PedidoKanban, podeEditar: boolean): boolean {
@@ -80,6 +62,8 @@ export function KanbanBoard({
   podeEditar,
   podeVerCustos,
   responsaveisPorEtapa,
+  sequencia,
+  rotulos,
 }: {
   pedidos: PedidoKanban[];
   podeEditar: boolean;
@@ -87,10 +71,34 @@ export function KanbanBoard({
   // Nomes de quem está atribuído a cada etapa (ver ResponsavelEstagio,
   // configurado em /usuarios) — mostrado no cabeçalho da coluna, já que é
   // uma característica da ETAPA, não de um pedido individual. Sempre
-  // ausente/[] pra ARTE/CLICHE_FACA (não são etapas atribuíveis, ver
-  // ESTAGIOS_ATRIBUIVEIS).
+  // ausente/[] pra ARTE/CLICHE_FACA (não são etapas atribuíveis).
   responsaveisPorEtapa: Partial<Record<StatusPedido, string[]>>;
+  // Achado A1 (Fase 1) — sequência/rótulos resolvidos DESTA gráfica (ver
+  // resolverEtapasGrafica em src/lib/etapa-grafica.ts), buscados uma vez em
+  // producao/page.tsx. Substituem os antigos imports diretos de
+  // SEQUENCIA_STATUS_PEDIDO/ROTULOS_STATUS_PEDIDO — client component, não
+  // pode ler o banco sozinho.
+  sequencia: StatusPedido[];
+  rotulos: Record<StatusPedido, string>;
 }) {
+  // Só as colunas "ativas" — Entregue/Cancelado são fim de linha, mesmo
+  // espírito de STATUS_FINALIZADOS em producao/page.tsx, e não aparecem
+  // aqui porque pedidosKanban (montado na page) já nem inclui esses status.
+  // Recalculado a cada render (não module-level): `sequencia` agora é uma
+  // prop por gráfica, não mais uma constante fixa.
+  const colunas = sequencia.filter((status) => status !== "ENTREGUE");
+
+  // A máquina de estado é linear e só anda pra frente dentro da sequência
+  // RESOLVIDA desta gráfica (ver EtapaGrafica) — este é o único lugar do
+  // Kanban que decide "pra onde este card pode ir", reaproveitando a mesma
+  // sequência que avancarStatusPedido usa no servidor (defesa em
+  // profundidade, não a única linha de defesa: o servidor rejeita de
+  // qualquer forma).
+  function proximoStatus(status: StatusPedido): StatusPedido | null {
+    const indice = sequencia.indexOf(status);
+    if (indice === -1 || indice === sequencia.length - 1) return null;
+    return sequencia[indice + 1];
+  }
   // Status otimista aplicado localmente enquanto a Server Action ainda não
   // confirmou — os dados "de verdade" continuam vindo do servidor via
   // `pedidos` (avancarStatusPedido chama revalidatePath("/producao") no
@@ -201,11 +209,14 @@ export function KanbanBoard({
     if (!proximo || destino !== proximo) return;
     if (!podeArrastar(pedido, podeEditar)) return;
 
-    // CLICHE_FACA→PRODUCAO baixa estoque automaticamente e pode envolver
+    // Entrar em PRODUCAO baixa estoque automaticamente e pode envolver
     // perda de material — precisa abrir o MESMO fluxo de confirmação que
     // IniciarImpressaoBotao usa na lista (ver KanbanConfirmarImpressao.tsx),
-    // nunca completar a transição direto feito as outras.
-    if (statusAtual === "CLICHE_FACA" && proximo === "PRODUCAO") {
+    // nunca completar a transição direto feito as outras. Checar só
+    // `proximo === "PRODUCAO"` (não mais `statusAtual === "CLICHE_FACA"`)
+    // cobre também a gráfica que desativou CLICHE_FACA — mesma razão do
+    // comentário em status-transicao.ts.
+    if (proximo === "PRODUCAO") {
       setPedidoConfirmando(pedidoId);
       return;
     }
@@ -219,10 +230,11 @@ export function KanbanBoard({
     <div>
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {COLUNAS.map((status) => (
+          {colunas.map((status) => (
             <KanbanColuna
               key={status}
               status={status}
+              rotulo={rotulos[status]}
               pedidos={pedidosComStatusEfetivo.filter((pedido) => pedido.status === status)}
               disabled={activeId === null || proximoDoArrastando !== status}
               destaqueValido={activeId !== null && proximoDoArrastando === status}
@@ -250,6 +262,7 @@ export function KanbanBoard({
 
 function KanbanColuna({
   status,
+  rotulo,
   pedidos,
   disabled,
   destaqueValido,
@@ -260,6 +273,7 @@ function KanbanColuna({
   responsaveis,
 }: {
   status: StatusPedido;
+  rotulo: string;
   pedidos: PedidoKanban[];
   disabled: boolean;
   destaqueValido: boolean;
@@ -290,7 +304,7 @@ function KanbanColuna({
       <div className="flex flex-col gap-0.5 px-1">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-            {ROTULOS_STATUS_PEDIDO[status]}
+            {rotulo}
           </h2>
           <span className="text-xs text-slate-400">{pedidos.length}</span>
         </div>

@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { obterIpRequisicao } from "@/lib/auth/ip";
 import { tentarRegistrarConfirmacaoEstagio } from "@/lib/auth/rate-limit";
 import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
-import { ESTAGIOS_ATRIBUIVEIS, ROTULOS_STATUS_PEDIDO } from "@/lib/producao-estagios";
+import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
 import { avancarStatusPedido } from "@/app/producao/status-transicao";
 import { assinaturaEstaLiberada } from "@/lib/billing/status";
 
@@ -57,6 +57,10 @@ export async function confirmarEstagioPublico(
     };
   }
 
+  // Achado A1 (Fase 1) — sequência/etapas atribuíveis DESTA gráfica (ver
+  // EtapaGrafica), não mais os arrays literais fixos.
+  const etapas = await resolverEtapasGrafica(pedido.graficaId);
+
   // Trava contra e-mail antigo: o campo etapaEsperada vem preenchido por
   // page.tsx com o status do pedido no momento em que a página foi
   // renderizada (mesmo status que o link daquele e-mail específico
@@ -69,14 +73,14 @@ export async function confirmarEstagioPublico(
   if (pedido.status !== etapaEsperada) {
     return {
       ok: false,
-      mensagem: `Esse link não é mais válido pra etapa atual do pedido (agora está em ${ROTULOS_STATUS_PEDIDO[pedido.status]}) — peça um link novo ou confirme direto no site.`,
+      mensagem: `Esse link não é mais válido pra etapa atual do pedido (agora está em ${etapas.rotulos[pedido.status]}) — peça um link novo ou confirme direto no site.`,
     };
   }
 
   // Só as etapas atribuíveis podem ser confirmadas por aqui — mesma regra
   // de page.tsx (evita confirmar CLICHE_FACA sem a tela de perda de
   // material, e ENTREGUE/CANCELADO não têm o que confirmar).
-  const confirmavel = ESTAGIOS_ATRIBUIVEIS.some((estagio) => estagio.valor === pedido.status);
+  const confirmavel = etapas.estagiosAtribuiveis.some((estagio) => estagio.valor === pedido.status);
   if (!confirmavel) {
     return { ok: false, mensagem: "Este pedido não tem nenhuma etapa pra confirmar agora." };
   }

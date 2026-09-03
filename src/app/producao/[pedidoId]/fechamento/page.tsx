@@ -14,7 +14,7 @@ import { calcularPrevisaoAprovacaoPedido } from "@/lib/pedido-aprovacao";
 import { lucroDoPedido } from "@/lib/custo-pedido";
 import { formatoMoeda } from "@/lib/moeda";
 import { formatoInstanteRealComHora } from "@/lib/data";
-import { ROTULOS_STATUS_PEDIDO } from "@/lib/producao-estagios";
+import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
 import { sugerirMaquinaPedido, apontamentoDivergeDaSugestao, type SelecaoMaquina } from "@/lib/apontamento-etapa";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
@@ -129,7 +129,7 @@ export default async function FechamentoPedidoPage({
   }
   const podeEditarCustos = await podeEditarModulo(usuario, "CUSTOS");
 
-  const [pedido, categoriasCustoAtivas, parametrosGrafica] = await Promise.all([
+  const [pedido, categoriasCustoAtivas, parametrosGrafica, etapas] = await Promise.all([
     prisma.pedido.findFirst({
       where: { id: pedidoId, graficaId: usuario.graficaId },
       include: {
@@ -157,6 +157,9 @@ export default async function FechamentoPedidoPage({
       where: { graficaId: usuario.graficaId },
       select: { margemFaixaBaixa: true, margemFaixaBoa: true },
     }),
+    // Achado A1 (Fase 1) — rótulos por gráfica (liga/desliga e renomeia
+    // etapa, ver EtapaGrafica), não mais o record literal fixo.
+    resolverEtapasGrafica(usuario.graficaId),
   ]);
   if (!pedido) {
     notFound();
@@ -354,7 +357,7 @@ export default async function FechamentoPedidoPage({
               <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
                 Fechamento do pedido
               </h1>
-              <StatusBadge status={pedido.status} tipo="pedido" />
+              <StatusBadge status={pedido.status} tipo="pedido" rotulo={etapas.rotulos[pedido.status]} />
             </div>
             <p className="text-slate-500">
               {pedido.orcamento.cliente.nome} · {itensResumo}
@@ -526,7 +529,7 @@ export default async function FechamentoPedidoPage({
                   <div key={linha.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
                     <div>
                       <p className="font-medium text-slate-800 dark:text-slate-100">
-                        {ROTULOS_STATUS_PEDIDO[linha.status]}
+                        {etapas.rotulos[linha.status]}
                       </p>
                       <p className="text-xs text-slate-500">
                         {formatoInstanteRealComHora.format(linha.iniciadoEm)}

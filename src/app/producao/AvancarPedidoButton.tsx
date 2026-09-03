@@ -6,19 +6,6 @@ import { Button } from "@/components/ui/Button";
 import { avancarPedido } from "./actions";
 import { SeletorMaquina, type MaquinaOpcaoUI } from "./SeletorMaquina";
 
-// CLICHE_FACA fica de fora deste mapa de propósito: essa transição baixa
-// estoque automaticamente (ver avancarStatusPedido), então PedidoLinha.tsx
-// mostra IniciarImpressaoBotao (fluxo de confirmação editável) em vez deste
-// botão de um clique só quando o status é CLICHE_FACA.
-const PROXIMO_ROTULO: Record<string, string> = {
-  ARTE: "Enviar p/ clichê/faca",
-  PRODUCAO: "Enviar p/ acabamento",
-  ACABAMENTO: "Enviar p/ conferência",
-  CONFERENCIA: "Enviar p/ embalagem",
-  EMBALAGEM: "Enviar p/ expedição",
-  EXPEDICAO: "Marcar como entregue",
-};
-
 // Etapas de DESTINO com "motor" (ver comentário de ApontamentoEtapa no
 // schema): só ARTE→CLICHE_FACA e PRODUCAO→ACABAMENTO, entre as transições
 // que este botão cobre, entram numa etapa que pode ter máquina associada.
@@ -32,6 +19,7 @@ export function AvancarPedidoButton({
   status,
   maquinas = [],
   sugestaoValor = "",
+  rotuloProximo = null,
 }: {
   pedidoId: string;
   status: string;
@@ -42,6 +30,14 @@ export function AvancarPedidoButton({
   // usaram na precificação (ver sugerirMaquinaPedido) — "" quando não há
   // sugestão (nenhuma máquina configurada nos itens, ou ambígua entre eles).
   sugestaoValor?: string;
+  // Achado A1 (Fase 1) — rótulo (já resolvido: customizado da gráfica ou
+  // padrão, ver resolverEtapasGrafica em src/lib/etapa-grafica.ts) da
+  // PRÓXIMA etapa deste pedido. Antes desta troca o texto do botão vinha de
+  // um mapa fixo por status ("Enviar p/ clichê/faca" etc.) — incoerente
+  // assim que uma gráfica renomeia a etapa de destino. null (ou omitido)
+  // cai no rótulo genérico "Avançar", mesmo comportamento de qualquer
+  // chamador que ainda não passe esta prop.
+  rotuloProximo?: string | null;
 }) {
   const [state, formAction, isPending] = useActionState(avancarPedido, null);
   const [maquinaEscolhida, setMaquinaEscolhida] = useState(sugestaoValor);
@@ -59,7 +55,7 @@ export function AvancarPedidoButton({
         <SeletorMaquina maquinas={maquinas} valor={maquinaEscolhida} onChange={setMaquinaEscolhida} />
       )}
       <Button type="submit" variant="outline" loading={isPending}>
-        {PROXIMO_ROTULO[status] ?? "Avançar"}
+        {rotuloProximo ? `Avançar para ${rotuloProximo}` : "Avançar"}
       </Button>
       {state && !state.ok && (
         <span className="text-xs text-rose-600">{state.mensagem}</span>

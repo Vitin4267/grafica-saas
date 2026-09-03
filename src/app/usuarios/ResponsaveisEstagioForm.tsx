@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { UsersIcon } from "@/components/icons";
 import { ROTULO_PAPEL } from "@/lib/papel-usuario";
-import { ESTAGIOS_ATRIBUIVEIS } from "@/lib/producao-estagios";
+import type { StatusPedido } from "@/generated/prisma/enums";
 import { salvarResponsaveisEstagio } from "./actions";
 
 type Funcionario = {
@@ -17,7 +17,17 @@ type Funcionario = {
   etapas: string[];
 };
 
-export function ResponsaveisEstagioForm({ funcionarios }: { funcionarios: Funcionario[] }) {
+export function ResponsaveisEstagioForm({
+  funcionarios,
+  estagiosAtribuiveis,
+}: {
+  funcionarios: Funcionario[];
+  // Achado A1 (Fase 1) — resolvido no server (ver resolverEtapasGrafica em
+  // src/lib/etapa-grafica.ts): só as etapas ATIVAS desta gráfica, com o
+  // rótulo customizado quando houver. Client component, não pode resolver
+  // isso sozinho (precisa de graficaId + banco).
+  estagiosAtribuiveis: { valor: StatusPedido; rotulo: string }[];
+}) {
   const [state, formAction, isPending] = useActionState(salvarResponsaveisEstagio, null);
 
   if (funcionarios.length === 0) {
@@ -41,7 +51,7 @@ export function ResponsaveisEstagioForm({ funcionarios }: { funcionarios: Funcio
                 <th scope="col" className="pb-3 text-left text-xs font-medium text-slate-500">
                   Funcionário
                 </th>
-                {ESTAGIOS_ATRIBUIVEIS.map((estagio) => (
+                {estagiosAtribuiveis.map((estagio) => (
                   <th
                     key={estagio.valor}
                     scope="col"
@@ -70,7 +80,7 @@ export function ResponsaveisEstagioForm({ funcionarios }: { funcionarios: Funcio
                       </span>
                     </span>
                   </td>
-                  {ESTAGIOS_ATRIBUIVEIS.map((estagio) => (
+                  {estagiosAtribuiveis.map((estagio) => (
                     <td key={estagio.valor} className="py-3 text-center">
                       <input
                         type="checkbox"
