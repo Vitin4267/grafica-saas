@@ -10,6 +10,7 @@ import { exigirPapel, MODULOS_PERMISSAO } from "@/lib/auth/permissoes";
 import { senhaSchema } from "@/lib/auth/validation";
 import { hashPassword } from "@/lib/auth/password";
 import { ESTAGIOS_ATRIBUIVEIS } from "@/lib/producao-estagios";
+import { AREAS_ADMINISTRATIVAS, ROTULO_AREA_ADMINISTRATIVA } from "@/lib/areas-administrativas";
 import { registrarAuditoria } from "@/lib/auditoria";
 import type { AreaAdministrativa } from "@/generated/prisma/enums";
 
@@ -466,25 +467,12 @@ export type SalvarResponsaveisAdministrativoResult = { ok: boolean; mensagem: st
 // pra esta action, e a UI (ResponsaveisAdministrativoForm, que importa os
 // dois exports abaixo pra desenhar a tabela funcionário × área), servirem
 // qualquer área nova sem precisar mudar a lógica, só adicionar o valor aqui
-// e o rótulo abaixo. PRAZO_PRODUCAO adicionado 2026-08-24 (achado A9 da
-// auditoria de abrangência) pra rotear o alerta de prazo/atraso de pedido
-// (src/lib/alerta-prazo-email.ts) pra um responsável dedicado em vez de
-// sempre cair em todos os DONOs. COMPRAS adicionado 2026-08-31 (achado A9,
-// restante pendente) pro mesmo tratamento no alerta de estoque crítico
-// (src/lib/alerta-estoque.ts). COBRANCA adicionado junto (mesmo achado,
-// mesma rodada) só como valor cadastrável — hoje não existe nenhum disparo
-// de e-mail de "conta a receber vencida" no código pra rotear (só a tela
-// /financeiro/contas-receber destacando visualmente as vencidas), então
-// marcar um funcionário aqui não liga nada ainda; fica pronto pro dia que
-// esse alerta for construído.
-export const AREAS_ADMINISTRATIVAS: AreaAdministrativa[] = ["NOTA_FISCAL", "PRAZO_PRODUCAO", "COBRANCA", "COMPRAS"];
-export const ROTULO_AREA_ADMINISTRATIVA: Record<AreaAdministrativa, string> = {
-  NOTA_FISCAL: "Emissão de Nota Fiscal",
-  PRAZO_PRODUCAO: "Alerta de prazo/atraso de pedido",
-  COBRANCA: "Cobrança (conta a receber vencida)",
-  COMPRAS: "Alerta de estoque crítico",
-};
-
+// e o rótulo abaixo. Movido pra src/lib/areas-administrativas.ts em
+// 2026-09-02 (bug real de produção: este arquivo tem "use server" no topo,
+// e exportar uma constante — não função async — daqui quebrava em produção
+// quando importado por um client component, "X.map is not a function" na
+// SSR; funcionava em `next dev` por isso não foi detectado antes). Import
+// mantido aqui só pro uso interno de salvarResponsaveisAdministrativo abaixo.
 // Mesmo padrão de salvarResponsaveisEstagio logo acima: ResponsavelAdministrativo
 // não tem flag boolean pra fazer upsert em cima — a PRESENÇA da linha é o
 // "marcado" — então apaga tudo do tenant e recria só o que veio marcado

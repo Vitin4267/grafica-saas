@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { UsersIcon } from "@/components/icons";
 import { ROTULO_PAPEL } from "@/lib/papel-usuario";
-import { salvarResponsaveisAdministrativo, AREAS_ADMINISTRATIVAS, ROTULO_AREA_ADMINISTRATIVA } from "./actions";
+import { AREAS_ADMINISTRATIVAS, ROTULO_AREA_ADMINISTRATIVA } from "@/lib/areas-administrativas";
+import { salvarResponsaveisAdministrativo } from "./actions";
 
 type Funcionario = {
   id: string;
