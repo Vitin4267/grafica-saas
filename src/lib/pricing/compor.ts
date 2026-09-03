@@ -66,10 +66,24 @@ export function comporPreco(params: {
 
   validarSomaEncargos(somaEncargosDec.toNumber());
 
+  // Achado N3 da auditoria de abrangência — parametros.pedidoMinimo NÃO é
+  // mais aplicado aqui, por ITEM. O rótulo "Pedido mínimo (R$)" em
+  // Configurações sempre foi um piso de PEDIDO (todo o orçamento), mas até
+  // aqui `maiorDec(precoBruto, pedidoMinimo)` rodava uma vez por LINHA — um
+  // orçamento com 3 itens de R$12+R$9+R$4 e mínimo R$30 cobrava R$90 (3× o
+  // mínimo) em vez de R$30. O piso agora é aplicado UMA VEZ sobre a SOMA dos
+  // itens, depois de somar as linhas — ver aplicarPisoDoPedido logo abaixo,
+  // chamada nos pontos que persistem/recalculam Orcamento.total (ver
+  // recalcularTotalOrcamento em src/lib/orcamento-precificacao.ts e os
+  // pontos de criação de orçamento/opção em src/app/orcamento/actions.ts,
+  // src/app/orcamento/[id]/actions.ts e opcoes.actions.ts). Efeito colateral
+  // resolvido de brinde: antes o piso era aplicado ANTES deste
+  // arredondamento por item, então arredondarParaIncremento podia devolver
+  // um valor abaixo do mínimo — aplicarPisoDoPedido aplica o piso e SÓ
+  // DEPOIS arredonda, na ordem certa.
   const precoBruto = custoTotal.div(paraDecimal(1).minus(somaEncargosDec));
-  const precoComPiso = maiorDec(precoBruto, paraDecimal(params.parametros.pedidoMinimo));
   const precoFinalAlvo = arredondarParaIncremento(
-    precoComPiso,
+    precoBruto,
     paraDecimal(params.parametros.incrementoArredondamento)
   );
 
@@ -111,4 +125,23 @@ export function comporPreco(params: {
       margem: margemLucro,
     },
   };
+}
+
+// Achado N3 da auditoria de abrangência — piso de PEDIDO, aplicado UMA VEZ
+// sobre a SOMA de OrcamentoItem.precoTotal de um orçamento (nunca por item —
+// ver comentário em comporPreco acima, que não conhece mais pedidoMinimo).
+// Ordem correta: somar as linhas → aplicar o piso → arredondar no incremento
+// comercial, nessa ordem (chamar isto ANTES de qualquer arredondamento do
+// total evita que o arredondamento devolva um valor abaixo do mínimo).
+// Chamada por src/lib/orcamento-precificacao.ts (recalcularTotalOrcamento) e
+// pelos pontos que criam Orcamento/OrcamentoOpcao somando itens direto
+// (src/app/orcamento/actions.ts, src/app/orcamento/[id]/actions.ts —
+// duplicarOrcamento — e src/app/orcamento/[id]/opcoes.actions.ts).
+export function aplicarPisoDoPedido(
+  somaItens: Dec,
+  pedidoMinimo: Dec,
+  incrementoArredondamento: Dec
+): Dec {
+  const comPiso = maiorDec(somaItens, pedidoMinimo);
+  return arredondarParaIncremento(comPiso, incrementoArredondamento);
 }

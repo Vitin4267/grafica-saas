@@ -50,6 +50,7 @@ export function EditarOrcamentoForm({
   itemNome,
   modeloCalculo,
   usaClicheEtiqueta,
+  simplesCobraPorArea,
   valoresIniciais,
   podeRemover,
   unidadeDimensao,
@@ -75,6 +76,10 @@ export function EditarOrcamentoForm({
   // ConfiguracaoClicheEtiqueta presente pro produto deste item — só então
   // mostra o seletor de papel/cores/faca/frete.
   usaClicheEtiqueta: boolean;
+  // Achado N1 — só relevante quando modeloCalculo=SIMPLES: decide se largura/
+  // altura aparecem pra edição (ver mostraDimensao abaixo e
+  // ItemGrafica.simplesCobraPorArea no schema).
+  simplesCobraPorArea: boolean;
   // Unidade congelada na criação do item — nunca a padrão atual da gráfica,
   // pra trocar a configuração não mudar o que já foi orçado.
   unidadeDimensao: UnidadeDimensao;
@@ -156,6 +161,9 @@ export function EditarOrcamentoForm({
     modeloCalculo === "PERSONALIZACAO";
   const usaModeloBordado = modeloCalculo === "BORDADO";
   const usaModeloTempoMaquina = modeloCalculo === "TEMPO_MAQUINA";
+  // Achado N1 — SIMPLES só mostra largura/altura quando o PRODUTO está
+  // marcado como "cobra por área" (simplesCobraPorArea); sem a flag,
+  // preencher dimensão não muda mais o preço (sempre por peça).
   const mostraDimensao =
     exigeDimensao ||
     modeloCalculo === "DIGITAL" ||
@@ -165,7 +173,8 @@ export function EditarOrcamentoForm({
     modeloCalculo === "PERSONALIZACAO" ||
     modeloCalculo === "REVENDA" ||
     modeloCalculo === "BORDADO" ||
-    modeloCalculo === "TEMPO_MAQUINA";
+    modeloCalculo === "TEMPO_MAQUINA" ||
+    (modeloCalculo === "SIMPLES" && simplesCobraPorArea);
   // Mesmo agrupamento visual de SeletorItemOrcamento.tsx (fluxo de criação)
   // — o formulário de edição tem exatamente os mesmos campos duplicados, e a
   // tarefa pede a mesma estrutura nos dois pra não confundir o usuário.

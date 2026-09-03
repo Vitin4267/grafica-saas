@@ -42,7 +42,12 @@ export type ContextoM2 = {
   bobinas: Bobina[];
   custoM2Material: number; // ItemGrafica.precoCompra do material em bobina
   custoImpressaoM2: number; // ItemGrafica.custoImpressaoM2 do produto
-  areaMinimaFaturavel: number; // ItemGrafica.areaMinimaFaturavel do produto (m², métrica de auditoria)
+  // ItemGrafica.areaMinimaFaturavel do produto (m²) — achado N18: piso
+  // comercial por PEÇA (não por pedido, ver pedidoMinimo em
+  // ParametrosTenant). Peça menor que este valor é cobrada como se tivesse
+  // esta área (ver custoImpressao em m2.ts). 0 = sem piso configurado
+  // (comportamento de sempre, nenhuma regressão).
+  areaMinimaFaturavel: number;
   // Achado A9 da auditoria de abrangência — config OPCIONAL do item
   // (ConfiguracaoEmenda). Ausente = comportamento de hoje inalterado
   // (calcularM2 lança PECA_EXCEDE_BOBINA quando a peça não cabe em nenhuma
@@ -111,6 +116,11 @@ export type ParametrosTenant = {
   impostoPercent: number;
   comissaoPercent: number;
   taxaFinanceiraPercent: number;
+  // Achado N3 — piso de PEDIDO (todo o orçamento), não de item. Presente
+  // aqui por completude (ParametrosGrafica inteiro), mas comporPreco NÃO lê
+  // mais este campo — o piso é aplicado uma vez sobre a soma dos itens via
+  // aplicarPisoDoPedido (compor.ts), nunca por item. Ver
+  // recalcularTotalOrcamento em src/lib/orcamento-precificacao.ts.
   pedidoMinimo: number;
   incrementoArredondamento: number;
 

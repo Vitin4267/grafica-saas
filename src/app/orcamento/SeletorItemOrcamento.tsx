@@ -41,6 +41,12 @@ export type ItemVenda = {
   // ConfiguracaoClicheEtiqueta presente pra este produto — só produtos M2
   // marcados assim mostram o seletor de papel/cores/faca/frete abaixo.
   usaClicheEtiqueta: boolean;
+  // Achado N1 — só relevante quando modeloCalculo=SIMPLES: decide se este
+  // produto cobra por m² (largura×altura) quando as dimensões forem
+  // preenchidas, ou sempre por peça (ver ItemGrafica.simplesCobraPorArea no
+  // schema e calcularPreco em src/lib/orcamento.ts). Controla se os campos
+  // largura/altura aparecem pra este produto abaixo.
+  simplesCobraPorArea: boolean;
 };
 
 // Serviço do catálogo (ItemGrafica tipo SERVICO) já configurado como acabamento
@@ -214,6 +220,17 @@ export function SeletorItemOrcamento({
   // em si (sem nesting) — só M2/OFFSET/FLEXOGRAFIA exigem dimensão aqui.
   const exigeDimensao = usaModeloM2 || usaModeloOffset || usaModeloFlexografia;
   const usaClicheEtiqueta = usaModeloM2 && itemSelecionado?.usaClicheEtiqueta === true;
+  // Achado N1 — pra um produto SIMPLES sem a flag simplesCobraPorArea,
+  // preencher largura/altura não muda mais o preço (sempre por peça), então
+  // não faz sentido continuar mostrando os campos como se mudasse. Sem
+  // produto selecionado ainda, mostra normalmente (estado inicial). Todo
+  // outro modelo de cálculo (avançado) continua mostrando os campos —
+  // mesmo os sem nesting, que podem ter um acabamento cobrado por m²/metro
+  // linear anexado (ver guarda em orcamento-precificacao.ts).
+  const ocultarDimensaoSimples =
+    itemSelecionado?.modeloCalculo === "SIMPLES" && !itemSelecionado.simplesCobraPorArea;
+  const simplesCobraPorArea =
+    itemSelecionado?.modeloCalculo === "SIMPLES" && itemSelecionado.simplesCobraPorArea === true;
   // Só aparece quando um acabamento selecionado cobra por hora — o motor
   // rejeita silenciosamente sem isso (ver guard em orcamento-precificacao.ts).
   const temAcabamentoHora = valores.acabamentoIds.some(
@@ -331,33 +348,40 @@ export function SeletorItemOrcamento({
         onChange={set("quantidade")}
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Input
-          label={`Largura (${rotuloUnidade})`}
-          type="number"
-          step={passoDimensao}
-          value={valores.largura}
-          onChange={set("largura")}
-          placeholder="opcional"
-          required={exigeDimensao}
-        />
-        <Input
-          label={`Altura (${rotuloUnidade})`}
-          type="number"
-          step={passoDimensao}
-          value={valores.altura}
-          onChange={set("altura")}
-          placeholder="opcional"
-          required={exigeDimensao}
-        />
-        <Select label="Unidade" value={valores.unidadeDimensao} onChange={trocarUnidade}>
-          {UNIDADES_DIMENSAO.map((u) => (
-            <option key={u} value={u}>
-              {ROTULO_UNIDADE_DIMENSAO[u]}
-            </option>
-          ))}
-        </Select>
-      </div>
+      {ocultarDimensaoSimples ? (
+        <p className="text-xs text-slate-500">
+          Este produto é cobrado por peça (preço fixo) — largura e altura não afetam o preço.
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Input
+            label={`Largura (${rotuloUnidade})`}
+            type="number"
+            step={passoDimensao}
+            value={valores.largura}
+            onChange={set("largura")}
+            placeholder="opcional"
+            required={exigeDimensao}
+            hint={simplesCobraPorArea ? "Este produto cobra por área (m²)." : undefined}
+          />
+          <Input
+            label={`Altura (${rotuloUnidade})`}
+            type="number"
+            step={passoDimensao}
+            value={valores.altura}
+            onChange={set("altura")}
+            placeholder="opcional"
+            required={exigeDimensao}
+          />
+          <Select label="Unidade" value={valores.unidadeDimensao} onChange={trocarUnidade}>
+            {UNIDADES_DIMENSAO.map((u) => (
+              <option key={u} value={u}>
+                {ROTULO_UNIDADE_DIMENSAO[u]}
+              </option>
+            ))}
+          </Select>
+        </div>
+      )}
 
       {mostrarGrupoCorPreparo && (
         <details open className="group rounded-xl border border-slate-300 dark:border-slate-700">

@@ -45,14 +45,16 @@ type Fixture = {
   itemGraficaId: string;
   orcamentoId: string;
   precoVenda: number;
-  precoCompra: number;
+  precoCompra: number | null;
 };
 
 // Limite de desconto sem aprovação usado em todos os testes — bem abaixo de
 // 100 (default de "sem trava") pra exercitar a trava de aprovação de verdade.
 const LIMITE_SEM_APROVACAO = 15;
 
-async function criarFixture(): Promise<Fixture> {
+async function criarFixture(
+  opts: { precoCompra?: number | null; simplesCobraPorArea?: boolean } = {}
+): Promise<Fixture> {
   const s = sufixo();
   const grafica = await prisma.grafica.create({
     data: { nome: `Teste Desconto Item ${s}`, slug: `teste-desconto-item-${s}` },
@@ -88,13 +90,22 @@ async function criarFixture(): Promise<Fixture> {
   // Produto SIMPLES com preço de compra conhecido — custo direto do item
   // (pra trava de preço mínimo) = precoCompra × quantidade, mesmo cálculo do
   // bloco de comissão já existente neste arquivo (ver aplicarDescontoItemOrcamento).
+  // opts.precoCompra=null (achado N11a) e opts.simplesCobraPorArea (achado
+  // N11b) permitem os testes abaixo exercitarem a trava de custo desconhecido
+  // e a trava de custo por área sem duplicar todo o resto da fixture.
   const precoVenda = 100;
-  const precoCompra = 60;
+  const precoCompra = opts.precoCompra === undefined ? 60 : opts.precoCompra;
   const catalogo = await prisma.itemCatalogo.create({
     data: { graficaId: grafica.id, tipo: "PRODUTO", categoria: "Cartão", nome: `Produto Teste ${s}` },
   });
   const itemGrafica = await prisma.itemGrafica.create({
-    data: { graficaId: grafica.id, itemCatalogoId: catalogo.id, precoVenda, precoCompra },
+    data: {
+      graficaId: grafica.id,
+      itemCatalogoId: catalogo.id,
+      precoVenda,
+      precoCompra,
+      simplesCobraPorArea: opts.simplesCobraPorArea ?? false,
+    },
   });
 
   const orcamento = await prisma.orcamento.create({
@@ -142,8 +153,14 @@ afterEach(async () => {
 }, TIMEOUT_MS);
 
 // Adiciona um item de quantidade 10 (precoVenda 100 → sugerido/vendido 1000,
-// custo direto 600) e devolve o id do OrcamentoItem criado.
-async function adicionarItemFixture(fixture: Fixture, quantidade = 10): Promise<string> {
+// custo direto 600) e devolve o id do OrcamentoItem criado. dimensoes
+// (achado N11b) só faz sentido combinado com uma fixture
+// simplesCobraPorArea:true — exercita a trava de custo por área.
+async function adicionarItemFixture(
+  fixture: Fixture,
+  quantidade = 10,
+  dimensoes?: { largura: number; altura: number }
+): Promise<string> {
   vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(
     (await usuarioParaMock(fixture.usuarioDonoId)) as never
   );
@@ -154,6 +171,9 @@ async function adicionarItemFixture(fixture: Fixture, quantidade = 10): Promise<
       itemGraficaId: fixture.itemGraficaId,
       quantidade: String(quantidade),
       unidadeDimensao: "CM",
+      ...(dimensoes
+        ? { largura: String(dimensoes.largura), altura: String(dimensoes.altura) }
+        : {}),
     })
   );
   expect(resultado.ok).toBe(true);
@@ -385,4 +405,108 @@ describe("aplicarDescontoItemOrcamento", () => {
     },
     TIMEOUT_MS
   );
+
+  // Achado N11(a) — precoCompra ausente é custo DESCONHECIDO, não zero.
+  // Antes desta correção, a trava calculava custo direto = 0 nesse caso e
+  // liberava qualquer desconto (inclusive pra DONO/ADMIN, que nem passam
+  // pela trava de alçada). Agora o piso vira o próprio preço sugerido —
+  // bloqueia até o custo de compra ser cadastrado.
+  it(
+    "sem precoCompra cadastrado, QUALQUER desconto é bloqueado (custo desconhecido != custo zero)",
+    async () => {
+      const fixture = await criarFixture({ precoCompra: null });
+      graficaIdsParaLimpar.push(fixture.graficaId);
+      const itemId = await adicionarItemFixture(fixture); // qtd 10, sugerido total 1000
+
+      // DONO — sem alçada configurada, sempre passaria pela trava de
+      // aprovação (limiteResolvido=100%); só a trava de custo pode bloquear.
+      vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(
+        (await usuarioParaMock(fixture.usuarioDonoId)) as never
+      );
+      const resultado = await aplicarDescontoItemOrcamento(
+        null,
+        formDataDe({
+          orcamentoItemId: itemId,
+          tipo: "PERCENTUAL",
+          valor: "5", // desconto pequeno — antes da correção, passava sem qualquer trava
+          motivo: "desconto pequeno, mas custo é desconhecido",
+        })
+      );
+
+      expect(resultado.ok).toBe(false);
+      expect(resultado.mensagem).toContain("não tem custo de compra cadastrado");
+
+      const item = await prisma.orcamentoItem.findUniqueOrThrow({ where: { id: itemId } });
+      expect(Number(item.precoUnitario)).toBe(100); // nada foi escrito
+    },
+    TIMEOUT_MS
+  );
+
+  // Achado N11(b) — produto SIMPLES marcado como "cobra por área"
+  // (ItemGrafica.simplesCobraPorArea): o piso de custo precisa multiplicar
+  // pela MESMA área usada no cálculo do preço, senão um desconto que na
+  // prática vende abaixo do custo passa batido.
+  describe("SIMPLES cobrado por área (simplesCobraPorArea=true)", () => {
+    it(
+      "desconto que fica abaixo do custo×área é bloqueado (mesmo passando no custo×peça antigo)",
+      async () => {
+        // precoVenda 100/m², precoCompra 18/m², item 3m×2m = 6m², qtd 1.
+        // Preço sugerido = 100 × 6 = 600. Custo direto correto = 18 × 6 = 108.
+        // Custo ANTIGO (sem área, achado N11b) seria só 18 × 1 = 18 — um
+        // preço final de 50 passaria na trava antiga (50 ≥ 18) mas precisa
+        // ser bloqueado agora (50 < 108).
+        const fixture = await criarFixture({ precoCompra: 18, simplesCobraPorArea: true });
+        graficaIdsParaLimpar.push(fixture.graficaId);
+        const itemId = await adicionarItemFixture(fixture, 1, { largura: 300, altura: 200 });
+
+        const item = await prisma.orcamentoItem.findUniqueOrThrow({ where: { id: itemId } });
+        expect(Number(item.precoTotal)).toBe(600); // confirma a área entrou no preço
+
+        vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(
+          (await usuarioParaMock(fixture.usuarioDonoId)) as never
+        );
+        const resultado = await aplicarDescontoItemOrcamento(
+          null,
+          formDataDe({
+            orcamentoItemId: itemId,
+            tipo: "PRECO_FINAL",
+            valor: "50",
+            motivo: "tentando vender abaixo do custo real (por área)",
+          })
+        );
+
+        expect(resultado.ok).toBe(false);
+        expect(resultado.mensagem).toContain("abaixo do custo direto");
+      },
+      TIMEOUT_MS
+    );
+
+    it(
+      "desconto que fica acima do custo×área é aplicado normalmente",
+      async () => {
+        const fixture = await criarFixture({ precoCompra: 18, simplesCobraPorArea: true });
+        graficaIdsParaLimpar.push(fixture.graficaId);
+        const itemId = await adicionarItemFixture(fixture, 1, { largura: 300, altura: 200 });
+
+        vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(
+          (await usuarioParaMock(fixture.usuarioDonoId)) as never
+        );
+        // 150 fica acima do custo direto correto (108) — deve passar.
+        const resultado = await aplicarDescontoItemOrcamento(
+          null,
+          formDataDe({
+            orcamentoItemId: itemId,
+            tipo: "PRECO_FINAL",
+            valor: "150",
+            motivo: "desconto válido, ainda acima do custo por área",
+          })
+        );
+
+        expect(resultado.ok).toBe(true);
+        const item = await prisma.orcamentoItem.findUniqueOrThrow({ where: { id: itemId } });
+        expect(Number(item.precoTotal)).toBe(150);
+      },
+      TIMEOUT_MS
+    );
+  });
 });

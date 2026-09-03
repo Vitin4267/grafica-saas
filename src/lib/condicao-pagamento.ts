@@ -98,41 +98,51 @@ function arredondarCentavos(valor: number): number {
   return Math.round(valor * 100) / 100;
 }
 
-// Gera as ContaReceber de um orçamento recém-aprovado, a partir da
-// CondicaoPagamento vinculada (Orcamento.condicaoPagamentoId) — SNAPSHOT no
-// momento da aprovação, nunca recalculado depois: mudar a condição (ou suas
-// parcelas) mais tarde, ou até desativá-la, não altera nada do que já foi
-// gravado aqui (mesma disciplina de Comissao). Chamada DENTRO da mesma
-// transação que aprova o orçamento (ver atualizarStatusOrcamento em
-// src/app/orcamento/[id]/actions.ts e responderOrcamentoPublico em
-// src/app/o/[token]/actions.ts) — se algo aqui falhar, desfaz junto com o
-// resto da aprovação (Pedido, Comissao etc.).
+type ParamsGeracaoContaReceber = {
+  graficaId: string;
+  orcamentoId: string;
+  // Achado A10 da Parte 5 — preenche ContaReceber.clienteId no nascimento
+  // (ver comentário no schema.prisma), evitando o join
+  // ContaReceber → Orcamento → clienteId em toda consulta financeira "por
+  // cliente".
+  clienteId: string;
+  condicaoPagamentoId: string | null;
+  total: number;
+  // Dia em que o evento-gatilho (aprovação, emissão de nota ou entrega)
+  // aconteceu — base do cálculo de vencimento de cada parcela
+  // (diaBase + parcela.diasAposAncora).
+  dataAncora: Date;
+};
+
+// Núcleo compartilhado dos 3 gatilhos automáticos de ContaReceber (achado R1
+// da auditoria de abrangência, Parte 7, 2026-09-03) — gera as parcelas da
+// CondicaoPagamento vinculada ao orçamento (Orcamento.condicaoPagamentoId)
+// QUANDO o evento que chamou bate com a âncora configurada na condição
+// (`ancoraGatilho`). SNAPSHOT no momento do evento, nunca recalculado depois:
+// mudar a condição (ou suas parcelas) mais tarde, ou até desativá-la, não
+// altera nada do que já foi gravado aqui (mesma disciplina de Comissao).
+// Chamada DENTRO da mesma transação que muda o estado que dispara o evento
+// (aprovação do orçamento, emissão de NF-e, entrada do pedido em ENTREGUE) —
+// se algo aqui falhar, desfaz junto com o resto.
 //
-// Escopo desta rodada (achado A7 da Parte 4, 2026-08-28): só gera algo
-// quando a condição vinculada tem ancora=APROVACAO — é a única âncora com
-// gatilho automático plumbado até agora, por acontecer dentro desta própria
-// transação, sem depender de outro evento do sistema. EMISSAO_NOTA e
-// ENTREGA ficam com o enum pronto e o vínculo gravável (a condição pode ser
-// cadastrada e escolhida no orçamento normalmente), mas SEM gatilho — até uma
-// rodada futura plumbar isso em emitirNfe (src/lib/focus-nfe.ts) e em
-// avancarPedido (src/app/producao/actions.ts, transição pra ENTREGUE), o
-// comportamento pra essas duas âncoras é idêntico a não ter condição nenhuma
-// vinculada: a gráfica cadastra a parcela à mão, como sempre (ver
-// criarContaReceber em src/app/financeiro/contas-receber/actions.ts).
-export async function gerarContasReceberDaAprovacao(
+// Idempotência: cada um dos 3 gatilhos pode, na prática, rodar mais de uma
+// vez pro MESMO orçamento (reconsulta de status de NF-e depois de já
+// autorizada, por exemplo) — diferente da aprovação, que é protegida por um
+// CAS em Orcamento.status que só permite a transição uma vez. Sem uma coluna
+// dedicada marcando "geração automática já rodou" (evitado de propósito —
+// não precisa de schema novo pra resolver isto), o marcador usado é a
+// PRÓPRIA ContaReceber já criada: se já existe alguma conta deste orçamento
+// cuja descrição termina em "— {nome da condição}" (o sufixo que este mesmo
+// bloco sempre grava, ver `contaReceber.create` abaixo), a geração já
+// aconteceu e a chamada é um no-op. Efeito colateral aceito: uma
+// ContaReceber MANUAL cadastrada à mão com essa mesma condição no texto
+// (raro — a gráfica normalmente descreve manualmente sem citar o nome exato
+// da condição) bloquearia a geração automática; dado o baixo risco e a
+// alternativa (migration só pra isso), essa é a troca deliberada.
+async function gerarContasReceberPorAncora(
   tx: Prisma.TransactionClient,
-  params: {
-    graficaId: string;
-    orcamentoId: string;
-    // Achado A10 da Parte 5 — preenche ContaReceber.clienteId no nascimento
-    // (ver comentário no schema.prisma), evitando o join
-    // ContaReceber → Orcamento → clienteId em toda consulta financeira "por
-    // cliente".
-    clienteId: string;
-    condicaoPagamentoId: string | null;
-    total: number;
-    aprovadoEm: Date;
-  }
+  ancoraGatilho: AncoraVencimento,
+  params: ParamsGeracaoContaReceber
 ): Promise<void> {
   if (!params.condicaoPagamentoId || params.total <= 0) return;
 
@@ -141,21 +151,30 @@ export async function gerarContasReceberDaAprovacao(
     include: { parcelas: { orderBy: { ordem: "asc" } } },
   });
   // Condição não encontrada (nunca deveria acontecer — é FK, e não existe
-  // hard-delete de CondicaoPagamento) ou sem nenhuma parcela cadastrada: a
-  // aprovação segue sem gerar conta nenhuma em vez de travar o pedido
-  // inteiro por causa de dado de configuração incompleto.
+  // hard-delete de CondicaoPagamento) ou sem nenhuma parcela cadastrada: o
+  // evento segue sem gerar conta nenhuma em vez de travar o resto do fluxo
+  // por causa de dado de configuração incompleto.
   if (!condicao || condicao.parcelas.length === 0) return;
-  // Gap remanescente documentado acima — só APROVACAO dispara automático.
-  if (condicao.ancora !== "APROVACAO") return;
+  // A condição vinculada usa outra âncora (ex: orçamento tem condição
+  // EMISSAO_NOTA, mas quem chamou foi o gatilho de ENTREGA) — nada a fazer
+  // aqui, o gatilho certo cuida disso quando o evento certo acontecer.
+  if (condicao.ancora !== ancoraGatilho) return;
+
+  const marcadorGeracao = `— ${condicao.nome}`;
+  const jaGerado = await tx.contaReceber.findFirst({
+    where: { orcamentoId: params.orcamentoId, descricao: { endsWith: marcadorGeracao } },
+    select: { id: true },
+  });
+  if (jaGerado) return;
 
   const acrescimo = condicao.acrescimoPercent ? Number(condicao.acrescimoPercent) : 0;
   const totalComAcrescimo = params.total * (1 + acrescimo / 100);
 
-  // Dia-calendário de Brasília em que a aprovação aconteceu, como data-pura
-  // UTC (mesmo padrão de Despesa.vencimento/ContaReceber.vencimento) — a
-  // partir daí é só somar dias corridos, sem se preocupar com DST (Brasília
-  // não tem desde 2019).
-  const diaBaseUTC = dataInputParaUTC(hojeBrasiliaInputValue(params.aprovadoEm));
+  // Dia-calendário de Brasília em que o evento aconteceu, como data-pura UTC
+  // (mesmo padrão de Despesa.vencimento/ContaReceber.vencimento) — a partir
+  // daí é só somar dias corridos, sem se preocupar com DST (Brasília não tem
+  // desde 2019).
+  const diaBaseUTC = dataInputParaUTC(hojeBrasiliaInputValue(params.dataAncora));
 
   const totalParcelas = condicao.parcelas.length;
   let somaAcumulada = 0;
@@ -177,10 +196,77 @@ export async function gerarContasReceberDaAprovacao(
         graficaId: params.graficaId,
         orcamentoId: params.orcamentoId,
         clienteId: params.clienteId,
-        descricao: `Parcela ${parcela.ordem}/${totalParcelas} — ${condicao.nome}`,
+        descricao: `Parcela ${parcela.ordem}/${totalParcelas} ${marcadorGeracao}`,
         valor,
         vencimento,
       },
     });
   }
+}
+
+// Gatilho 1/3 — aprovação do orçamento. Chamada DENTRO da mesma transação
+// que aprova o orçamento (ver atualizarStatusOrcamento em
+// src/app/orcamento/[id]/actions.ts e responderOrcamentoPublico em
+// src/app/o/[token]/actions.ts). Idempotência garantida ali por um CAS em
+// Orcamento.status (updateMany com where status=status-anterior) — a
+// transição só passa uma vez, então esta função nunca roda duas vezes pro
+// mesmo orçamento por este caminho (o marcador em
+// gerarContasReceberPorAncora é redundância defensiva, não a proteção
+// principal aqui).
+export async function gerarContasReceberDaAprovacao(
+  tx: Prisma.TransactionClient,
+  params: {
+    graficaId: string;
+    orcamentoId: string;
+    clienteId: string;
+    condicaoPagamentoId: string | null;
+    total: number;
+    aprovadoEm: Date;
+  }
+): Promise<void> {
+  return gerarContasReceberPorAncora(tx, "APROVACAO", { ...params, dataAncora: params.aprovadoEm });
+}
+
+// Gatilho 2/3 — emissão de NF-e autorizada. Chamada DENTRO da mesma
+// transação que grava NotaFiscal.status="AUTORIZADA" (ver emitirNotaFiscal e
+// atualizarStatusNotaFiscal em src/app/orcamento/[id]/actions.ts) — os dois
+// pontos em que uma nota pode virar AUTORIZADA (emissão síncrona e consulta
+// de status depois de PROCESSANDO). Diferente da aprovação, não há CAS
+// natural aqui (o mesmo card pode ter seu status reconsultado várias vezes
+// depois de já autorizado), então a idempotência real vem do marcador em
+// gerarContasReceberPorAncora.
+export async function gerarContasReceberDaEmissaoNota(
+  tx: Prisma.TransactionClient,
+  params: {
+    graficaId: string;
+    orcamentoId: string;
+    clienteId: string;
+    condicaoPagamentoId: string | null;
+    total: number;
+    emitidoEm: Date;
+  }
+): Promise<void> {
+  return gerarContasReceberPorAncora(tx, "EMISSAO_NOTA", { ...params, dataAncora: params.emitidoEm });
+}
+
+// Gatilho 3/3 — pedido chega em ENTREGUE. Chamada DENTRO da mesma transação
+// que avança Pedido.status pra ENTREGUE (ver avancarStatusPedido em
+// src/app/producao/status-transicao.ts). Idempotência: ENTREGUE é o último
+// estágio de SEQUENCIA_STATUS_PEDIDO (não há transição pra fora dele) e a
+// própria transição é protegida por CAS (updateMany com where
+// status=status-anterior) — na prática só corre uma vez por pedido, mas o
+// marcador em gerarContasReceberPorAncora cobre mesmo assim qualquer
+// reentrada (ex: reprocessamento manual do mesmo evento).
+export async function gerarContasReceberDaEntrega(
+  tx: Prisma.TransactionClient,
+  params: {
+    graficaId: string;
+    orcamentoId: string;
+    clienteId: string;
+    condicaoPagamentoId: string | null;
+    total: number;
+    entregueEm: Date;
+  }
+): Promise<void> {
+  return gerarContasReceberPorAncora(tx, "ENTREGA", { ...params, dataAncora: params.entregueEm });
 }

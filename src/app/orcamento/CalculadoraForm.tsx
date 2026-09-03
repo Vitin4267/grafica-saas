@@ -265,6 +265,7 @@ export function CalculadoraForm({
       alturaCm: campos.altura
         ? converterParaCm(Number(campos.altura), campos.unidadeDimensao)
         : null,
+      simplesCobraPorArea: itemSelecionado.simplesCobraPorArea,
     });
   }, [
     itemSelecionado,
@@ -660,12 +661,12 @@ export function CalculadoraForm({
             <div className="flex items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-teal-50 px-3 py-1 text-xs font-medium text-teal-700 dark:bg-teal-950 dark:text-teal-300">
                 <RulerIcon className="h-3.5 w-3.5" />
-                {previewSimples.temDimensoes ? "Cobrado por m²" : "Cobrado por unidade"}
+                {previewSimples.cobraPorArea ? "Cobrado por m²" : "Cobrado por unidade"}
               </span>
             </div>
 
             <dl className="flex flex-col gap-3 text-sm">
-              {previewSimples.temDimensoes && (
+              {previewSimples.cobraPorArea && (
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-slate-800">
                   <dt className="text-slate-500">Área</dt>
                   <dd className="font-medium text-slate-800 dark:text-slate-200">

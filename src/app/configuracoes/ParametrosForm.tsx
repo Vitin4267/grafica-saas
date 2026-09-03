@@ -206,6 +206,7 @@ export function ParametrosForm({
               step="0.01"
               min="0"
               defaultValue={parametros.pedidoMinimo}
+              hint="Piso do ORÇAMENTO inteiro, não de cada item — um orçamento com vários itens some tudo e só aplica o mínimo se a soma ficar abaixo dele."
             />
             <Input
               label="Incremento de arredondamento (R$)"

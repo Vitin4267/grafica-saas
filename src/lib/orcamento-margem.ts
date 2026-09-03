@@ -15,6 +15,16 @@ export type DadosItemParaMargem = {
   quantidade: number;
   breakdown: Prisma.JsonValue | null;
   precoCompra: Prisma.Decimal | string | number | null;
+  // Achado N11 (bullet b) — quando o item é SIMPLES e o PRODUTO cobra por
+  // área (ItemGrafica.simplesCobraPorArea), o preço já escalou por m², mas
+  // "precoCompra × quantidade" sozinho ignorava a área — superestimava a
+  // margem de um item como banner/lona vendido por m² (ex: margem calculada
+  // em 95% quando a real era 70%). Todos opcionais/omitidos = comportamento
+  // de sempre (× quantidade, sem área) — mesmo padrão de regressão zero dos
+  // outros campos opcionais deste arquivo.
+  larguraCm?: Prisma.Decimal | string | number | null;
+  alturaCm?: Prisma.Decimal | string | number | null;
+  simplesCobraPorArea?: boolean;
 };
 
 export type MargemItemOrcamento = {
@@ -41,9 +51,18 @@ export function calcularMargemItemOrcamento(dados: DadosItemParaMargem): MargemI
   if (!Number.isFinite(precoTotal) || precoTotal <= 0) return null;
 
   const custoDoBreakdown = lerCustoTotalBreakdown(dados.breakdown);
+  // Área só entra quando o produto está marcado como "cobra por área" E as
+  // duas dimensões vieram preenchidas — mesma regra de calcularPreco em
+  // src/lib/orcamento.ts (nunca inventa área pra quem não pediu).
+  const larguraNumero = dados.larguraCm !== null && dados.larguraCm !== undefined ? Number(dados.larguraCm) : null;
+  const alturaNumero = dados.alturaCm !== null && dados.alturaCm !== undefined ? Number(dados.alturaCm) : null;
+  const areaM2 =
+    dados.simplesCobraPorArea && larguraNumero && alturaNumero
+      ? (larguraNumero / 100) * (alturaNumero / 100)
+      : 1;
   const custoEstimado =
     custoDoBreakdown ??
-    (dados.precoCompra !== null ? Number(dados.precoCompra) * dados.quantidade : null);
+    (dados.precoCompra !== null ? Number(dados.precoCompra) * dados.quantidade * areaM2 : null);
 
   if (custoEstimado === null || !Number.isFinite(custoEstimado)) return null;
 

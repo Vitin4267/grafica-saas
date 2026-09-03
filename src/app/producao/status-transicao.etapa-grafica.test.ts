@@ -128,6 +128,9 @@ function pedidoParaAvanco(f: FixtureSimples, status: StatusPedido): PedidoParaAv
     arteAprovadaEm: null,
     producaoLinkToken: null,
     orcamento: {
+      clienteId: "cliente-teste",
+      condicaoPagamentoId: null,
+      total: 0,
       cliente: { nome: "Cliente Teste", telefone: null },
       grafica: { nome: "Gráfica Teste", corPrimaria: null },
       itens: [{ quantidade: 1, itemGrafica: { itemCatalogo: { nome: "Produto Teste" } } }],
@@ -468,6 +471,9 @@ describe("avancarStatusPedido usando a sequência/rótulos resolvidos por gráfi
         arteAprovadaEm: null,
         producaoLinkToken: null,
         orcamento: {
+          clienteId: "cliente-teste",
+          condicaoPagamentoId: null,
+          total: 0,
           cliente: { nome: "Cliente Teste", telefone: null },
           grafica: { nome: "Gráfica Teste", corPrimaria: null },
           itens: [{ quantidade: f.quantidadeItem, itemGrafica: { itemCatalogo: { nome: "Produto Teste" } } }],
@@ -521,6 +527,9 @@ describe("avancarStatusPedido usando a sequência/rótulos resolvidos por gráfi
         arteAprovadaEm: null,
         producaoLinkToken: null,
         orcamento: {
+          clienteId: "cliente-teste",
+          condicaoPagamentoId: null,
+          total: 0,
           cliente: { nome: "Cliente Teste", telefone: null },
           grafica: { nome: "Gráfica Teste", corPrimaria: null },
           itens: [{ quantidade: f.quantidadeItem, itemGrafica: { itemCatalogo: { nome: "Produto Teste" } } }],

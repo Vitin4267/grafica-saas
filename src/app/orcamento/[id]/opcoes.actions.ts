@@ -10,7 +10,8 @@ import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { calcularItemOrcamento } from "@/lib/orcamento-precificacao";
 import { itemEntradaSchema, type ItemEntrada } from "@/lib/orcamento-item-entrada";
 import { parseJsonArray } from "@/lib/form-json";
-import { D } from "@/lib/pricing/decimal";
+import { D, paraDecimal } from "@/lib/pricing/decimal";
+import { aplicarPisoDoPedido } from "@/lib/pricing";
 import { converterParaCm } from "@/lib/unidade-dimensao";
 import { MAX_OPCOES_ALTERNATIVAS } from "@/lib/orcamento-opcoes";
 
@@ -225,6 +226,22 @@ export async function adicionarOpcaoOrcamento(
       precificacaoEtiqueta: resultado.precificacaoEtiqueta,
     });
   }
+
+  // Achado N3 — opção alternativa também respeita o piso de pedido, aplicado
+  // uma vez sobre a soma dos itens (nunca por item — mesma regra de
+  // criarOrcamento). Importante: se esta opção vencer o "torneio" na
+  // aprovação (ver resolverOpcoesNaAprovacao em orcamento-opcoes.ts), este
+  // total já com piso é o que vira Orcamento.total — sem isso o piso se
+  // perderia na promoção.
+  const parametrosPedidoMinimo = await prisma.parametrosGrafica.findUnique({
+    where: { graficaId: usuario.graficaId },
+    select: { pedidoMinimo: true, incrementoArredondamento: true },
+  });
+  total = aplicarPisoDoPedido(
+    total,
+    paraDecimal(parametrosPedidoMinimo?.pedidoMinimo.toString() ?? "0"),
+    paraDecimal(parametrosPedidoMinimo?.incrementoArredondamento.toString() ?? "0.10")
+  );
 
   // Monta o shape de `create` de verdade só aqui no fim — mesmo padrão de
   // criarOrcamento (src/app/orcamento/actions.ts): itensParaCriar acima é só

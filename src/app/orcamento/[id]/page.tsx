@@ -332,6 +332,9 @@ export default async function OrcamentoDetalhePage({
               quantidade: item.quantidade,
               breakdown: item.breakdown,
               precoCompra: item.itemGrafica.precoCompra,
+              larguraCm: item.larguraCm,
+              alturaCm: item.alturaCm,
+              simplesCobraPorArea: item.itemGrafica.simplesCobraPorArea,
             }),
           ])
         )
@@ -344,6 +347,9 @@ export default async function OrcamentoDetalhePage({
             quantidade: item.quantidade,
             breakdown: item.breakdown,
             precoCompra: item.itemGrafica.precoCompra,
+            larguraCm: item.larguraCm,
+            alturaCm: item.alturaCm,
+            simplesCobraPorArea: item.itemGrafica.simplesCobraPorArea,
           }))
         )
       : null;
@@ -479,6 +485,7 @@ export default async function OrcamentoDetalhePage({
                   itemNome={item.itemGrafica.itemCatalogo.nome}
                   modeloCalculo={item.modeloCalculo}
                   usaClicheEtiqueta={item.itemGrafica.configuracaoClicheEtiqueta !== null}
+                  simplesCobraPorArea={item.itemGrafica.simplesCobraPorArea}
                   unidadeDimensao={item.unidadeDimensao}
                   podeRemover={orcamento.itens.length > 1}
                   acabamentosDisponiveis={acabamentosDisponiveis}
@@ -562,6 +569,7 @@ export default async function OrcamentoDetalhePage({
                 precoVenda: ig.precoVenda!.toString(),
                 modeloCalculo: ig.modeloCalculo,
                 usaClicheEtiqueta: ig.configuracaoClicheEtiqueta !== null,
+                simplesCobraPorArea: ig.simplesCobraPorArea,
               }))}
               unidadePadrao={usuario.grafica.unidadePadraoDimensao}
               acabamentosDisponiveis={acabamentosDisponiveis}
@@ -691,6 +699,7 @@ export default async function OrcamentoDetalhePage({
               precoVenda: ig.precoVenda!.toString(),
               modeloCalculo: ig.modeloCalculo,
               usaClicheEtiqueta: ig.configuracaoClicheEtiqueta !== null,
+              simplesCobraPorArea: ig.simplesCobraPorArea,
             }))}
             acabamentosDisponiveis={acabamentosDisponiveis}
             papeisDisponiveis={papeisDisponiveis}

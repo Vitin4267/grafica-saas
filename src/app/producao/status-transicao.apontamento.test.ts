@@ -92,6 +92,9 @@ function pedidoParaAvanco(f: Fixture, status: StatusPedido): PedidoParaAvanco {
     arteAprovadaEm: null,
     producaoLinkToken: null,
     orcamento: {
+      clienteId: "cliente-teste",
+      condicaoPagamentoId: null,
+      total: 0,
       cliente: { nome: "Cliente Teste", telefone: null },
       grafica: { nome: "Gráfica Teste", corPrimaria: null },
       itens: [{ quantidade: 1, itemGrafica: { itemCatalogo: { nome: "Produto Teste" } } }],

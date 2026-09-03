@@ -139,8 +139,15 @@ describe("golden #2 — cartão 9×5cm 4/4 com BOPP: preço por milheiro cai com
   });
 });
 
-describe("golden #3 — adesivo 3×3cm Q=10 aciona o piso de pedidoMinimo", () => {
-  it("preço final é exatamente o pedidoMinimo configurado (custo real é irrisório)", () => {
+// Achado N3 da auditoria de abrangência — pedidoMinimo NÃO é mais um piso
+// por ITEM (comporPreco não conhece mais esse campo, ver src/lib/pricing/
+// compor.ts). O nome deste golden mudou de propósito: agora prova que um
+// item pequeno sai com o preço CALCULADO, sem ser clampado ao pedidoMinimo
+// do tenant — o piso de pedido virou uma responsabilidade de outra camada
+// (aplicarPisoDoPedido, testado em compor.test.ts; aplicado de verdade num
+// orçamento por recalcularTotalOrcamento, src/lib/orcamento-precificacao.ts).
+describe("golden #3 — adesivo 3×3cm Q=10 NÃO é clampado ao pedidoMinimo no nível do item", () => {
+  it("preço final do item reflete o custo calculado (bem abaixo de pedidoMinimo), não o piso do tenant", () => {
     const contexto: ContextoPrecificacao = {
       itemGraficaId: "adesivo-pequeno",
       modeloCalculo: "M2",
@@ -162,7 +169,12 @@ describe("golden #3 — adesivo 3×3cm Q=10 aciona o piso de pedidoMinimo", () =
 
     const resultado = precificar(pedido, contexto);
 
-    expect(resultado.precoFinal.toNumber()).toBeCloseTo(PARAMS.pedidoMinimo, 5);
+    // Bem menor que PARAMS.pedidoMinimo (15) — nada no motor de item clampa
+    // mais o preço a esse valor. (areaMinimaFaturavel=0.05 do achado N18
+    // ainda infla o custoBase — peça de 3×3cm é bem menor que 0,05m² — mas
+    // isso não chega perto do piso de R$15 do pedido inteiro.)
+    expect(resultado.precoFinal.toNumber()).toBeLessThan(PARAMS.pedidoMinimo);
+    expect(resultado.precoFinal.toNumber()).toBeGreaterThan(0);
   });
 });
 

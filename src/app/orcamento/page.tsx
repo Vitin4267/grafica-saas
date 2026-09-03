@@ -178,6 +178,7 @@ export default async function OrcamentoPage() {
               precoVenda: ig.precoVenda!.toString(),
               modeloCalculo: ig.modeloCalculo,
               usaClicheEtiqueta: ig.configuracaoClicheEtiqueta !== null,
+              simplesCobraPorArea: ig.simplesCobraPorArea,
             }))}
             acabamentosDisponiveis={acabamentosDisponiveis.map((ig) => ({
               id: ig.id,

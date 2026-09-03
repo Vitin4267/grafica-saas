@@ -1,5 +1,7 @@
 import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
+import { aplicarPisoDoPedido } from "@/lib/pricing";
+import { paraDecimal } from "@/lib/pricing/decimal";
 
 // Múltiplas opções de proposta no mesmo orçamento/link público (ver model
 // OrcamentoOpcao no schema.prisma pro desenho completo). MVP: no máximo esta
@@ -60,11 +62,33 @@ export async function resolverOpcoesNaAprovacao(
 
   if (params.opcaoEscolhidaId === null) {
     await tx.orcamentoOpcao.deleteMany({ where: { orcamentoId: params.orcamentoId } });
-    const agregado = await tx.orcamentoItem.aggregate({
-      where: { orcamentoId: params.orcamentoId, opcaoId: null },
-      _sum: { precoTotal: true },
+    const [agregado, orcamento] = await Promise.all([
+      tx.orcamentoItem.aggregate({
+        where: { orcamentoId: params.orcamentoId, opcaoId: null },
+        _sum: { precoTotal: true },
+      }),
+      tx.orcamento.findUniqueOrThrow({
+        where: { id: params.orcamentoId },
+        select: { graficaId: true },
+      }),
+    ]);
+    // Achado N3 — esta função reagrega os itens da base DO ZERO (em vez de
+    // confiar em Orcamento.total já gravado) em vez de assumir que ele
+    // reflete os itens atuais — mas um sum() cru de OrcamentoItem.precoTotal
+    // não carrega o piso de pedido. Reaplica aqui, mesma regra de
+    // recalcularTotalOrcamento (src/lib/orcamento-precificacao.ts) — sem
+    // isso, um orçamento cuja base ficou abaixo do mínimo perderia o piso
+    // ao "vencer o torneio" contra uma opção alternativa.
+    const parametros = await tx.parametrosGrafica.findUnique({
+      where: { graficaId: orcamento.graficaId },
+      select: { pedidoMinimo: true, incrementoArredondamento: true },
     });
-    return { total: (agregado._sum.precoTotal ?? 0).toString(), opcaoEscolhidaNome: "Opção A" };
+    const total = aplicarPisoDoPedido(
+      paraDecimal((agregado._sum.precoTotal ?? 0).toString()),
+      paraDecimal(parametros?.pedidoMinimo.toString() ?? "0"),
+      paraDecimal(parametros?.incrementoArredondamento.toString() ?? "0.10")
+    );
+    return { total: total.toFixed(2), opcaoEscolhidaNome: "Opção A" };
   }
 
   const vencedora = opcoes.find((o) => o.id === params.opcaoEscolhidaId);

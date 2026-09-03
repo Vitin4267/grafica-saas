@@ -209,6 +209,7 @@ function FormatosFolhaEditor({
 export function ConfiguracaoProdutoForm({
   itemGraficaId,
   modeloCalculo: modeloCalculoInicial,
+  simplesCobraPorArea: simplesCobraPorAreaInicial,
   viraFolha: viraFolhaInicial,
   custoImpressaoM2: custoImpressaoM2Inicial,
   areaMinimaFaturavel: areaMinimaFaturavelInicial,
@@ -235,6 +236,11 @@ export function ConfiguracaoProdutoForm({
 }: {
   itemGraficaId: string;
   modeloCalculo: ModeloCalculo;
+  // Achado N1 — só relevante quando modeloCalculo=SIMPLES: liga o cálculo
+  // por m² (largura×altura) neste produto quando as dimensões forem
+  // preenchidas num orçamento. false = sempre por peça (comportamento
+  // padrão de todo produto, ver ItemGrafica.simplesCobraPorArea no schema).
+  simplesCobraPorArea: boolean;
   viraFolha: boolean;
   custoImpressaoM2: string;
   areaMinimaFaturavel: string;
@@ -280,6 +286,7 @@ export function ConfiguracaoProdutoForm({
   maquinasTempo: { id: string; nome: string; emManutencao: boolean }[];
 }) {
   const [modeloCalculo, setModeloCalculo] = useState<ModeloCalculo>(modeloCalculoInicial);
+  const [simplesCobraPorArea, setSimplesCobraPorArea] = useState(simplesCobraPorAreaInicial);
   const [bobinas, setBobinas] = useState<BobinaLinha[]>(() =>
     bobinasIniciais.map((b) => ({ chave: gerarChave(), ...b }))
   );
@@ -400,6 +407,29 @@ export function ConfiguracaoProdutoForm({
           <option value="REVENDA">Revenda / terceirização</option>
         </Select>
 
+        {modeloCalculo === "SIMPLES" && (
+          <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
+            <input type="hidden" name="simplesCobraPorArea" value={simplesCobraPorArea ? "on" : ""} />
+            <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
+              <input
+                type="checkbox"
+                checked={simplesCobraPorArea}
+                onChange={(e) => setSimplesCobraPorArea(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+              />
+              <span>
+                <span className="inline-flex items-center gap-1.5">
+                  Cobra por área (m²) quando largura/altura são preenchidas
+                  <CampoAjuda texto="Deixe desmarcado pra produtos de preço fixo por peça (camiseta, cartão de visita) — largura/altura, se preenchidas no orçamento, ficam só descritivas e não mudam o preço. Marque só se este produto realmente é vendido por tamanho (ex: rótulo, adesivo, banner sem motor avançado): o preço passa a ser preço-base × largura(m) × altura(m)." />
+                </span>
+                <span className="block text-xs font-normal text-slate-500">
+                  Desmarcado (padrão): preço fixo por peça, mesmo com largura/altura preenchidas no orçamento.
+                </span>
+              </span>
+            </label>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 dark:border-slate-800">
           <Select
             label={
@@ -457,7 +487,7 @@ export function ConfiguracaoProdutoForm({
                   step="0.0001"
                   min="0"
                   defaultValue={areaMinimaFaturavelInicial}
-                  hint="Métrica de auditoria — o piso comercial real é o pedido mínimo em Configurações."
+                  hint="Piso por PEÇA: peça menor que essa área é cobrada como se tivesse essa área (ex: mínimo de 1m² por adesivo recortado). Independente do pedido mínimo em R$ de Configurações, que é um piso do orçamento inteiro."
                 />
               </div>
             </div>

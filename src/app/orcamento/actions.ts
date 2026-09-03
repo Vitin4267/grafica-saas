@@ -10,7 +10,8 @@ import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { calcularItemOrcamento } from "@/lib/orcamento-precificacao";
 import { parseJsonArray } from "@/lib/form-json";
-import { D } from "@/lib/pricing/decimal";
+import { D, paraDecimal } from "@/lib/pricing/decimal";
+import { aplicarPisoDoPedido } from "@/lib/pricing";
 import { revalidatePath, updateTag } from "next/cache";
 import { UNIDADES_DIMENSAO, converterParaCm } from "@/lib/unidade-dimensao";
 import { itemEntradaSchema, etiquetaEntradaSchema } from "@/lib/orcamento-item-entrada";
@@ -475,6 +476,19 @@ export async function criarOrcamento(
       precificacaoEtiqueta: resultado.precificacaoEtiqueta,
     });
   }
+
+  // Achado N3 — piso de pedido (ParametrosGrafica.pedidoMinimo) aplicado uma
+  // única vez sobre a SOMA dos itens, nunca por item (ver aplicarPisoDoPedido
+  // em src/lib/pricing/compor.ts — comporPreco não conhece mais esse campo).
+  const parametrosPedidoMinimo = await prisma.parametrosGrafica.findUnique({
+    where: { graficaId: usuario.graficaId },
+    select: { pedidoMinimo: true, incrementoArredondamento: true },
+  });
+  total = aplicarPisoDoPedido(
+    total,
+    paraDecimal(parametrosPedidoMinimo?.pedidoMinimo.toString() ?? "0"),
+    paraDecimal(parametrosPedidoMinimo?.incrementoArredondamento.toString() ?? "0.10")
+  );
 
   const orcamento = await prisma.orcamento.create({
     data: {

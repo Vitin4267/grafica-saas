@@ -14,7 +14,7 @@ import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { resolverLimiteDesconto, type AlcadaParaResolucao } from "@/lib/alcada-aprovacao";
-import { calcularItemOrcamento } from "@/lib/orcamento-precificacao";
+import { calcularItemOrcamento, recalcularTotalOrcamento } from "@/lib/orcamento-precificacao";
 import { analisarPreflight } from "@/lib/preflight";
 import { resolverOrigemPublica } from "@/lib/url-publica";
 import {
@@ -73,7 +73,7 @@ import {
 } from "@/lib/billing/armazenamento";
 import { calcularPrevisaoAprovacaoPedido, gravarPrevisaoAprovacaoPedido } from "@/lib/pedido-aprovacao";
 import { criarCustoAutomaticoComissao } from "@/lib/custo-pedido";
-import { gerarContasReceberDaAprovacao } from "@/lib/condicao-pagamento";
+import { gerarContasReceberDaAprovacao, gerarContasReceberDaEmissaoNota } from "@/lib/condicao-pagamento";
 import { calcularExposicaoCreditoCliente } from "@/lib/exposicao-credito-cliente";
 import { lancarConsumoCreditoCliente } from "@/lib/credito-cliente";
 import { saldoContaReceber } from "@/lib/baixa-financeira";
@@ -81,6 +81,7 @@ import { registrarCandidatosGangRun } from "@/lib/gang-run-servico";
 import { resolverOpcoesNaAprovacao, descartarOpcoesAlternativas } from "@/lib/orcamento-opcoes";
 import { UNIDADES_DIMENSAO, converterParaCm } from "@/lib/unidade-dimensao";
 import { paraDecimal, type Dec } from "@/lib/pricing/decimal";
+import { aplicarPisoDoPedido } from "@/lib/pricing";
 import { montarDadosItemParaRecalculo, calcularDescontoHerdado } from "@/lib/orcamento-duplicar";
 
 // Nunca confia na unidade que vem do formulário — validada contra as únicas
@@ -906,15 +907,10 @@ export async function editarOrcamento(
 
         // opcaoId: null — total da opção-base é sempre só a soma dos itens
         // dela; itens de opções alternativas (ver OrcamentoOpcao) têm seu
-        // próprio total, calculado à parte (ver opcoes.actions.ts).
-        const agregado = await tx.orcamentoItem.aggregate({
-          where: { orcamentoId, opcaoId: null },
-          _sum: { precoTotal: true },
-        });
-        await tx.orcamento.update({
-          where: { id: orcamentoId },
-          data: { total: agregado._sum.precoTotal ?? 0 },
-        });
+        // próprio total, calculado à parte (ver opcoes.actions.ts). Achado
+        // N3 — recalcularTotalOrcamento já aplica o piso de pedido (uma vez
+        // sobre a soma, não por item) antes de gravar.
+        await recalcularTotalOrcamento(tx, orcamentoId, usuario.graficaId);
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
     );
@@ -1827,15 +1823,9 @@ export async function adicionarItemOrcamento(
         });
         // opcaoId: null — mesmo cuidado de editarOrcamento acima. Item novo
         // criado por esta action nunca leva opcaoId (nasce sempre na
-        // opção-base, ver create acima).
-        const agregado = await tx.orcamentoItem.aggregate({
-          where: { orcamentoId, opcaoId: null },
-          _sum: { precoTotal: true },
-        });
-        await tx.orcamento.update({
-          where: { id: orcamentoId },
-          data: { total: agregado._sum.precoTotal ?? 0 },
-        });
+        // opção-base, ver create acima). Achado N3 — piso de pedido aplicado
+        // uma vez sobre a soma, ver recalcularTotalOrcamento.
+        await recalcularTotalOrcamento(tx, orcamentoId, usuario.graficaId);
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
     );
@@ -1898,14 +1888,9 @@ export async function removerItemOrcamento(
 
         await tx.orcamentoItem.delete({ where: { id: orcamentoItemId } });
 
-        const agregado = await tx.orcamentoItem.aggregate({
-          where: { orcamentoId: item.orcamentoId, opcaoId: null },
-          _sum: { precoTotal: true },
-        });
-        await tx.orcamento.update({
-          where: { id: item.orcamentoId },
-          data: { total: agregado._sum.precoTotal ?? 0 },
-        });
+        // Achado N3 — piso de pedido aplicado uma vez sobre a soma dos itens
+        // que sobraram, ver recalcularTotalOrcamento.
+        await recalcularTotalOrcamento(tx, item.orcamentoId, usuario.graficaId);
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
     );
@@ -1996,7 +1981,7 @@ export async function aplicarDescontoItemOrcamento(
     where: { id: orcamentoItemId, opcaoId: null, orcamento: { graficaId: usuario.graficaId } },
     include: {
       orcamento: { select: { status: true } },
-      itemGrafica: { select: { precoCompra: true } },
+      itemGrafica: { select: { precoCompra: true, simplesCobraPorArea: true } },
     },
   });
   if (!item) {
@@ -2076,24 +2061,42 @@ export async function aplicarDescontoItemOrcamento(
   // Trava de preço mínimo — mesma checagem/mensagem que o motor já usa pra
   // travar o preço SUGERIDO, aplicada agora ao preço NEGOCIADO. Custo direto
   // calculado do mesmo jeito que o bloco de comissão logo acima neste mesmo
-  // arquivo (breakdown.custoTotal pra M2/OFFSET, precoCompra × quantidade
-  // pra SIMPLES) — nunca inventa um número novo pra "custo". Remover
-  // desconto sempre volta pro preço que o motor já validou na criação, então
-  // não precisa passar por esta checagem de novo.
+  // arquivo (breakdown.custoTotal pra M2/OFFSET, precoCompra × quantidade —
+  // × área quando o produto SIMPLES cobra por m², achado N11(b) — pra
+  // SIMPLES) — nunca inventa um número novo pra "custo". Remover desconto
+  // sempre volta pro preço que o motor já validou na criação, então não
+  // precisa passar por esta checagem de novo.
   if (!remover) {
     const breakdown = item.breakdown as { custoTotal?: string } | null;
+    // Achado N11(b) — mesma área usada pra calcular o PREÇO deste item
+    // (calcularPreco em src/lib/orcamento.ts), só que aplicada ao CUSTO: sem
+    // isso, um item SIMPLES cobrado por m² (banner/lona) tinha o custo
+    // calculado só por peça, e a trava abaixo liberava um desconto que na
+    // prática vendia abaixo do custo real.
+    const areaM2 =
+      item.itemGrafica.simplesCobraPorArea && item.larguraCm && item.alturaCm
+        ? (Number(item.larguraCm) / 100) * (Number(item.alturaCm) / 100)
+        : 1;
+    // Achado N11(a) — precoCompra ausente é custo DESCONHECIDO, não zero:
+    // tratar como 0 liberava desconto irrestrito (inclusive pra DONO/ADMIN,
+    // que nem passam pela trava de alçada abaixo). Sem dado de custo, usa o
+    // próprio preço SUGERIDO (sem desconto) como piso — bloqueia qualquer
+    // desconto neste item até que o custo de compra seja cadastrado no
+    // catálogo, sem travar a venda no preço cheio.
+    const custoConhecido = Boolean(breakdown?.custoTotal) || item.itemGrafica.precoCompra !== null;
     const custoDiretoNumero = breakdown?.custoTotal
       ? Number(breakdown.custoTotal)
       : item.itemGrafica.precoCompra
-        ? Number(item.itemGrafica.precoCompra) * quantidade
-        : 0;
+        ? Number(item.itemGrafica.precoCompra) * quantidade * areaM2
+        : precoSugerido.times(quantidade).toNumber();
     const custoDireto = paraDecimal(custoDiretoNumero);
 
     if (novoPrecoTotal.lt(custoDireto)) {
       return {
         ok: false,
-        mensagem:
-          "O preço final calculado ficou abaixo do custo direto — configuração de margem/encargos provavelmente incorreta. Orçamento abortado por segurança.",
+        mensagem: custoConhecido
+          ? "O preço final calculado ficou abaixo do custo direto — configuração de margem/encargos provavelmente incorreta. Orçamento abortado por segurança."
+          : "Este produto não tem custo de compra cadastrado no catálogo — não é possível confirmar que o desconto fica acima do custo. Cadastre o preço de compra em Catálogo antes de negociar este item.",
       };
     }
   }
@@ -2160,15 +2163,9 @@ export async function aplicarDescontoItemOrcamento(
         });
         // opcaoId: null — mesmo cuidado dos outros três pontos de agregação
         // deste arquivo (ver editarOrcamento/adicionarItemOrcamento/
-        // removerItemOrcamento acima).
-        const agregado = await tx.orcamentoItem.aggregate({
-          where: { orcamentoId: item.orcamentoId, opcaoId: null },
-          _sum: { precoTotal: true },
-        });
-        await tx.orcamento.update({
-          where: { id: item.orcamentoId },
-          data: { total: agregado._sum.precoTotal ?? 0 },
-        });
+        // removerItemOrcamento acima). Achado N3 — piso de pedido aplicado
+        // uma vez sobre a soma, ver recalcularTotalOrcamento.
+        await recalcularTotalOrcamento(tx, item.orcamentoId, usuario.graficaId);
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
     );
@@ -2344,11 +2341,16 @@ export async function duplicarOrcamento(
 
   const parametros = await prisma.parametrosGrafica.findUnique({
     where: { graficaId: usuario.graficaId },
-    select: { descontoMaxSemAprovacao: true },
+    select: { descontoMaxSemAprovacao: true, pedidoMinimo: true, incrementoArredondamento: true },
   });
   const limiteDescontoSemAprovacao = parametros
     ? paraDecimal(parametros.descontoMaxSemAprovacao.toString())
     : paraDecimal(100);
+  // Achado N3 — pedido duplicado também precisa do piso de pedido aplicado
+  // uma vez sobre a soma dos itens, mesma regra de criarOrcamento (ver
+  // aplicarPisoDoPedido em src/lib/pricing/compor.ts).
+  const pedidoMinimo = paraDecimal(parametros?.pedidoMinimo.toString() ?? "0");
+  const incrementoArredondamento = paraDecimal(parametros?.incrementoArredondamento.toString() ?? "0.10");
   // Achado A4 da auditoria de abrangência — mesma resolução de
   // aplicarDescontoItemOrcamento: limite RESOLVIDO pra este usuário
   // (alçada dele > alçada do papel dele > fallback idêntico ao
@@ -2482,11 +2484,23 @@ export async function duplicarOrcamento(
         // Mesma trava de preço mínimo de aplicarDescontoItemOrcamento: nunca
         // vende abaixo do custo direto deste item, já recalculado.
         const breakdown = resultado.breakdown as { custoTotal?: string } | null;
+        // Achado N11(b) — mesma área usada no recálculo do PREÇO deste item
+        // (itemOriginal.larguraCm/alturaCm, já passadas pra
+        // montarDadosItemParaRecalculo acima) aplicada ao CUSTO também,
+        // quando o produto SIMPLES cobra por m².
+        const areaM2 =
+          itemGraficaFresh.simplesCobraPorArea && itemOriginal.larguraCm && itemOriginal.alturaCm
+            ? (Number(itemOriginal.larguraCm) / 100) * (Number(itemOriginal.alturaCm) / 100)
+            : 1;
+        // Achado N11(a) — precoCompra ausente é custo DESCONHECIDO, não zero
+        // (mesmo raciocínio de aplicarDescontoItemOrcamento): usa o preço
+        // sugerido recalculado (sem desconto) como piso em vez de liberar o
+        // desconto herdado irrestrito.
         const custoDiretoNumero = breakdown?.custoTotal
           ? Number(breakdown.custoTotal)
           : itemGraficaFresh.precoCompra
-            ? Number(itemGraficaFresh.precoCompra) * itemOriginal.quantidade
-            : 0;
+            ? Number(itemGraficaFresh.precoCompra) * itemOriginal.quantidade * areaM2
+            : Number(resultado.precoTotal);
         const custoDireto = paraDecimal(custoDiretoNumero);
 
         // Mesma trava de aprovação de aplicarDescontoItemOrcamento: desconto
@@ -2549,6 +2563,10 @@ export async function duplicarOrcamento(
       precificacaoEtiquetaParaGravar: resultado.precificacaoEtiqueta,
     });
   }
+
+  // Achado N3 — piso de pedido aplicado uma vez sobre a soma dos itens
+  // duplicados, mesma regra de criarOrcamento (ver aplicarPisoDoPedido).
+  total = aplicarPisoDoPedido(total, pedidoMinimo, incrementoArredondamento);
 
   const novoOrcamento = await prisma.orcamento.create({
     data: {
@@ -3210,24 +3228,44 @@ export async function emitirNotaFiscal(
       }
     );
 
-    await prisma.notaFiscal.create({
-      data: {
-        graficaId: usuario.graficaId,
-        orcamentoId,
-        referencia: orcamentoId,
-        status:
-          resposta.status === "autorizado"
-            ? "AUTORIZADA"
-            : resposta.status === "erro_autorizacao" || resposta.status === "denegado"
-              ? "REJEITADA"
-              : "PROCESSANDO",
-        numero: resposta.numero,
-        serie: resposta.serie,
-        chaveAcesso: resposta.chaveNfe,
-        xmlUrl: resposta.caminhoXml,
-        danfeUrl: resposta.caminhoDanfe,
-        mensagemErro: formatarMensagemErroNfe(resposta),
-      },
+    const statusNota =
+      resposta.status === "autorizado"
+        ? "AUTORIZADA"
+        : resposta.status === "erro_autorizacao" || resposta.status === "denegado"
+          ? "REJEITADA"
+          : "PROCESSANDO";
+
+    // Transação: cria a NotaFiscal e, se já veio autorizada nesta mesma
+    // chamada (a Focus NFe pode responder síncrono), gera as ContaReceber da
+    // condição de pagamento com âncora EMISSAO_NOTA (achado R1 da auditoria
+    // de abrangência, ver src/lib/condicao-pagamento.ts) — atômico com a
+    // criação da nota, nunca uma sem a outra.
+    await prisma.$transaction(async (tx) => {
+      await tx.notaFiscal.create({
+        data: {
+          graficaId: usuario.graficaId,
+          orcamentoId,
+          referencia: orcamentoId,
+          status: statusNota,
+          numero: resposta.numero,
+          serie: resposta.serie,
+          chaveAcesso: resposta.chaveNfe,
+          xmlUrl: resposta.caminhoXml,
+          danfeUrl: resposta.caminhoDanfe,
+          mensagemErro: formatarMensagemErroNfe(resposta),
+        },
+      });
+
+      if (statusNota === "AUTORIZADA") {
+        await gerarContasReceberDaEmissaoNota(tx, {
+          graficaId: usuario.graficaId,
+          orcamentoId,
+          clienteId: orcamento.clienteId,
+          condicaoPagamentoId: orcamento.condicaoPagamentoId,
+          total: Number(orcamento.total),
+          emitidoEm: new Date(),
+        });
+      }
     });
   } catch (erro) {
     if (erro instanceof ErroFocusNfe) {
@@ -3254,7 +3292,9 @@ export async function atualizarStatusNotaFiscal(
 
   const notaFiscal = await prisma.notaFiscal.findFirst({
     where: { orcamentoId, graficaId: usuario.graficaId },
-    include: { orcamento: { select: { filialId: true } } },
+    include: {
+      orcamento: { select: { filialId: true, clienteId: true, condicaoPagamentoId: true, total: true } },
+    },
   });
   if (!notaFiscal) {
     return { ok: false, mensagem: "Nota fiscal não encontrada." };
@@ -3271,24 +3311,45 @@ export async function atualizarStatusNotaFiscal(
       notaFiscal.referencia
     );
 
-    await prisma.notaFiscal.update({
-      where: { id: notaFiscal.id },
-      data: {
-        status:
-          resposta.status === "autorizado"
-            ? "AUTORIZADA"
-            : resposta.status === "cancelado"
-              ? "CANCELADA"
-              : resposta.status === "erro_autorizacao" || resposta.status === "denegado"
-                ? "REJEITADA"
-                : "PROCESSANDO",
-        numero: resposta.numero,
-        serie: resposta.serie,
-        chaveAcesso: resposta.chaveNfe,
-        xmlUrl: resposta.caminhoXml,
-        danfeUrl: resposta.caminhoDanfe,
-        mensagemErro: formatarMensagemErroNfe(resposta),
-      },
+    const statusNota =
+      resposta.status === "autorizado"
+        ? "AUTORIZADA"
+        : resposta.status === "cancelado"
+          ? "CANCELADA"
+          : resposta.status === "erro_autorizacao" || resposta.status === "denegado"
+            ? "REJEITADA"
+            : "PROCESSANDO";
+
+    // Transação: atualiza o status da nota e, se ela acabou de ser
+    // autorizada (a consulta pode ser chamada de novo depois de já
+    // AUTORIZADA — nunca dispara duas vezes graças ao marcador de
+    // idempotência dentro de gerarContasReceberDaEmissaoNota), gera as
+    // ContaReceber com âncora EMISSAO_NOTA. Mesmo padrão de emitirNotaFiscal
+    // acima.
+    await prisma.$transaction(async (tx) => {
+      await tx.notaFiscal.update({
+        where: { id: notaFiscal.id },
+        data: {
+          status: statusNota,
+          numero: resposta.numero,
+          serie: resposta.serie,
+          chaveAcesso: resposta.chaveNfe,
+          xmlUrl: resposta.caminhoXml,
+          danfeUrl: resposta.caminhoDanfe,
+          mensagemErro: formatarMensagemErroNfe(resposta),
+        },
+      });
+
+      if (statusNota === "AUTORIZADA") {
+        await gerarContasReceberDaEmissaoNota(tx, {
+          graficaId: usuario.graficaId,
+          orcamentoId,
+          clienteId: notaFiscal.orcamento.clienteId,
+          condicaoPagamentoId: notaFiscal.orcamento.condicaoPagamentoId,
+          total: Number(notaFiscal.orcamento.total),
+          emitidoEm: new Date(),
+        });
+      }
     });
   } catch (erro) {
     if (erro instanceof ErroFocusNfe) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { comporPreco } from "../compor";
+import { comporPreco, aplicarPisoDoPedido } from "../compor";
 import { paraDecimal } from "../decimal";
 import { ErroPrecificacao } from "../erros";
 import type { ParametrosTenant } from "../tipos";
@@ -47,13 +47,21 @@ describe("comporPreco", () => {
     expect(resultado.precoFinal.toNumber()).toBe(100);
   });
 
-  it("aplica o piso de pedidoMinimo quando o preço calculado é menor", () => {
+  // Achado N3 da auditoria de abrangência — comporPreco NÃO aplica mais
+  // pedidoMinimo por item (o piso agora é de PEDIDO, aplicado uma única vez
+  // sobre a soma de todos os itens — ver aplicarPisoDoPedido mais abaixo e
+  // recalcularTotalOrcamento em src/lib/orcamento-precificacao.ts). Preço da
+  // linha reflete só o cálculo do item, mesmo com pedidoMinimo configurado
+  // acima do preço calculado.
+  it("NÃO aplica pedidoMinimo por item — preço da linha reflete só o cálculo do item", () => {
     const resultado = comporPreco({
       quantidade: 1,
       custoBase: paraDecimal(1),
       parametros: { ...PARAMS, overheadPercent: 0, margemPadrao: 0, impostoPercent: 0, pedidoMinimo: 50 },
     });
-    expect(resultado.precoFinal.toNumber()).toBe(50);
+    // custoDireto=1, sem encargos => precoBruto=1, arredondado no incremento
+    // padrão (0.1) => 1. pedidoMinimo=50 configurado, mas ignorado aqui.
+    expect(resultado.precoFinal.toNumber()).toBe(1);
   });
 
   it("precoUnitario × quantidade bate com precoFinal mesmo quando a divisão não fecha redondo (evita item.precoUnitario × item.quantidade ≠ item.precoTotal depois de gravar em Decimal(12,2))", () => {
@@ -98,5 +106,40 @@ describe("comporPreco", () => {
     // shape do breakdown estável entre orçamentos com e sem etiqueta.
     expect(semExtras.detalhes.cliche.toNumber()).toBe(0);
     expect(semExtras.detalhes.faca.toNumber()).toBe(0);
+  });
+});
+
+// Achado N3 da auditoria de abrangência — piso de PEDIDO, aplicado uma única
+// vez sobre a SOMA dos itens (não mais por item, ver describe acima). Ver
+// recalcularTotalOrcamento em src/lib/orcamento-precificacao.ts pro ponto
+// que efetivamente soma+aplica isto num orçamento de verdade.
+describe("aplicarPisoDoPedido", () => {
+  it("cenário da auditoria: 3 itens (R$12+R$9+R$4=R$25) com pedidoMinimo=30 → total R$30, não R$25 nem 3×30", () => {
+    const somaItens = paraDecimal(12).plus(9).plus(4); // R$25
+    const total = aplicarPisoDoPedido(somaItens, paraDecimal(30), paraDecimal(0.01));
+    expect(total.toNumber()).toBe(30);
+  });
+
+  it("soma acima do mínimo não é alterada", () => {
+    const somaItens = paraDecimal(100);
+    const total = aplicarPisoDoPedido(somaItens, paraDecimal(30), paraDecimal(0.01));
+    expect(total.toNumber()).toBe(100);
+  });
+
+  it("pedidoMinimo=0 (padrão, gráfica sem piso configurado) nunca altera a soma", () => {
+    const somaItens = paraDecimal(3.5);
+    const total = aplicarPisoDoPedido(somaItens, paraDecimal(0), paraDecimal(0.01));
+    expect(total.toNumber()).toBe(3.5);
+  });
+
+  it("aplica o piso ANTES do arredondamento final, não depois — arredondamento nunca devolve valor abaixo do mínimo", () => {
+    // pedidoMinimo=30 não é múltiplo do incremento comercial (7) — se o
+    // arredondamento rodasse ANTES do piso (bug original do achado N3), o
+    // resultado seria diferente de ceil(30/7)*7=35. Testa a ORDEM: piso
+    // primeiro (soma 25 -> 30), depois arredonda (30 -> 35).
+    const somaItens = paraDecimal(25);
+    const total = aplicarPisoDoPedido(somaItens, paraDecimal(30), paraDecimal(7));
+    expect(total.toNumber()).toBe(35);
+    expect(total.toNumber()).toBeGreaterThanOrEqual(30);
   });
 });

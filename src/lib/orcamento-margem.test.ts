@@ -15,12 +15,18 @@ function item(dados: {
   quantidade: number;
   breakdown?: Prisma.JsonValue | null;
   precoCompra?: string | number | null;
+  larguraCm?: string | number | null;
+  alturaCm?: string | number | null;
+  simplesCobraPorArea?: boolean;
 }) {
   return {
     precoTotal: dados.precoTotal as unknown as Prisma.Decimal,
     quantidade: dados.quantidade,
     breakdown: dados.breakdown ?? null,
     precoCompra: (dados.precoCompra ?? null) as unknown as Prisma.Decimal | null,
+    larguraCm: (dados.larguraCm ?? null) as unknown as Prisma.Decimal | null,
+    alturaCm: (dados.alturaCm ?? null) as unknown as Prisma.Decimal | null,
+    simplesCobraPorArea: dados.simplesCobraPorArea,
   };
 }
 
@@ -76,6 +82,49 @@ describe("calcularMargemItemOrcamento", () => {
     expect(
       calcularMargemItemOrcamento(item({ precoTotal: "não-numero", quantidade: 1, precoCompra: 5 }))
     ).toBeNull();
+  });
+
+  // Achado N11(b) — item SIMPLES cobrado por m² (ItemGrafica.simplesCobraPorArea):
+  // o preço já escalou pela área, então o custo precisa escalar junto, senão
+  // a margem calculada fica artificialmente alta.
+  it("multiplica precoCompra por área quando simplesCobraPorArea=true e largura/altura vêm preenchidas", () => {
+    // Banner 3m×2m = 6m², precoCompra 18/m², quantidade 1 -> custo = 108.
+    // precoTotal (venda) = 60/m² × 6m² = 360 -> margem = (360-108)/360 = 70%.
+    const resultado = calcularMargemItemOrcamento(
+      item({
+        precoTotal: 360,
+        quantidade: 1,
+        precoCompra: 18,
+        larguraCm: 300,
+        alturaCm: 200,
+        simplesCobraPorArea: true,
+      })
+    );
+    expect(resultado).not.toBeNull();
+    expect(resultado!.custoEstimado).toBe(108);
+    expect(resultado!.margemPercent).toBeCloseTo(70);
+  });
+
+  it("ignora largura/altura quando simplesCobraPorArea não está ligado (comportamento de sempre)", () => {
+    const resultado = calcularMargemItemOrcamento(
+      item({
+        precoTotal: 450,
+        quantidade: 10,
+        precoCompra: 20,
+        larguraCm: 300,
+        alturaCm: 200,
+        simplesCobraPorArea: false,
+      })
+    );
+    expect(resultado).not.toBeNull();
+    expect(resultado!.custoEstimado).toBe(200); // 20 × 10, sem área
+  });
+
+  it("simplesCobraPorArea=true mas sem dimensão preenchida — cai pra custo × quantidade (área=1)", () => {
+    const resultado = calcularMargemItemOrcamento(
+      item({ precoTotal: 450, quantidade: 10, precoCompra: 20, simplesCobraPorArea: true })
+    );
+    expect(resultado!.custoEstimado).toBe(200);
   });
 });
 

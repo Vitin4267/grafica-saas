@@ -254,6 +254,7 @@ export default async function ConfiguracaoItemPage({
             <ConfiguracaoProdutoForm
               itemGraficaId={itemGrafica.id}
               modeloCalculo={itemGrafica.modeloCalculo}
+              simplesCobraPorArea={itemGrafica.simplesCobraPorArea}
               viraFolha={itemGrafica.viraFolha}
               custoImpressaoM2={itemGrafica.custoImpressaoM2?.toString() ?? ""}
               areaMinimaFaturavel={itemGrafica.areaMinimaFaturavel?.toString() ?? ""}

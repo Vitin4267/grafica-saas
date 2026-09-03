@@ -193,10 +193,15 @@ export async function salvarModeloProduto(
 
   try {
     if (modeloCalculo === "SIMPLES") {
+      // Achado N1 — só lido/gravado no branch SIMPLES: nos outros modelos de
+      // cálculo o checkbox nem aparece no form, então o campo permanece com
+      // o valor que já estava no banco (sem esta escrita).
+      const simplesCobraPorArea = formData.get("simplesCobraPorArea") === "on";
       await prisma.itemGrafica.update({
         where: { id: itemGraficaId },
         data: {
           modeloCalculo: "SIMPLES",
+          simplesCobraPorArea,
           unidadeContagem: unidadeContagemFinal,
           fatorConversao: fatorConversaoFinal,
         },

@@ -19,6 +19,7 @@ import {
   chaveFisicaMaterial,
 } from "@/lib/perda-fixa-producao";
 import { fecharEAbrirApontamento, type ContextoOrigemAvanco } from "@/lib/apontamento-etapa";
+import { gerarContasReceberDaEntrega } from "@/lib/condicao-pagamento";
 import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
 import { resolverOrigemPublica } from "@/lib/url-publica";
 import { dispararEventoEmail } from "@/lib/email/webhook-email";
@@ -41,6 +42,15 @@ export type PedidoParaAvanco = {
   arteAprovadaEm: Date | null;
   producaoLinkToken: string | null;
   orcamento: {
+    // Achado R1 da auditoria de abrangência (Parte 7, 2026-09-03) — gatilho
+    // ENTREGA de gerarContasReceberDaEntrega precisa desses 3 campos (ver
+    // uso mais abaixo, na transição pra ENTREGUE). Sempre presentes na
+    // prática: um `include` do Prisma sem `select` (todos os call-sites de
+    // avancarStatusPedido) já traz os escalares do Orcamento de graça, não é
+    // uma query nova.
+    clienteId: string;
+    condicaoPagamentoId: string | null;
+    total: Prisma.Decimal | number;
     cliente: { nome: string; telefone: string | null };
     grafica: { nome: string; corPrimaria: string | null };
     itens: { quantidade: number; itemGrafica: { itemCatalogo: { nome: string } } }[];
@@ -740,6 +750,23 @@ export async function avancarStatusPedido(
           proximoStatus,
           ...contexto,
         });
+
+        // Achado R1 da auditoria de abrangência (Parte 7, 2026-09-03) —
+        // gatilho ENTREGA: gera as ContaReceber da condição de pagamento
+        // vinculada ao orçamento, se ela usar essa âncora (ver
+        // src/lib/condicao-pagamento.ts). Dentro da MESMA transação do CAS
+        // acima — o CAS só passa uma vez por pedido (ENTREGUE é terminal em
+        // SEQUENCIA_STATUS_PEDIDO), o que já garante idempotência aqui.
+        if (proximoStatus === "ENTREGUE") {
+          await gerarContasReceberDaEntrega(tx, {
+            graficaId: pedido.graficaId,
+            orcamentoId: pedido.orcamentoId,
+            clienteId: pedido.orcamento.clienteId,
+            condicaoPagamentoId: pedido.orcamento.condicaoPagamentoId,
+            total: Number(pedido.orcamento.total),
+            entregueEm: new Date(),
+          });
+        }
       });
     }
   } catch (erro) {

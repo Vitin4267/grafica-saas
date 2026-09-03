@@ -2270,6 +2270,22 @@ model ItemGrafica {
   modeloCalculo ModeloCalculo @default(SIMPLES)
   viraFolha     Boolean       @default(false) // work-and-turn; só usado quando modeloCalculo=OFFSET
 
+  // Achado N1 da auditoria de abrangência (Parte 7) — só relevante quando
+  // modeloCalculo=SIMPLES. Antes desta flag, o motor decidia "cobra por m²"
+  // ou "cobra por peça" olhando se o VENDEDOR preencheu largura/altura
+  // naquela linha do orçamento (largura/altura são sempre opcionais e
+  // renderizadas em qualquer linha, ver SeletorItemOrcamento.tsx) — uma
+  // camiseta SIMPLES com "30×40" digitado como medida descritiva da estampa
+  // virava R$ preço/m² por acidente. Agora é propriedade do PRODUTO: só
+  // multiplica pela área (ver calcularPreco em src/lib/orcamento.ts) quando
+  // esta flag está ligada. @default(false) preserva o comportamento atual
+  // (peça) pra todo produto — a migration que introduziu este campo faz um
+  // backfill pontual (liga a flag em todo ItemGrafica que JÁ TEM algum
+  // OrcamentoItem SIMPLES com largura+altura preenchidas, preservando o
+  // comportamento observado hoje pra quem já dependia disso, ex: rótulos por
+  // tamanho) — nunca liga sozinha pra produto novo.
+  simplesCobraPorArea Boolean @default(false)
+
   // Qual prensa física produz este item — só relevante/obrigatório (na aplicação)
   // quando modeloCalculo=OFFSET. onDelete=Restrict: não deixa excluir uma prensa
   // ainda em uso por algum produto.
@@ -3746,15 +3762,14 @@ model BaixaContaReceber {
 // condições praticadas por gráfica brasileira: da aprovação do orçamento,
 // da emissão da nota fiscal, da entrega do pedido, ou "outro" (prazo digitado
 // manualmente, sem gatilho automático — cai no mesmo cadastro manual de
-// sempre). Hoje só APROVACAO dispara geração automática de ContaReceber (ver
-// atualizarStatusOrcamento em src/app/orcamento/[id]/actions.ts e
-// responderOrcamentoPublico em src/app/o/[token]/actions.ts) — EMISSAO_NOTA
-// e ENTREGA ficam com o enum pronto mas SEM gatilho plumbado ainda (gap
-// remanescente documentado na auditoria): a condição pode ser cadastrada e
-// vinculada ao orçamento normalmente, mas gerarContasReceberDaAprovacao (ver
-// src/lib/condicao-pagamento.ts) só age quando ancora === APROVACAO — pra
-// qualquer outra âncora, hoje o comportamento é o mesmo de não ter condição
-// nenhuma vinculada (a gráfica ainda cadastra a parcela à mão).
+// sempre). As 3 primeiras disparam geração automática de ContaReceber
+// (achado R1 da auditoria, Parte 7, 2026-09-03 — ver
+// gerarContasReceberDaAprovacao/gerarContasReceberDaEmissaoNota/
+// gerarContasReceberDaEntrega em src/lib/condicao-pagamento.ts, chamadas
+// respectivamente em atualizarStatusOrcamento/responderOrcamentoPublico,
+// emitirNotaFiscal/atualizarStatusNotaFiscal, e avancarStatusPedido na
+// transição pra ENTREGUE). OUTRO nunca dispara nada automático — é
+// deliberadamente "sem gatilho", a gráfica sempre cadastra a parcela à mão.
 enum AncoraVencimento {
   APROVACAO
   EMISSAO_NOTA
@@ -3769,7 +3784,8 @@ enum AncoraVencimento {
 // em src/lib/custo-pedido.ts — ver garantirCondicoesPagamentoPadrao em
 // src/lib/condicao-pagamento.ts. Vinculada a um Orcamento via
 // Orcamento.condicaoPagamentoId (FK opcional, convive com o texto livre
-// condicoesPagamento) e usada, na aprovação, pra gerar ContaReceber (ver
+// condicoesPagamento) e usada, no evento que bate com a âncora escolhida
+// (aprovação/emissão de nota/entrega), pra gerar ContaReceber (ver
 // comentário em AncoraVencimento acima e no model ContaReceber). Soft-delete
 // via `ativa` (nunca hard-delete — orçamentos já aprovados continuam
 // referenciando a condição usada, mesmo desativada).

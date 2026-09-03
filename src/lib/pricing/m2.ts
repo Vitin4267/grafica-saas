@@ -8,7 +8,15 @@ export type ResultadoM2 = {
   custoImpressao: Dec;
   custoBase: Dec; // custoMaterial + custoImpressao (+ custoEmenda, quando aplicável) — NÃO é o custoDireto final (ver compor.ts)
   areaFaturavel: Dec;
-  areaCobrada: Dec; // métrica de auditoria/exibição; não realimenta o nesting
+  // Achado N18 — métrica de EXIBIÇÃO (área nominal w×h do pedido vs.
+  // areaMinimaFaturavel, sem margem de segurança), continua sem realimentar
+  // o nesting/custoMaterial. O PISO em si agora afeta o preço por outro
+  // caminho: custoImpressao usa areaImpressaoPorPeca (com margem de
+  // segurança), floored pela mesma areaMinimaFaturavel — ver abaixo. As duas
+  // bases (com/sem margem) divergem de propósito: areaCobrada mostra o que
+  // o cliente pediu vs. o mínimo comercial; custoImpressao precisa da área
+  // real que entra na máquina.
+  areaCobrada: Dec;
   eficiencia: Dec;
   bobinaEscolhida: { id: string; larguraNominal: number; rotacionado: boolean };
   pecasPorFaixa: number;
@@ -191,11 +199,27 @@ export function calcularM2(
     );
   }
 
+  // Achado N18 — área mínima faturável (piso comercial por PEÇA, ex: "cobro
+  // no mínimo 1m² por adesivo recortado") agora entra no custo, não só na
+  // métrica de auditoria abaixo. areaPecaComMargem é a mesma base
+  // (wLinha×hLinha) que sempre alimentou custoImpressao; quando o
+  // configurado areaMinimaFaturavel é maior, floora ESSA área antes de
+  // multiplicar pelo custo/m² — peça pequena passa a custar como se tivesse
+  // a área mínima. maiorDec com areaMinimaFaturavel=0 (padrão, produto sem
+  // piso configurado) devolve areaPecaComMargem sem alteração — nenhuma
+  // regressão pra quem nunca configurou o campo.
+  const areaMinimaFaturavel = paraDecimal(contexto.areaMinimaFaturavel);
+  const areaPecaComMargem = wLinha.times(hLinha);
+  const areaImpressaoPorPeca = maiorDec(areaPecaComMargem, areaMinimaFaturavel);
+
   const custoImpressaoM2 = paraDecimal(contexto.custoImpressaoM2);
-  const custoImpressao = paraDecimal(Q).times(wLinha).times(hLinha).times(custoImpressaoM2);
+  const custoImpressao = paraDecimal(Q).times(areaImpressaoPorPeca).times(custoImpressaoM2);
   const custoBase = escolhido.custoMaterial.plus(custoImpressao).plus(custoEmenda);
 
-  const areaMinimaFaturavel = paraDecimal(contexto.areaMinimaFaturavel);
+  // Métrica de EXIBIÇÃO/auditoria — área NOMINAL do pedido (w×h, sem margem
+  // de segurança) vs. o mesmo piso, só pra mostrar ao usuário "isso está
+  // sendo cobrado como se fosse X m²". Base diferente de areaImpressaoPorPeca
+  // acima de propósito (ver comentário no campo areaCobrada do tipo).
   const areaCobrada = maiorDec(
     paraDecimal(Q).times(w).times(h),
     paraDecimal(Q).times(areaMinimaFaturavel)

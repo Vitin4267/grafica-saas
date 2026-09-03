@@ -1,7 +1,8 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { calcularPreco } from "@/lib/orcamento";
-import { precificar, ErroPrecificacao, type PedidoPrecificacao } from "@/lib/pricing";
+import { precificar, ErroPrecificacao, aplicarPisoDoPedido, type PedidoPrecificacao } from "@/lib/pricing";
 import { carregarContextoPrecificacao, resolverConfigAcabamentos } from "@/lib/pricing/carregar";
+import { paraDecimal, type Dec } from "@/lib/pricing/decimal";
 
 type ModeloCalculoPrecificavel =
   | "SIMPLES"
@@ -45,6 +46,12 @@ type ItemGraficaParaPrecificacao = {
   id: string;
   modeloCalculo: ModeloCalculoPrecificavel;
   precoVenda: Prisma.Decimal | null;
+  // Achado N1 — só relevante pro branch SIMPLES abaixo (ver calcularPreco em
+  // src/lib/orcamento.ts). Opcional (em vez de obrigatório) só pra não
+  // quebrar os fixtures de teste que montam este objeto à mão sem tocar o
+  // banco (orcamento-precificacao.test.ts) — ausente equivale a false, mesmo
+  // default do schema.
+  simplesCobraPorArea?: boolean;
 };
 
 export type DadosItemOrcamento = {
@@ -298,6 +305,7 @@ export async function calcularItemOrcamento(
       quantidade,
       larguraCm,
       alturaCm,
+      simplesCobraPorArea: itemGrafica.simplesCobraPorArea === true,
     });
 
     return {
@@ -645,4 +653,42 @@ export async function calcularItemOrcamento(
     }
     throw erro;
   }
+}
+
+// Achado N3 da auditoria de abrangência — ponto ÚNICO que recalcula e grava
+// Orcamento.total a partir da soma dos itens da opção-base (opcaoId: null),
+// aplicando o piso de pedido (ParametrosGrafica.pedidoMinimo) uma vez sobre
+// a SOMA, nunca por item (ver aplicarPisoDoPedido em src/lib/pricing/compor.ts
+// e o comentário em comporPreco, que não conhece mais pedidoMinimo).
+// Reaproveitado por editarOrcamento/adicionarItemOrcamento/
+// removerItemOrcamento/aplicarDescontoItemOrcamento (src/app/orcamento/[id]/
+// actions.ts) — os 4 pontos que hoje reagregam o total depois de mexer nos
+// itens da opção-base. Sempre chamado DENTRO da mesma transação Serializable
+// que alterou os itens, pra nunca gravar um total que já ficou stale.
+export async function recalcularTotalOrcamento(
+  tx: Prisma.TransactionClient,
+  orcamentoId: string,
+  graficaId: string
+): Promise<Dec> {
+  const [agregado, parametros] = await Promise.all([
+    tx.orcamentoItem.aggregate({
+      where: { orcamentoId, opcaoId: null },
+      _sum: { precoTotal: true },
+    }),
+    tx.parametrosGrafica.findUnique({
+      where: { graficaId },
+      select: { pedidoMinimo: true, incrementoArredondamento: true },
+    }),
+  ]);
+
+  const somaItens = paraDecimal((agregado._sum.precoTotal ?? 0).toString());
+  const pedidoMinimo = paraDecimal(parametros?.pedidoMinimo.toString() ?? "0");
+  // Fallback igual ao default da coluna (ParametrosGrafica.incrementoArredondamento
+  // @default(0.10)) — só usado se por algum motivo a gráfica não tiver linha
+  // de ParametrosGrafica ainda (nunca deveria acontecer em produção).
+  const incremento = paraDecimal(parametros?.incrementoArredondamento.toString() ?? "0.10");
+  const total = aplicarPisoDoPedido(somaItens, pedidoMinimo, incremento);
+
+  await tx.orcamento.update({ where: { id: orcamentoId }, data: { total: total.toFixed(2) } });
+  return total;
 }

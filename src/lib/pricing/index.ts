@@ -14,7 +14,7 @@ export {
   calcularAcabamentos,
   type ItemAcabamentoCalculado,
 } from "./acabamento";
-export { comporPreco, type ResultadoComposicao } from "./compor";
+export { comporPreco, aplicarPisoDoPedido, type ResultadoComposicao } from "./compor";
 export { resolverPrecoPapel, type ResultadoPrecoPapel, type OrigemPrecoPapel } from "./papel";
 export { precificar, type PedidoPrecificacao, type ContextoPrecificacao, type ResultadoPrecificacao } from "./precificar";
 export { paraDecimal, arredondarParaIncremento, tetoInteiro, type Dec } from "./decimal";
