@@ -353,8 +353,9 @@ export function ParametrosForm({
       >
         <Card className="flex flex-col gap-4 p-6">
           <div>
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+            <h2 className="inline-flex items-center gap-1.5 text-base font-semibold text-slate-900 dark:text-white">
               Alçada de desconto
+              <CampoAjuda texto="Este é o teto ÚNICO pra gráfica inteira, usado quando ninguém configurou nada em Alçadas de aprovação (Cadastros auxiliares, mais abaixo). Lá dá pra configurar um teto diferente por papel ou até por pessoa específica — ex: vendedor júnior 5%, sênior 10%, sem mexer neste campo." />
             </h2>
             <p className="mt-1 text-sm text-slate-500">
               Teto de desconto que um vendedor comum pode dar num orçamento sem
@@ -908,6 +909,23 @@ export function ParametrosForm({
           <Link href="/configuracoes/ferramentais">
             <Button type="button" variant="outline">
               Gerenciar ferramentais
+            </Button>
+          </Link>
+        </Card>
+
+        <Card className="flex items-center justify-between gap-4 p-6">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+              Alçadas de aprovação
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Até quanto cada papel ou pessoa aprova sozinho: desconto de
+              orçamento (%) e aprovação de solicitação de compra (R$).
+            </p>
+          </div>
+          <Link href="/configuracoes/alcadas">
+            <Button type="button" variant="outline">
+              Gerenciar alçadas
             </Button>
           </Link>
         </Card>

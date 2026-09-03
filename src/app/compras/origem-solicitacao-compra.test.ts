@@ -131,6 +131,7 @@ async function solicitacaoParaTransicao(solicitacaoId: string): Promise<Solicita
     itemGraficaId: solicitacao.itemGraficaId,
     varianteId: solicitacao.varianteId,
     quantidade: solicitacao.quantidade,
+    valorEstimado: solicitacao.valorEstimado,
     valorFinal: solicitacao.valorFinal,
     fornecedorId: solicitacao.fornecedorId,
     documento: solicitacao.documento,

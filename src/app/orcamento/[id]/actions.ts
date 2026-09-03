@@ -13,6 +13,7 @@ import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
+import { resolverLimiteDesconto, type AlcadaParaResolucao } from "@/lib/alcada-aprovacao";
 import { calcularItemOrcamento } from "@/lib/orcamento-precificacao";
 import { analisarPreflight } from "@/lib/preflight";
 import { resolverOrigemPublica } from "@/lib/url-publica";
@@ -1919,6 +1920,20 @@ const tipoDescontoFormSchema = z.enum(["PERCENTUAL", "VALOR_ABSOLUTO", "PRECO_FI
 
 export type AplicarDescontoResult = { ok: boolean; mensagem: string };
 
+// Alçadas de DESCONTO_ORCAMENTO configuradas pra esta gráfica (achado A4 da
+// auditoria de abrangência, Parte 6/Configurações) — usado tanto por
+// aplicarDescontoItemOrcamento quanto por duplicarOrcamento (herança de
+// desconto), sempre junto de resolverLimiteDesconto. Gráfica sem nenhuma
+// linha cadastrada (toda gráfica existente, no dia desta feature) devolve
+// array vazio — resolverLimiteDesconto cai no fallback de sempre.
+async function buscarAlcadasDesconto(graficaId: string): Promise<AlcadaParaResolucao[]> {
+  const linhas = await prisma.alcadaAprovacao.findMany({
+    where: { graficaId, tipo: "DESCONTO_ORCAMENTO" },
+    select: { papel: true, usuarioId: true, limite: true },
+  });
+  return linhas.map((l) => ({ papel: l.papel, usuarioId: l.usuarioId, limite: Number(l.limite) }));
+}
+
 // Aplica (tipo+valor+motivo) ou remove (remover=true) um desconto negociado
 // sobre o preço sugerido pelo motor num item já adicionado ao orçamento (ver
 // fase-custo-real.md §2.4, §4.2). precoUnitario/precoTotal continuam sendo
@@ -1928,8 +1943,11 @@ export type AplicarDescontoResult = { ok: boolean; mensagem: string };
 // preço negociado nunca fica abaixo do custo direto do item (mesma
 // checagem/mensagem da trava que o motor já usa pro preço SUGERIDO, ver
 // ErroPrecificacao "PRECO_ABAIXO_DO_CUSTO" em src/lib/pricing/compor.ts), e
-// desconto acima de ParametrosGrafica.descontoMaxSemAprovacao só um
-// DONO/ADMIN aplica (grava aprovadoPorId).
+// desconto acima do limite RESOLVIDO pro usuário (achado A4 da auditoria de
+// abrangência — alçada do usuário > alçada do papel > DONO/ADMIN sem teto/
+// OPERADOR travado no limite global da gráfica, ver resolverLimiteDesconto
+// em src/lib/alcada-aprovacao.ts) é bloqueado (grava aprovadoPorId quando
+// aplicado por alguém acima do limite GLOBAL da gráfica).
 export async function aplicarDescontoItemOrcamento(
   _estadoAnterior: AplicarDescontoResult | null,
   formData: FormData
@@ -2073,14 +2091,29 @@ export async function aplicarDescontoItemOrcamento(
       ? paraDecimal(parametros.descontoMaxSemAprovacao.toString())
       : paraDecimal(100);
 
+    // Achado A4 da auditoria de abrangência — limite RESOLVIDO pra este
+    // usuário específico (alçada dele > alçada do papel dele > fallback
+    // idêntico ao comportamento de sempre). Sem nenhuma AlcadaAprovacao
+    // cadastrada, limiteResolvido === o mesmo cálculo hardcoded de antes
+    // (DONO/ADMIN sem teto, OPERADOR travado no `limite` global acima) —
+    // regressão zero pra quem nunca configurar nada.
+    const alcadasDesconto = await buscarAlcadasDesconto(usuario.graficaId);
+    const limiteResolvido = paraDecimal(
+      resolverLimiteDesconto(usuario, alcadasDesconto, Number(limite))
+    );
+
+    if (descontoPercentualEfetivo.gt(limiteResolvido)) {
+      const temAlcadaConfigurada = alcadasDesconto.some(
+        (a) => a.usuarioId === usuario.id || a.papel === usuario.papel
+      );
+      return {
+        ok: false,
+        mensagem: temAlcadaConfigurada
+          ? `Desconto acima de ${limiteResolvido.toFixed(1)}% (sua alçada) precisa ser aplicado por alguém com alçada maior.`
+          : `Desconto acima de ${limiteResolvido.toFixed(1)}% precisa ser aplicado por um dono ou administrador.`,
+      };
+    }
     if (descontoPercentualEfetivo.gt(limite)) {
-      const podeAprovar = usuario.papel === "DONO" || usuario.papel === "ADMIN";
-      if (!podeAprovar) {
-        return {
-          ok: false,
-          mensagem: `Desconto acima de ${limite.toFixed(1)}% precisa ser aplicado por um dono ou administrador.`,
-        };
-      }
       aprovadoPorId = usuario.id;
     }
   }
@@ -2290,7 +2323,15 @@ export async function duplicarOrcamento(
   const limiteDescontoSemAprovacao = parametros
     ? paraDecimal(parametros.descontoMaxSemAprovacao.toString())
     : paraDecimal(100);
-  const podeAprovarDesconto = usuario.papel === "DONO" || usuario.papel === "ADMIN";
+  // Achado A4 da auditoria de abrangência — mesma resolução de
+  // aplicarDescontoItemOrcamento: limite RESOLVIDO pra este usuário
+  // (alçada dele > alçada do papel dele > fallback idêntico ao
+  // comportamento de sempre), usado abaixo pra decidir se o desconto
+  // herdado pode ser aplicado sem mais ninguém.
+  const alcadasDesconto = await buscarAlcadasDesconto(usuario.graficaId);
+  const limiteDescontoResolvido = paraDecimal(
+    resolverLimiteDesconto(usuario, alcadasDesconto, Number(limiteDescontoSemAprovacao))
+  );
 
   let total = paraDecimal(0);
   const itensParaCriar: {
@@ -2414,13 +2455,16 @@ export async function duplicarOrcamento(
             : 0;
         const custoDireto = paraDecimal(custoDiretoNumero);
 
-        // Mesma trava de aprovação: desconto acima do limite da gráfica só
-        // um DONO/ADMIN aplica. Não há como pedir aprovação no meio de uma
-        // criação automática — se quem duplicou não pode aprovar, o item
-        // nasce sem desconto (preço cheio) em vez de bloquear tudo.
+        // Mesma trava de aprovação de aplicarDescontoItemOrcamento: desconto
+        // acima do limite RESOLVIDO pra quem está duplicando (achado A4 da
+        // auditoria de abrangência) simplesmente não é herdado. Não há como
+        // pedir aprovação no meio de uma criação automática — se quem
+        // duplicou não tem alçada suficiente, o item nasce sem desconto
+        // (preço cheio) em vez de bloquear a duplicação inteira.
+        const podeHerdarDesconto = herdado.percentual.lte(limiteDescontoResolvido);
         const precisaAprovacao = herdado.percentual.gt(limiteDescontoSemAprovacao);
 
-        if (herdado.precoTotal.gte(custoDireto) && (!precisaAprovacao || podeAprovarDesconto)) {
+        if (herdado.precoTotal.gte(custoDireto) && podeHerdarDesconto) {
           precoUnitario = herdado.precoUnitario;
           precoTotal = herdado.precoTotal;
           descontoTipo = "PERCENTUAL";

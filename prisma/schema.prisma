@@ -165,6 +165,9 @@ model Grafica {
   filaGangRun           FilaGangRun[]
   gruposGangRun         GrupoGangRun[]
   feriados              FeriadoGrafica[]
+  // Achado A4 da Parte 6 da auditoria de abrangência
+  // (pesquisa-abrangencia-modulos.md, 2026-09-02) — ver model AlcadaAprovacao.
+  alcadasAprovacao      AlcadaAprovacao[]
 
   @@map("graficas")
 }
@@ -1310,6 +1313,51 @@ model PermissaoPerfil {
 
   @@unique([perfilId, modulo])
   @@map("permissoes_perfil")
+}
+
+// Achado A4 da Parte 6 da auditoria de abrangência (Configurações,
+// pesquisa-abrangencia-modulos.md, 2026-09-02) — hoje duas travas de
+// autorização por VALOR eram fixas em código: desconto de orçamento acima de
+// ParametrosGrafica.descontoMaxSemAprovacao só DONO/ADMIN aprova (limite
+// único pra gráfica inteira), e aprovação de SolicitacaoCompra não tinha
+// teto de valor nenhum — quem tem permissão de COMPRAS aprova R$ 50 ou
+// R$ 50.000 igual. Este model dá um teto CONFIGURÁVEL por papel ou por
+// usuário específico pras duas travas, sem exigir aprovação em múltiplos
+// níveis encadeados (fora de escopo de propósito — 1 nível + 1 teto resolve
+// o porte do cliente-alvo, gráfica de 5 a 30 pessoas).
+enum TipoAlcada {
+  DESCONTO_ORCAMENTO // limite em % de desconto (ver resolverLimiteDesconto)
+  APROVACAO_COMPRA // limite em R$ da solicitação de compra (ver resolverLimiteAprovacaoCompra)
+}
+
+model AlcadaAprovacao {
+  id        String     @id @default(cuid())
+  graficaId String
+  tipo      TipoAlcada
+
+  // Alvo: por PAPEL (cobre a gráfica inteira em poucas linhas) ou por
+  // USUÁRIO específico (exceção pontual, ex: um vendedor sênior com alçada
+  // maior que o resto do papel OPERADOR). Exatamente um dos dois preenchido
+  // — validado na action, mesmo padrão de "exatamente um preenchido" que
+  // RegistroManutencao já usa pras 5 FKs de máquina (ver
+  // validarSelecaoMaquina em src/lib/manutencao-maquina.ts), aqui sem FK de
+  // banco pro papel (é um enum, não uma tabela). usuarioId sem FK formal de
+  // propósito, mesmo espírito de RegistroManutencao.registradoPorId —
+  // resolvido em código, nunca precisa sobreviver à remoção de um usuário
+  // (uma alçada de usuário removido simplesmente para de bater com ninguém).
+  papel     PapelUsuario?
+  usuarioId String?
+
+  // % em DESCONTO_ORCAMENTO (0-100), R$ em APROVACAO_COMPRA — resolução em
+  // src/lib/alcada-aprovacao.ts (resolverLimiteDesconto/
+  // resolverLimiteAprovacaoCompra): alçada do usuário > alçada do papel >
+  // comportamento de hoje (fallback sem esta tabela configurada).
+  limite Decimal @db.Decimal(12, 2)
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+
+  @@index([graficaId, tipo])
+  @@map("alcadas_aprovacao")
 }
 
 // Sessão opaca: o cookie do usuário guarda só o token bruto, nunca persistido em texto puro aqui.

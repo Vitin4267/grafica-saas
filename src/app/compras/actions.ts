@@ -407,6 +407,7 @@ export async function avancarSolicitacaoCompra(
     itemGraficaId: solicitacao.itemGraficaId,
     varianteId: solicitacao.varianteId,
     quantidade: solicitacao.quantidade,
+    valorEstimado: solicitacao.valorEstimado,
     valorFinal: solicitacao.valorFinal,
     fornecedorId: solicitacao.fornecedorId,
     documento: solicitacao.documento,
@@ -414,11 +415,16 @@ export async function avancarSolicitacaoCompra(
     contratoFornecimentoId: solicitacao.contratoFornecimentoId,
   };
 
-  const resultado = await avancarStatusCompra(solicitacaoParaTransicao, proximoStatus, usuario, {
-    fornecedorId: fornecedorIdBruto,
-    documento: documentoBruto,
-    valorFinal,
-  });
+  const resultado = await avancarStatusCompra(
+    solicitacaoParaTransicao,
+    proximoStatus,
+    { id: usuario.id, papel: usuario.papel },
+    {
+      fornecedorId: fornecedorIdBruto,
+      documento: documentoBruto,
+      valorFinal,
+    }
+  );
 
   if (resultado.ok) {
     await registrarAuditoria({

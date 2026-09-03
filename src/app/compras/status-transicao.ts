@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
+import type { PapelUsuario } from "@/generated/prisma/enums";
 import { D } from "@/lib/pricing/decimal";
 import {
   TRANSICOES_VALIDAS,
@@ -8,12 +9,18 @@ import {
   type StatusSolicitacaoCompra,
 } from "@/lib/compras-status";
 import { criarCustoAutomaticoCompra } from "@/lib/custo-pedido";
+import { resolverLimiteAprovacaoCompra } from "@/lib/alcada-aprovacao";
+import { formatoMoeda } from "@/lib/moeda";
 
 // Núcleo da transição de status de uma SolicitacaoCompra — mesma filosofia
 // de avancarStatusPedido (src/app/producao/status-transicao.ts): não faz
-// autenticação/autorização (isso é responsabilidade de quem chama, ver
-// src/app/compras/actions.ts), só valida a transição em si e aplica os
-// efeitos colaterais de cada etapa.
+// autenticação (isso é responsabilidade de quem chama, ver
+// src/app/compras/actions.ts — exigirUsuarioAutenticado/podeEditarModulo),
+// só valida a transição em si e aplica os efeitos colaterais de cada etapa.
+// Exceção: a trava de ALÇADA por valor em APROVADO abaixo (achado A4 da
+// auditoria de abrangência, Parte 6/Configurações) mora aqui de propósito,
+// não em quem chama — é uma regra da própria transição de status, mesmo
+// espírito da checagem de cotação vencedora COTANDO→APROVADO logo abaixo.
 
 export type SolicitacaoParaTransicao = {
   id: string;
@@ -22,6 +29,10 @@ export type SolicitacaoParaTransicao = {
   itemGraficaId: string;
   varianteId: string | null;
   quantidade: Prisma.Decimal;
+  // Estimativa no momento da solicitação/cotação — usada (junto da cotação
+  // vencedora, quando existe) só pra checar a alçada de quem aprova, nunca
+  // pra gravar nada (ver DadosTransicaoCompra.valorFinal pra isso).
+  valorEstimado: Prisma.Decimal | null;
   valorFinal: Prisma.Decimal | null;
   fornecedorId: string | null;
   documento: string | null;
@@ -91,7 +102,13 @@ const CAMPO_DATA_POR_STATUS: Partial<Record<StatusSolicitacaoCompra, string>> = 
 export async function avancarStatusCompra(
   solicitacao: SolicitacaoParaTransicao,
   proximoStatus: StatusSolicitacaoCompra,
-  usuario: { id: string },
+  // `papel` é opcional só pra não quebrar os chamadores que já existiam
+  // antes desta trava (ex: testes que chamam avancarStatusCompra direto
+  // com só o id) — quando ausente, o papel do aprovador é resolvido aqui
+  // dentro a partir do banco (ver bloco de alçada abaixo). Quem chama de
+  // produção (src/app/compras/actions.ts) já tem `usuario.papel` em mãos e
+  // sempre passa, evitando essa consulta extra.
+  usuario: { id: string; papel?: PapelUsuario },
   dados: DadosTransicaoCompra = {}
 ): Promise<AvancarStatusCompraResult> {
   const statusAnterior = solicitacao.status;
@@ -117,6 +134,46 @@ export async function avancarStatusCompra(
     });
     if (!cotacaoVencedora) {
       return { ok: false, mensagem: "Escolha a cotação vencedora antes de aprovar esta solicitação." };
+    }
+  }
+
+  // Trava de ALÇADA por valor (achado A4 da auditoria de abrangência, Parte
+  // 6/Configurações) — só entra em jogo indo PRA APROVADO (qualquer outra
+  // transição não muda). Valor considerado: a cotação vencedora quando
+  // existe (é a fonte da verdade da decisão, mesmo raciocínio do bloco
+  // logo abaixo pra fornecedorIdFinal), senão o valorEstimado da própria
+  // solicitação. Sem nenhum valor conhecido (SOLICITADO→APROVADO direto,
+  // sem cotação, sem valorEstimado informado), não há o que checar — segue
+  // sem bloquear, mesmo comportamento de hoje.
+  if (proximoStatus === "APROVADO") {
+    const valorParaChecagem = cotacaoVencedora ? cotacaoVencedora.valorTotal : solicitacao.valorEstimado;
+    if (valorParaChecagem !== null) {
+      let papelAprovador = usuario.papel ?? null;
+      if (papelAprovador === null) {
+        const aprovador = await prisma.usuario.findUnique({
+          where: { id: usuario.id },
+          select: { papel: true },
+        });
+        papelAprovador = aprovador?.papel ?? null;
+      }
+
+      if (papelAprovador !== null) {
+        const alcadas = await prisma.alcadaAprovacao.findMany({
+          where: { graficaId: solicitacao.graficaId, tipo: "APROVACAO_COMPRA" },
+          select: { papel: true, usuarioId: true, limite: true },
+        });
+        const limiteResolvido = resolverLimiteAprovacaoCompra(
+          { id: usuario.id, papel: papelAprovador },
+          alcadas.map((a) => ({ papel: a.papel, usuarioId: a.usuarioId, limite: Number(a.limite) }))
+        );
+
+        if (limiteResolvido !== null && new D(valorParaChecagem.toString()).gt(limiteResolvido)) {
+          return {
+            ok: false,
+            mensagem: `Esta solicitação (${formatoMoeda.format(Number(valorParaChecagem))}) está acima da sua alçada de aprovação (até ${formatoMoeda.format(limiteResolvido)}) — peça pra alguém com alçada maior aprovar.`,
+          };
+        }
+      }
     }
   }
 
