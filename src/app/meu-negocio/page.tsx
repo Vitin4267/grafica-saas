@@ -96,6 +96,7 @@ export default async function MeuNegocioPage() {
         paginaAtual="/meu-negocio"
         mostrarMeuNegocio
         modulosVisiveis={await obterModulosVisiveis(usuario)}
+        temAlgumPedido={visaoGeral.temAlgumPedido}
       />
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-10">
@@ -232,60 +233,64 @@ export default async function MeuNegocioPage() {
             )}
           </div>
 
-          <div>
-            <SecaoHeader titulo="Pipeline de produção" href="/producao" />
-            {visaoGeral.totalPedidos === 0 ? (
-              <EmptyState
-                icone={<PrinterIcon className="h-5 w-5" />}
-                texto="Nenhum pedido em produção. Pedidos aparecem aqui automaticamente quando um orçamento é aprovado."
-                href="/producao"
-                rotuloCta="Ver produção"
-              />
-            ) : (
-              <Card className="p-6">
-                <ProportionBar faixas={faixasPedido} total={visaoGeral.totalPedidos} />
-              </Card>
-            )}
-          </div>
+          {visaoGeral.temAlgumPedido && (
+            <div>
+              <SecaoHeader titulo="Pipeline de produção" href="/producao" />
+              {visaoGeral.totalPedidos === 0 ? (
+                <EmptyState
+                  icone={<PrinterIcon className="h-5 w-5" />}
+                  texto="Nenhum pedido em produção. Pedidos aparecem aqui automaticamente quando um orçamento é aprovado."
+                  href="/producao"
+                  rotuloCta="Ver produção"
+                />
+              ) : (
+                <Card className="p-6">
+                  <ProportionBar faixas={faixasPedido} total={visaoGeral.totalPedidos} />
+                </Card>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Estoque baixo + top clientes */}
         <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <div>
-            <SecaoHeader titulo="Previsão de estoque" href="/catalogo/estoque" />
-            {visaoGeral.alertasEstoque.length > 0 ? (
-              <Card className="divide-y divide-slate-100 p-0 dark:divide-slate-800">
-                {visaoGeral.alertasEstoque.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between gap-3 p-4">
-                    <div className="flex items-center gap-3">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-400">
-                        <AlertTriangleIcon className="h-4 w-4" />
-                      </span>
-                      <p className="text-sm font-medium text-slate-800 dark:text-slate-100">
-                        {item.nome}
+          {visaoGeral.temAlgumPedido && (
+            <div>
+              <SecaoHeader titulo="Previsão de estoque" href="/catalogo/estoque" />
+              {visaoGeral.alertasEstoque.length > 0 ? (
+                <Card className="divide-y divide-slate-100 p-0 dark:divide-slate-800">
+                  {visaoGeral.alertasEstoque.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between gap-3 p-4">
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-600 dark:bg-amber-950 dark:text-amber-400">
+                          <AlertTriangleIcon className="h-4 w-4" />
+                        </span>
+                        <p className="text-sm font-medium text-slate-800 dark:text-slate-100">
+                          {item.nome}
+                        </p>
+                      </div>
+                      <p className="text-sm font-medium text-rose-600 dark:text-rose-400">
+                        {item.diasRestantes !== null
+                          ? `Acaba em ${Math.max(0, Math.round(item.diasRestantes))} dia${Math.round(item.diasRestantes) === 1 ? "" : "s"}`
+                          : `${item.estoqueAtual} de ${item.estoqueMinimo} restantes`}
                       </p>
                     </div>
-                    <p className="text-sm font-medium text-rose-600 dark:text-rose-400">
-                      {item.diasRestantes !== null
-                        ? `Acaba em ${Math.max(0, Math.round(item.diasRestantes))} dia${Math.round(item.diasRestantes) === 1 ? "" : "s"}`
-                        : `${item.estoqueAtual} de ${item.estoqueMinimo} restantes`}
-                    </p>
-                  </div>
-                ))}
-              </Card>
-            ) : (
-              <Card className="flex items-center gap-3 p-6">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
-                  <CheckCircleIcon className="h-5 w-5" />
-                </span>
-                <p className="text-sm text-slate-500">
-                  {visaoGeral.temItensComEstoqueControlado
-                    ? "Estoque em dia — nada abaixo do mínimo nem previsto pra acabar em breve."
-                    : "Nenhum item com controle de estoque cadastrado ainda. Configure estoque atual no Catálogo."}
-                </p>
-              </Card>
-            )}
-          </div>
+                  ))}
+                </Card>
+              ) : (
+                <Card className="flex items-center gap-3 p-6">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+                    <CheckCircleIcon className="h-5 w-5" />
+                  </span>
+                  <p className="text-sm text-slate-500">
+                    {visaoGeral.temItensComEstoqueControlado
+                      ? "Estoque em dia — nada abaixo do mínimo nem previsto pra acabar em breve."
+                      : "Nenhum item com controle de estoque cadastrado ainda. Configure estoque atual no Catálogo."}
+                  </p>
+                </Card>
+              )}
+            </div>
+          )}
 
           <div>
             <SecaoHeader titulo="Clientes com maior faturamento" href="/clientes" />

@@ -67,6 +67,7 @@ export function UserNav({
   paginaAtual,
   mostrarMeuNegocio = false,
   modulosVisiveis = null,
+  temAlgumPedido = true,
 }: {
   nome: string;
   graficaNome: string;
@@ -74,6 +75,7 @@ export function UserNav({
   paginaAtual?: string;
   mostrarMeuNegocio?: boolean;
   modulosVisiveis?: ModuloPermissao[] | null;
+  temAlgumPedido?: boolean;
 }) {
   const [menuAberto, setMenuAberto] = useState(false);
   const [diasRestantesTrial, setDiasRestantesTrial] = useState<number | null>(null);
@@ -102,7 +104,18 @@ export function UserNav({
   }, []);
 
   let links: { href: string; label: string; modulo: ModuloPermissao | null }[] = LINKS.filter(
-    (l) => modulosVisiveis === null || modulosVisiveis.includes(l.modulo)
+    (l) => {
+      // Filtra por permissão de módulo
+      if (modulosVisiveis !== null && !modulosVisiveis.includes(l.modulo)) {
+        return false;
+      }
+      // Achados E1 e E2 (Parte 7, Completude de cadastro) — esconde link de
+      // Produção pra gráficas que nunca tiveram nenhum Pedido (revenda pura)
+      if (l.href === "/producao" && !temAlgumPedido) {
+        return false;
+      }
+      return true;
+    }
   );
   if (papel === "DONO") {
     links = [

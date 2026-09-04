@@ -91,6 +91,10 @@ export type VisaoGeralNegocio = {
   // mesmo com semana vazia (fica 0), pra não distorcer a leitura visual da
   // tendência.
   serieFaturamentoSemanal: { rotulo: string; total: number }[];
+  // Indicador de que a gráfica tem uso real de produção (qualquer Pedido
+  // criado). Usado pra esconder cards e links de produção de gráficas de
+  // revenda pura (E1 e E2 da auditoria de abrangência).
+  temAlgumPedido: boolean;
 };
 
 export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoGeralNegocio> {
@@ -127,6 +131,7 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
     orcamentosParaSerie,
     orcamentosAprovadosParaTempoResposta,
     etapas,
+    primeiroPedido,
   ] = await Promise.all([
     prisma.orcamento.aggregate({
       // NOT pedido.status=CANCELADO — achado N2 da auditoria de abrangência
@@ -207,6 +212,14 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
     // Achado A1 (Fase 1) — sequência/rótulos por gráfica (liga/desliga e
     // renomeia etapa, ver EtapaGrafica), não mais os arrays literais fixos.
     resolverEtapasGrafica(graficaId),
+    // Achados E1 e E2 (Parte 7, Completude de cadastro) — verifica se a
+    // gráfica tem uso real de produção (qualquer Pedido criado). Usa findFirst
+    // com select { id: true } e take: 1 pra query barata (só precisa saber se
+    // existe, não precisa dos dados).
+    prisma.pedido.findFirst({
+      where: { graficaId },
+      select: { id: true },
+    }),
   ]);
 
   const contagemPorStatusOrcamento = new Map(
@@ -296,5 +309,6 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
       orcamentosParaSerie,
       inicioSerieFaturamento
     ),
+    temAlgumPedido: primeiroPedido !== null,
   };
 }
