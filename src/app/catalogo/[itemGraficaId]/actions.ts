@@ -16,6 +16,14 @@ import { formatoMoeda } from "@/lib/moeda";
 import { D } from "@/lib/pricing/decimal";
 import { calcularDeltaAjusteInventario } from "@/lib/estoque-manual";
 import { UNIDADES_COMPRA, type UnidadeCompra } from "@/lib/unidade-compra";
+import {
+  TIPOS_DOBRA,
+  TIPOS_ENCADERNACAO,
+  TIPOS_COLAGEM,
+  type TipoDobra,
+  type TipoEncadernacao,
+  type TipoColagem,
+} from "@/lib/acabamento-estrutural";
 
 const formatoQuantidade = new Intl.NumberFormat("pt-BR");
 
@@ -830,6 +838,94 @@ export async function salvarConfiguracaoCompra(
       fatorConversaoCompraPadrao: fatorConversaoCompraPadrao !== undefined ? fatorConversaoCompraPadrao.toFixed(4) : null,
       loteMinimoCompra: loteMinimoCompra !== undefined ? loteMinimoCompra.toFixed(4) : null,
       multiploCompra: multiploCompra !== undefined ? multiploCompra.toFixed(4) : null,
+    },
+  });
+
+  revalidatePath(`/catalogo/${itemGraficaId}`);
+  return { ok: true, mensagem: "Salvo." };
+}
+
+export type SalvarAcabamentoEstruturalResult = SalvarConfigResult;
+
+const acabamentoEstruturalSchema = z.object({
+  tipoDobra: z.enum(TIPOS_DOBRA as [TipoDobra, ...TipoDobra[]]).optional(),
+  tipoDobraOutro: z
+    .string()
+    .trim()
+    .max(60)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+  tipoEncadernacao: z.enum(TIPOS_ENCADERNACAO as [TipoEncadernacao, ...TipoEncadernacao[]]).optional(),
+  tipoEncadernacaoOutro: z
+    .string()
+    .trim()
+    .max(60)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+  tipoColagem: z.enum(TIPOS_COLAGEM as [TipoColagem, ...TipoColagem[]]).optional(),
+  tipoColagemOutro: z
+    .string()
+    .trim()
+    .max(60)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+});
+
+// Achado C5 da auditoria de abrangência (Parte 7, 2026-09-04): dropdown
+// estruturado de dobra/encadernação/colagem pra SERVICO, fora do motor de
+// etiqueta — mesmo espírito puramente informativo/organizacional de
+// salvarConfiguracaoCompra acima (NUNCA usado pelo motor de precificação;
+// ver src/lib/pricing/). Os 3 campos são independentes entre si (uma
+// gráfica tipicamente usa só 1 por serviço) e cada um limpa o "*Outro"
+// correspondente quando o tipo não é OUTRO ou fica em branco.
+export async function salvarAcabamentoEstrutural(
+  _estadoAnterior: SalvarAcabamentoEstruturalResult | null,
+  formData: FormData
+): Promise<SalvarAcabamentoEstruturalResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CATALOGO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar o catálogo." };
+  }
+  const itemGraficaId = String(formData.get("itemGraficaId"));
+
+  const itemGrafica = await prisma.itemGrafica.findFirst({
+    where: { id: itemGraficaId, graficaId: usuario.graficaId },
+  });
+  if (!itemGrafica) {
+    return { ok: false, mensagem: "Item não encontrado." };
+  }
+
+  const parsed = acabamentoEstruturalSchema.safeParse({
+    tipoDobra: formData.get("tipoDobra") || undefined,
+    tipoDobraOutro: formData.get("tipoDobraOutro") || undefined,
+    tipoEncadernacao: formData.get("tipoEncadernacao") || undefined,
+    tipoEncadernacaoOutro: formData.get("tipoEncadernacaoOutro") || undefined,
+    tipoColagem: formData.get("tipoColagem") || undefined,
+    tipoColagemOutro: formData.get("tipoColagemOutro") || undefined,
+  });
+  if (!parsed.success) {
+    return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Valor inválido." };
+  }
+  const {
+    tipoDobra,
+    tipoDobraOutro,
+    tipoEncadernacao,
+    tipoEncadernacaoOutro,
+    tipoColagem,
+    tipoColagemOutro,
+  } = parsed.data;
+
+  await prisma.itemGrafica.update({
+    where: { id: itemGraficaId },
+    data: {
+      tipoDobra: tipoDobra ?? null,
+      tipoDobraOutro: tipoDobra === "OUTRO" ? (tipoDobraOutro ?? null) : null,
+      tipoEncadernacao: tipoEncadernacao ?? null,
+      tipoEncadernacaoOutro: tipoEncadernacao === "OUTRO" ? (tipoEncadernacaoOutro ?? null) : null,
+      tipoColagem: tipoColagem ?? null,
+      tipoColagemOutro: tipoColagem === "OUTRO" ? (tipoColagemOutro ?? null) : null,
     },
   });
 

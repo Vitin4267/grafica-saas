@@ -14,6 +14,7 @@ import { Card } from "@/components/ui/Card";
 import { ArrowLeftIcon } from "@/components/icons";
 import { ConfiguracaoProdutoForm } from "./ConfiguracaoProdutoForm";
 import { ConfiguracaoAcabamentoForm } from "./ConfiguracaoAcabamentoForm";
+import { AcabamentoEstruturalForm } from "./AcabamentoEstruturalForm";
 import { ConfiguracaoClicheEtiquetaForm } from "./ConfiguracaoClicheEtiquetaForm";
 import { ConfiguracaoEmendaForm } from "./ConfiguracaoEmendaForm";
 import { FichaTecnicaForm } from "./FichaTecnicaForm";
@@ -488,6 +489,17 @@ export default async function ConfiguracaoItemPage({
                     }
                   : null
               }
+            />
+            <AcabamentoEstruturalForm
+              itemGraficaId={itemGrafica.id}
+              valoresAtuais={{
+                tipoDobra: itemGrafica.tipoDobra ?? "",
+                tipoDobraOutro: itemGrafica.tipoDobraOutro ?? "",
+                tipoEncadernacao: itemGrafica.tipoEncadernacao ?? "",
+                tipoEncadernacaoOutro: itemGrafica.tipoEncadernacaoOutro ?? "",
+                tipoColagem: itemGrafica.tipoColagem ?? "",
+                tipoColagemOutro: itemGrafica.tipoColagemOutro ?? "",
+              }}
             />
             {/* Ficha técnica de SERVIÇO (fase "custo real" — ver comentário no
                 schema de FichaTecnicaItem): acabamentos que consomem material

@@ -347,6 +347,25 @@ model ItemGrafica {
   unidadeContagem UnidadeMedida?
   fatorConversao  Decimal?       @db.Decimal(12, 4)
 
+  // Achado C5 da auditoria de abrangência (Parte 7, 2026-09-04) — só
+  // relevante quando itemCatalogo.tipo=SERVICO. Puramente descritivo/
+  // organizacional (mesmo espírito de EstagioAcabamento acima): identifica
+  // qual tipo de dobra/encadernação/colagem este serviço representa, pra
+  // gráfica de embalagem/livro/comunicação visual/brinde ter o mesmo
+  // dropdown estruturado que etiqueta já tem (TipoAdesivo/TipoSerrilha/
+  // TipoLaminacao/TipoAcabamentoVerniz/TipoHotStamping) em vez de só um nome
+  // livre de serviço. NUNCA lido por src/lib/pricing/ — não entra em nenhum
+  // cálculo de custo/preço. Todos opcionais, nenhum exigido; uma gráfica
+  // tipicamente usa só 1 dos 3 por serviço, nunca os 3 juntos. *Outro só
+  // usado quando o tipo correspondente = OUTRO (mesmo padrão de
+  // unidadeOutro/unidadeCompraPadraoOutro acima).
+  tipoDobra             TipoDobra?
+  tipoDobraOutro        String?
+  tipoEncadernacao      TipoEncadernacao?
+  tipoEncadernacaoOutro String?
+  tipoColagem           TipoColagem?
+  tipoColagemOutro      String?
+
   grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   itemCatalogo        ItemCatalogo         @relation(fields: [itemCatalogoId], references: [id])
   prensa              Prensa?              @relation(fields: [prensaId], references: [id], onDelete: Restrict)
@@ -714,4 +733,43 @@ enum TipoHotStamping {
 enum LadoEtiqueta {
   ROTULO
   CONTRA_ROTULO
+}
+
+// Achado C5 da auditoria de abrangência (Parte 7, 2026-09-04): os únicos
+// enums estruturados de acabamento (TipoAdesivo/TipoSerrilha/TipoLaminacao/
+// TipoAcabamentoVerniz/TipoHotStamping, acima) só existem em
+// OrcamentoItemEtiqueta — o motor M2/flexografia de rótulo. Fora de
+// etiqueta (embalagem, livro/editorial, comunicação visual, brinde), não
+// existe NENHUM dropdown estruturado pra dobra/encadernação/colagem: a
+// gráfica cadastra um SERVICO com nome livre, sem opção de escolher o tipo.
+// Estes 3 enums seguem o MESMO padrão fechado+OUTRO das etiquetas acima, mas
+// são referenciados direto por ItemGrafica (ver campos tipoDobra/
+// tipoEncadernacao/tipoColagem + seus *Outro), não por um model de linha de
+// orçamento — são puramente descritivos/organizacionais, igual
+// EstagioAcabamento: NUNCA lidos por src/lib/pricing/, nunca entram em
+// nenhum cálculo de custo/preço. Servem só pra a gráfica documentar QUAL
+// tipo de dobra/encadernação/colagem aquele serviço representa, pra não
+// precisar adivinhar pelo nome livre do serviço. Ver hint em
+// AcabamentoEstruturalForm.tsx.
+enum TipoDobra {
+  MEIA_DOBRA
+  SANFONA
+  CARTA
+  PARALELA
+  OUTRO
+}
+
+enum TipoEncadernacao {
+  BROCHURA
+  WIRE_O
+  ESPIRAL
+  CAPA_DURA
+  OUTRO
+}
+
+enum TipoColagem {
+  COLA_FRIA
+  COLA_QUENTE
+  PUR
+  OUTRO
 }
