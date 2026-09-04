@@ -522,6 +522,7 @@ model OrcamentoItem {
   tinta                OrcamentoItemTinta?
   precificacaoEtiqueta OrcamentoItemPrecificacaoEtiqueta?
   precificacaoDigital  OrcamentoItemPrecificacaoDigital? // achado N4 — papel escolhido neste orçamento pro motor Digital
+  precificacaoOffset   OrcamentoItemPrecificacaoOffset?  // achado N8 — papel/gramatura escolhidos neste orçamento pro motor Offset
   filaGangRun          FilaGangRun?
 
   @@index([orcamentoId])
@@ -647,6 +648,54 @@ model OrcamentoItemPrecificacaoDigital {
   papel         ItemGrafica   @relation("PapelDoItemOrcamentoDigital", fields: [papelId], references: [id], onDelete: Restrict)
 
   @@map("orcamento_item_precificacao_digital")
+}
+
+// Achado N8 da auditoria de código (2026-09-04) — no Offset, ItemGrafica.papelId/
+// gramaturaGm2 são propriedade FIXA do PRODUTO cadastrado em Catálogo (resolvem
+// "de que papel esse produto É feito"), mas uma gráfica offset comercial cota o
+// MESMO produto ("Folder A4 4/4") em couché 90g, 115g ou 150g dependendo do
+// orçamento — uma decisão comercial, não de catálogo. Este model é o override
+// OPCIONAL, por orçamento, que sobrepõe os fixos do produto quando preenchido.
+//
+// DECISÃO DE DESIGN (model próprio vs. reaproveitar OrcamentoItemPrecificacaoDigital):
+// papelId É o mesmo campo único/compartilhado que Digital e o clichê de
+// etiqueta já usam no backend (DadosItemOrcamento.papelId — nunca dois motores
+// ativos ao mesmo tempo no mesmo item, já que modeloCalculo é mutuamente
+// exclusivo). Mas gramaturaGm2 é um dado NOVO, específico do Offset, sem
+// equivalente em Digital/Etiqueta — colocá-lo em OrcamentoItemPrecificacaoDigital
+// deixaria uma coluna sempre nula pra todo item Digital (o mesmo raciocínio que
+// já levou OrcamentoItemEtiqueta/OrcamentoItemAcabamento a serem tabelas
+// próprias em vez de colunas soltas em OrcamentoItem). Um model PRÓPRIO também
+// mantém Digital e Offset conceitualmente independentes (motores diferentes,
+// nunca coexistem no mesmo item de qualquer forma) mesmo reaproveitando o
+// mesmo papelId genérico — menos acoplamento entre os dois pra qualquer
+// evolução futura de um dos dois sozinho.
+//
+// papelId E gramaturaGm2 são NULLABLE de propósito (diferente de
+// OrcamentoItemPrecificacaoDigital.papelId, obrigatório lá porque Digital não
+// tem NENHUM papel fixo no produto): aqui os dois podem ser sobrescritos
+// INDEPENDENTEMENTE um do outro — a gráfica pode trocar só a gramatura (mesmo
+// papel do produto, outra espessura) ou só o papel (mesma gramatura, outro
+// fornecedor), sem ser obrigada a preencher os dois. Linha só existe quando ao
+// menos um dos dois foi de fato sobrescrito neste orçamento (ver
+// carregarContextoPrecificacao/calcularItemOrcamento) — ausência total = usa
+// papel/gramatura do PRODUTO, comportamento de sempre, zero regressão.
+model OrcamentoItemPrecificacaoOffset {
+  id              String   @id @default(cuid())
+  orcamentoItemId String   @unique
+  papelId         String? // matéria-prima (ItemGrafica tipo=MATERIA_PRIMA) escolhida NESTE orçamento — null = usa o papelId fixo do produto
+  gramaturaGm2    Decimal? @db.Decimal(6, 1) // gramatura escolhida NESTE orçamento — null = usa o gramaturaGm2 fixo do produto
+  createdAt       DateTime @default(now())
+
+  orcamentoItem OrcamentoItem @relation(fields: [orcamentoItemId], references: [id], onDelete: Cascade)
+  // SetNull (não Restrict, diferente de PapelDoItemOrcamentoDigital/Etiqueta
+  // acima): papelId aqui é opcional — desativar/remover o papel usado como
+  // override não pode travar, o pior caso é o item voltar a exigir escolha
+  // de papel na próxima edição (mesmo espírito de Ferramental/EnderecoCliente
+  // neste schema).
+  papel         ItemGrafica?  @relation("PapelDoItemOrcamentoOffset", fields: [papelId], references: [id], onDelete: SetNull)
+
+  @@map("orcamento_item_precificacao_offset")
 }
 
 // Acabamentos estruturados aplicados a um item de orçamento no motor avançado

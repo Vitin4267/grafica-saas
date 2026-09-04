@@ -89,6 +89,14 @@ export function montarDadosItemParaRecalculo(
           : null,
     custoFrete:
       item.precificacaoEtiqueta?.custoFrete != null ? Number(item.precificacaoEtiqueta.custoFrete) : null,
+    // Achado N8 — mesmo gap pré-existente de precificacaoDigital.papelId
+    // (achado N4): "Pedir de novo" nunca copiou overrides por orçamento de
+    // papel pro item duplicado (só o que já vinha de precificacaoEtiqueta
+    // acima, motor de clichê). gramaturaGm2 do Offset segue o mesmo
+    // comportamento — sempre recalcula com o papel/gramatura FIXOS do
+    // produto atual, nunca um override antigo. Fora do escopo deste achado
+    // consertar essa lacuna pros dois motores de uma vez.
+    gramaturaGm2: null,
     margemLucroOverride,
   };
 }

@@ -98,6 +98,9 @@ type ItemCarrinho = {
   precoTotal: string;
   etiqueta: CamposEtiqueta;
   precificacaoEtiqueta: CamposItemOrcamento["precificacaoEtiqueta"];
+  // Achado N8 — só OFFSET: gramatura escolhida NESTA opção, sobrepondo a do
+  // produto quando preenchida.
+  gramaturaGm2: number | null;
 };
 
 // "Opção B/C" — monta um carrinho de itens do zero (igual à criação de um
@@ -180,6 +183,7 @@ export function AdicionarOpcaoForm({
       campos.precificacaoEtiqueta.custoFaca !== "" ? Number(campos.precificacaoEtiqueta.custoFaca) : null;
     const custoFrete =
       campos.precificacaoEtiqueta.custoFrete !== "" ? Number(campos.precificacaoEtiqueta.custoFrete) : null;
+    const gramaturaGm2 = campos.gramaturaGm2 !== "" ? Number(campos.gramaturaGm2) : null;
 
     setAdicionando(true);
     const resultado = await precificarItem({
@@ -202,6 +206,7 @@ export function AdicionarOpcaoForm({
       quantidadeCores,
       custoFaca,
       custoFrete,
+      gramaturaGm2,
       custoAquisicaoUnitario,
       materialFornecidoPeloCliente,
     });
@@ -243,6 +248,7 @@ export function AdicionarOpcaoForm({
         precoTotal: resultado.precoTotal,
         etiqueta: campos.etiqueta,
         precificacaoEtiqueta: campos.precificacaoEtiqueta,
+        gramaturaGm2,
       },
     ]);
     setCampos(camposIniciais(itens, unidadePadrao));
@@ -282,6 +288,7 @@ export function AdicionarOpcaoForm({
         i.precificacaoEtiqueta.quantidadeCores !== "" ? Number(i.precificacaoEtiqueta.quantidadeCores) : null,
       custoFaca: i.precificacaoEtiqueta.custoFaca !== "" ? Number(i.precificacaoEtiqueta.custoFaca) : null,
       custoFrete: i.precificacaoEtiqueta.custoFrete !== "" ? Number(i.precificacaoEtiqueta.custoFrete) : null,
+      gramaturaGm2: i.gramaturaGm2,
     }))
   );
 

@@ -12,6 +12,7 @@ import {
   type PapelDisponivel,
 } from "./CamposPrecificacaoEtiquetaOrcamento";
 import { CamposPrecificacaoDigitalOrcamento } from "./CamposPrecificacaoDigitalOrcamento";
+import { CamposPrecificacaoOffsetOrcamento } from "./CamposPrecificacaoOffsetOrcamento";
 import {
   UNIDADES_DIMENSAO,
   ROTULO_UNIDADE_DIMENSAO,
@@ -125,6 +126,10 @@ export type CamposItemOrcamento = {
   acabamentoIds: string[];
   etiqueta: CamposEtiqueta;
   precificacaoEtiqueta: CamposPrecificacaoEtiqueta;
+  // Achado N8 — só OFFSET: gramatura escolhida NESTE orçamento, sobrepondo a
+  // do produto quando preenchida. papelId acima (precificacaoEtiqueta.papelId)
+  // é reaproveitado como o mesmo override de papel do Offset.
+  gramaturaGm2: string;
 };
 
 // unidadePadrao vem de Grafica.unidadePadraoDimensao (lida pelo servidor no
@@ -172,6 +177,7 @@ export function camposIniciais(
     acabamentoIds: [],
     etiqueta: etiquetaInicial(),
     precificacaoEtiqueta: precificacaoEtiquetaInicial(),
+    gramaturaGm2: "",
   };
 }
 
@@ -299,6 +305,7 @@ export function SeletorItemOrcamento({
       acabamentoIds: [],
       etiqueta: etiquetaInicial(),
       precificacaoEtiqueta: precificacaoEtiquetaInicial(),
+      gramaturaGm2: "",
     });
   };
 
@@ -664,6 +671,18 @@ export function SeletorItemOrcamento({
           onChange={(papelId) =>
             onChange({ ...valores, precificacaoEtiqueta: { ...valores.precificacaoEtiqueta, papelId } })
           }
+        />
+      )}
+
+      {usaModeloOffset && (
+        <CamposPrecificacaoOffsetOrcamento
+          papeisDisponiveis={papeisDisponiveis}
+          papelId={valores.precificacaoEtiqueta.papelId}
+          gramaturaGm2={valores.gramaturaGm2}
+          onChangePapelId={(papelId) =>
+            onChange({ ...valores, precificacaoEtiqueta: { ...valores.precificacaoEtiqueta, papelId } })
+          }
+          onChangeGramaturaGm2={(gramaturaGm2) => onChange({ ...valores, gramaturaGm2 })}
         />
       )}
 

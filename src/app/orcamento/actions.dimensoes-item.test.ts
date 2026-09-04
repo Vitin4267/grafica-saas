@@ -118,6 +118,7 @@ function itemJson(overrides: Record<string, unknown>, itemGraficaId: string) {
     quantidadeCores: null,
     custoFaca: null,
     custoFrete: null,
+    gramaturaGm2: null,
     custoAquisicaoUnitario: null,
     materialFornecidoPeloCliente: false,
     ...overrides,

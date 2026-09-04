@@ -95,6 +95,10 @@ export async function precificarItem(input: {
   quantidadeCores: number | null;
   custoFaca: number | null;
   custoFrete: number | null;
+  // Motor Offset (achado N8) — gramatura escolhida NESTE orçamento,
+  // sobrepondo ItemGrafica.gramaturaGm2 do produto; ausente = usa a
+  // gramatura fixa do produto, comportamento de sempre.
+  gramaturaGm2: number | null;
   custoAquisicaoUnitario: number | null;
   materialFornecidoPeloCliente: boolean;
 }): Promise<PrecificarItemResult> {
@@ -160,6 +164,7 @@ export async function precificarItem(input: {
     quantidadeCores: input.quantidadeCores,
     custoFaca: input.custoFaca,
     custoFrete: input.custoFrete,
+    gramaturaGm2: input.gramaturaGm2,
     custoAquisicaoUnitario: input.custoAquisicaoUnitario,
     materialFornecidoPeloCliente: input.materialFornecidoPeloCliente,
     // Achado A7 — esta é uma PRÉVIA sem cliente definido (carrinho da
@@ -376,6 +381,12 @@ export async function criarOrcamento(
       custoFaca: string | null;
       custoFrete: string | null;
     } | null;
+    // Achado N4 (correção de gap encontrado durante a revisão do N8) —
+    // nunca existia aqui antes, mesmo padrão de precificacaoEtiqueta acima.
+    precificacaoDigital: { papelId: string } | null;
+    // Achado N8 — snapshot do papel/gramatura Offset OVERRIDDEN neste
+    // orçamento, mesmo padrão de precificacaoEtiqueta acima.
+    precificacaoOffset: { papelId: string | null; gramaturaGm2: number | null } | null;
   }[] = [];
 
   // Recalcula cada item no servidor — nunca confia no preço que veio do carrinho
@@ -439,6 +450,7 @@ export async function criarOrcamento(
       quantidadeCores: entrada.quantidadeCores,
       custoFaca: entrada.custoFaca,
       custoFrete: entrada.custoFrete,
+      gramaturaGm2: entrada.gramaturaGm2,
       custoAquisicaoUnitario: entrada.custoAquisicaoUnitario,
       materialFornecidoPeloCliente: entrada.materialFornecidoPeloCliente,
       margemLucroOverride,
@@ -478,6 +490,8 @@ export async function criarOrcamento(
       etiqueta: entrada.etiqueta,
       acabamentos: resultado.acabamentos,
       precificacaoEtiqueta: resultado.precificacaoEtiqueta,
+      precificacaoDigital: resultado.precificacaoDigital,
+      precificacaoOffset: resultado.precificacaoOffset,
     });
   }
 
@@ -596,6 +610,26 @@ export async function criarOrcamento(
                   custoClicheCalculado: item.precificacaoEtiqueta.custoClicheCalculado,
                   custoFaca: item.precificacaoEtiqueta.custoFaca,
                   custoFrete: item.precificacaoEtiqueta.custoFrete,
+                },
+              }
+            : undefined,
+          // Achado N4 (correção de gap encontrado durante a revisão do N8)
+          // — nunca existia aqui antes, mesmo padrão de
+          // precificacaoEtiqueta acima.
+          precificacaoDigital: item.precificacaoDigital
+            ? {
+                create: {
+                  papelId: item.precificacaoDigital.papelId,
+                },
+              }
+            : undefined,
+          // Achado N8 — snapshot do papel/gramatura Offset OVERRIDDEN neste
+          // orçamento, mesmo padrão de precificacaoEtiqueta acima.
+          precificacaoOffset: item.precificacaoOffset
+            ? {
+                create: {
+                  papelId: item.precificacaoOffset.papelId,
+                  gramaturaGm2: item.precificacaoOffset.gramaturaGm2,
                 },
               }
             : undefined,

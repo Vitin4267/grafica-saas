@@ -190,6 +190,10 @@ export const itemEntradaSchema = z.object({
   quantidadeCores: z.number().int().positive().nullable(),
   custoFaca: z.number().min(0).nullable(),
   custoFrete: z.number().min(0).nullable(),
+  // Motor Offset (achado N8) — gramatura escolhida NESTE orçamento,
+  // sobrepondo ItemGrafica.gramaturaGm2 do produto quando preenchida; o
+  // papel reaproveita o mesmo campo papelId compartilhado acima.
+  gramaturaGm2: z.number().positive().nullable(),
   // Motor Revenda/terceirização (achado A12) — override opcional, POR
   // ORÇAMENTO, do custo de aquisição do fornecedor; quando ausente, o motor
   // cai no ItemGrafica.precoCompra do catálogo (ver src/lib/pricing/carregar.ts).

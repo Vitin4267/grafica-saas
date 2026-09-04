@@ -479,5 +479,119 @@ describe(
       },
       TIMEOUT_MS
     );
+
+    // Achado N8 da auditoria de código (2026-09-04) — papel e gramatura do
+    // Offset passam a ser sobrepostos POR ORÇAMENTO (dadosOffset), mesmo
+    // padrão de dadosEtiqueta/dadosDigital acima — mas o produto continua
+    // exigindo papel/gramatura fixos em Catálogo como fallback (comportamento
+    // de hoje 100% preservado quando dadosOffset não vem, ou vem parcial).
+    describe("papel/gramatura por orçamento (achado N8)", () => {
+      it(
+        "sem dadosOffset: usa o papel/gramatura FIXOS do produto, sem override nenhum (zero regressão)",
+        async () => {
+          const { grafica, s } = await criarGrafica();
+          const produto = await criarProdutoOffset(grafica, s, {
+            gramaturasCadastradas: [90, 150, 300],
+            gramaturaEscolhida: 150,
+          });
+
+          const contexto = await carregarContextoPrecificacao(produto.id, grafica.id);
+
+          expect(contexto.offset).toMatchObject({ gramaturaGm2: 150, precoPorKg: 11.5 });
+          expect(contexto.offset?.papelIdOverride).toBeUndefined();
+          expect(contexto.offset?.gramaturaGm2Override).toBeUndefined();
+        },
+        TIMEOUT_MS
+      );
+
+      it(
+        "lança PAPEL_INVALIDO quando o papelId do override não existe ou não é MATERIA_PRIMA ativa",
+        async () => {
+          const { grafica, s } = await criarGrafica();
+          const produto = await criarProdutoOffset(grafica, s, {
+            gramaturasCadastradas: [150],
+            gramaturaEscolhida: 150,
+          });
+
+          await expect(
+            carregarContextoPrecificacao(produto.id, grafica.id, undefined, undefined, {
+              papelId: "id-que-nao-existe",
+            })
+          ).rejects.toMatchObject({ codigo: "PAPEL_INVALIDO" });
+        },
+        TIMEOUT_MS
+      );
+
+      it(
+        "com papel diferente escolhido no orçamento: preço vem da TABELA do papel escolhido, não do papel fixo do produto",
+        async () => {
+          const { grafica, s } = await criarGrafica();
+          // Papel fixo do produto: 10.9/kg a 150g. Papel alternativo escolhido
+          // no orçamento: 20/kg a 150g — bem diferente, pra diferença ficar óbvia.
+          const produto = await criarProdutoOffset(grafica, s, {
+            gramaturasCadastradas: [150],
+            gramaturaEscolhida: 150,
+          });
+          const catalogoPapelAlt = await prisma.itemCatalogo.create({
+            data: { graficaId: grafica.id, tipo: "MATERIA_PRIMA", categoria: "Papel", nome: `Reciclado ${s}` },
+          });
+          const papelAlternativo = await prisma.itemGrafica.create({
+            data: {
+              graficaId: grafica.id,
+              itemCatalogoId: catalogoPapelAlt.id,
+              modeloCalculo: "SIMPLES",
+              tabelaPrecoPapel: { create: [{ gramatura: 150, precoKg: 20 }] },
+            },
+          });
+
+          const contextoSemOverride = await carregarContextoPrecificacao(produto.id, grafica.id);
+          const contextoComOverride = await carregarContextoPrecificacao(
+            produto.id,
+            grafica.id,
+            undefined,
+            undefined,
+            { papelId: papelAlternativo.id }
+          );
+
+          expect(contextoSemOverride.offset?.precoPorKg).toBe(11.5); // 10 + 150/100, papel do produto
+          expect(contextoComOverride.offset?.precoPorKg).toBe(20); // papel alternativo escolhido no orçamento
+          expect(contextoComOverride.offset?.papelIdOverride).toBe(papelAlternativo.id);
+          // Geometria de imposição (folhas) continua vindo do PRODUTO — o
+          // achado é só sobre papelId/gramaturaGm2, nunca formatosFolha.
+          expect(contextoComOverride.offset?.folhas).toEqual(contextoSemOverride.offset?.folhas);
+        },
+        TIMEOUT_MS
+      );
+
+      it(
+        "com gramatura diferente escolhida no orçamento: resolverPrecoPapel usa a nova gramatura contra a MESMA tabela do papel fixo do produto",
+        async () => {
+          const { grafica, s } = await criarGrafica();
+          const produto = await criarProdutoOffset(grafica, s, {
+            gramaturasCadastradas: [90, 150, 300],
+            gramaturaEscolhida: 150, // gramatura fixa do produto
+          });
+
+          const contextoSemOverride = await carregarContextoPrecificacao(produto.id, grafica.id);
+          const contextoComOverride = await carregarContextoPrecificacao(
+            produto.id,
+            grafica.id,
+            undefined,
+            undefined,
+            { gramaturaGm2: 300 }
+          );
+
+          expect(contextoSemOverride.offset?.gramaturaGm2).toBe(150);
+          expect(contextoSemOverride.offset?.precoPorKg).toBe(11.5); // 10 + 150/100
+
+          expect(contextoComOverride.offset?.gramaturaGm2).toBe(300);
+          expect(contextoComOverride.offset?.precoPorKg).toBe(13); // 10 + 300/100
+          expect(contextoComOverride.offset?.gramaturaGm2Override).toBe(300);
+          // gramatura override sozinha não mexe no papel usado.
+          expect(contextoComOverride.offset?.papelIdOverride).toBeUndefined();
+        },
+        TIMEOUT_MS
+      );
+    });
   }
 );

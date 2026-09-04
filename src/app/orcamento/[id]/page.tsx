@@ -115,6 +115,7 @@ export default async function OrcamentoDetalhePage({
             acabamentos: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
             precificacaoEtiqueta: true,
             precificacaoDigital: true, // achado N4
+            precificacaoOffset: true, // achado N8
           },
         },
         opcoes: {
@@ -537,7 +538,15 @@ export default async function OrcamentoDetalhePage({
                     custoAquisicaoUnitario: item.custoAquisicaoUnitario?.toString() ?? "",
                     materialFornecidoPeloCliente: item.materialFornecidoPeloCliente,
                     etiqueta: etiquetaParaCampos(item.etiqueta),
-                    papelId: item.precificacaoEtiqueta?.papelId ?? item.precificacaoDigital?.papelId ?? "",
+                    papelId:
+                      item.precificacaoEtiqueta?.papelId ??
+                      item.precificacaoDigital?.papelId ??
+                      item.precificacaoOffset?.papelId ??
+                      "",
+                    // Achado N8 — gramatura Offset OVERRIDDEN neste orçamento
+                    // (null quando nunca sobrescrita, cai no vazio = usa a do
+                    // produto).
+                    gramaturaGm2: item.precificacaoOffset?.gramaturaGm2?.toString() ?? "",
                     quantidadeCores: item.precificacaoEtiqueta?.quantidadeCores.toString() ?? "",
                     // Achado N10 — precificacaoEtiqueta.custoFaca é a fonte de
                     // verdade pra M2 com clichê (comportamento de sempre);

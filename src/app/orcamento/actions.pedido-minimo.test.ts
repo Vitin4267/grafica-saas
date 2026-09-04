@@ -124,6 +124,7 @@ function itemJson(itemGraficaId: string) {
     quantidadeCores: null,
     custoFaca: null,
     custoFrete: null,
+    gramaturaGm2: null,
     custoAquisicaoUnitario: null,
     materialFornecidoPeloCliente: false,
   };

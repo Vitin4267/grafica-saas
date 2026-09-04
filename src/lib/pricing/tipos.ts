@@ -103,6 +103,16 @@ export type ContextoOffset = {
   // 30/500 (mesmo comportamento de sempre) quando omitido.
   gramaturaMinGm2?: number;
   gramaturaMaxGm2?: number;
+  // Achado N8 — puro passthrough (mesmo espírito de gramaturaBasePapel/
+  // origemPrecoPapel acima): quando o papel/gramatura deste item foram
+  // ESCOLHIDOS NO ORÇAMENTO (override, ver OrcamentoItemPrecificacaoOffset),
+  // carregarContextoPrecificacao ecoa aqui o que realmente usou, pra
+  // orcamento-precificacao.ts saber o que gravar no snapshot — não é lido
+  // pelo cálculo em si (calcularOffset já recebe gramaturaGm2/precoPorKg
+  // resolvidos acima). undefined = não houve override, usou os valores fixos
+  // do PRODUTO (comportamento de sempre, zero regressão).
+  papelIdOverride?: string;
+  gramaturaGm2Override?: number;
 };
 
 // ---------- Cenário 3 (acabamento) ----------

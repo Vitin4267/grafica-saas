@@ -392,6 +392,10 @@ export async function editarOrcamento(
     : null;
   const custoFaca = formData.get("custoFaca") ? Number(formData.get("custoFaca")) : null;
   const custoFrete = formData.get("custoFrete") ? Number(formData.get("custoFrete")) : null;
+  // Motor Offset (achado N8) — gramatura escolhida NESTE orçamento,
+  // sobrepondo ItemGrafica.gramaturaGm2 do produto; ausente = usa a
+  // gramatura fixa do produto, comportamento de sempre.
+  const gramaturaGm2 = formData.get("gramaturaGm2") ? Number(formData.get("gramaturaGm2")) : null;
   // Motor Revenda/terceirização (achado A12) — override opcional, POR
   // ORÇAMENTO, do custo de aquisição; ausente = motor cai no precoCompra do
   // catálogo (ver src/lib/pricing/carregar.ts).
@@ -461,6 +465,7 @@ export async function editarOrcamento(
     quantidadeCores,
     custoFaca,
     custoFrete,
+    gramaturaGm2,
     custoAquisicaoUnitario,
     materialFornecidoPeloCliente,
     margemLucroOverride,
@@ -581,6 +586,53 @@ export async function editarOrcamento(
               custoClicheCalculado: resultado.precificacaoEtiqueta.custoClicheCalculado,
               custoFaca: resultado.precificacaoEtiqueta.custoFaca,
               custoFrete: resultado.precificacaoEtiqueta.custoFrete,
+            },
+          });
+        }
+
+        // Achado N4 (correção de gap encontrado durante a revisão do N8) —
+        // o motor Digital já calculava o preço certo a partir de
+        // dados.papelId desde que o achado N4 foi construído, mas nunca
+        // persistia OrcamentoItemPrecificacaoDigital em nenhum fluxo de
+        // escrita — a tela de edição sempre reabria com o papel em branco.
+        // Mesmo padrão upsert de precificacaoEtiqueta/precificacaoOffset.
+        if (resultado.precificacaoDigital) {
+          await tx.orcamentoItemPrecificacaoDigital.upsert({
+            where: { orcamentoItemId },
+            create: {
+              orcamentoItemId,
+              papelId: resultado.precificacaoDigital.papelId,
+            },
+            update: {
+              papelId: resultado.precificacaoDigital.papelId,
+            },
+          });
+        }
+
+        // Achado N8 — upsert (não create) porque o vendedor pode reabrir a
+        // edição de um item OFFSET que já tinha um override e trocar de
+        // novo o papel/gramatura, mesmo padrão de precificacaoEtiqueta
+        // acima. Só TOCA a tabela quando há override de verdade (nunca uma
+        // query condicional pra todo item OFFSET sem override, que é a
+        // esmagadora maioria) — LIMITAÇÃO conhecida: se o vendedor limpar um
+        // override já salvo (volta a usar o papel/gramatura do produto), o
+        // PREÇO recalcula certo (dados.papelId/gramaturaGm2 vêm null,
+        // contexto.offset cai nos valores do produto), mas a linha antiga
+        // fica órfã no banco e a tela de edição pode reabrir mostrando o
+        // papel/gramatura antigos pré-preenchidos — aceito de propósito
+        // (uso real de OFFSET é ~0 hoje) em vez de forçar toda edição de
+        // item OFFSET a tocar esta tabela.
+        if (resultado.precificacaoOffset) {
+          await tx.orcamentoItemPrecificacaoOffset.upsert({
+            where: { orcamentoItemId },
+            create: {
+              orcamentoItemId,
+              papelId: resultado.precificacaoOffset.papelId,
+              gramaturaGm2: resultado.precificacaoOffset.gramaturaGm2,
+            },
+            update: {
+              papelId: resultado.precificacaoOffset.papelId,
+              gramaturaGm2: resultado.precificacaoOffset.gramaturaGm2,
             },
           });
         }
@@ -742,6 +794,10 @@ export async function adicionarItemOrcamento(
     : null;
   const custoFaca = formData.get("custoFaca") ? Number(formData.get("custoFaca")) : null;
   const custoFrete = formData.get("custoFrete") ? Number(formData.get("custoFrete")) : null;
+  // Motor Offset (achado N8) — gramatura escolhida NESTE orçamento,
+  // sobrepondo ItemGrafica.gramaturaGm2 do produto; ausente = usa a
+  // gramatura fixa do produto, comportamento de sempre.
+  const gramaturaGm2 = formData.get("gramaturaGm2") ? Number(formData.get("gramaturaGm2")) : null;
   // Motor Revenda/terceirização (achado A12) — override opcional, POR
   // ORÇAMENTO, do custo de aquisição; ausente = motor cai no precoCompra do
   // catálogo (ver src/lib/pricing/carregar.ts).
@@ -815,6 +871,7 @@ export async function adicionarItemOrcamento(
     quantidadeCores,
     custoFaca,
     custoFrete,
+    gramaturaGm2,
     custoAquisicaoUnitario,
     materialFornecidoPeloCliente,
     margemLucroOverride,
@@ -935,6 +992,26 @@ export async function adicionarItemOrcamento(
                     custoClicheCalculado: resultado.precificacaoEtiqueta.custoClicheCalculado,
                     custoFaca: resultado.precificacaoEtiqueta.custoFaca,
                     custoFrete: resultado.precificacaoEtiqueta.custoFrete,
+                  },
+                }
+              : undefined,
+            // Achado N4 (correção de gap encontrado durante a revisão do
+            // N8) — mesmo padrão de precificacaoEtiqueta acima, nunca
+            // existia aqui antes.
+            precificacaoDigital: resultado.precificacaoDigital
+              ? {
+                  create: {
+                    papelId: resultado.precificacaoDigital.papelId,
+                  },
+                }
+              : undefined,
+            // Achado N8 — snapshot do papel/gramatura Offset OVERRIDDEN
+            // neste orçamento, mesmo padrão de precificacaoEtiqueta acima.
+            precificacaoOffset: resultado.precificacaoOffset
+              ? {
+                  create: {
+                    papelId: resultado.precificacaoOffset.papelId,
+                    gramaturaGm2: resultado.precificacaoOffset.gramaturaGm2,
                   },
                 }
               : undefined,

@@ -142,6 +142,12 @@ export async function adicionarOpcaoOrcamento(
       custoFaca: string | null;
       custoFrete: string | null;
     } | null;
+    // Achado N4 (correção de gap encontrado durante a revisão do N8) —
+    // nunca existia aqui antes, mesmo padrão de precificacaoEtiqueta acima.
+    precificacaoDigital: { papelId: string } | null;
+    // Achado N8 — snapshot do papel/gramatura Offset OVERRIDDEN neste
+    // orçamento, mesmo padrão de precificacaoEtiqueta acima.
+    precificacaoOffset: { papelId: string | null; gramaturaGm2: number | null } | null;
   }[] = [];
 
   for (const [indice, entrada] of itensResult.data.entries()) {
@@ -189,6 +195,7 @@ export async function adicionarOpcaoOrcamento(
       quantidadeCores: entrada.quantidadeCores,
       custoFaca: entrada.custoFaca,
       custoFrete: entrada.custoFrete,
+      gramaturaGm2: entrada.gramaturaGm2,
       custoAquisicaoUnitario: entrada.custoAquisicaoUnitario,
       materialFornecidoPeloCliente: entrada.materialFornecidoPeloCliente,
       margemLucroOverride,
@@ -228,6 +235,8 @@ export async function adicionarOpcaoOrcamento(
       etiqueta: entrada.etiqueta,
       acabamentos: resultado.acabamentos,
       precificacaoEtiqueta: resultado.precificacaoEtiqueta,
+      precificacaoDigital: resultado.precificacaoDigital,
+      precificacaoOffset: resultado.precificacaoOffset,
     });
   }
 
@@ -353,6 +362,26 @@ export async function adicionarOpcaoOrcamento(
                   custoClicheCalculado: item.precificacaoEtiqueta.custoClicheCalculado,
                   custoFaca: item.precificacaoEtiqueta.custoFaca,
                   custoFrete: item.precificacaoEtiqueta.custoFrete,
+                },
+              }
+            : undefined,
+          // Achado N4 (correção de gap encontrado durante a revisão do N8)
+          // — nunca existia aqui antes, mesmo padrão de
+          // precificacaoEtiqueta acima.
+          precificacaoDigital: item.precificacaoDigital
+            ? {
+                create: {
+                  papelId: item.precificacaoDigital.papelId,
+                },
+              }
+            : undefined,
+          // Achado N8 — snapshot do papel/gramatura Offset OVERRIDDEN neste
+          // orçamento, mesmo padrão de precificacaoEtiqueta acima.
+          precificacaoOffset: item.precificacaoOffset
+            ? {
+                create: {
+                  papelId: item.precificacaoOffset.papelId,
+                  gramaturaGm2: item.precificacaoOffset.gramaturaGm2,
                 },
               }
             : undefined,

@@ -76,6 +76,13 @@ export type DadosItemOrcamento = {
   quantidadeCores: number | null;
   custoFaca: number | null;
   custoFrete: number | null;
+  // Achado N8 — só usado por OFFSET: gramatura escolhida NESTE orçamento,
+  // sobrepondo ItemGrafica.gramaturaGm2 do produto quando preenchida. papelId
+  // acima é reaproveitado como o mesmo override de papel do Offset (nunca
+  // coexiste com Digital/etiqueta no mesmo item, modeloCalculo é mutuamente
+  // exclusivo) — null = usa a gramatura fixa do produto, comportamento de
+  // sempre.
+  gramaturaGm2: number | null;
   // Só usado por FLEXOGRAFIA — deliberadamente separado de corFrente/corVerso
   // (semânticos de frente/verso de folha do Offset, lidos em ~20 lugares fora
   // deste escopo).
@@ -167,6 +174,13 @@ export type ResultadoItemOrcamento =
       // motor resolveu o papel com sucesso, mesmo padrão de
       // precificacaoEtiqueta acima). null pra qualquer outro modeloCalculo.
       precificacaoDigital: { papelId: string } | null;
+      // Achado N8 — papel/gramatura do motor Offset realmente OVERRIDDEN
+      // neste orçamento (contexto.offset.papelIdOverride/gramaturaGm2Override,
+      // nunca dados.papelId/dados.gramaturaGm2 crus — mesma proteção de
+      // precificacaoEtiqueta/precificacaoDigital acima). null quando o item
+      // não é OFFSET OU quando é OFFSET mas nenhum dos dois foi sobrescrito
+      // (usa 100% os valores fixos do produto, comportamento de sempre).
+      precificacaoOffset: { papelId: string | null; gramaturaGm2: number | null } | null;
     }
   | { ok: false; mensagem: string };
 
@@ -227,6 +241,11 @@ export async function calcularItemOrcamento(
   }
   if (dados.custoFrete !== null && (!Number.isFinite(dados.custoFrete) || dados.custoFrete < 0)) {
     return { ok: false, mensagem: "Custo de frete inválido." };
+  }
+  // Achado N8 — mesma razão das guardas acima: editarOrcamento/
+  // adicionarItemOrcamento leem este campo direto do FormData, sem zod.
+  if (dados.gramaturaGm2 !== null && (!Number.isFinite(dados.gramaturaGm2) || dados.gramaturaGm2 <= 0)) {
+    return { ok: false, mensagem: "Gramatura inválida (deve ser maior que zero)." };
   }
   if (
     dados.custoAquisicaoUnitario !== null &&
@@ -351,6 +370,7 @@ export async function calcularItemOrcamento(
       acabamentos: [],
       precificacaoEtiqueta: null,
       precificacaoDigital: null,
+      precificacaoOffset: null,
     };
   }
 
@@ -389,6 +409,17 @@ export async function calcularItemOrcamento(
       // (não precisa de quantidadeCores, diferente da etiqueta).
       itemGrafica.modeloCalculo === "DIGITAL" && dados.papelId
         ? { papelId: dados.papelId }
+        : undefined,
+      // Achado N8 — mesmo papelId acima, reaproveitado pro motor Offset como
+      // override opcional (o produto já tem papel/gramatura fixos em
+      // Catálogo, exigidos como fallback dentro de carregarContextoPrecificacao
+      // — nunca undefined ali). papelId e gramaturaGm2 são independentes um
+      // do outro: só monta o objeto quando ao menos um dos dois veio.
+      itemGrafica.modeloCalculo === "OFFSET" && (dados.papelId || dados.gramaturaGm2 !== null)
+        ? {
+            papelId: dados.papelId ?? undefined,
+            gramaturaGm2: dados.gramaturaGm2 ?? undefined,
+          }
         : undefined
     );
     if (dados.custoFrete !== null) contexto.custoFreteEstimado = dados.custoFrete;
@@ -679,6 +710,20 @@ export async function calcularItemOrcamento(
       // verdade, protege contra um papelId adulterado/de outro modelo — se o
       // motor não resolveu o papel de verdade, não gravamos nada.
       precificacaoDigital: contexto.digital ? { papelId: dados.papelId! } : null,
+      // Achado N8 — diferente de precificacaoEtiqueta/precificacaoDigital
+      // acima, contexto.offset está SEMPRE presente pra um item OFFSET (é o
+      // branch principal do motor, não uma feature opcional anexada) — então
+      // a fonte de verdade de "houve override" são os campos
+      // papelIdOverride/gramaturaGm2Override, que carregarContextoPrecificacao
+      // só preenche quando dadosOffset foi de fato aplicado com sucesso.
+      precificacaoOffset:
+        itemGrafica.modeloCalculo === "OFFSET" &&
+        (contexto.offset?.papelIdOverride !== undefined || contexto.offset?.gramaturaGm2Override !== undefined)
+          ? {
+              papelId: contexto.offset?.papelIdOverride ?? null,
+              gramaturaGm2: contexto.offset?.gramaturaGm2Override ?? null,
+            }
+          : null,
     };
   } catch (erro) {
     if (erro instanceof ErroPrecificacao) {

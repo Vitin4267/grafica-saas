@@ -44,6 +44,7 @@ describe("montarDadosItemParaRecalculo", () => {
       quantidadeCores: null,
       custoFaca: null,
       custoFrete: null,
+      gramaturaGm2: null,
       margemLucroOverride: null,
     });
   });

@@ -372,6 +372,7 @@ model ItemGrafica {
   configuracaoEmenda            ConfiguracaoEmenda?
   usadoComoPapelEtiqueta        OrcamentoItemPrecificacaoEtiqueta[] @relation("PapelDoItemOrcamentoEtiqueta")
   usadoComoPapelDigital         OrcamentoItemPrecificacaoDigital[]  @relation("PapelDoItemOrcamentoDigital") // achado N4
+  usadoComoPapelOffset          OrcamentoItemPrecificacaoOffset[]   @relation("PapelDoItemOrcamentoOffset") // achado N8
 
   // Ficha técnica (spec de baixa automática de estoque): só relevante quando
   // tipo=PRODUTO. fichaTecnica = quais matérias-primas este produto consome;

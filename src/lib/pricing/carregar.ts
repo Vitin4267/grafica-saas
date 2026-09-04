@@ -183,7 +183,13 @@ export async function carregarContextoPrecificacao(
   // Achado N4 — mesmo padrão de dadosEtiqueta acima: o papel do motor
   // Digital (agora com imposição) também é escolhido NO ORÇAMENTO, não fixo
   // no produto (ver ContextoDigital em tipos.ts).
-  dadosDigital?: { papelId: string }
+  dadosDigital?: { papelId: string },
+  // Achado N8 — no Offset, diferente do Digital/etiqueta acima, o produto
+  // JÁ TEM papel/gramatura fixos em Catálogo (item.papel/item.gramaturaGm2
+  // continuam sendo o default/fallback, exigidos como sempre). Isto aqui é
+  // um OVERRIDE opcional por orçamento — papelId e gramaturaGm2 podem vir
+  // independentemente um do outro (o objeto todo também pode vir ausente).
+  dadosOffset?: { papelId?: string; gramaturaGm2?: number }
 ): Promise<ContextoPrecificacao> {
   const item = await prisma.itemGrafica.findFirstOrThrow({
     where: { id: itemGraficaId, graficaId },
@@ -279,13 +285,41 @@ export async function carregarContextoPrecificacao(
       );
     }
 
-    const gramaturaEscolhida = Number(item.gramaturaGm2 ?? 0);
+    // Achado N8 — papel e gramatura escolhidos NESTE ORÇAMENTO sobrepõem os
+    // fixos do PRODUTO (item.papel/item.gramaturaGm2 acima, que continuam
+    // exigidos como fallback — comportamento de hoje inalterado quando
+    // dadosOffset não vem, ou vem sem um dos dois campos). Nunca mexe em
+    // item.formatosFolha ("folhas" abaixo) — isso é geometria de imposição
+    // do PRODUTO, fora do escopo deste achado (ver comentário no relatório).
+    let papelParaPreco = item.papel;
+    let papelIdOverride: string | undefined;
+    if (dadosOffset?.papelId) {
+      const papelOverride = await prisma.itemGrafica.findFirst({
+        where: {
+          id: dadosOffset.papelId,
+          graficaId,
+          ativo: true,
+          itemCatalogo: { tipo: "MATERIA_PRIMA" },
+        },
+        include: { tabelaPrecoPapel: true },
+      });
+      if (!papelOverride) {
+        throw new ErroPrecificacao(
+          "PAPEL_INVALIDO",
+          "O papel escolhido não é válido — verifique se ele ainda existe e está ativo no catálogo."
+        );
+      }
+      papelParaPreco = papelOverride;
+      papelIdOverride = papelOverride.id;
+    }
+
+    const gramaturaEscolhida = dadosOffset?.gramaturaGm2 ?? Number(item.gramaturaGm2 ?? 0);
     // Achado N12 — origem/gramaturaBase antes eram descartados aqui (só
     // precoKg era lido). Repassados pro contexto pra chegar até o
     // breakdown do item e avisar quando o R$/kg veio de uma gramatura
     // aproximada (mais próxima cadastrada), não da gramatura real do papel.
     const { precoKg, gramaturaBase, origem } = resolverPrecoPapel(
-      item.papel.tabelaPrecoPapel.map((linha) => ({
+      papelParaPreco.tabelaPrecoPapel.map((linha) => ({
         gramatura: linha.gramatura,
         precoKg: Number(linha.precoKg),
       })),
@@ -304,6 +338,8 @@ export async function carregarContextoPrecificacao(
       viraFolha: item.viraFolha,
       gramaturaBasePapel: gramaturaBase,
       origemPrecoPapel: origem,
+      papelIdOverride,
+      gramaturaGm2Override: dadosOffset?.gramaturaGm2,
     };
     contexto.parametrosPrensa = await carregarParametrosPrensa(item.prensa.id, graficaId);
     contexto.prensaUsada = { id: item.prensa.id, nome: item.prensa.nome };

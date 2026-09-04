@@ -116,6 +116,10 @@ export function EditarOrcamentoForm({
     quantidadeCores: string;
     custoFaca: string;
     custoFrete: string;
+    // Achado N8 — só OFFSET: gramatura escolhida NESTE orçamento, sobrepondo
+    // a do produto quando preenchida. papelId acima é reaproveitado como o
+    // mesmo override de papel do Offset.
+    gramaturaGm2: string;
   };
   podeRemover: boolean;
   acabamentosDisponiveis: ItemAcabamentoDisponivel[];
@@ -679,6 +683,42 @@ export function EditarOrcamentoForm({
                 ))}
               </Select>
             )}
+          </div>
+        )}
+
+        {modeloCalculo === "OFFSET" && (
+          <div className="flex flex-col gap-4 rounded-xl border border-slate-300 p-4 dark:border-slate-700">
+            <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              Papel/gramatura deste orçamento (opcional)
+            </p>
+            <span className="text-xs text-slate-500">
+              Deixe em branco pra usar o papel e a gramatura cadastrados no produto — só preencha pra
+              cotar este orçamento num papel ou numa gramatura diferente.
+            </span>
+            {papeisDisponiveis.length > 0 && (
+              <Select label="Papel" name="papelId" defaultValue={valoresIniciais.papelId}>
+                <option value="">Usar o papel cadastrado no produto</option>
+                {papeisDisponiveis.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nome}
+                  </option>
+                ))}
+              </Select>
+            )}
+            <Input
+              label={
+                <>
+                  Gramatura (g/m²)
+                  <CampoAjuda texto="Sobrepõe a gramatura cadastrada no produto só neste orçamento — útil pra cotar o mesmo produto em espessuras diferentes de papel sem precisar cadastrar um produto novo pra cada uma." />
+                </>
+              }
+              name="gramaturaGm2"
+              type="number"
+              min={1}
+              step="0.1"
+              defaultValue={valoresIniciais.gramaturaGm2}
+              placeholder="opcional — usa a gramatura do produto"
+            />
           </div>
         )}
 

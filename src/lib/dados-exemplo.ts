@@ -75,6 +75,7 @@ const DADOS_ITEM_VAZIO: DadosItemOrcamento = {
   quantidadeCores: null,
   custoFaca: null,
   custoFrete: null,
+  gramaturaGm2: null,
   numeroCoresFlexo: null,
   numeroCliques: null,
   numeroSetups: null,

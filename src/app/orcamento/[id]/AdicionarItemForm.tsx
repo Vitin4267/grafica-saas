@@ -90,6 +90,8 @@ export function AdicionarItemForm({
         />
         <input type="hidden" name="custoFaca" value={campos.precificacaoEtiqueta.custoFaca} />
         <input type="hidden" name="custoFrete" value={campos.precificacaoEtiqueta.custoFrete} />
+        {/* Achado N8 — gramatura Offset escolhida NESTE orçamento. */}
+        <input type="hidden" name="gramaturaGm2" value={campos.gramaturaGm2} />
         <input type="hidden" name="materialSubstrato" value={campos.etiqueta.materialSubstrato} />
         <input type="hidden" name="materialSubstratoOutro" value={campos.etiqueta.materialSubstratoOutro} />
         <input type="hidden" name="tipoAdesivo" value={campos.etiqueta.tipoAdesivo} />

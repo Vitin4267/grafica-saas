@@ -23,6 +23,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       corVerso: null,
       acabamentoIds: [],
       papelId: null,
+      gramaturaGm2: null,
       quantidadeCores: null,
       custoFaca: null,
       custoFrete: null,
@@ -52,6 +53,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       corVerso: null,
       acabamentoIds: [],
       papelId: null,
+      gramaturaGm2: null,
       quantidadeCores: null,
       custoFaca: null,
       custoFrete: null,
@@ -78,6 +80,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       corVerso: null,
       acabamentoIds: [],
       papelId: null,
+      gramaturaGm2: null,
       quantidadeCores: null,
       custoFaca: null,
       custoFrete: null,
@@ -104,6 +107,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       corVerso: null,
       acabamentoIds: [],
       papelId: null,
+      gramaturaGm2: null,
       quantidadeCores: null,
       custoFaca: null,
       custoFrete: null,
@@ -130,6 +134,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       corVerso: null,
       acabamentoIds: [],
       papelId: null,
+      gramaturaGm2: null,
       quantidadeCores: null,
       custoFaca: null,
       custoFrete: null,
@@ -156,6 +161,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       corVerso: null,
       acabamentoIds: [],
       papelId: null,
+      gramaturaGm2: null,
       quantidadeCores: null,
       custoFaca: null,
       custoFrete: null,
@@ -182,6 +188,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       corVerso: null,
       acabamentoIds: [],
       papelId: null,
+      gramaturaGm2: null,
       quantidadeCores: null,
       custoFaca: null,
       custoFrete: null,
@@ -208,6 +215,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       corVerso: null,
       acabamentoIds: [],
       papelId: null,
+      gramaturaGm2: null,
       quantidadeCores: null,
       custoFaca: null,
       custoFrete: null,
@@ -239,6 +247,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       corVerso: null,
       acabamentoIds: [],
       papelId: null,
+      gramaturaGm2: null,
       quantidadeCores: 1.5,
       custoFaca: null,
       custoFrete: null,
@@ -265,6 +274,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       corVerso: null,
       acabamentoIds: [],
       papelId: null,
+      gramaturaGm2: null,
       quantidadeCores: 0,
       custoFaca: null,
       custoFrete: null,
@@ -291,6 +301,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       corVerso: null,
       acabamentoIds: [],
       papelId: null,
+      gramaturaGm2: null,
       quantidadeCores: null,
       custoFaca: -1,
       custoFrete: null,
@@ -317,6 +328,7 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
       corVerso: null,
       acabamentoIds: [],
       papelId: null,
+      gramaturaGm2: null,
       quantidadeCores: null,
       custoFaca: null,
       custoFrete: -1,
@@ -373,6 +385,7 @@ function dadosBase(overrides: Partial<Parameters<typeof calcularItemOrcamento>[2
     quantidadeCores: null,
     custoFaca: null,
     custoFrete: null,
+    gramaturaGm2: null,
     numeroCoresFlexo: null,
     numeroCliques: null,
     numeroSetups: null,
@@ -856,6 +869,218 @@ describe("calcularItemOrcamento — guard METRO_LINEAR/HORA (achado A1)", () => 
       );
 
       expect(resultado.ok).toBe(true);
+    },
+    TIMEOUT_MS
+  );
+});
+
+// Teste de INTEGRAÇÃO de verdade (mesmo padrão dos describes acima) — cobre o
+// achado N8 da auditoria de código (2026-09-04): no Offset, papel e gramatura
+// eram propriedade FIXA do produto (ItemGrafica.papelId/gramaturaGm2); agora
+// podem ser SOBREPOSTOS por orçamento (dados.papelId/dados.gramaturaGm2),
+// mesmo padrão já estabelecido pro clichê de etiqueta e pro Digital (achado
+// N4) — mas com o produto continuando a exigir papel/gramatura fixos em
+// Catálogo como fallback (comportamento de hoje 100% preservado quando o
+// orçamento não informa override nenhum).
+describe("calcularItemOrcamento — Offset papel/gramatura por orçamento (achado N8)", () => {
+  const TIMEOUT_MS = 30_000;
+  const sufixo = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const graficaIdsParaLimpar: string[] = [];
+
+  afterEach(async () => {
+    for (const graficaId of graficaIdsParaLimpar) {
+      await prisma.itemGrafica.deleteMany({ where: { graficaId } });
+      await prisma.itemCatalogo.deleteMany({ where: { graficaId } });
+      await prisma.prensa.deleteMany({ where: { graficaId } });
+      await prisma.parametrosGrafica.deleteMany({ where: { graficaId } });
+      await prisma.grafica.delete({ where: { id: graficaId } }).catch(() => {});
+    }
+    graficaIdsParaLimpar.length = 0;
+  }, TIMEOUT_MS);
+
+  // Papel FIXO do produto: 90g→9/kg, 150g→10/kg, 300g→13/kg — gramaturas bem
+  // espaçadas de propósito, pra qualquer diferença de preço entre elas ficar
+  // óbvia (nunca uma diferença de centavos que poderia ser ruído de
+  // arredondamento).
+  async function criarProdutoOffset(graficaId: string, s: string) {
+    const catalogoPapel = await prisma.itemCatalogo.create({
+      data: { graficaId, tipo: "MATERIA_PRIMA", categoria: "Papel", nome: `Couché N8 ${s}` },
+    });
+    const papel = await prisma.itemGrafica.create({
+      data: {
+        graficaId,
+        itemCatalogoId: catalogoPapel.id,
+        modeloCalculo: "SIMPLES",
+        tabelaPrecoPapel: {
+          create: [
+            { gramatura: 90, precoKg: 9 },
+            { gramatura: 150, precoKg: 10 },
+            { gramatura: 300, precoKg: 13 },
+          ],
+        },
+      },
+    });
+    const catalogoProduto = await prisma.itemCatalogo.create({
+      data: { graficaId, tipo: "PRODUTO", categoria: "Folder", nome: `Folder A4 N8 ${s}` },
+    });
+    const produto = await prisma.itemGrafica.create({
+      data: {
+        graficaId,
+        itemCatalogoId: catalogoProduto.id,
+        modeloCalculo: "OFFSET",
+        prensaId: (await prisma.prensa.create({ data: { graficaId, nome: `Prensa N8 ${s}` } })).id,
+        papelId: papel.id,
+        gramaturaGm2: 150, // gramatura FIXA do produto
+        formatosFolha: { create: [{ nome: `Fechada N8 ${s}`, larguraFolha: 0.66, alturaFolha: 0.96 }] },
+      },
+    });
+    return { produto, papel };
+  }
+
+  it(
+    "sem override: item OFFSET calcula normalmente com o papel/gramatura FIXOS do produto (nenhuma regressão)",
+    async () => {
+      const s = sufixo();
+      const grafica = await prisma.grafica.create({
+        data: { nome: `Teste Offset N8 ${s}`, slug: `teste-offset-n8-${s}` },
+      });
+      graficaIdsParaLimpar.push(grafica.id);
+      const { produto } = await criarProdutoOffset(grafica.id, s);
+
+      const resultado = await calcularItemOrcamento(
+        produto,
+        grafica.id,
+        dadosBase({ larguraCm: 9, alturaCm: 5, corFrente: 4, corVerso: 4, quantidade: 1000 })
+      );
+
+      expect(resultado.ok).toBe(true);
+      if (resultado.ok) {
+        expect(resultado.precificacaoOffset).toBeNull();
+        expect(Number(resultado.precoTotal)).toBeGreaterThan(0);
+      }
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "com papel diferente escolhido no orçamento: preço reflete a tabela do papel NOVO, não a do papel fixo do produto",
+    async () => {
+      const s = sufixo();
+      const grafica = await prisma.grafica.create({
+        data: { nome: `Teste Offset N8 Papel ${s}`, slug: `teste-offset-n8-papel-${s}` },
+      });
+      graficaIdsParaLimpar.push(grafica.id);
+      const { produto } = await criarProdutoOffset(grafica.id, s);
+      // Papel alternativo bem mais caro (30/kg a 150g) — diferença de preço
+      // tem que ficar óbvia.
+      const catalogoPapelCaro = await prisma.itemCatalogo.create({
+        data: { graficaId: grafica.id, tipo: "MATERIA_PRIMA", categoria: "Papel", nome: `Importado ${s}` },
+      });
+      const papelCaro = await prisma.itemGrafica.create({
+        data: {
+          graficaId: grafica.id,
+          itemCatalogoId: catalogoPapelCaro.id,
+          modeloCalculo: "SIMPLES",
+          tabelaPrecoPapel: { create: [{ gramatura: 150, precoKg: 30 }] },
+        },
+      });
+
+      const dadosComuns = { larguraCm: 9, alturaCm: 5, corFrente: 4, corVerso: 4, quantidade: 1000 };
+      const resultadoSemOverride = await calcularItemOrcamento(produto, grafica.id, dadosBase(dadosComuns));
+      const resultadoComOverride = await calcularItemOrcamento(
+        produto,
+        grafica.id,
+        dadosBase({ ...dadosComuns, papelId: papelCaro.id })
+      );
+
+      expect(resultadoSemOverride.ok).toBe(true);
+      expect(resultadoComOverride.ok).toBe(true);
+      if (resultadoSemOverride.ok && resultadoComOverride.ok) {
+        expect(resultadoComOverride.precificacaoOffset).toMatchObject({
+          papelId: papelCaro.id,
+          gramaturaGm2: null, // só o papel foi sobrescrito, gramatura continua a do produto
+        });
+        expect(Number(resultadoComOverride.precoTotal)).toBeGreaterThan(
+          Number(resultadoSemOverride.precoTotal)
+        );
+      }
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "com gramatura diferente escolhida no orçamento: preço reflete a nova gramatura via resolverPrecoPapel (mesma tabela do papel fixo)",
+    async () => {
+      const s = sufixo();
+      const grafica = await prisma.grafica.create({
+        data: { nome: `Teste Offset N8 Gramatura ${s}`, slug: `teste-offset-n8-gramatura-${s}` },
+      });
+      graficaIdsParaLimpar.push(grafica.id);
+      const { produto } = await criarProdutoOffset(grafica.id, s);
+
+      const dadosComuns = { larguraCm: 9, alturaCm: 5, corFrente: 4, corVerso: 4, quantidade: 1000 };
+      // Produto está cadastrado a 150g (10/kg) — override pra 300g (13/kg):
+      // preço tem que subir (papel mais pesado E mais caro por kg).
+      const resultadoSemOverride = await calcularItemOrcamento(produto, grafica.id, dadosBase(dadosComuns));
+      const resultadoComOverride = await calcularItemOrcamento(
+        produto,
+        grafica.id,
+        dadosBase({ ...dadosComuns, gramaturaGm2: 300 })
+      );
+
+      expect(resultadoSemOverride.ok).toBe(true);
+      expect(resultadoComOverride.ok).toBe(true);
+      if (resultadoSemOverride.ok && resultadoComOverride.ok) {
+        expect(resultadoComOverride.precificacaoOffset).toMatchObject({
+          papelId: null, // só a gramatura foi sobrescrita, papel continua o do produto
+          gramaturaGm2: 300,
+        });
+        expect(Number(resultadoComOverride.precoTotal)).toBeGreaterThan(
+          Number(resultadoSemOverride.precoTotal)
+        );
+      }
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "golden: o MESMO produto usado 2× no MESMO orçamento (2 itens), cada um com sua própria gramatura, dá preços diferentes condizentes com a tabela",
+    async () => {
+      const s = sufixo();
+      const grafica = await prisma.grafica.create({
+        data: { nome: `Teste Offset N8 Golden ${s}`, slug: `teste-offset-n8-golden-${s}` },
+      });
+      graficaIdsParaLimpar.push(grafica.id);
+      const { produto } = await criarProdutoOffset(grafica.id, s);
+
+      const dadosComuns = { larguraCm: 9, alturaCm: 5, corFrente: 4, corVerso: 4, quantidade: 1000 };
+      // "Item 1" do orçamento: couché 90g (9/kg). "Item 2": couché 300g (13/kg)
+      // — mesmíssimo produto de catálogo, dois OrcamentoItem distintos.
+      const item1 = await calcularItemOrcamento(
+        produto,
+        grafica.id,
+        dadosBase({ ...dadosComuns, gramaturaGm2: 90 })
+      );
+      const item2 = await calcularItemOrcamento(
+        produto,
+        grafica.id,
+        dadosBase({ ...dadosComuns, gramaturaGm2: 300 })
+      );
+
+      expect(item1.ok).toBe(true);
+      expect(item2.ok).toBe(true);
+      if (item1.ok && item2.ok) {
+        // Preço final difere entre os dois itens — nunca o mesmo produto
+        // "engessado" no mesmo preço independente da gramatura escolhida.
+        expect(item1.precoTotal).not.toBe(item2.precoTotal);
+        // Direção condizente com a tabela: 300g/13kg custa mais que 90g/9kg
+        // (peso maior E preço/kg maior, os dois empurram pra cima).
+        expect(Number(item2.precoTotal)).toBeGreaterThan(Number(item1.precoTotal));
+        // Cada item carrega o snapshot da SUA PRÓPRIA gramatura, não vazam
+        // um pro outro.
+        expect(item1.precificacaoOffset).toMatchObject({ gramaturaGm2: 90 });
+        expect(item2.precificacaoOffset).toMatchObject({ gramaturaGm2: 300 });
+      }
     },
     TIMEOUT_MS
   );

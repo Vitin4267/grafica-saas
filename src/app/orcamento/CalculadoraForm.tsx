@@ -174,6 +174,9 @@ type ItemCarrinho = {
     | "TEMPO_MAQUINA";
   etiqueta: CamposEtiqueta;
   precificacaoEtiqueta: CamposPrecificacaoEtiqueta;
+  // Achado N8 — só OFFSET: gramatura escolhida NESTE orçamento, sobrepondo a
+  // do produto quando preenchida.
+  gramaturaGm2: number | null;
 };
 
 export function CalculadoraForm({
@@ -320,6 +323,7 @@ export function CalculadoraForm({
       campos.precificacaoEtiqueta.custoFrete !== ""
         ? Number(campos.precificacaoEtiqueta.custoFrete)
         : null;
+    const gramaturaGm2 = campos.gramaturaGm2 !== "" ? Number(campos.gramaturaGm2) : null;
 
     setAdicionando(true);
     const resultado = await precificarItem({
@@ -342,6 +346,7 @@ export function CalculadoraForm({
       quantidadeCores,
       custoFaca,
       custoFrete,
+      gramaturaGm2,
       custoAquisicaoUnitario,
       materialFornecidoPeloCliente,
     });
@@ -385,6 +390,7 @@ export function CalculadoraForm({
         modeloCalculo: resultado.modeloCalculo,
         etiqueta: campos.etiqueta,
         precificacaoEtiqueta: campos.precificacaoEtiqueta,
+        gramaturaGm2,
       },
     ]);
     setCampos(camposIniciais(itens, unidadePadrao));
@@ -430,6 +436,7 @@ export function CalculadoraForm({
         i.precificacaoEtiqueta.custoFrete !== ""
           ? Number(i.precificacaoEtiqueta.custoFrete)
           : null,
+      gramaturaGm2: i.gramaturaGm2,
     }))
   );
 
