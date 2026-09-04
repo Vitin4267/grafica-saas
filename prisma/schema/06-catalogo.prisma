@@ -446,6 +446,35 @@ model FichaTecnicaItem {
   // do ItemGrafica direto, como sempre foi.
   varianteId String?
 
+  // Achado N5 da auditoria de código (2026-09-04) — marca esta linha como o
+  // SUBSTRATO/PAPEL PRINCIPAL que o motor avançado (M2/OFFSET/FLEXOGRAFIA)
+  // de fato dimensiona pela imposição/nesting, distinto de qualquer outro
+  // ingrediente da ficha técnica do mesmo produto (tinta, verniz, outro
+  // insumo) — esses continuam SEMPRE no consumo linear de hoje
+  // (quantidadePorUnidade × quantidade), nunca lêem o breakdown. Ver
+  // src/lib/baixa-estoque-substrato.ts pra como isto é usado.
+  //
+  // Por que um campo booleano manual, em vez de inferir automaticamente qual
+  // linha é o substrato: pra OFFSET (ItemGrafica.papelId, fixo no produto) e
+  // pra M2 com ConfiguracaoClicheEtiqueta (OrcamentoItemPrecificacaoEtiqueta.
+  // papelId, escolhido por orçamento) existe uma FK inequívoca — o helper já
+  // casa `materiaPrimaId` com ela automaticamente, SEM precisar desta flag.
+  // Mas pra FLEXOGRAFIA e pra M2 SEM clichê de etiqueta (ex: "Banner de
+  // Lona"), o motor não referencia nenhum ItemGrafica de matéria-prima
+  // separado — ele usa o precoCompra/bobinas do PRÓPRIO produto (ver
+  // carregarContextoPrecificacao em src/lib/pricing/carregar.ts:
+  // `custoM2Material = Number(item.precoCompra ?? 0)`), então não há FK
+  // nenhuma pra comparar. Sem uma marcação explícita, seria preciso adivinhar
+  // (ex: "a única linha da ficha técnica" ou "a linha com o nome parecido")
+  // — um palpite errado aplicaria consumo de motor numa matéria-prima que não
+  // é o substrato real, o que é PIOR que o bug original (que ao menos
+  // consumia TODAS as linhas de forma consistente, mesmo que linear demais).
+  // Esta flag resolve isso com ação explícita e auditável do usuário, e serve
+  // também de reforço/override manual pros dois casos com FK automática.
+  // @default(false) preserva 100% o consumo linear de hoje pra toda ficha
+  // técnica já cadastrada — precisa de ação explícita pra ligar.
+  ehSubstratoPrincipal Boolean @default(false)
+
   itemGrafica  ItemGrafica           @relation("FichaTecnicaDoProduto", fields: [itemGraficaId], references: [id], onDelete: Cascade)
   materiaPrima ItemGrafica           @relation("MateriaPrimaConsumida", fields: [materiaPrimaId], references: [id], onDelete: Cascade)
   variante     VarianteMateriaPrima? @relation(fields: [varianteId], references: [id], onDelete: Restrict)

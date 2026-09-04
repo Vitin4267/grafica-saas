@@ -21,6 +21,7 @@ import {
 import { fecharEAbrirApontamento, type ContextoOrigemAvanco } from "@/lib/apontamento-etapa";
 import { gerarContasReceberDaEntrega } from "@/lib/condicao-pagamento";
 import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
+import { calcularQuantidadeConsumidaFichaProduto } from "@/lib/baixa-estoque-substrato";
 import { resolverOrigemPublica } from "@/lib/url-publica";
 import { dispararEventoEmail } from "@/lib/email/webhook-email";
 import { templateEstagioResponsavel } from "@/lib/email/templates";
@@ -100,6 +101,15 @@ export function buscarOrcamentoParaBaixa(orcamentoId: string) {
               },
             },
           },
+          // Achado N5 da auditoria de código (2026-09-04) — papel escolhido
+          // NESTE orçamento pro motor de clichê de etiqueta (M2), única fonte
+          // pra identificar automaticamente qual linha da ficha técnica é o
+          // substrato quando o item usa esse motor (ver
+          // src/lib/baixa-estoque-substrato.ts). Ausente (null) em qualquer
+          // item que não usa o motor de clichê — sem custo extra de query
+          // pra quem não usa (é um 1:1 opcional, já resolvido pelo mesmo
+          // include de item.itens que já existia).
+          precificacaoEtiqueta: { select: { papelId: true } },
           // Acabamentos anexados ao item (ex: laminação) — mesma forma de
           // include que itemGrafica.fichaTecnica acima, só que agora pela
           // ficha técnica do SERVIÇO (ItemGrafica tipo SERVICO), não do
@@ -355,7 +365,15 @@ export async function avancarStatusPedido(
             const estoqueAtual = ficha.variante ? ficha.variante.estoqueAtual : ficha.materiaPrima.estoqueAtual;
             return {
               chave: montarChavePerda(item.id, ficha.id),
-              quantidadeConsumida: Number(ficha.quantidadePorUnidade) * item.quantidade,
+              // Achado N5 da auditoria de código (2026-09-04) — quando este
+              // item tem breakdown de motor avançado (OFFSET/M2/FLEXOGRAFIA)
+              // e esta linha é o substrato identificado, usa o consumo FÍSICO
+              // real (folhas/área/metragem) em vez do linear de sempre — ver
+              // src/lib/baixa-estoque-substrato.ts. Precisa bater EXATAMENTE
+              // com o mesmo cálculo dentro da transação abaixo (mesma função
+              // compartilhada), senão a validação de estoque/perda aqui usaria
+              // um número diferente do que é de fato descontado.
+              quantidadeConsumida: calcularQuantidadeConsumidaFichaProduto(item, ficha),
               perdaPadrao: perdaPadrao !== null ? Number(perdaPadrao) : 0,
               estoqueAtual: Number(estoqueAtual),
               materiaPrimaNome: ficha.materiaPrima.itemCatalogo.nome,
@@ -483,7 +501,10 @@ export async function avancarStatusPedido(
               // um estoque separado. Sem variante, comportamento de sempre.
               const estoqueAtual = ficha.variante ? ficha.variante.estoqueAtual : ficha.materiaPrima.estoqueAtual;
               if (estoqueAtual === null) continue; // sem controle de estoque
-              const quantidadeConsumida = Number(ficha.quantidadePorUnidade) * item.quantidade;
+              // Achado N5 — mesma função de itensParaBaixaProduto acima
+              // (leitura pré-transação), garante que o número validado antes
+              // é EXATAMENTE o número decrementado aqui.
+              const quantidadeConsumida = calcularQuantidadeConsumidaFichaProduto(item, ficha);
               // Validado antes da transação (resolverPerdasConfirmadas) — toda
               // chave esperada aqui já tem confirmação, o "!" é seguro.
               const chave = montarChavePerda(item.id, ficha.id);

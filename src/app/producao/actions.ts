@@ -21,6 +21,7 @@ import { analisarPreflight } from "@/lib/preflight";
 import { cancelarCandidatosDoPedido } from "@/lib/gang-run-servico";
 import { extrairEValidarSelecaoMaquina } from "@/lib/apontamento-etapa";
 import { avancarStatusPedido, buscarOrcamentoParaBaixa } from "./status-transicao";
+import { calcularQuantidadeConsumidaFichaProduto } from "@/lib/baixa-estoque-substrato";
 import {
   validarArquivoArte,
   extensaoArte,
@@ -100,7 +101,13 @@ export async function previsaoBaixaEstoque(pedidoId: string): Promise<PrevisaoBa
       if (estoqueAtual === null) continue;
 
       const perdaPadrao = ficha.variante ? ficha.variante.perdaFixaPadrao : ficha.materiaPrima.perdaFixaPadrao;
-      const quantidadeConsumida = Number(ficha.quantidadePorUnidade) * item.quantidade;
+      // Achado N5 da auditoria de código (2026-09-04) — mesma função
+      // compartilhada de status-transicao.ts (ver
+      // src/lib/baixa-estoque-substrato.ts): quando o item tem breakdown de
+      // motor avançado e esta linha é o substrato identificado, a PRÉVIA já
+      // mostra o consumo FÍSICO real (folhas/área/metragem), não o linear —
+      // nunca pode divergir do que avancarStatusPedido de fato desconta.
+      const quantidadeConsumida = calcularQuantidadeConsumidaFichaProduto(item, ficha);
       // Mesmo preço que snapshotCustoFicha (status-transicao.ts) vai
       // congelar na baixa de verdade — variante sobrepõe o preço da
       // matéria-prima "pai" quando a ficha aponta uma variante específica.
