@@ -225,15 +225,31 @@ export async function avancarStatusCompra(
       // curta, mesmo padrão de lancarEntradaCompra em
       // src/app/catalogo/[itemGraficaId]/actions.ts) — o CAS abaixo garante
       // que ninguém mexeu no estoque entre esta leitura e a escrita.
-      const estoqueAnterior = solicitacao.varianteId
-        ? (await prisma.varianteMateriaPrima.findUnique({
+      const registroEstoque = solicitacao.varianteId
+        ? await prisma.varianteMateriaPrima.findUnique({
             where: { id: solicitacao.varianteId },
             select: { estoqueAtual: true },
-          }))?.estoqueAtual
-        : (await prisma.itemGrafica.findUnique({
+          })
+        : await prisma.itemGrafica.findUnique({
             where: { id: solicitacao.itemGraficaId },
             select: { estoqueAtual: true },
-          }))?.estoqueAtual;
+          });
+
+      // Achado N15 da auditoria de abrangência (Parte 7,
+      // pesquisa-abrangencia-modulos.md) — estoqueAtual = null é a
+      // convenção do projeto pra "item sem controle de estoque" (mesmo
+      // guard respeitado pela baixa de produção, ver
+      // src/app/producao/status-transicao.ts: `if (estoqueAtual === null)
+      // continue`). Uma compra recebida de um item nessa condição NUNCA
+      // deve fazer o item "nascer" com saldo — pula a alta de
+      // estoque/MovimentacaoEstoque abaixo, e só registra o custo da compra
+      // normalmente (blocos de CustoPedido/ContratoFornecimento, que não
+      // dependem de estoque). Distinto de "registro não encontrado"
+      // (`registroEstoque === null`, não deveria acontecer — FK garante
+      // que o item existe — mas se acontecer preserva o comportamento de
+      // sempre, tratando como estoque zerado).
+      const semControleEstoque = registroEstoque !== null && registroEstoque.estoqueAtual === null;
+      const estoqueAnterior = registroEstoque?.estoqueAtual;
 
       const quantidadeDec = new D(solicitacao.quantidade.toString());
       const novoEstoque = new D(estoqueAnterior?.toString() ?? 0).plus(quantidadeDec).toFixed(4);
@@ -247,33 +263,35 @@ export async function avancarStatusCompra(
         });
         if (casStatus.count === 0) throw new ErroSolicitacaoJaAlterada();
 
-        const casEstoque = solicitacao.varianteId
-          ? await tx.varianteMateriaPrima.updateMany({
-              where: { id: solicitacao.varianteId, estoqueAtual: estoqueAnterior ?? null },
-              data: { estoqueAtual: novoEstoque },
-            })
-          : await tx.itemGrafica.updateMany({
-              where: { id: solicitacao.itemGraficaId, estoqueAtual: estoqueAnterior ?? null },
-              data: { estoqueAtual: novoEstoque },
-            });
-        if (casEstoque.count === 0) throw new ErroEstoqueDivergenteCompra();
+        if (!semControleEstoque) {
+          const casEstoque = solicitacao.varianteId
+            ? await tx.varianteMateriaPrima.updateMany({
+                where: { id: solicitacao.varianteId, estoqueAtual: estoqueAnterior ?? null },
+                data: { estoqueAtual: novoEstoque },
+              })
+            : await tx.itemGrafica.updateMany({
+                where: { id: solicitacao.itemGraficaId, estoqueAtual: estoqueAnterior ?? null },
+                data: { estoqueAtual: novoEstoque },
+              });
+          if (casEstoque.count === 0) throw new ErroEstoqueDivergenteCompra();
 
-        await tx.movimentacaoEstoque.create({
-          data: {
-            itemGraficaId: solicitacao.itemGraficaId,
-            varianteId: solicitacao.varianteId,
-            solicitacaoCompraId: solicitacao.id,
-            tipo: "ENTRADA_COMPRA",
-            quantidade: quantidadeDec.toFixed(4),
-            custoUnitario: custoUnitarioDec ? custoUnitarioDec.toFixed(4) : null,
-            custoTotal: valorFinalFinal !== null ? new D(valorFinalFinal).toFixed(2) : null,
-            metodoCusteio: "ULTIMA_COMPRA",
-            precoReferenciaEm: new Date(),
-            documento: documentoFinal,
-            fornecedorId: fornecedorIdFinal,
-            criadoPorId: usuario.id,
-          },
-        });
+          await tx.movimentacaoEstoque.create({
+            data: {
+              itemGraficaId: solicitacao.itemGraficaId,
+              varianteId: solicitacao.varianteId,
+              solicitacaoCompraId: solicitacao.id,
+              tipo: "ENTRADA_COMPRA",
+              quantidade: quantidadeDec.toFixed(4),
+              custoUnitario: custoUnitarioDec ? custoUnitarioDec.toFixed(4) : null,
+              custoTotal: valorFinalFinal !== null ? new D(valorFinalFinal).toFixed(2) : null,
+              metodoCusteio: "ULTIMA_COMPRA",
+              precoReferenciaEm: new Date(),
+              documento: documentoFinal,
+              fornecedorId: fornecedorIdFinal,
+              criadoPorId: usuario.id,
+            },
+          });
+        }
 
         // Achado A3 da auditoria de abrangência (Parte 3/Compras): compra
         // sob encomenda (origem=PEDIDO_ESPECIFICO) vira CustoPedido origem
