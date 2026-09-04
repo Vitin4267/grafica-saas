@@ -1,0 +1,23 @@
+-- Migração escrita à mão (ver instrução no schema — NÃO rodar
+-- `prisma migrate dev`/`migrate reset` neste projeto, o banco de dev tem
+-- dados reais de cliente).
+--
+-- Achado N2 da auditoria de abrangência (pesquisa-abrangencia-modulos.md,
+-- "Cancelar pedido não desfaz ContaReceber, Comissao, nem tira o orçamento
+-- do faturamento"):
+--
+-- cancelarPedido (src/app/producao/actions.ts) passa a marcar a Comissao do
+-- orçamento como CANCELADA quando ainda estiver PENDENTE — sem isso o
+-- vendedor recebia comissão de um pedido que foi cancelado.
+--
+-- StatusContaReceber (tabela "contas_a_receber") já tinha o valor CANCELADO
+-- desde o achado A8 da Parte 4 (2026-08-29) — não precisa de migration nova
+-- pra essa parte do achado N2, só o UPDATE feito em código.
+--
+-- Tabela real (via @@map no schema): "comissoes".
+--
+-- Migração 100% aditiva: nenhum valor existente do enum "StatusComissao"
+-- muda, nenhuma linha é reescrita.
+
+-- AlterEnum
+ALTER TYPE "StatusComissao" ADD VALUE 'CANCELADA';

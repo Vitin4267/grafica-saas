@@ -3906,6 +3906,13 @@ model CondicaoPagamentoParcela {
 enum StatusComissao {
   PENDENTE
   PAGA
+  // Achado N2 da auditoria de abrangência — cancelarPedido (ver
+  // src/app/producao/actions.ts) marca a Comissao do orçamento como
+  // CANCELADA quando ainda estava PENDENTE, pra o vendedor não receber
+  // comissão de uma venda que não vai mais acontecer. Uma comissão já PAGA
+  // não é revertida automaticamente (mesmo critério de custo manual: dinheiro
+  // que já saiu não é estornado sozinho, a gráfica decide à parte).
+  CANCELADA
 }
 
 // Comissão de um vendedor sobre um orçamento aprovado — registro histórico

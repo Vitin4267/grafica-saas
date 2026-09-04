@@ -38,7 +38,7 @@ export function ComissaoLinha({
   baseCalculo: string;
   percentualAplicado: string;
   valorComissao: string;
-  status: "PENDENTE" | "PAGA";
+  status: "PENDENTE" | "PAGA" | "CANCELADA";
   pagoEm: string | null;
   podeEditar: boolean;
 }) {
@@ -61,6 +61,12 @@ export function ComissaoLinha({
           {status === "PAGA" ? (
             <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
               Paga em {pagoEm}
+            </span>
+          ) : status === "CANCELADA" ? (
+            // Comissão de um orçamento cujo pedido foi cancelado (achado N2
+            // da auditoria de abrangência) — nunca vai gerar pagamento.
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+              Cancelada
             </span>
           ) : (
             <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">

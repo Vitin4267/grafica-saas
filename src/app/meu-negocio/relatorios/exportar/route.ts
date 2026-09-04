@@ -54,6 +54,11 @@ export async function GET(request: NextRequest) {
     prisma.pedido.findMany({
       where: {
         graficaId: usuario.graficaId,
+        // Achado N2 da auditoria de abrangência (2026-09-04) — exclui pedido
+        // cancelado, mesmo motivo de buscarRelatorioNegocio (que já não soma
+        // este pedido no resumo do topo): sem isso o CSV listava uma linha
+        // de "faturado" pra um pedido que não conta mais como faturamento.
+        status: { not: "CANCELADO" },
         orcamento: {
           createdAt: { gte: inicio, lt: fim },
           status: "APROVADO",

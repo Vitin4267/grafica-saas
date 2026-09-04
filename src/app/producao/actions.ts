@@ -258,6 +258,21 @@ export async function cancelarPedido(
   // commitar (mesmo motivo do comentário em registrarAuditoria: nunca
   // auditoria dentro da própria transação de negócio).
   let custosEstornados: { id: string; valor: Prisma.Decimal; categoriaNome: string }[] = [];
+  // Achado N2 da auditoria de abrangência — as duas outras consequências
+  // financeiras da aprovação que cancelar um pedido também precisa desfazer
+  // (junto com o estorno de estoque/custo acima): a(s) ContaReceber ainda
+  // PENDENTE deste orçamento (senão fica pra sempre pendente, entrando no
+  // aging e no limite de crédito de um pedido que não existe) e a Comissao
+  // do vendedor, se ainda PENDENTE (senão ele recebe comissão de uma venda
+  // cancelada). Preenchidos dentro da transação, logados DEPOIS que ela
+  // commitar — mesmo motivo do comentário em custosEstornados acima.
+  let contasReceberCanceladas: { id: string; descricao: string; valor: Prisma.Decimal }[] = [];
+  // Array (não objeto nullable) apesar de Comissao ser @unique por orçamento
+  // (no máximo 1 linha) — mesmo formato de contasReceberCanceladas acima, e
+  // evita uma pegadinha do TypeScript: narrowing de `let x: T | null = null`
+  // não atravessa direito o closure assíncrono de $transaction, colapsando o
+  // tipo pra `never` num `if (x)` depois da transação.
+  let comissoesCanceladas: { id: string; valorComissao: Prisma.Decimal }[] = [];
 
   try {
     await prisma.$transaction(
@@ -346,6 +361,47 @@ export async function cancelarPedido(
             }));
           }
         }
+
+        // ContaReceber gerada na aprovação (automática ou manual) — só
+        // cancela quem ainda estiver PENDENTE. Uma conta PARCIAL já tem
+        // dinheiro real recebido via BaixaContaReceber: cancelar sozinho
+        // faria esse saldo já recebido desaparecer sem contrapartida, então
+        // fica como está e a gráfica decide à parte (mesmo critério que
+        // cancelarContaReceber, em financeiro/contas-receber/actions.ts, já
+        // aplica pro cancelamento manual — também só aceita PENDENTE).
+        // RECEBIDO/CANCELADO nunca são tocados (já não representam dívida em
+        // aberto, e um já cancelado não precisa ser cancelado de novo).
+        const contasParaCancelar = await tx.contaReceber.findMany({
+          where: { orcamentoId: pedido.orcamentoId, status: "PENDENTE" },
+        });
+        if (contasParaCancelar.length > 0) {
+          await tx.contaReceber.updateMany({
+            where: { id: { in: contasParaCancelar.map((c) => c.id) } },
+            data: { status: "CANCELADO" },
+          });
+          contasReceberCanceladas = contasParaCancelar.map((c) => ({
+            id: c.id,
+            descricao: c.descricao,
+            valor: c.valor,
+          }));
+        }
+
+        // Comissao é @unique por orçamento (no máximo uma linha) — só mexe
+        // se ainda estiver PENDENTE. Uma comissão já PAGA não é revertida
+        // automaticamente (mesmo critério de custo manual acima: dinheiro que
+        // já saiu da gráfica não é estornado sozinho).
+        const comissaoParaCancelar = await tx.comissao.findFirst({
+          where: { orcamentoId: pedido.orcamentoId, status: "PENDENTE" },
+        });
+        if (comissaoParaCancelar) {
+          await tx.comissao.update({
+            where: { id: comissaoParaCancelar.id },
+            data: { status: "CANCELADA" },
+          });
+          comissoesCanceladas = [
+            { id: comissaoParaCancelar.id, valorComissao: comissaoParaCancelar.valorComissao },
+          ];
+        }
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
     );
@@ -379,6 +435,39 @@ export async function cancelarPedido(
     });
   }
 
+  // Mesma granularidade acima, agora pras duas consequências financeiras da
+  // aprovação que o achado N2 pede pra desfazer no cancelamento.
+  for (const conta of contasReceberCanceladas) {
+    const diff = criarDiffCampos();
+    diff.campo("Status", "PENDENTE", "CANCELADO (pedido cancelado)");
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "conta_receber.cancelar",
+      entidade: "ContaReceber",
+      entidadeId: conta.id,
+      descricao: `Conta a receber "${conta.descricao}" (${formatoMoeda.format(Number(conta.valor))}) cancelada automaticamente pelo cancelamento do pedido ${pedidoId}`,
+      valorAnterior: diff.antesTextos.join(", "),
+      valorNovo: diff.depoisTextos.join(", "),
+    });
+  }
+  for (const comissao of comissoesCanceladas) {
+    const diff = criarDiffCampos();
+    diff.campo("Status", "PENDENTE", "CANCELADA (pedido cancelado)");
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "comissao.cancelar",
+      entidade: "Comissao",
+      entidadeId: comissao.id,
+      descricao: `Comissão de ${formatoMoeda.format(Number(comissao.valorComissao))} cancelada automaticamente pelo cancelamento do pedido ${pedidoId}`,
+      valorAnterior: diff.antesTextos.join(", "),
+      valorNovo: diff.depoisTextos.join(", "),
+    });
+  }
+
   if (automacao.webhookUrl && automacao.notificarStatusMudou) {
     // after() em vez de void: garante que a instância serverless continua
     // viva até o webhook terminar, mesmo depois da resposta já ter sido
@@ -401,8 +490,17 @@ export async function cancelarPedido(
   revalidatePath(`/orcamento/${pedido.orcamentoId}`);
   revalidatePath("/catalogo");
   revalidatePath("/meu-negocio");
+  revalidatePath("/financeiro/contas-receber");
+  revalidatePath("/financeiro/comissoes");
 
   let mensagem = itensEstornados > 0 ? "Pedido cancelado e estoque estornado." : "Pedido cancelado.";
+  if (contasReceberCanceladas.length > 0) {
+    const totalContas = contasReceberCanceladas.reduce((soma, c) => soma + Number(c.valor), 0);
+    mensagem += ` ${contasReceberCanceladas.length} conta${contasReceberCanceladas.length > 1 ? "s" : ""} a receber de ${formatoMoeda.format(totalContas)} cancelada${contasReceberCanceladas.length > 1 ? "s" : ""}.`;
+  }
+  if (comissoesCanceladas.length > 0) {
+    mensagem += ` Comissão de ${formatoMoeda.format(Number(comissoesCanceladas[0].valorComissao))} cancelada.`;
+  }
 
   // Aviso "nice to have" do plano (§3.3): custo manual não é estornado
   // automaticamente, então avisa quando sobrou algum neste pedido cancelado

@@ -129,7 +129,21 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
     etapas,
   ] = await Promise.all([
     prisma.orcamento.aggregate({
-      where: { graficaId, status: "APROVADO", createdAt: { gte: inicioDoMesReal } },
+      // NOT pedido.status=CANCELADO — achado N2 da auditoria de abrangência
+      // (2026-09-04): cancelarPedido (producao/actions.ts) não reverte
+      // Orcamento.status de propósito (menos invasivo — ver comentário lá),
+      // então essa exclusão é o que impede um pedido cancelado de continuar
+      // contando como faturamento. Pedido sempre existe pra todo orçamento
+      // aprovado (criado atomicamente na mesma transação da aprovação, ver
+      // atualizarStatusOrcamento em orcamento/[id]/actions.ts) — mas o filtro
+      // é escrito como NOT em vez de assumir isso, então não exclui por
+      // engano um orçamento aprovado sem Pedido (dado legado/importação).
+      where: {
+        graficaId,
+        status: "APROVADO",
+        createdAt: { gte: inicioDoMesReal },
+        NOT: { pedido: { status: "CANCELADO" } },
+      },
       _sum: { total: true },
       _count: true,
     }),
@@ -146,7 +160,11 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
     calcularPrevisaoEstoque(graficaId),
     prisma.orcamento.groupBy({
       by: ["clienteId"],
-      where: { graficaId, status: "APROVADO" },
+      // Mesma exclusão de pedido cancelado do faturamentoAgregado acima —
+      // achado N2: sem isso um cliente cujo pedido foi cancelado podia
+      // aparecer como "top cliente" por um valor que não foi de fato
+      // faturado.
+      where: { graficaId, status: "APROVADO", NOT: { pedido: { status: "CANCELADO" } } },
       _sum: { total: true },
       orderBy: { _sum: { total: "desc" } },
       take: 5,
@@ -169,7 +187,14 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
       _sum: { valor: true },
     }),
     prisma.orcamento.findMany({
-      where: { graficaId, status: "APROVADO", createdAt: { gte: inicioSerieFaturamento } },
+      // Mesma exclusão de pedido cancelado — achado N2: o sparkline de
+      // faturamento semanal não pode continuar contando um pedido cancelado.
+      where: {
+        graficaId,
+        status: "APROVADO",
+        createdAt: { gte: inicioSerieFaturamento },
+        NOT: { pedido: { status: "CANCELADO" } },
+      },
       select: { createdAt: true, total: true },
     }),
     // Sem filtro de mês, de propósito — mesmo escopo (todo o histórico) de

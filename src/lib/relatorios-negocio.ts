@@ -65,6 +65,18 @@ function whereClienteOrcamento(clienteId: string | undefined) {
   return clienteId ? { clienteId } : {};
 }
 
+// Achado N2 da auditoria de abrangência (2026-09-04) — cancelarPedido
+// (producao/actions.ts) não reverte Orcamento.status de propósito (ver
+// comentário lá), então toda agregação de receita por status=APROVADO nesta
+// lib precisa excluir explicitamente o orçamento cujo Pedido foi cancelado,
+// senão o cancelamento não se reflete em nenhum relatório financeiro. Pedido
+// sempre existe pra todo orçamento aprovado (criado atomicamente na mesma
+// transação da aprovação) — o filtro usa NOT em vez de assumir isso, então
+// não exclui por engano um orçamento aprovado sem Pedido (dado legado).
+function semPedidoCancelado() {
+  return { NOT: { pedido: { status: "CANCELADO" as const } } };
+}
+
 export async function buscarRelatorioNegocio(filtro: FiltroRelatorio): Promise<RelatorioNegocio> {
   const { graficaId, inicio, fim, clienteId } = filtro;
   const whereCliente = whereClienteOrcamento(clienteId);
@@ -79,11 +91,25 @@ export async function buscarRelatorioNegocio(filtro: FiltroRelatorio): Promise<R
     parametros,
   ] = await Promise.all([
     prisma.orcamento.aggregate({
-      where: { graficaId, status: "APROVADO", createdAt: { gte: inicio, lt: fim }, ...whereCliente },
+      where: {
+        graficaId,
+        status: "APROVADO",
+        createdAt: { gte: inicio, lt: fim },
+        ...whereCliente,
+        ...semPedidoCancelado(),
+      },
       _sum: { total: true },
     }),
     prisma.pedido.count({
-      where: { graficaId, orcamento: { createdAt: { gte: inicio, lt: fim }, ...whereCliente } },
+      // status not CANCELADO direto no Pedido (query já é sobre Pedido, não
+      // precisa do NOT/pedido aninhado de semPedidoCancelado) — mesmo achado
+      // N2: sem isso "pedidos" no período contava pedido cancelado, inflando
+      // o denominador do ticket médio (faturado exclui, pedidos não excluía).
+      where: {
+        graficaId,
+        status: { not: "CANCELADO" },
+        orcamento: { createdAt: { gte: inicio, lt: fim }, ...whereCliente },
+      },
     }),
     prisma.custoPedido.aggregate({
       where: {
@@ -98,7 +124,13 @@ export async function buscarRelatorioNegocio(filtro: FiltroRelatorio): Promise<R
     }),
     prisma.orcamento.groupBy({
       by: ["clienteId"],
-      where: { graficaId, status: "APROVADO", createdAt: { gte: inicio, lt: fim }, ...whereCliente },
+      where: {
+        graficaId,
+        status: "APROVADO",
+        createdAt: { gte: inicio, lt: fim },
+        ...whereCliente,
+        ...semPedidoCancelado(),
+      },
       _sum: { total: true },
       orderBy: { _sum: { total: "desc" } },
       take: TOP_CLIENTES,
@@ -107,7 +139,13 @@ export async function buscarRelatorioNegocio(filtro: FiltroRelatorio): Promise<R
     prisma.orcamentoItem.groupBy({
       by: ["itemGraficaId"],
       where: {
-        orcamento: { graficaId, status: "APROVADO", createdAt: { gte: inicio, lt: fim }, ...whereCliente },
+        orcamento: {
+          graficaId,
+          status: "APROVADO",
+          createdAt: { gte: inicio, lt: fim },
+          ...whereCliente,
+          ...semPedidoCancelado(),
+        },
       },
       _sum: { quantidade: true, precoTotal: true },
       orderBy: { _sum: { quantidade: "desc" } },
@@ -204,13 +242,13 @@ export async function buscarRankingGeral(graficaId: string): Promise<RankingGera
   const [clienteTopBruto, orcamentosJanela] = await Promise.all([
     prisma.orcamento.groupBy({
       by: ["clienteId"],
-      where: { graficaId, status: "APROVADO", createdAt: { gte: inicioJanela } },
+      where: { graficaId, status: "APROVADO", createdAt: { gte: inicioJanela }, ...semPedidoCancelado() },
       _sum: { total: true },
       orderBy: { _sum: { total: "desc" } },
       take: 1,
     }),
     prisma.orcamento.findMany({
-      where: { graficaId, status: "APROVADO", createdAt: { gte: inicioJanela } },
+      where: { graficaId, status: "APROVADO", createdAt: { gte: inicioJanela }, ...semPedidoCancelado() },
       select: { createdAt: true, total: true },
     }),
   ]);
@@ -352,7 +390,12 @@ export async function buscarReceitaCustoLucroMensal(
 
   const [orcamentos, custosPedido] = await Promise.all([
     prisma.orcamento.findMany({
-      where: { graficaId, status: "APROVADO", createdAt: { gte: inicioJanela, lt: fimJanela } },
+      where: {
+        graficaId,
+        status: "APROVADO",
+        createdAt: { gte: inicioJanela, lt: fimJanela },
+        ...semPedidoCancelado(),
+      },
       select: { createdAt: true, total: true },
     }),
     prisma.custoPedido.findMany({
@@ -423,7 +466,12 @@ export async function buscarReceitaPorClienteEMes(
   const fimJanela = limitesMesBrasilia(anoAtual, mesAtual).fim;
 
   const orcamentos = await prisma.orcamento.findMany({
-    where: { graficaId, status: "APROVADO", createdAt: { gte: inicioJanela, lt: fimJanela } },
+    where: {
+      graficaId,
+      status: "APROVADO",
+      createdAt: { gte: inicioJanela, lt: fimJanela },
+      ...semPedidoCancelado(),
+    },
     select: { clienteId: true, createdAt: true, total: true, cliente: { select: { nome: true } } },
   });
 
