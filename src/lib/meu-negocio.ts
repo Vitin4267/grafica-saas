@@ -12,6 +12,8 @@ import {
   calcularTempoMedioAprovacaoDias,
   type TaxaConversaoOrcamentos,
 } from "@/lib/funil-conversao";
+import { buscarProjecaoFluxoCaixa } from "@/lib/fluxo-caixa-query";
+import type { ProjecaoFluxoCaixa } from "@/lib/fluxo-caixa";
 
 const SEMANAS_SERIE_FATURAMENTO = 8;
 const MS_POR_SEMANA = 1000 * 60 * 60 * 24 * 7;
@@ -95,6 +97,9 @@ export type VisaoGeralNegocio = {
   // criado). Usado pra esconder cards e links de produção de gráficas de
   // revenda pura (E1 e E2 da auditoria de abrangência).
   temAlgumPedido: boolean;
+  // Projeção de fluxo de caixa pra os próximos 90 dias (achado A4 da auditoria
+  // de abrangência) — buckets de fluxo e alerta de quando fica negativo
+  projecaoFluxoCaixa: ProjecaoFluxoCaixa;
 };
 
 export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoGeralNegocio> {
@@ -132,6 +137,7 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
     orcamentosAprovadosParaTempoResposta,
     etapas,
     primeiroPedido,
+    projecaoFluxoCaixa,
   ] = await Promise.all([
     prisma.orcamento.aggregate({
       // NOT pedido.status=CANCELADO — achado N2 da auditoria de abrangência
@@ -220,6 +226,8 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
       where: { graficaId },
       select: { id: true },
     }),
+    // Achado A4 — projeção de fluxo de caixa pra 90 dias
+    buscarProjecaoFluxoCaixa(graficaId),
   ]);
 
   const contagemPorStatusOrcamento = new Map(
@@ -310,5 +318,6 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
       inicioSerieFaturamento
     ),
     temAlgumPedido: primeiroPedido !== null,
+    projecaoFluxoCaixa,
   };
 }

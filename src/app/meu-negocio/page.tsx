@@ -322,6 +322,86 @@ export default async function MeuNegocioPage() {
             )}
           </div>
         </div>
+
+        {/* Projeção de fluxo de caixa — achado A4 */}
+        <div className="mt-6">
+          <SecaoHeader titulo="Projeção de fluxo de caixa" href="/financeiro" />
+          {visaoGeral.projecaoFluxoCaixa.dataFicaNegativo !== null && (
+            <div className="mb-4 flex items-center gap-3 rounded-lg border border-rose-200 bg-rose-50 p-4 dark:border-rose-900 dark:bg-rose-950">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-rose-600 dark:text-rose-400">
+                <AlertTriangleIcon className="h-5 w-5" />
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-rose-900 dark:text-rose-100">
+                  Alerta de caixa negativo
+                </p>
+                <p className="text-xs text-rose-700 dark:text-rose-300">
+                  Baseado nas contas a receber e despesas pendentes, o saldo ficará negativo em{" "}
+                  <time dateTime={visaoGeral.projecaoFluxoCaixa.dataFicaNegativo.toISOString()}>
+                    {visaoGeral.projecaoFluxoCaixa.dataFicaNegativo.toLocaleDateString("pt-BR")}
+                  </time>{" "}
+                  ({visaoGeral.projecaoFluxoCaixa.diasAteNegativo} dia
+                  {visaoGeral.projecaoFluxoCaixa.diasAteNegativo !== 1 ? "s" : ""} a partir de hoje).
+                </p>
+              </div>
+            </div>
+          )}
+          <Card className="overflow-x-auto p-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 dark:border-slate-700">
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700 dark:text-slate-300">
+                    Período
+                  </th>
+                  <th className="px-3 py-2 text-right font-semibold text-slate-700 dark:text-slate-300">
+                    Entradas
+                  </th>
+                  <th className="px-3 py-2 text-right font-semibold text-slate-700 dark:text-slate-300">
+                    Saídas
+                  </th>
+                  <th className="px-3 py-2 text-right font-semibold text-slate-700 dark:text-slate-300">
+                    Saldo
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {visaoGeral.projecaoFluxoCaixa.buckets.map((bucket, idx) => (
+                  <tr
+                    key={idx}
+                    className={
+                      bucket.saldoAcumulado < 0
+                        ? "border-b border-slate-100 bg-rose-50 dark:border-slate-800 dark:bg-rose-950"
+                        : "border-b border-slate-100 dark:border-slate-800"
+                    }
+                  >
+                    <td className="px-3 py-3 font-medium text-slate-900 dark:text-white">
+                      {bucket.rotulo}
+                    </td>
+                    <td className="px-3 py-3 text-right text-emerald-600 dark:text-emerald-400">
+                      {formatoMoeda.format(bucket.entradas)}
+                    </td>
+                    <td className="px-3 py-3 text-right text-rose-600 dark:text-rose-400">
+                      {formatoMoeda.format(bucket.saidas)}
+                    </td>
+                    <td
+                      className={
+                        bucket.saldoAcumulado < 0
+                          ? "px-3 py-3 text-right font-semibold text-rose-700 dark:text-rose-300"
+                          : "px-3 py-3 text-right font-semibold text-slate-900 dark:text-white"
+                      }
+                    >
+                      {formatoMoeda.format(bucket.saldoAcumulado)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+          <p className="mt-2 text-xs text-slate-500">
+            Projeção baseada em contas a receber e despesas pendentes. Saldo inicial em 0 (não considera
+            saldo em caixa atual). Horizonte de 90 dias.
+          </p>
+        </div>
       </main>
     </div>
   );
