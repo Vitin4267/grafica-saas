@@ -1,0 +1,686 @@
+enum UnidadeMedida {
+  FOLHA
+  METRO_QUADRADO
+  METRO_LINEAR
+  UNIDADE
+  LITRO
+  KG
+  ROLO
+  PACOTE
+  CENTO
+  MILHEIRO
+  HORA
+  // Sem fator de conversão nenhum (diferente de UnidadeDimensao) — é só
+  // rótulo. Lista fechada sem esta opção forçava gráfica que mede insumo em
+  // resma/galão/fardo/tonelada a "forçar" pra unidade ou pacote, perdendo
+  // precisão no relatório de estoque. ItemCatalogo.unidadeOutro guarda o
+  // texto quando esta opção é escolhida.
+  OUTRO
+}
+
+// Unidade COMERCIAL de compra — achado A6 da auditoria de abrangência (Parte
+// 3/Compras, 2026-08-29): separada da unidade de ESTOQUE (UnidadeMedida
+// acima). NF-e brasileira distingue uCom (unidade comercial, o que consta na
+// nota/negociação) de uTrib (unidade tributável — aqui, a de estoque), com
+// tabela oficial incluindo FARDO/RESMA/BOBINA/ROLO/PALETE: o comprador
+// negocia e recebe proposta em R$/tonelada ou R$/fardo, não na unidade que o
+// estoque já usa. OUTRO + campo de texto livre, mesmo padrão de
+// UnidadeMedida.OUTRO/ItemCatalogo.unidadeOutro.
+enum UnidadeCompra {
+  FARDO
+  RESMA
+  BOBINA
+  ROLO
+  PALETE
+  CAIXA
+  UNIDADE
+  KG
+  TONELADA
+  OUTRO
+}
+
+enum TipoItemCatalogo {
+  PRODUTO
+  MATERIA_PRIMA
+  SERVICO
+}
+
+// Modelo de cálculo de um PRODUTO: SIMPLES é o preço direto (precoVenda × área/quantidade,
+// como sempre funcionou); M2, OFFSET e FLEXOGRAFIA acionam o motor avançado (src/lib/pricing)
+// e exigem configuração extra (bobinas, formatos de folha, ou máquina flexo + clichê).
+// Sempre opt-in por item, nunca default.
+// DIGITAL usa src/lib/pricing/digital.ts (custo por clique + substrato, sem
+// nesting). SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE/PERSONALIZACAO são 4
+// valores distintos (rótulo específico no dropdown de produto, pra não
+// confundir o usuário) mas os 4 chamam a MESMA função calcularSetupPorPeca —
+// a tag de qual processo é (pra filtrar a lista de MaquinaSetupPorPeca
+// compatível) vive em ProcessoSetupPorPeca, não aqui. PERSONALIZACAO é o
+// rótulo genérico (achado A3 da auditoria de abrangência,
+// pesquisa-abrangencia-modulos.md) pra processos que têm a mesma forma de
+// custo (setup fixo por matriz/clichê/arte + variável por peça) mas não são
+// nenhum dos 3 nomeados: tampografia, gravação a laser, DTG, transfer etc.
+enum ModeloCalculo {
+  SIMPLES
+  M2
+  OFFSET
+  FLEXOGRAFIA
+  DIGITAL
+  SERIGRAFIA
+  SUBLIMACAO
+  ESTAMPAGEM_QUENTE
+  PERSONALIZACAO
+  // Revenda/terceirização (achado A12 da auditoria de abrangência,
+  // 2026-08-24): produto comprado pronto de um fornecedor (brinde) ou
+  // terceirizado — sem máquina, sem setup. custoBase = Q × custoAquisicaoUnitario
+  // (ver OrcamentoItem.custoAquisicaoUnitario abaixo), mas passa pelo MESMO
+  // comporPreco de todo mundo — ganha overhead/imposto/margem/piso e
+  // breakdown auditável, ao contrário de SIMPLES (preço digitado, custo zero).
+  REVENDA
+  // Achados A4/A6 da Parte 1 da auditoria de abrangência
+  // (pesquisa-abrangencia-modulos.md, 2026-09-02). BORDADO: custoBase =
+  // custoMatrizDigitalizacao (1×, não escala com tiragem — mesmo princípio
+  // já usado no clichê de etiqueta) + Q × (numeroPontos/1000 ×
+  // custoPorMilPontos) + Q × custoSubstrato (ver MaquinaBordado,
+  // OrcamentoItem.numeroPontos). TEMPO_MAQUINA: custoBase = tempo
+  // (tempoEstimadoMin/60 × custoHoraMaq) + corte (metrosCorte ×
+  // custoPorMetroCorte, se preenchido) + custoSetupPorJob (1× por item) com
+  // custoMinimo como piso — cobre corte/gravação a laser, router CNC,
+  // plotter de recorte, montagem de letra caixa/totem (ver MaquinaTempo,
+  // OrcamentoItem.tempoEstimadoMin/metrosCorte). Sem nesting, mesma família
+  // de DIGITAL/setup-por-peça/REVENDA acima.
+  BORDADO
+  TEMPO_MAQUINA
+}
+
+// Como um acabamento (SERVICO) é cobrado — spec §3. FOLHA_IMPRESSA é o caso mais sutil:
+// cobra pela folha de máquina ANTES do refile (ex: BOPP), não pela peça final.
+enum BaseCobranca {
+  UNIDADE
+  M2
+  FOLHA_IMPRESSA
+  METRO_LINEAR
+  FIXO
+  HORA
+  MILHEIRO
+  CENTO
+}
+
+// Achado N14 da auditoria de abrangência (Parte 7, 2026-09-03): campo
+// DESCRITIVO, não usado pelo motor de precificação. Decisão tomada após
+// investigar calcularQtdBase/calcularCustoAcabamento (src/lib/pricing/
+// acabamento.ts) — o motor só tem UMA noção de quantidade de folha
+// (ContextoAcabamento.folhasBoas/folhasPerda, calculadas em offset.ts), e ela
+// já É a folha de máquina ANTES do refile (é literalmente como
+// BaseCobranca.FOLHA_IMPRESSA é definida e documentada). Não existe, em
+// nenhum lugar do motor, uma segunda contagem de "folhas depois do refile"
+// pra esse campo escolher entre uma e outra — depois do refile o que existe
+// é contagem de PEÇA (ctx.quantidade), já coberta por BaseCobranca.UNIDADE.
+// Fazer o campo governar o cálculo exigiria inventar essa segunda contagem,
+// que não corresponde a nada físico além do que UNIDADE já cobre — trocado
+// por deixar o campo puramente organizacional (indica ao fluxo de produção
+// SE este acabamento acontece antes ou depois do corte de refile, sem afetar
+// o preço). Ver rótulo/hint em ConfiguracaoAcabamentoForm.tsx.
+enum EstagioAcabamento {
+  PRE_REFILE
+  POS_REFILE
+}
+
+// Código de origem da mercadoria (Tabela B do CST/ICMS, Convênio S/N 70/2012)
+// exigido em TODO item de NF-e — achado N6 da auditoria de abrangência
+// (Parte 7, 2026-09-03): mapearItemNfePayload em src/lib/focus-nfe.ts mandava
+// icms_origem: "0" (nacional) fixo pra todo item, de toda gráfica, sem
+// nenhum campo pra configurar diferente. Gráfica de brindes que revende
+// produto importado (ModeloCalculo.REVENDA), comunicação visual com
+// ACM/acrílico importado, DTF com filme importado — todas emitiam NF-e
+// declarando origem nacional errada (afeta ICMS interestadual da Resolução
+// SF 13/2012 e a FCI). Sufixo numérico no nome de cada valor evita ambiguidade
+// entre os 5 códigos "Nacional" (0/3/4/5/8) e os 4 "Estrangeira" (1/2/6/7) —
+// ver mapearOrigemMercadoria em src/lib/focus-nfe.ts pro código exato
+// enviado à Focus NFe. @default(NACIONAL_0) preserva o comportamento atual
+// pra todo item já cadastrado e todo item novo, até a gráfica configurar
+// diferente.
+enum OrigemMercadoria {
+  NACIONAL_0 // Nacional, exceto os códigos 3, 4, 5 e 8
+  ESTRANGEIRA_IMPORTACAO_DIRETA_1
+  ESTRANGEIRA_MERCADO_INTERNO_2 // adquirida no mercado interno
+  NACIONAL_CONTEUDO_IMPORTACAO_40_A_70_3 // conteúdo de importação > 40% e ≤ 70%
+  NACIONAL_PROCESSO_PRODUTIVO_BASICO_4
+  NACIONAL_CONTEUDO_IMPORTACAO_ATE_40_5 // conteúdo de importação ≤ 40%
+  ESTRANGEIRA_IMPORTACAO_DIRETA_SEM_SIMILAR_6 // sem produto nacional similar
+  ESTRANGEIRA_MERCADO_INTERNO_SEM_SIMILAR_7 // adquirida no mercado interno, sem produto nacional similar
+  NACIONAL_CONTEUDO_IMPORTACAO_ACIMA_70_8 // conteúdo de importação > 70%
+}
+
+// Catálogo: base é mestre e compartilhada entre todas as gráficas (graficaId=null,
+// só criada via seed). Cada gráfica pode complementar com itens próprios que faltem
+// (graficaId preenchido, criados pelo botão "Adicionar" em /catalogo) — esses ficam
+// privados: só a gráfica dona vê e pode selecionar (ver salvarCatalogo/página do
+// catálogo, que sempre filtram por graficaId=null OU graficaId=tenant atual).
+// Cada gráfica escolhe, em ItemGrafica, o que ela realmente oferece/usa e define
+// seus próprios preços — o item de catálogo em si nunca muda por tenant.
+model ItemCatalogo {
+  id               String           @id @default(cuid())
+  graficaId        String? // null = catálogo mestre; preenchido = item privado dessa gráfica
+  tipo             TipoItemCatalogo
+  categoria        String
+  nome             String
+  descricao        String?
+  unidade          UnidadeMedida?
+  unidadeOutro     String? // só usado quando unidade = OUTRO
+  ncm              String? // classificação fiscal (NF-e) — nullable, só exigido no momento de emitir nota
+  // Código de origem da mercadoria (Tabela B do CST/ICMS) — achado N6 da
+  // auditoria de abrangência. @default(NACIONAL_0) preserva o comportamento
+  // de sempre (icms_origem "0" fixo) pra todo item existente e todo item
+  // novo até a gráfica configurar diferente. Ver enum OrigemMercadoria acima.
+  origemMercadoria OrigemMercadoria @default(NACIONAL_0)
+  createdAt        DateTime         @default(now())
+
+  grafica      Grafica?      @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  itensGrafica ItemGrafica[]
+
+  // Nota: como o Postgres trata NULL como distinto em índices únicos, esta
+  // constraint não impede globais (graficaId=null) duplicados entre si — por
+  // isso o seed faz a própria checagem de duplicidade em vez de contar só com
+  // isto (ver prisma/seed.ts). Para itens privados (graficaId preenchido) a
+  // constraint funciona normalmente.
+  @@unique([graficaId, tipo, nome])
+  @@index([tipo, categoria])
+  @@index([graficaId])
+  @@map("itens_catalogo")
+}
+
+// Seleção da gráfica dentro do catálogo mestre: liga a gráfica a um ItemCatalogo
+// e guarda os preços que ELA define (compra = custo de aquisição/produção,
+// venda = quanto cobra do cliente). ativo=false "desliga" o item sem apagar
+// histórico (orçamentos e movimentações de estoque continuam íntegros).
+model ItemGrafica {
+  id                         String         @id @default(cuid())
+  graficaId                  String
+  itemCatalogoId             String
+  ativo                      Boolean        @default(true)
+  precoCompra                Decimal?       @db.Decimal(12, 4)
+  // Quando precoCompra mudou pela última vez — carimbado só quando o VALOR
+  // muda de verdade (não em toda edição da linha, ao contrário de
+  // updatedAt). null = nunca rastreado (todo item já existente antes deste
+  // campo) — não entra no aviso de "preço desatualizado"
+  // (ParametrosGrafica.diasPrecoInsumoDesatualizado): sem dado é "não sei",
+  // nunca "está velho".
+  precoCompraAtualizadoEm    DateTime?
+  precoVenda                 Decimal?       @db.Decimal(12, 2)
+  estoqueAtual               Decimal?       @db.Decimal(12, 4)
+  estoqueMinimo              Decimal?       @db.Decimal(12, 4)
+  // Quantas unidades individuais tem em cada "unidade cadastrada" deste item
+  // (ex: unidade=PACOTE, quantidadePorEmbalagem=500 → 1 pacote = 500
+  // etiquetas). Puramente informativo: mostra a conversão ao lado do estoque
+  // nas telas de catálogo, mas NÃO muda a unidade em que
+  // entrada/saída/ajuste são lançados nem como ficha técnica/custo calculam
+  // (estoqueAtual continua sendo "quantas unidades cadastradas", igual hoje).
+  // null = sem conversão configurada (comportamento atual, sem mudança).
+  quantidadePorEmbalagem     Decimal?       @db.Decimal(12, 4)
+  // Achado A6 da auditoria de abrangência (Parte 3/Compras): unidade
+  // COMERCIAL padrão em que este item costuma ser comprado (ex: FARDO),
+  // separada da unidade de ESTOQUE (ItemCatalogo.unidade) — ver enum
+  // UnidadeCompra. unidadeCompraPadraoOutro é texto livre só usado quando
+  // unidadeCompraPadrao=OUTRO (mesmo padrão de unidadeOutro). Só pré-
+  // preenche e avisa na tela de nova solicitação de compra (ver
+  // src/app/compras/nova/NovaSolicitacaoForm.tsx) — nunca obrigatório,
+  // nunca muda como estoque é lançado. null = sem padrão configurado
+  // (comprador digita direto na unidade de estoque, comportamento de hoje).
+  unidadeCompraPadrao        UnidadeCompra?
+  unidadeCompraPadraoOutro   String?
+  // Quantas unidades de ESTOQUE cada unidade de COMPRA representa (ex:
+  // unidadeCompraPadrao=FARDO, fatorConversaoCompraPadrao=50 → 1 fardo = 50
+  // kg de estoque). Pré-preenche o fator da solicitação; o comprador pode
+  // sempre digitar um fator diferente pra uma compra específica. null = sem
+  // fator padrão (precisa digitar na hora que unidadeCompra é usada).
+  fatorConversaoCompraPadrao Decimal?       @db.Decimal(12, 4)
+  // Lote mínimo e múltiplo de embalagem padrão de compra deste item, na
+  // unidade de COMPRA (não de estoque) — só CONFIGURAÇÃO pra pré-preencher
+  // e avisar arredondamento na tela de nova solicitação (mesma disciplina
+  // de aviso não-bloqueante já usada nesta auditoria, ex.: divergência de
+  // máquina): pedir uma quantidade que não é múltiplo é sempre permitido,
+  // nunca barrado. null = sem lote/múltiplo configurado, sem aviso.
+  loteMinimoCompra           Decimal?       @db.Decimal(12, 4)
+  multiploCompra             Decimal?       @db.Decimal(12, 4)
+  // Quanto desse material é perdido por CALIBRAGEM toda vez que uma produção
+  // entra em impressão (FILA→IMPRESSAO) — fixo, não escala com a quantidade
+  // do pedido (1 unidade ou 1000 = mesma perda). Diferente de
+  // Prensa.perdaPercentPadrao, que é percentual e só entra na ESTIMATIVA DE
+  // PREÇO do motor Offset (src/lib/pricing/offset.ts) — nunca mexe em
+  // estoque real. null = sem perda de calibragem configurada (comportamento
+  // de hoje: baixa só pela ficha técnica). Só relevante quando este
+  // ItemGrafica é matéria-prima (itemCatalogo.tipo=MATERIA_PRIMA); é o
+  // padrão sugerido na tela de confirmação de avancarPedido — editável por
+  // pedido lá, sem alterar este valor.
+  perdaFixaPadrao            Decimal?       @db.Decimal(12, 4)
+  // Dedup do alerta de estoque baixo por e-mail (ver src/lib/alerta-estoque.ts)
+  // — preenchido quando o e-mail/aviso é disparado, limpo de volta pra null
+  // assim que o estoque volta a ficar acima do mínimo (self-healing: cai nunca
+  // avisado → avisa; sobe → limpa; cai de novo → avisa de novo).
+  alertaEstoqueEnviadoEm     DateTime?
+  createdAt                  DateTime       @default(now())
+  updatedAt                  DateTime       @updatedAt
+
+  // Motor avançado — só relevante quando tipo=PRODUTO no ItemCatalogo relacionado.
+  modeloCalculo ModeloCalculo @default(SIMPLES)
+  viraFolha     Boolean       @default(false) // work-and-turn; só usado quando modeloCalculo=OFFSET
+
+  // Achado N1 da auditoria de abrangência (Parte 7) — só relevante quando
+  // modeloCalculo=SIMPLES. Antes desta flag, o motor decidia "cobra por m²"
+  // ou "cobra por peça" olhando se o VENDEDOR preencheu largura/altura
+  // naquela linha do orçamento (largura/altura são sempre opcionais e
+  // renderizadas em qualquer linha, ver SeletorItemOrcamento.tsx) — uma
+  // camiseta SIMPLES com "30×40" digitado como medida descritiva da estampa
+  // virava R$ preço/m² por acidente. Agora é propriedade do PRODUTO: só
+  // multiplica pela área (ver calcularPreco em src/lib/orcamento.ts) quando
+  // esta flag está ligada. @default(false) preserva o comportamento atual
+  // (peça) pra todo produto — a migration que introduziu este campo faz um
+  // backfill pontual (liga a flag em todo ItemGrafica que JÁ TEM algum
+  // OrcamentoItem SIMPLES com largura+altura preenchidas, preservando o
+  // comportamento observado hoje pra quem já dependia disso, ex: rótulos por
+  // tamanho) — nunca liga sozinha pra produto novo.
+  simplesCobraPorArea Boolean @default(false)
+
+  // Qual prensa física produz este item — só relevante/obrigatório (na aplicação)
+  // quando modeloCalculo=OFFSET. onDelete=Restrict: não deixa excluir uma prensa
+  // ainda em uso por algum produto.
+  prensaId String?
+
+  // Qual máquina flexo produz este item — só relevante/obrigatório (na aplicação)
+  // quando modeloCalculo=FLEXOGRAFIA. Mesma regra de prensaId (onDelete=Restrict).
+  maquinaFlexografiaId String?
+
+  // Qual impressora digital produz este item — só relevante/obrigatório (na
+  // aplicação) quando modeloCalculo=DIGITAL. Mesma regra de prensaId
+  // (onDelete=Restrict).
+  impressoraDigitalId String?
+
+  // Qual máquina de setup-por-peça produz este item — só relevante/
+  // obrigatório (na aplicação) quando modeloCalculo é SERIGRAFIA/SUBLIMACAO/
+  // ESTAMPAGEM_QUENTE. A máquina escolhida deve ter tipoProcesso compatível
+  // com o modeloCalculo do produto (validado na Server Action, sem CHECK no
+  // banco — mesmo padrão do resto do schema). Mesma regra de prensaId
+  // (onDelete=Restrict).
+  maquinaSetupPorPecaId String?
+
+  // Qual máquina de bordado produz este item — só relevante/obrigatório (na
+  // aplicação) quando modeloCalculo=BORDADO (achado A4). Mesma regra de
+  // prensaId (onDelete=Restrict).
+  maquinaBordadoId String?
+
+  // Qual máquina de tempo (corte/gravação a laser, router CNC, plotter de
+  // recorte...) produz este item — só relevante/obrigatório (na aplicação)
+  // quando modeloCalculo=TEMPO_MAQUINA (achado A6). Mesma regra de prensaId
+  // (onDelete=Restrict).
+  maquinaTempoId String?
+
+  // Gramatura escolhida — só relevante quando modeloCalculo=OFFSET (produto) ou
+  // quando este item é usado como papel de outro produto (matéria-prima). No
+  // produto, alimenta tanto o peso físico real da folha quanto a busca (com
+  // fallback) na TabelaPrecoPapel do papel selecionado — ver `papelId` abaixo
+  // e src/lib/pricing/papel.ts.
+  gramaturaGm2 Decimal? @db.Decimal(6, 1)
+
+  // Qual matéria-prima (papel) este produto Offset usa — só relevante/obrigatório
+  // (na aplicação) quando modeloCalculo=OFFSET. O preço por kg não fica mais
+  // digitado no produto: é resolvido em runtime pela TabelaPrecoPapel do papel
+  // referenciado aqui, usando gramaturaGm2 como chave (com fallback pra mais
+  // próxima). onDelete=Restrict: não deixa excluir um papel ainda em uso.
+  papelId String?
+
+  // Só relevante quando tipo=PRODUTO e modeloCalculo=M2.
+  custoImpressaoM2    Decimal? @db.Decimal(12, 4)
+  areaMinimaFaturavel Decimal? @db.Decimal(8, 4)
+
+  // Em qual CategoriaCusto a baixa automática desta matéria-prima cai (ver
+  // fase-custo-real.md §1.5, §3.2) — só relevante quando tipo=MATERIA_PRIMA.
+  // Nulo cai na categoria padrão configurada em
+  // ParametrosGrafica.categoriaCustoConsumoPadraoId.
+  categoriaCustoId String?
+
+  // Unidade em que a gráfica RACIOCINA e VENDE este produto (ex: rótulo por
+  // milheiro), separada da UnidadeMedida de ItemCatalogo (que descreve o
+  // item em si) — só relevante quando tipo=PRODUTO. fatorConversao converte
+  // pra a unidade base do motor de preço (ex: 1 milheiro = 1000). Nula = usa
+  // UNIDADE/1, comportamento de hoje. Camada de exibição/métrica derivada —
+  // nunca mexe no motor de preço em si.
+  unidadeContagem UnidadeMedida?
+  fatorConversao  Decimal?       @db.Decimal(12, 4)
+
+  grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  itemCatalogo        ItemCatalogo         @relation(fields: [itemCatalogoId], references: [id])
+  prensa              Prensa?              @relation(fields: [prensaId], references: [id], onDelete: Restrict)
+  maquinaFlexografia  MaquinaFlexografia?  @relation(fields: [maquinaFlexografiaId], references: [id], onDelete: Restrict)
+  impressoraDigital   ImpressoraDigital?   @relation(fields: [impressoraDigitalId], references: [id], onDelete: Restrict)
+  maquinaSetupPorPeca MaquinaSetupPorPeca? @relation(fields: [maquinaSetupPorPecaId], references: [id], onDelete: Restrict)
+  maquinaBordado      MaquinaBordado?      @relation(fields: [maquinaBordadoId], references: [id], onDelete: Restrict)
+  maquinaTempo        MaquinaTempo?        @relation(fields: [maquinaTempoId], references: [id], onDelete: Restrict)
+  papel               ItemGrafica?         @relation("PapelDoProdutoOffset", fields: [papelId], references: [id], onDelete: Restrict)
+  // SetNull: desativar/remover a categoria de custo não pode travar a
+  // matéria-prima — ela só volta a cair na categoria padrão da gráfica.
+  categoriaCusto      CategoriaCusto?      @relation(fields: [categoriaCustoId], references: [id], onDelete: SetNull)
+
+  itensOrcamento OrcamentoItem[]
+  movimentacoes  MovimentacaoEstoque[]
+
+  bobinas                       BobinaMaterial[]
+  formatosFolha                 FormatoFolha[]
+  configuracaoAcabamento        ConfiguracaoAcabamento?
+  usadoComoAcabamento           OrcamentoItemAcabamento[]
+  configuracaoClicheEtiqueta    ConfiguracaoClicheEtiqueta?
+  configuracaoClicheFlexografia ConfiguracaoClicheFlexografia?
+  configuracaoEmenda            ConfiguracaoEmenda?
+  usadoComoPapelEtiqueta        OrcamentoItemPrecificacaoEtiqueta[] @relation("PapelDoItemOrcamentoEtiqueta")
+
+  // Ficha técnica (spec de baixa automática de estoque): só relevante quando
+  // tipo=PRODUTO. fichaTecnica = quais matérias-primas este produto consome;
+  // usadoComoMateriaPrima = em quais fichas técnicas esta matéria-prima aparece.
+  fichaTecnica          FichaTecnicaItem[] @relation("FichaTecnicaDoProduto")
+  usadoComoMateriaPrima FichaTecnicaItem[] @relation("MateriaPrimaConsumida")
+
+  // Papel: produtos Offset que usam este item como papel, e a tabela de
+  // preço por gramatura deste item quando ELE é o papel (tipo=MATERIA_PRIMA).
+  produtosQueUsam  ItemGrafica[]      @relation("PapelDoProdutoOffset")
+  tabelaPrecoPapel TabelaPrecoPapel[] @relation("TabelaDoPapel")
+
+  // Variantes deste item quando ELE é uma matéria-prima com sub-variação
+  // (ex: espessura de chapa) — ver comentário do model VarianteMateriaPrima.
+  variantes VarianteMateriaPrima[] @relation("VariantesDaMateriaPrima")
+
+  // Pedidos de compra (workflow SOLICITADO→...→CONFERIDO) que têm esta
+  // matéria-prima como alvo — ver model SolicitacaoCompra.
+  solicitacoesCompra    SolicitacaoCompra[]
+  // Contratos de fornecimento com preço fixo por período que travam
+  // especificamente esta matéria-prima — achado A9 da auditoria de
+  // abrangência (Parte 3/Compras, 2026-08-30). Ver model ContratoFornecimento.
+  contratosFornecimento ContratoFornecimento[]
+  // Achado F1 da Parte 7 da auditoria de abrangência — ferramentais (faca,
+  // clichê...) que produzem este item do catálogo, ver model Ferramental.
+  ferramentais          Ferramental[]
+
+  @@unique([graficaId, itemCatalogoId])
+  @@index([graficaId])
+  @@index([categoriaCustoId])
+  @@index([impressoraDigitalId])
+  @@index([maquinaSetupPorPecaId])
+  @@index([maquinaBordadoId])
+  @@index([maquinaTempoId])
+  @@map("itens_grafica")
+}
+
+// Tabela de preço por gramatura de um papel (ItemGrafica tipo=MATERIA_PRIMA).
+// Um papel = 1 cadastro no catálogo; a gramatura vira um subtópico aqui em vez
+// de virar um cadastro inteiro novo (ver comentário do model ItemGrafica).
+// resolverPrecoPapel (src/lib/pricing/papel.ts) busca aqui pela gramatura
+// exata e, se não achar, cai no fallback pela mais próxima.
+model TabelaPrecoPapel {
+  id            String   @id @default(cuid())
+  itemGraficaId String
+  gramatura     Int
+  precoKg       Decimal  @db.Decimal(12, 4)
+  createdAt     DateTime @default(now())
+
+  itemGrafica ItemGrafica @relation("TabelaDoPapel", fields: [itemGraficaId], references: [id], onDelete: Cascade)
+
+  @@unique([itemGraficaId, gramatura])
+  @@index([itemGraficaId])
+  @@map("tabela_preco_papel")
+}
+
+// Quanto de uma matéria-prima um produto consome por unidade vendida (ex: 1 Cartão de
+// Visita consome 0,002 folha de Papel Couché 300g). Alimenta a baixa automática de
+// estoque quando um Pedido entra em produção (ver avancarPedido) — v1 só cobre
+// PRODUTO×quantidade do OrcamentoItem; acabamentos/serviços consumindo material próprio
+// (ex: BOPP na laminação) ficam de fora por ora.
+model FichaTecnicaItem {
+  id                   String   @id @default(cuid())
+  itemGraficaId        String // o produto (ItemGrafica tipo PRODUTO)
+  materiaPrimaId       String // a matéria-prima consumida (outro ItemGrafica, tipo MATERIA_PRIMA)
+  quantidadePorUnidade Decimal  @db.Decimal(12, 6)
+  createdAt            DateTime @default(now())
+
+  // Qual variante da matéria-prima (ex: espessura de uma chapa) é consumida —
+  // só relevante/obrigatório (na aplicação) quando a matéria-prima tem
+  // VarianteMateriaPrima cadastrada. Sem variantes, fica null e o consumo é
+  // do ItemGrafica direto, como sempre foi.
+  varianteId String?
+
+  itemGrafica  ItemGrafica           @relation("FichaTecnicaDoProduto", fields: [itemGraficaId], references: [id], onDelete: Cascade)
+  materiaPrima ItemGrafica           @relation("MateriaPrimaConsumida", fields: [materiaPrimaId], references: [id], onDelete: Cascade)
+  variante     VarianteMateriaPrima? @relation(fields: [varianteId], references: [id], onDelete: Restrict)
+
+  @@unique([itemGraficaId, materiaPrimaId, varianteId])
+  @@index([itemGraficaId])
+  @@index([materiaPrimaId])
+  @@index([varianteId])
+  @@map("ficha_tecnica_itens")
+}
+
+// Variante de uma matéria-prima (ex: espessura de uma chapa: 2mm/3mm/5mm) —
+// mesma filosofia de TabelaPrecoPapel (1 cadastro de matéria-prima, N
+// subtópicos), mas aqui cada variante tem preço E estoque próprios, porque
+// (diferente da gramatura do papel) variantes físicas diferentes têm saldos
+// de estoque diferentes de verdade. `ativo=false` é soft-delete: nunca se
+// apaga uma variante que já foi referenciada por ficha técnica ou
+// movimentação de estoque, só se desativa (some da tela, histórico intacto).
+model VarianteMateriaPrima {
+  id                     String    @id @default(cuid())
+  itemGraficaId          String // a matéria-prima "pai" (ItemGrafica tipo=MATERIA_PRIMA)
+  rotulo                 String // ex: "2mm", "3mm", "5mm"
+  ativo                  Boolean   @default(true)
+  precoCompra            Decimal   @db.Decimal(12, 4)
+  estoqueAtual           Decimal?  @db.Decimal(12, 4)
+  estoqueMinimo          Decimal?  @db.Decimal(12, 4)
+  // Mesma ideia de ItemGrafica.perdaFixaPadrao, só que por variante (ex: uma
+  // espessura de chapa pode ter perda de calibragem diferente de outra).
+  perdaFixaPadrao        Decimal?  @db.Decimal(12, 4)
+  // Mesmo dedup self-healing de ItemGrafica.alertaEstoqueEnviadoEm, só que por
+  // variante (cada uma tem saldo próprio).
+  alertaEstoqueEnviadoEm DateTime?
+  createdAt              DateTime  @default(now())
+
+  itemGrafica ItemGrafica @relation("VariantesDaMateriaPrima", fields: [itemGraficaId], references: [id], onDelete: Cascade)
+
+  fichaTecnica          FichaTecnicaItem[]
+  movimentacoes         MovimentacaoEstoque[]
+  solicitacoesCompra    SolicitacaoCompra[]
+  // Achado A9 da auditoria de abrangência (Parte 3/Compras, 2026-08-30) —
+  // ver model ContratoFornecimento.
+  contratosFornecimento ContratoFornecimento[]
+
+  @@unique([itemGraficaId, rotulo])
+  @@index([itemGraficaId])
+  @@map("variantes_materia_prima")
+}
+
+// Opções de bobina de um material (ex: Lona 440g vem em rolos de 1,00/1,20/1,50m).
+// custoM2 não é duplicado aqui — vem de ItemGrafica.precoCompra (fonte única).
+model BobinaMaterial {
+  id             String   @id @default(cuid())
+  itemGraficaId  String
+  larguraNominal Decimal  @db.Decimal(6, 3) // W_nominal, metros
+  refile         Decimal  @db.Decimal(6, 3) // m_refile por lado, metros
+  createdAt      DateTime @default(now())
+
+  itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id], onDelete: Cascade)
+
+  @@index([itemGraficaId])
+  @@map("bobinas_material")
+}
+
+// Formatos de folha de máquina de um papel (ex: Couché 300g em 66x96 e 33x48).
+model FormatoFolha {
+  id            String   @id @default(cuid())
+  itemGraficaId String
+  nome          String // ex: "Fechada 66x96"
+  larguraFolha  Decimal  @db.Decimal(6, 3) // L_f, metros
+  alturaFolha   Decimal  @db.Decimal(6, 3) // A_f, metros
+  createdAt     DateTime @default(now())
+
+  itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id], onDelete: Cascade)
+
+  @@index([itemGraficaId])
+  @@map("formatos_folha")
+}
+
+// Configura um SERVICO como acabamento do motor avançado (spec §3).
+// custoUnitario da fórmula não é campo novo — é o ItemGrafica.precoCompra do próprio serviço.
+model ConfiguracaoAcabamento {
+  id               String            @id @default(cuid())
+  itemGraficaId    String            @unique
+  baseCobranca     BaseCobranca
+  estagio          EstagioAcabamento
+  custoSetup       Decimal           @default(0) @db.Decimal(12, 4)
+  custoMinimo      Decimal           @default(0) @db.Decimal(12, 4)
+  custoFerramental Decimal?          @db.Decimal(12, 4)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id], onDelete: Cascade)
+
+  @@map("configuracoes_acabamento")
+}
+
+// Liga/configura o motor de clichê de etiqueta pra um produto M2 — presença
+// da linha = "este produto usa o motor de clichê", mesmo padrão de
+// ConfiguracaoAcabamento pra SERVICO/acabamento (presença = ligado, sem
+// checkbox extra). Só relevante quando ItemGrafica.modeloCalculo=M2.
+model ConfiguracaoClicheEtiqueta {
+  id                String   @id @default(cuid())
+  itemGraficaId     String   @unique
+  // R$ por cm² de área de clichê — achado analisando 132 pedidos reais da
+  // Assus (histórico "Custos_Adestek"): o custo do clichê escala com a área
+  // da etiqueta, não é um valor fixo igual pra qualquer tamanho (confirmado
+  // comparando pedidos de tamanhos diferentes com o mesmo nº de cores).
+  // Nunca escala com a tiragem — só com área × nº de cores.
+  custoClichePorCm2 Decimal  @db.Decimal(12, 4)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id], onDelete: Cascade)
+
+  @@map("configuracoes_cliche_etiqueta")
+}
+
+// Custo de clichê pro modelo FLEXOGRAFIA — mesma fórmula/unidade de
+// ConfiguracaoClicheEtiqueta (R$/cm² × nº de cores × área da peça, achada na mesma
+// análise de dados reais), mas tabela PARALELA, não reaproveitada: ao contrário do
+// M2 (onde a presença da linha liga/desliga um motor opcional, configurado num card
+// próprio), aqui é OBRIGATÓRIO pra todo produto FLEXOGRAFIA e configurado inline
+// junto com máquina/bobina em ConfiguracaoProdutoForm.tsx, não como card
+// independente.
+model ConfiguracaoClicheFlexografia {
+  id                String   @id @default(cuid())
+  itemGraficaId     String   @unique
+  custoClichePorCm2 Decimal  @db.Decimal(12, 4)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id], onDelete: Cascade)
+
+  @@map("configuracoes_cliche_flexografia")
+}
+
+// Achado A9 da auditoria de abrangência — config OPCIONAL por produto M2:
+// presença da linha = "emenda liberada pra este item", mesmo padrão de
+// presença-liga/ausência-desliga de ConfiguracaoClicheEtiqueta. Sem esta
+// linha, calcularM2 continua lançando PECA_EXCEDE_BOBINA quando a peça não
+// cabe em nenhuma bobina — comunicação visual (backdrop/fachada/outdoor/
+// painel de evento) é onde emendar painéis é rotina, não exceção; ver
+// src/lib/pricing/m2.ts. sobreposicaoM é só informativo por ora (não entra
+// na fórmula de custo, que segue exatamente a proposta do achado) — fica
+// disponível pra produção/instalação saberem quanto de sobra deixar em cada
+// emenda.
+model ConfiguracaoEmenda {
+  id                  String   @id @default(cuid())
+  itemGraficaId       String   @unique
+  custoPorMetroLinear Decimal  @db.Decimal(12, 4)
+  sobreposicaoM       Decimal  @db.Decimal(6, 3)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  itemGrafica ItemGrafica @relation(fields: [itemGraficaId], references: [id], onDelete: Cascade)
+
+  @@map("configuracoes_emenda")
+}
+
+enum MaterialSubstrato {
+  PAPEL_TERMICO
+  COUCHE_C_ROT
+  BOPP_METALIZADO_ROT
+  BOPP_BCO_PEROLIZADO
+  BOPP_BCO_FOSCO
+  BOPP_TRANSPARENTE
+  L2_SEM_ADESIVO
+  POLIETILENO_BRANCO
+  POLIETILENO_TRANSPARENTE
+  POLIESTER_BRANCO
+  POLIESTER_TRANSPARENTE
+  POLIESTER_CROMO_FOSCO
+  ELETROSTATICO_SEM_COLA
+  OUTRO
+}
+
+// OUTRO em cada enum abaixo (exceto TipoRotulagem, que descreve um PROCESSO
+// binário — manual ou automático — não um catálogo de material/técnica de
+// fornecedor) + campo de texto livre pareado em OrcamentoItemEtiqueta/
+// OrcamentoItemHotStamping — sem isso, uma gráfica cujo adesivo/laminação/
+// verniz real não está nesta lista fixa (montada a partir do catálogo de UM
+// fornecedor específico) simplesmente não conseguia cadastrar o item.
+enum TipoAdesivo {
+  ACRILICO_20G
+  ACRILICO_30G
+  BORRACHA_20G
+  BORRACHA_25G
+  BORRACHA_30G
+  BORRACHA_50G
+  OUTRO
+}
+
+enum SuperficieAplicacao {
+  VIDRO
+  PLASTICO
+  METAL
+  PAPEL
+  PAPELAO
+  OUTROS
+}
+
+enum TipoRotulagem {
+  MANUAL
+  AUTOMATICA
+}
+
+enum TipoSerrilha {
+  SERRILHA
+  MICRO_SERRILHA
+  GAP
+  OUTRO
+}
+
+enum TipoLaminacao {
+  BRILHO
+  FOSCO
+  SOFT_TOUCH
+  METALIZADA
+  OUTRO
+}
+
+enum TipoAcabamentoVerniz {
+  BRILHO
+  FOSCO
+  RIBBON
+  SOFT_TOUCH
+  OUTRO
+}
+
+enum TipoHotStamping {
+  HOT
+  COLD
+  OUTRO
+}
+
+enum LadoEtiqueta {
+  ROTULO
+  CONTRA_ROTULO
+}

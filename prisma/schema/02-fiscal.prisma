@@ -1,0 +1,144 @@
+// Dados fiscais da gráfica pra emitir nota fiscal via Focus NFe — 100% opt-in,
+// nunca pedido em /comecar ou /login, só configurado quando a gráfica realmente
+// for usar a função (ver NotaFiscalCard em /orcamento/[id]). Cada gráfica traz
+// sua PRÓPRIA conta na Focus NFe (não uma conta compartilhada do grafica-saas):
+// o token abaixo é o dela, e o site nunca armazena/manuseia certificado digital
+// — isso fica inteiramente do lado da Focus NFe.
+//
+// A API da Focus NFe exige os dados do emitente (CNPJ, razão social, endereço)
+// em TODA chamada de emissão — não fica pré-configurado na conta deles, por
+// isso precisamos guardar aqui também (confirmado no exemplo oficial da API).
+model DadosFiscaisGrafica {
+  id        String @id @default(cuid())
+  graficaId String @unique
+
+  focusNfeToken String? // token da CONTA DELES na Focus NFe — nunca uma conta nossa
+  ambiente      String  @default("homologacao") // homologacao | producao — nasce em homologação por segurança
+
+  cnpj              String?
+  razaoSocial       String?
+  nomeFantasia      String?
+  inscricaoEstadual String?
+  regimeTributario  RegimeTributario @default(SIMPLES_NACIONAL) // decide CSOSN (Simples) vs CST+ICMS (Normal) na emissão — ver src/lib/nota-fiscal.ts
+
+  enderecoCep        String?
+  enderecoLogradouro String?
+  enderecoNumero     String?
+  enderecoBairro     String?
+  enderecoMunicipio  String?
+  enderecoUf         String?
+
+  naturezaOperacaoPadrao  String @default("Venda de mercadoria")
+  cfopPadrao              String @default("5102") // venda dentro do estado, mercadoria de terceiros
+  cfopPadraoInterestadual String @default("6102") // venda interestadual (UF do cliente != UF da gráfica) pra cliente CONTRIBUINTE de ICMS, mercadoria de terceiros — ver resolverCfop em src/lib/nota-fiscal.ts. Cliente não-contribuinte/isento (Cliente.indicadorInscricaoEstadual) usa 6108 fixo, não este campo — achado N7 em pesquisa-abrangencia-modulos.md
+  csosnPadrao             String @default("102") // Simples Nacional, tributada sem permissão de crédito — só lido/enviado quando regimeTributario=SIMPLES_NACIONAL
+
+  // Só relevantes/obrigatórios (validado na Server Action, não CHECK no
+  // banco — mesmo padrão do resto do arquivo) quando regimeTributario !=
+  // SIMPLES_NACIONAL. Tabelas de código: ver src/lib/nota-fiscal-tabelas.ts.
+  cstIcmsPadrao                     String? // tabela CST-ICMS (00,10,20...), diferente de CSOSN
+  icmsAliquotaPadrao                Decimal? @db.Decimal(5, 2) // % — ex: 18.00
+  icmsModalidadeBaseCalculoPadrao   String? // tabela 0-3
+  pisCofinsSituacaoTributariaPadrao String? // PIS e COFINS compartilham a mesma tabela de código
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+
+  @@map("dados_fiscais_grafica")
+}
+
+// Cadastro fiscal completo e independente de uma FILIAL com CNPJ próprio —
+// espelha DadosFiscaisGrafica campo a campo de propósito (cada CNPJ é um
+// contribuinte separado perante a Focus NFe/SEFAZ, precisa do próprio
+// token/cadastro lá, não dá pra "herdar" o da matriz). Opcional: uma filial
+// sem linha aqui continua emitindo com os dados da gráfica (comportamento de
+// sempre, sem mudança) — ver resolverDadosFiscais em src/lib/nota-fiscal.ts,
+// único ponto que decide qual dos dois usar. Modelo separado (não um
+// filialId nullable dentro de DadosFiscaisGrafica) de propósito: evita
+// problema de unicidade parcial (Postgres trata NULL como sempre distinto em
+// @@unique, então não daria pra garantir "no máximo 1 linha-padrão da
+// gráfica" só com filialId opcional na mesma tabela) e mantém o caminho
+// gráfica-level 100% intocado — decisão de 2026-08-16, pedido de negócio
+// ainda sem caso real (nenhuma gráfica cliente tem filial com CNPJ próprio
+// hoje), construído preventivamente.
+model DadosFiscaisFilial {
+  id       String @id @default(cuid())
+  filialId String @unique
+
+  focusNfeToken String?
+  ambiente      String  @default("homologacao")
+
+  cnpj              String?
+  razaoSocial       String?
+  nomeFantasia      String?
+  inscricaoEstadual String?
+  regimeTributario  RegimeTributario @default(SIMPLES_NACIONAL)
+
+  enderecoCep        String?
+  enderecoLogradouro String?
+  enderecoNumero     String?
+  enderecoBairro     String?
+  enderecoMunicipio  String?
+  enderecoUf         String?
+
+  naturezaOperacaoPadrao  String @default("Venda de mercadoria")
+  cfopPadrao              String @default("5102")
+  cfopPadraoInterestadual String @default("6102") // ver comentário do campo espelho em DadosFiscaisGrafica
+  csosnPadrao             String @default("102")
+
+  // Espelha DadosFiscaisGrafica campo a campo — ver comentário lá.
+  cstIcmsPadrao                     String?
+  icmsAliquotaPadrao                Decimal? @db.Decimal(5, 2)
+  icmsModalidadeBaseCalculoPadrao   String?
+  pisCofinsSituacaoTributariaPadrao String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  filial Filial @relation(fields: [filialId], references: [id], onDelete: Cascade)
+
+  @@map("dados_fiscais_filial")
+}
+
+// Fechado, sem OUTRO: não existe um 4º regime real pra CNPJ emitir NF-e.
+enum RegimeTributario {
+  SIMPLES_NACIONAL
+  LUCRO_PRESUMIDO
+  LUCRO_REAL
+}
+
+enum StatusNotaFiscal {
+  PROCESSANDO
+  AUTORIZADA
+  REJEITADA
+  CANCELADA
+  ERRO
+}
+
+// Uma nota fiscal emitida (ou em processamento) pra um orçamento aprovado.
+// 1:1 com Orcamento — mesmo padrão de Pedido. `referencia` é a chave que
+// mandamos pra Focus NFe pra identificar essa emissão (idempotência do lado
+// deles); `chaveAcesso` só existe depois de AUTORIZADA.
+model NotaFiscal {
+  id           String           @id @default(cuid())
+  graficaId    String
+  orcamentoId  String           @unique
+  referencia   String           @unique
+  status       StatusNotaFiscal @default(PROCESSANDO)
+  numero       String?
+  serie        String?
+  chaveAcesso  String?
+  xmlUrl       String?
+  danfeUrl     String?
+  mensagemErro String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  grafica   Grafica   @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamento Orcamento @relation(fields: [orcamentoId], references: [id])
+
+  @@index([graficaId])
+  @@map("notas_fiscais")
+}

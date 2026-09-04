@@ -1,0 +1,22 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Unidade de ENTRADA/EXIBIÇÃO de medida de item de orçamento — ver
+// Grafica.unidadePadraoDimensao e src/lib/unidade-dimensao.ts. O banco
+// sempre grava em centímetros (OrcamentoItem.larguraCm/alturaCm), então
+// isto nunca é a unidade armazenada, só a unidade que a gráfica prefere
+// digitar/ver.
+enum UnidadeDimensao {
+  MM
+  CM
+  M
+}

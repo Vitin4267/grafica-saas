@@ -1,0 +1,357 @@
+// Fornecedor de matéria-prima/serviço — cadastro simples pra permitir
+// vincular uma entrada de compra (MovimentacaoEstoque tipo ENTRADA_COMPRA)
+// a quem vendeu, e comparar preço entre fornecedores do mesmo item ao
+// longo do tempo (via o histórico de movimentações já existente). Sem
+// workflow de cotação/aprovação de propósito — isso é feature maior,
+// separada; aqui é só "quem vendeu isto", espelhando o que a gráfica já
+// controla manualmente numa planilha de lista de compras.
+model Fornecedor {
+  id        String   @id @default(cuid())
+  graficaId String
+  nome      String
+  contato   String? // telefone/e-mail/observação livre
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  // Achado R3 da auditoria de abrangência (Parte 2/Produção, rodada 20,
+  // 2026-09-03) — CNPJ/CPF + endereço, necessários pra usar este fornecedor
+  // como DESTINATÁRIO de uma NF-e de remessa pra industrialização emitida
+  // direto do sistema (ver emitirNfeRemessaTerceirizacao em
+  // src/app/producao/terceirizacao-nfe-actions.ts e
+  // fornecedorProntoParaNfe em src/lib/nota-fiscal.ts). Todos opcionais: um
+  // Fornecedor cadastrado sem esses dados continua funcionando normalmente
+  // em SolicitacaoCompra/EtapaTerceirizada (comportamento de sempre) — só
+  // fica de fora do botão de emissão automática até alguém completar o
+  // cadastro (a terceirização em si nunca é bloqueada, só a emissão).
+  documento          String? // CNPJ (14) ou CPF (11), decidido pelo comprimento na emissão — mesmo critério de normalizarDocumentoDestinatario
+  enderecoLogradouro String?
+  enderecoNumero     String?
+  enderecoBairro     String?
+  enderecoMunicipio  String?
+  enderecoUf         String?
+  enderecoCep        String?
+
+  grafica               Grafica                @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  movimentacoes         MovimentacaoEstoque[]
+  solicitacoesCompra    SolicitacaoCompra[]
+  cotacoes              CotacaoFornecedor[]
+  // Achado A9 da auditoria de abrangência (Parte 3/Compras, 2026-08-30) —
+  // ver model ContratoFornecimento.
+  contratosFornecimento ContratoFornecimento[]
+  // Achado E1 da auditoria de abrangência (Parte 2/Produção) — ver model
+  // EtapaTerceirizada.
+  etapasTerceirizadas   EtapaTerceirizada[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("fornecedores")
+}
+
+// Fluxo estruturado de compra de matéria-prima: SOLICITADO→COTANDO→APROVADO→
+// COMPRADO→RECEBIDO→CONFERIDO, com CANCELADO alcançável a partir de qualquer
+// estado antes de RECEBIDO (ver TRANSICOES_VALIDAS em
+// src/lib/compras-status.ts, mesmo padrão de StatusOrcamento/orcamento-status.ts).
+// Diferente de MovimentacaoEstoque tipo ENTRADA_COMPRA (que já existia, um
+// registro simples de "isso entrou no estoque"): este model é o PEDIDO DE
+// COMPRA em si, existe desde ANTES de qualquer coisa física acontecer, e só
+// gera a MovimentacaoEstoque de entrada quando o material de fato chega
+// (RECEBIDO) — CONFERIDO é só a conferência/auditoria do que já entrou,
+// nunca gera uma segunda entrada.
+enum StatusSolicitacaoCompra {
+  SOLICITADO
+  COTANDO
+  APROVADO
+  COMPRADO
+  RECEBIDO
+  CONFERIDO
+  CANCELADO
+}
+
+// De onde nasce a necessidade da compra — achado A3 da auditoria de
+// abrangência (Parte 3/Compras, 2026-08-29): sem isso, reposição de estoque
+// (make-to-stock, nasce do ponto de encomenda) e compra pra um pedido
+// específico (make-to-order, nasce da venda) eram indistinguíveis, e o
+// custo de uma compra sob encomenda só chegava ao pedido indiretamente via
+// baixa de ficha técnica — nunca quando o item comprado não está na ficha
+// técnica (clichê, faca, terceirização). PEDIDO_ESPECIFICO exige
+// SolicitacaoCompra.pedidoId (obrigatório na aplicação, não no schema — ver
+// criarSolicitacaoCompra em src/app/compras/actions.ts); as demais nunca
+// preenchem pedidoId.
+enum OrigemSolicitacaoCompra {
+  REPOSICAO_ESTOQUE // ponto de encomenda / estoque baixo — o caso de sempre, default
+  PEDIDO_ESPECIFICO // comprado especificamente pra um Pedido — vira CustoPedido origem COMPRA em RECEBIDO
+  MANUTENCAO
+  CONSUMO_INTERNO
+  CONTRATO_PROGRAMADO
+  OUTRO
+}
+
+model SolicitacaoCompra {
+  id        String                  @id @default(cuid())
+  graficaId String
+  status    StatusSolicitacaoCompra @default(SOLICITADO)
+
+  itemGraficaId String // a matéria-prima (ItemGrafica tipo=MATERIA_PRIMA)
+  // Qual variante (ex: espessura de chapa) quando a matéria-prima tem
+  // VarianteMateriaPrima cadastrada — mesmo padrão opcional de
+  // FichaTecnicaItem.varianteId. null = matéria-prima sem variantes.
+  varianteId    String?
+  // Pode nascer sem fornecedor definido (ainda em SOLICITADO/COTANDO) — só
+  // costuma ser preenchido a partir de APROVADO.
+  fornecedorId  String?
+
+  quantidade           Decimal        @db.Decimal(12, 4)
+  // Achado A6 da auditoria de abrangência (Parte 3/Compras): unidade
+  // COMERCIAL desta compra específica (ex: FARDO — "R$/fardo"), separada da
+  // unidade de ESTOQUE que `quantidade` acima sempre representa (ver enum
+  // UnidadeCompra). unidadeCompraOutro é texto livre só usado quando
+  // unidadeCompra=OUTRO. quantidadeCompra × fatorConversaoCompra = quantidade
+  // (calculado e gravado na criação/edição da solicitação, em
+  // criarSolicitacaoCompra — não é campo computed do Prisma). `quantidade`
+  // continua sendo a ÚNICA fonte de verdade lida pelo resto do sistema
+  // (baixa de estoque, custo automático etc.); estes campos só existem pra
+  // reconstruir/exibir a conta original em unidade de compra pro comprador.
+  // precoUnitarioCompra é o preço por unidade de COMPRA (R$/fardo), DIFERENTE
+  // de ItemGrafica.precoCompra (preço por unidade de ESTOQUE) — puramente
+  // informativo, nunca usado em cálculo de custo. Todos null quando a
+  // solicitação não usa unidade de compra própria (comportamento de hoje
+  // 100% preservado: quantidade digitada direto na unidade de estoque).
+  unidadeCompra        UnidadeCompra?
+  unidadeCompraOutro   String?
+  quantidadeCompra     Decimal?       @db.Decimal(12, 4)
+  fatorConversaoCompra Decimal?       @db.Decimal(12, 4)
+  precoUnitarioCompra  Decimal?       @db.Decimal(12, 4)
+  // Estimativa no momento da solicitação/cotação — informativa, nunca usada
+  // pra decrementar caixa nem pra gravar o custo da entrada de estoque.
+  // valorFinal é o que de fato foi pago, preenchido ao confirmar COMPRADO —
+  // é ele (não o estimado) que vira o custo snapshotado na MovimentacaoEstoque
+  // gerada em RECEBIDO.
+  valorEstimado        Decimal?       @db.Decimal(12, 2)
+  valorFinal           Decimal?       @db.Decimal(12, 2)
+
+  observacao String? // texto livre — ex: motivo da solicitação, condição de pagamento
+
+  // Achado A3 da auditoria de abrangência (Parte 3/Compras) — ver comentário
+  // de OrigemSolicitacaoCompra acima. origemOutro é texto livre só usado
+  // quando origem=OUTRO (mesmo padrão de TipoPessoa/segmento "outro" já
+  // usados no resto do schema). pedidoId aponta pro Pedido de PRODUÇÃO (não
+  // pro Orcamento) — é o Pedido que tem CustoPedido; nullable porque só
+  // PEDIDO_ESPECIFICO preenche (obrigatoriedade condicional validada na
+  // action, não constraint de banco).
+  origem      OrigemSolicitacaoCompra @default(REPOSICAO_ESTOQUE)
+  origemOutro String?
+  pedidoId    String?
+
+  // Achado A9 da auditoria de abrangência (Parte 3/Compras, 2026-08-30) —
+  // preenchido só quando origem=CONTRATO_PROGRAMADO: o contrato de
+  // fornecimento que autorizou esta solicitação a nascer direto em APROVADO
+  // (fornecedor/preço copiados dele, ver criarSolicitacaoCompra em
+  // src/app/compras/actions.ts). SetNull: apagar o contrato (hoje sem fluxo
+  // de exclusão, só alternarAtivoContratoFornecimento) não pode apagar o
+  // histórico da compra, só perde a referência de qual contrato a originou.
+  contratoFornecimentoId String?
+
+  usuarioSolicitanteId String
+  usuarioAprovadorId   String?
+
+  // Datas de cada transição relevante. LogAuditoria (registrarAuditoria) já
+  // cobre "quem fez o quê e quando" de forma genérica pra toda a aplicação,
+  // mas a tela de detalhe desta solicitação precisa montar sua própria linha
+  // do tempo sem depender de outra tabela — por isso datas dedicadas aqui,
+  // igual o resto do schema faz (ex: Pedido.arteAprovadaEm). SOLICITADO
+  // nasce preenchido (solicitadoEm = createdAt); as demais começam null e são
+  // preenchidas por avancarStatusCompra na hora de cada transição.
+  solicitadoEm DateTime  @default(now())
+  cotandoEm    DateTime?
+  aprovadoEm   DateTime?
+  compradoEm   DateTime?
+  recebidoEm   DateTime?
+  conferidoEm  DateTime?
+  canceladoEm  DateTime?
+
+  // Nº da nota fiscal da compra — mesmo papel de MovimentacaoEstoque.documento;
+  // copiado pra lá quando a entrada é gerada em RECEBIDO.
+  documento String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica              Grafica               @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  // Restrict, mesmo raciocínio de MovimentacaoEstoque.itemGrafica: hoje não
+  // existe fluxo que apague um ItemGrafica, isto é só defensivo.
+  itemGrafica          ItemGrafica           @relation(fields: [itemGraficaId], references: [id], onDelete: Restrict)
+  // SetNull: desativar/apagar uma variante não pode apagar a solicitação —
+  // ela só perde a referência de qual variante era o alvo.
+  variante             VarianteMateriaPrima? @relation(fields: [varianteId], references: [id], onDelete: SetNull)
+  fornecedor           Fornecedor?           @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
+  usuarioSolicitante   Usuario               @relation("SolicitacoesCompraSolicitadas", fields: [usuarioSolicitanteId], references: [id])
+  usuarioAprovador     Usuario?              @relation("SolicitacoesCompraAprovadas", fields: [usuarioAprovadorId], references: [id])
+  // SetNull, mesmo raciocínio de MovimentacaoEstoque.pedido: apagar um
+  // Pedido (hoje não existe fluxo que apague) não pode apagar a solicitação
+  // de compra, só perde a referência de qual pedido a originou.
+  pedido               Pedido?               @relation(fields: [pedidoId], references: [id], onDelete: SetNull)
+  // Achado A9 da auditoria de abrangência (Parte 3/Compras) — ver comentário
+  // do campo contratoFornecimentoId acima.
+  contratoFornecimento ContratoFornecimento? @relation(fields: [contratoFornecimentoId], references: [id], onDelete: SetNull)
+  // Lado inverso de MovimentacaoEstoque.solicitacaoCompraId (FK mora lá, não
+  // aqui) — a entrada de estoque gerada ao confirmar RECEBIDO.
+  movimentacaoEstoque  MovimentacaoEstoque?
+  // Cotações registradas de cada fornecedor consultado (ver model
+  // CotacaoFornecedor abaixo) — achado A4 da auditoria de abrangência.
+  cotacoes             CotacaoFornecedor[]
+  // Lado inverso de CustoPedido.solicitacaoCompraId — o CustoPedido origem
+  // COMPRA gerado ao confirmar RECEBIDO quando pedidoId está preenchido
+  // (achado A3 da auditoria de abrangência).
+  custoPedidoGerado    CustoPedido?
+
+  @@index([graficaId, status])
+  @@index([itemGraficaId])
+  @@index([varianteId])
+  @@index([fornecedorId])
+  @@index([usuarioSolicitanteId])
+  @@index([pedidoId])
+  @@index([contratoFornecimentoId])
+  @@map("solicitacoes_compra")
+}
+
+// Achado A9 da auditoria de abrangência (Parte 3/Compras, 2026-08-30) —
+// contrato de fornecimento com preço fixo por período, prática corrente pra
+// gráfica de volume alto que dispensa cotação a cada reposição. Antes disto,
+// nada representava um acordo contínuo: ItemGrafica.precoCompra e
+// TabelaPrecoPapel.precoKg são preços de REFERÊNCIA, sem vigência nem
+// fornecedor associado. Dá função de verdade a
+// OrigemSolicitacaoCompra.CONTRATO_PROGRAMADO (enum existia desde a rodada 14
+// da auditoria sem nenhum comportamento associado) — ver
+// criarSolicitacaoCompra em src/app/compras/actions.ts: uma solicitação
+// criada com essa origem, vinculada a um contrato ativo e dentro da
+// vigência, nasce direto em APROVADO (fornecedor e preço copiados do
+// contrato), sem passar por COTANDO.
+//
+// itemGraficaId/varianteId são OPCIONAIS (validado em app, não em constraint
+// de banco — mesmo padrão do resto do schema): null em itemGraficaId é
+// contrato "coringa" que cobre qualquer matéria-prima deste fornecedor; null
+// em varianteId com itemGraficaId preenchido cobre qualquer variante deste
+// item — ver contratosAplicaveis em src/lib/contrato-fornecimento.ts.
+//
+// precoUnitario é sempre por UNIDADE DE ESTOQUE (a mesma unidade de
+// SolicitacaoCompra.quantidade) — unidadeCompra aqui é só INFORMATIVO (rótulo
+// de como o preço foi negociado, ex: "R$/fardo" na tela), sem fator de
+// conversão próprio: se o preço foi negociado numa unidade comercial
+// diferente da unidade de estoque, quem cadastra o contrato já digita
+// precoUnitario convertido pra unidade de estoque (fora de escopo desta
+// rodada acoplar isso ao fator de conversão do achado A6, trabalho em
+// paralelo). Reusa o enum UnidadeCompra (achado A6) em vez de duplicar;
+// unidadeCompraOutro é texto livre só usado quando unidadeCompra=OUTRO,
+// mesmo padrão do resto do schema.
+//
+// quantidadeConsumida só CRESCE, incrementada via increment() do Prisma
+// dentro da MESMA transação que já confirma RECEBIDO (ver
+// avancarStatusCompra em src/app/compras/status-transicao.ts) — nunca
+// lê-modifica-grava em passos separados, pra não perder incremento sob
+// concorrência. quantidadeContratada é o teto opcional (contrato "preço
+// travado, sem teto de volume" também é comum) — ver
+// listarContratosProximosDoLimite em src/lib/contrato-fornecimento.ts pro
+// alerta de esgotamento de quantidade/vigência.
+model ContratoFornecimento {
+  id        String @id @default(cuid())
+  graficaId String
+
+  fornecedorId  String
+  itemGraficaId String?
+  varianteId    String?
+
+  precoUnitario      Decimal       @db.Decimal(12, 4)
+  unidadeCompra      UnidadeCompra
+  unidadeCompraOutro String?
+
+  vigenciaInicio DateTime @db.Date
+  vigenciaFim    DateTime @db.Date
+
+  quantidadeContratada Decimal? @db.Decimal(12, 4)
+  quantidadeConsumida  Decimal  @default(0) @db.Decimal(12, 4)
+
+  condicaoPagamento String? // texto livre, mesmo padrão de CotacaoFornecedor.condicaoPagamento
+  observacao        String?
+
+  ativo Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica     Grafica               @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  // Restrict: um fornecedor com contrato cadastrado nunca deveria ser
+  // excluído de verdade (hoje nem existe fluxo de exclusão física de
+  // Fornecedor, só alternarAtivoFornecedor) — puramente defensivo.
+  fornecedor  Fornecedor            @relation(fields: [fornecedorId], references: [id], onDelete: Restrict)
+  // SetNull: desativar/remover o item ou a variante não apaga o contrato, só
+  // perde o escopo específico e passa a valer como "coringa" pro fornecedor
+  // (mesmo raciocínio de SolicitacaoCompra.varianteId).
+  itemGrafica ItemGrafica?          @relation(fields: [itemGraficaId], references: [id], onDelete: SetNull)
+  variante    VarianteMateriaPrima? @relation(fields: [varianteId], references: [id], onDelete: SetNull)
+
+  // Lado inverso de SolicitacaoCompra.contratoFornecimentoId — todas as
+  // solicitações nascidas via este contrato (origem=CONTRATO_PROGRAMADO).
+  solicitacoesCompra SolicitacaoCompra[]
+
+  @@index([graficaId, ativo])
+  @@index([fornecedorId])
+  @@index([itemGraficaId])
+  @@index([varianteId])
+  @@map("contratos_fornecimento")
+}
+
+// Uma cotação de um fornecedor específico pra uma SolicitacaoCompra — "mapa
+// de cotação" padrão dos ERPs brasileiros (achado A4 da auditoria de
+// abrangência, Parte 3/Compras): antes disso, a transição SOLICITADO/
+// COTANDO→APROVADO só guardava um único fornecedorId+valorEstimado, sem
+// forma de registrar "Suzano cotou R$5,20/kg em 10 dias, boleto 30; Ibema
+// R$5,45 em 3 dias, à vista" e depois escolher entre eles. Diferente de
+// ComparativoFornecedoresCard (src/lib/comparativo-fornecedores.ts), que é
+// histórico RETROSPECTIVO derivado de compras já recebidas — este model é
+// cotação ATIVA, criada durante o fluxo de uma solicitação específica, antes
+// de qualquer compra de fato acontecer.
+//
+// condicaoPagamento é texto livre de propósito: não existe no schema um
+// enum que sirva pra condição de COMPRA ("à vista", "boleto 30/60/90",
+// "antecipado") — FormaPagamento (usado em Pagamento/Despesa) é sobre o
+// MEIO de pagamento de uma venda (PIX/cartão/boleto como forma), conceito
+// diferente. Fechar um enum agora sem uso real validado seria hardcode
+// prematuro (ver princípio "configurabilidade em vez de hardcode").
+//
+// @@unique([solicitacaoCompraId, fornecedorId]): um fornecedor tem NO MÁXIMO
+// uma cotação vigente por solicitação — recotar o mesmo fornecedor
+// atualiza a linha existente (upsert), nunca duplica.
+model CotacaoFornecedor {
+  id                  String @id @default(cuid())
+  solicitacaoCompraId String
+  fornecedorId        String
+
+  precoUnitario     Decimal   @db.Decimal(12, 4)
+  valorTotal        Decimal   @db.Decimal(12, 2)
+  prazoEntregaDias  Int?
+  condicaoPagamento String?
+  validaAte         DateTime?
+  frete             Decimal?  @db.Decimal(12, 2)
+  observacao        String?
+
+  // Só uma cotação por solicitação pode ser vencedora — garantido em
+  // código (definirCotacaoVencedora zera as demais na mesma transação),
+  // não em constraint de banco (um índice único parcial "por
+  // solicitacaoCompraId onde vencedora=true" exigiria SQL específico do
+  // Postgres fora do que o Prisma schema expressa direto; a rota de
+  // escrita é única — sempre via essa mesma action — então o risco de
+  // divergência é baixo).
+  vencedora Boolean @default(false)
+
+  registradaPorId String
+  createdAt       DateTime @default(now())
+
+  solicitacaoCompra SolicitacaoCompra @relation(fields: [solicitacaoCompraId], references: [id], onDelete: Cascade)
+  fornecedor        Fornecedor        @relation(fields: [fornecedorId], references: [id], onDelete: Cascade)
+  registradaPor     Usuario           @relation(fields: [registradaPorId], references: [id])
+
+  @@unique([solicitacaoCompraId, fornecedorId])
+  @@index([solicitacaoCompraId])
+  @@index([fornecedorId])
+  @@map("cotacoes_fornecedor")
+}

@@ -1,0 +1,34 @@
+// Trilha de auditoria financeira: quem alterou o quê. usuarioNome é um
+// snapshot (não FK em Usuario) de propósito — o log tem que continuar legível
+// mesmo que o usuário seja removido da gráfica no futuro. entidadeId também
+// não é FK (mesmo motivo: excluirDespesa é hard delete, o log tem que
+// sobreviver ao registro que ele descreve).
+model LogAuditoria {
+  id          String   @id @default(cuid())
+  graficaId   String
+  usuarioId   String
+  usuarioNome String
+  acao        String
+  entidade    String
+  entidadeId  String
+  descricao   String
+  createdAt   DateTime @default(now())
+
+  // O QUE mudou, não só que mudou. Sem estes dois, "Fulano editou a despesa
+  // X" não resolve nenhuma investigação — o que resolve é "mudou de R$ 300
+  // pra R$ 100". Guardados como texto legível por humano (não JSON cru),
+  // porque quem lê isto é o dono da gráfica na tela de auditoria, não um
+  // programa. Nulos em ação que não é edição (criar, excluir, aprovar).
+  valorAnterior String?
+  valorNovo     String?
+
+  // IP de quem fez a ação. Existe pra responder "foi mesmo esse funcionário
+  // ou alguém usando a conta dele" — a pergunta que o dono faz quando algo
+  // dá errado. Nulo quando não foi possível resolver o IP.
+  ip String?
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+
+  @@index([graficaId, createdAt])
+  @@map("logs_auditoria")
+}

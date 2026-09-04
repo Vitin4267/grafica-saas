@@ -1,0 +1,547 @@
+// Cada gráfica é um tenant: todo dado abaixo pertence a uma Grafica
+// e nunca deve vazar entre tenants nas queries da aplicação.
+model Grafica {
+  id        String   @id @default(cuid())
+  nome      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Liga/desliga o compartilhamento da aba "Meu Negócio" com a equipe (não-DONO).
+  // Controle fino de quem exatamente vê fica em Usuario.acessoMeuNegocio — os dois
+  // precisam ser verdadeiros pra um funcionário enxergar a aba (ver podeVerMeuNegocio).
+  compartilharMeuNegocio Boolean @default(false)
+
+  // Logo da PRÓPRIA gráfica (não confundir com a marca do grafica-saas) —
+  // usada no cabeçalho do PDF de orçamento (src/lib/pdf/OrcamentoDocumento.tsx)
+  // no lugar da marca da plataforma. Opcional: sem logo, o PDF mostra só o
+  // nome da gráfica em texto, nunca a marca "GrafPro".
+  logoUrl String?
+
+  // Cor de destaque usada no PDF de orçamento e nos e-mails transacionais
+  // que vão pro CLIENTE FINAL da gráfica (aprovação de orçamento, arte,
+  // etc.) — documentos com a cara da gráfica, não do GrafPro. Formato hex
+  // ("#RRGGBB"), validado na action. null = mantém o teal padrão da
+  // plataforma (comportamento de hoje, sem mudança pra quem nunca configurar).
+  corPrimaria String?
+
+  // Dados de contato (comerciais, não fiscais) que aparecem no PDF de orçamento
+  // — mesmo nível de logoUrl/corPrimaria: identidade visual do documento
+  // enviado pro cliente (ver src/lib/pdf/OrcamentoDocumento.tsx rodapé).
+  // Aditivos, nunca vazam de nenhuma gráfica existente.
+  telefone         String?
+  emailContato     String?
+  site             String?
+  enderecoResumido String? // texto livre, uma linha — mesmo espírito de Filial.endereco
+
+  // Dados de RECEBIMENTO da própria gráfica (achado F6 da Parte 7 da
+  // auditoria de abrangência, pesquisa-abrangencia-modulos.md, 2026-08-31) —
+  // identidade comercial, não fiscal (por isso mora aqui, não em
+  // DadosFiscaisGrafica). SÓ EXIBIÇÃO: chavePix nunca é validada (não confere
+  // CPF/CNPJ/e-mail/telefone real, é texto livre) e nada aqui confirma
+  // pagamento automaticamente — ContaReceber/Pagamento continuam a única
+  // fonte de verdade de "foi pago", baixados manualmente como hoje. Impresso
+  // no PDF de orçamento e exibido em /o/[token] (só depois de APROVADO) só
+  // quando preenchido — null = gráfica não cadastrou, comportamento de hoje
+  // 100% preservado.
+  chavePix       String?
+  tipoChavePix   TipoChavePix?
+  // Nome de quem recebe o PIX — pode ser diferente de `nome`/razão social
+  // (ex: sócio pessoa física, ou outra empresa do grupo). Puramente
+  // declarativo, nunca comparado com nada.
+  favorecidoPix  String?
+  // Texto livre pra quem prefere TED/depósito em vez de PIX (banco, agência,
+  // conta) — sem cadastro estruturado de banco/agência/conta de propósito:
+  // achado classificado 🟢 Barato cobre só recebimento básico, não um
+  // cadastro bancário completo.
+  dadosBancarios String?
+
+  // Unidade padrão pra ENTRADA e EXIBIÇÃO de medidas de item de orçamento
+  // (largura/altura) — não afeta como o dado é gravado: OrcamentoItem.
+  // larguraCm/alturaCm continuam SEMPRE em centímetros, a unidade canônica
+  // do motor de cálculo (ver src/lib/unidade-dimensao.ts). Default CM
+  // preserva o comportamento de toda gráfica existente. Mais tarde um item
+  // específico de orçamento poderá sobrescrever isso pontualmente — trocar
+  // este padrão aqui nunca reconverte/altera orçamentos já salvos.
+  unidadePadraoDimensao UnidadeDimensao @default(CM)
+
+  // Perfil de negócio da gráfica (achado A6 da Parte 6 da auditoria de
+  // abrangência, 2026-08-27) — DESCRITIVO, nunca restritivo: só semeia
+  // defaults (categorias de custo sugeridas, pacote de dados de exemplo) e
+  // filtra sugestões; uma gráfica ESTAMPARIA_VESTUARIO continua podendo
+  // cadastrar uma prensa offset sem nenhuma trava. null = tenant anterior a
+  // este campo, ou que ainda não respondeu — cai nos mesmos defaults de
+  // sempre (perfil rótulo/etiqueta da gráfica-piloto), sem mudança de
+  // comportamento. Pergunta opcional, respondida em /configuracoes/identidade.
+  segmento      SegmentoGrafica?
+  // Só obrigatório (validado no server) quando segmento = OUTRO — mesmo
+  // padrão de Cliente.segmentoOutro/OrigemCliente.origemOutro.
+  segmentoOutro String?
+
+  // Segmentos SECUNDÁRIOS da gráfica (achado F9 da Parte 7 da auditoria de
+  // abrangência, pesquisa-abrangencia-modulos.md, 2026-08-31) — gráfica real
+  // quase nunca é uma coisa só (offset + gráfica rápida + comunicação visual
+  // no mesmo CNPJ é a norma). MESMA REGRA DE OURO de `segmento` acima: 100%
+  // DESCRITIVO, NUNCA RESTRITIVO. Só pode alimentar lógica ADITIVA (ex:
+  // ampliar o pacote de dados de exemplo em src/lib/dados-exemplo.ts com
+  // produtos extras dos segmentos secundários) — nunca uma condição que
+  // esconde/bloqueia card, menu ou feature (ver correção de E1/E2 no mesmo
+  // documento: usar `segmento`/`segmentosSecundarios` desse jeito já foi
+  // sinalizado como potencialmente perigoso). Array vazio (default) =
+  // comportamento de hoje, sem nenhuma mudança pra tenant existente. Não há
+  // campo "Outro" irmão aqui (diferente de segmento/segmentoOutro): a lista
+  // secundária é só um multi-select sobre o mesmo enum, sem texto livre.
+  segmentosSecundarios SegmentoGrafica[] @default([])
+
+  usuarios              Usuario[]
+  clientes              Cliente[]
+  itensGrafica          ItemGrafica[]
+  itensCatalogoPrivados ItemCatalogo[]
+  orcamentos            Orcamento[]
+  pedidos               Pedido[]
+  parametros            ParametrosGrafica?
+  prensas               Prensa[]
+  maquinasFlexografia   MaquinaFlexografia[]
+  equipamentos          Equipamento[]
+  impressorasDigitais   ImpressoraDigital[]
+  maquinasSetupPorPeca  MaquinaSetupPorPeca[]
+  // Achados A4/A6 da Parte 1 da auditoria de abrangência
+  // (pesquisa-abrangencia-modulos.md) — ver model MaquinaBordado/MaquinaTempo.
+  maquinasBordado       MaquinaBordado[]
+  maquinasTempo         MaquinaTempo[]
+  registrosManutencao   RegistroManutencao[]
+  // Achado F1 da Parte 7 da auditoria de abrangência — ver model Ferramental.
+  ferramentais          Ferramental[]
+  // Achado A5 da auditoria de abrangência (Parte 6/Configurações) — ver
+  // model PerfilAcesso.
+  perfisAcesso          PerfilAcesso[]
+  // Achado B1/B2 da Parte 2 (Produção) — histórico de transição de etapa
+  // por pedido, ver ApontamentoEtapa.
+  apontamentosEtapa     ApontamentoEtapa[]
+  dadosFiscais          DadosFiscaisGrafica?
+  notasFiscais          NotaFiscal[]
+  automacao             AutomacaoGrafica?
+  despesas              Despesa[]
+  logsAuditoria         LogAuditoria[]
+  assinatura            AssinaturaGrafica?
+  comissoes             Comissao[]
+  filiais               Filial[]
+  arquivos              ArquivoArmazenado[]
+  categoriasCusto       CategoriaCusto[]
+  custosPedido          CustoPedido[]
+  custosPrevisto        PedidoCustoPrevisto[]
+  fornecedores          Fornecedor[]
+  // Achado E1 da auditoria de abrangência (Parte 2/Produção) — ver model
+  // EtapaTerceirizada.
+  etapasTerceirizadas   EtapaTerceirizada[]
+  contasPrepagas        ContaPrepaga[]
+  contasReceber         ContaReceber[]
+  condicoesPagamento    CondicaoPagamento[]
+  importacoesPlanilha   ImportacaoPlanilha[]
+  solicitacoesCompra    SolicitacaoCompra[]
+  // Achado A9 da auditoria de abrangência (Parte 3/Compras, 2026-08-30) —
+  // ver model ContratoFornecimento.
+  contratosFornecimento ContratoFornecimento[]
+  entregas              Entrega[]
+  filaGangRun           FilaGangRun[]
+  gruposGangRun         GrupoGangRun[]
+  feriados              FeriadoGrafica[]
+  // Achado A4 da Parte 6 da auditoria de abrangência
+  // (pesquisa-abrangencia-modulos.md, 2026-09-02) — ver model AlcadaAprovacao.
+  alcadasAprovacao      AlcadaAprovacao[]
+  // Achado A1 da auditoria de abrangência (Parte 2/Produção), Fase 1 — ver
+  // model EtapaGrafica.
+  etapasGrafica         EtapaGrafica[]
+
+  @@map("graficas")
+}
+
+// Parâmetros globais do motor de precificação avançado (M2/OFFSET), um por tenant.
+// Os campos de custo de máquina (torres, custoHoraMaq etc.) viraram o modelo Prensa
+// — um tenant pode ter várias prensas offset com custos/rendimentos diferentes.
+model ParametrosGrafica {
+  id        String @id @default(cuid())
+  graficaId String @unique
+
+  // Composição final do preço (spec §0 e §4)
+  overheadPercent          Decimal @default(0.15) @db.Decimal(5, 4)
+  margemPadrao             Decimal @default(0.20) @db.Decimal(5, 4)
+  impostoPercent           Decimal @default(0.06) @db.Decimal(5, 4)
+  comissaoPercent          Decimal @default(0) @db.Decimal(5, 4)
+  taxaFinanceiraPercent    Decimal @default(0) @db.Decimal(5, 4)
+  pedidoMinimo             Decimal @default(0) @db.Decimal(12, 2)
+  incrementoArredondamento Decimal @default(0.10) @db.Decimal(6, 2)
+
+  // Defaults de nesting em bobina (spec §1: s, g)
+  margemSegurancaPadrao Decimal @default(0.02) @db.Decimal(5, 4)
+  gapPecasPadrao        Decimal @default(0.008) @db.Decimal(5, 4)
+
+  // Referência pro Cálculo de tinta com IA (ver OrcamentoItemTinta) — NUNCA
+  // entra na composição de preço acima, é só multiplicado pelo ml estimado
+  // na hora de EXIBIR o card, puramente informativo. Nulo = ainda não
+  // configurado, o card não mostra linha de custo nenhuma nesse caso.
+  custoTintaPorMl Decimal? @db.Decimal(10, 4)
+
+  // Política de cálculo da comissão PAGA a vendedores (ver model Comissao)
+  // — NÃO CONFUNDIR com `comissaoPercent` acima, que é markup de
+  // precificação embutido no preço de venda (src/lib/pricing/compor.ts),
+  // nunca pago a ninguém. Esta aqui decide se o valor-base da comissão de
+  // cada vendedor é o total do orçamento ou o lucro (total - custo).
+  comissaoVendedorBase BaseComissao @default(VALOR)
+
+  // Achado A8 da auditoria de abrangência (pesquisa-abrangencia-modulos.md)
+  // — hoje Comissao.usuarioId nasce sempre de Orcamento.usuarioId (quem
+  // DIGITOU o orçamento no sistema), não de Cliente.vendedorId (quem
+  // efetivamente atende o cliente). Quando ligada, o vendedor do CLIENTE
+  // passa a ser a base de Comissao.usuarioId no fechamento (ver
+  // atualizarStatusOrcamento em src/app/orcamento/[id]/actions.ts e
+  // responderOrcamentoPublico em src/app/o/[token]/actions.ts), com
+  // fallback pra Orcamento.usuarioId quando o cliente não tem vendedor
+  // atribuído. default(false) preserva 100% do comportamento de hoje pra
+  // quem já usa o sistema — muitas gráficas pequenas não distinguem "quem
+  // atende o cliente" de "quem lança no sistema".
+  comissaoSegueVendedorDoCliente Boolean @default(false)
+
+  // Flags da fase "custo real" (fase-custo-real.md §1.5) — tudo que varia
+  // entre gráficas nasce aqui, nunca hardcoded.
+  custoAutomaticoConsumo        Boolean @default(true) // gerar CustoPedido automático na baixa Fila→Impressão
+  categoriaCustoConsumoPadraoId String? // categoria pra matéria-prima sem categoriaCustoId própria
+  comissaoEntraNoCustoPedido    Boolean @default(false)
+  perdaEhCustoDoPedido          Boolean @default(true)
+  margemFaixaBaixa              Decimal @default(10) @db.Decimal(5, 2) // % — abaixo disso o medidor mostra vermelho
+  margemFaixaBoa                Decimal @default(25) @db.Decimal(5, 2) // % — acima disso o medidor mostra verde
+  descontoMaxSemAprovacao       Decimal @default(100) @db.Decimal(5, 2) // % — 100 = sem trava (comportamento de hoje)
+  diasPrecoInsumoDesatualizado  Int     @default(90)
+
+  // Achado N13 da auditoria de abrangência — faixa de gramatura aceita pelo
+  // validador do offset (ver validarPedidoOffset em src/lib/pricing/validar.ts).
+  // Antes era uma constante fixa 30-500 g/m² no código: travava com erro
+  // fatal a cotação de embalagem/cartonagem (duplex/triplex 450-600 g/m²,
+  // micro-ondulado E-flute >500) e de editorial (papel bíblia 22-40 g/m²).
+  // Defaults 30/500 preservam 100% do comportamento de hoje pra quem já usa
+  // o sistema — mesmo espírito de descontoMaxSemAprovacao acima.
+  gramaturaMinGm2 Decimal @default(30) @db.Decimal(6, 1)
+  gramaturaMaxGm2 Decimal @default(500) @db.Decimal(6, 1)
+
+  // Achado A6 da Parte 4 da auditoria de abrangência (2026-08-27) — mesmo
+  // espírito de descontoMaxSemAprovacao acima: por padrão, estourar
+  // Cliente.limiteCredito na aprovação de um orçamento é só um AVISO
+  // (atualizarStatusOrcamento/responderOrcamentoPublico continuam aprovando).
+  // Ligada, a aprovação passa a ser recusada de verdade quando a exposição
+  // (ContaReceber pendente + este orçamento) ultrapassa o limite. Só afeta o
+  // estouro AUTOMÁTICO de limite — o bloqueio manual
+  // (Cliente.bloqueadoParaVenda/bloqueadoParaFaturamento) nunca bloqueia de
+  // verdade, só avisa, independente desta flag. default(false) preserva o
+  // comportamento de hoje pra quem já usa o sistema.
+  bloqueiaAoUltrapassarLimiteCredito Boolean @default(false)
+  // Quantos dias um orçamento fica válido depois de virar ENVIADO (ver
+  // Orcamento.validoAteEm e orcamentoEstaExpirado em
+  // src/lib/orcamento-status.ts). Nullable + default(15) de propósito: o
+  // form sempre manda um inteiro, mas o nullable deixa espaço pra uma
+  // futura opção de "sem expiração" sem precisar de sentinela mágico.
+  diasValidadeOrcamentoPadrao        Int?    @default(15)
+
+  // Variação admissível entre a quantidade CONTRATADA e a quantidade
+  // efetivamente ENTREGUE, em %, sem que isso seja motivo de disputa —
+  // padrão do mercado offset (quebra de máquina, acerto de cor). Snapshot
+  // em Orcamento.toleranciaTiragemPercent no momento do ENVIO, mesmo
+  // mecanismo de diasValidadeOrcamentoPadrao → validoAteEm acima. Nullable
+  // + default(10) pelo mesmo motivo: form sempre manda um número, mas o
+  // nullable deixa espaço pra uma futura opção de "tolerância zero" sem
+  // sentinela mágico.
+  toleranciaTiragemPadraoPercent Decimal? @default(10) @db.Decimal(5, 2)
+
+  // Achado A13 da Parte 6 da auditoria de abrangência (2026-08-29) —
+  // tolerância de tiragem configurável pela gráfica (usada no PDF de
+  // termos-padrão e exibição de faixa aceitável na Ordem de Produção).
+  // 0 = sem tolerância (comportamento padrão hoje); > 0 = % de variação
+  // permitida exibida em documentos. Aditivo: zero mudança de comportamento
+  // de faturamento (fora de escopo desta rodada, ver pesquisa-abrangencia-modulos.md).
+  toleranciaTiragemPercent Decimal @default(0) @db.Decimal(5, 2)
+
+  // Limiares do alerta de prazo por e-mail (ver src/lib/alerta-prazo-email.ts)
+  // — antes fixos em 5/3/0 dias no código. Uma gráfica com ciclo de produção
+  // de 1 dia acha 5 dias antes ruído inútil; uma com produção longa
+  // (offset+laminação+hot stamping) quer aviso mais cedo. Ordem decrescente
+  // sempre (limiar1 > limiar2 > limiar3) — validado na action, não aqui.
+  alertaPrazoAtivo       Boolean @default(true)
+  alertaPrazoLimiar1Dias Int     @default(5)
+  alertaPrazoLimiar2Dias Int     @default(3)
+  alertaPrazoLimiar3Dias Int     @default(0)
+
+  // Quantos dias um orçamento ENVIADO fica sem resposta do cliente até
+  // aparecer na lista de "parados" (ver Orcamento.enviadoEm e
+  // orcamentoEstaParado em src/lib/orcamento-status.ts). Distinto de
+  // diasValidadeOrcamentoPadrao acima: expiração é o prazo em que a proposta
+  // deixa de valer, este é um aviso ANTERIOR pro vendedor cobrar o cliente
+  // antes de chegar lá — pesquisa de mercado aponta "mandei e o cliente
+  // sumiu" como o padrão mais comum de venda perdida numa gráfica.
+  diasAlertaOrcamentoParado Int @default(5)
+
+  // Bloco de termos e condições impresso no rodapé do PDF de orçamento
+  // (src/lib/pdf/OrcamentoDocumento.tsx), usado tanto em /orcamento/[id]/pdf
+  // quanto no link público /o/[token]/pdf. Null = gráfica nunca configurou
+  // — o PDF cai no texto padrão do sistema (ver TERMOS_CONDICOES_PDF_PADRAO
+  // em src/lib/pdf/termos-padrao.ts), nunca fica em branco por padrão
+  // (exposição jurídica se um pedido for contestado). "" também vira null na
+  // action (ver salvarParametros), pra "limpar o campo" sempre significar
+  // "voltar pro padrão do sistema", nunca "sem cláusula nenhuma".
+  termosCondicoesPdf String? @db.Text
+
+  // Liga/desliga o bloco inteiro de especificações técnicas de etiqueta
+  // (material, adesivo, verniz, laminação, hot/cold stamping, rebobinamento
+  // — ver OrcamentoItemEtiqueta) no que o CLIENTE vê (link público e as duas
+  // rotas de PDF), nunca na tela interna autenticada nem na Ordem de
+  // Produção (chão de fábrica sempre precisa da especificação completa,
+  // independente da preferência do cliente). Tudo ou nada de propósito —
+  // usuário pediu explicitamente a versão simples em vez de um toggle por
+  // campo (2026-08-23): "nem toda empresa quer que apareça". default true
+  // preserva o comportamento de sempre mostrar (que já existia antes deste
+  // campo existir) pra toda gráfica já cadastrada.
+  mostrarEspecificacoesTecnicas Boolean @default(true)
+
+  // Calendário de dias úteis por tenant (achado A2 da Parte 6 — auditoria de
+  // abrangência, 2026-08-27): o PDF de orçamento promete "N dias úteis após
+  // aprovação" (texto fixo em src/lib/pdf/OrcamentoDocumento.tsx e
+  // src/app/o/[token]/page.tsx) mas nada no sistema sabia calcular um dia
+  // útil de verdade — nem sequer sabia que cada gráfica tem feriados
+  // municipais/estaduais próprios (Carnaval é feriado no Rio, não em SP; um
+  // feriado municipal de Araxá não existe em Manaus). false = a gráfica cota
+  // em dias corridos simples (ver somarDiasUteis em src/lib/dias-uteis.ts).
+  prazoEmDiasUteis  Boolean @default(true)
+  // Bitmask dos dias da semana em que a gráfica funciona — bit0=segunda,
+  // bit1=terça, bit2=quarta, bit3=quinta, bit4=sexta, bit5=sábado,
+  // bit6=domingo (bit ligado = funciona nesse dia). Default 31 = 0b0011111 =
+  // segunda a sexta.
+  diasFuncionamento Int     @default(31)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+
+  @@map("parametros_grafica")
+}
+
+// Feriado (ou ponto facultativo tratado como feriado) de UMA gráfica — nunca
+// um calendário nacional único: cada gráfica tem sua cidade/UF, com feriados
+// municipais/estaduais próprios (ver comentário de
+// ParametrosGrafica.prazoEmDiasUteis acima). Consumido por somarDiasUteis
+// (src/lib/dias-uteis.ts) e por enviarAlertasPrazoEmail (src/lib/alerta-prazo-email.ts).
+model FeriadoGrafica {
+  id              String   @id @default(cuid())
+  graficaId       String
+  data            DateTime @db.Date
+  descricao       String
+  // 25/12 (Natal) é recorrente todo ano; Carnaval/Corpus Christi são datas
+  // móveis e precisam ser recadastrados ano a ano — somarDiasUteis compara
+  // só mês/dia (ignorando o ano) quando este flag está ligado, nunca a data
+  // inteira.
+  recorrenteAnual Boolean  @default(false)
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+
+  @@unique([graficaId, data])
+  @@index([graficaId])
+  @@map("feriados_grafica")
+}
+
+// Uma filial/unidade física da gráfica. COMPARTILHA catálogo, estoque e
+// financeiro com a gráfica inteira (não é um tenant separado) — serve só
+// pra marcar em qual orçamento foi feito, pra fins de relatório (ver
+// Orcamento.filialId). endereco é texto livre de propósito, sem CEP
+// estruturado — é só referência, não alimenta nenhum cálculo.
+model Filial {
+  id        String  @id @default(cuid())
+  graficaId String
+  nome      String
+  endereco  String?
+  ativa     Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica      Grafica             @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamentos   Orcamento[]
+  dadosFiscais DadosFiscaisFilial?
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("filiais")
+}
+
+// Webhook n8n (ou qualquer outro) que a PRÓPRIA gráfica configura pra
+// receber eventos do hub de automação (pedido_status_mudou, estoque_critico,
+// pedido_atrasado — ver src/lib/webhook-automacao.ts), mesmo padrão "bring
+// your own account" de DadosFiscaisGrafica. Diferente do assistente de IA
+// (ASSISTENTE_WEBHOOK_URL, env var única da plataforma) — automação é
+// legitimamente por tenant, cada gráfica quer notificação só dos próprios
+// pedidos.
+model AutomacaoGrafica {
+  id        String @id @default(cuid())
+  graficaId String @unique
+
+  // URL do workflow n8n do PRÓPRIO tenant — o path costuma carregar um UUID
+  // que funciona como token de capability (padrão de webhook do n8n), por
+  // isso é tratada como segredo (nunca reexibida por completo, ver
+  // /configuracoes/automacao).
+  webhookUrl String?
+
+  // Liga/desliga cada tipo de evento individualmente — antes dos três
+  // disparavam sempre juntos assim que webhookUrl estava configurado. Uma
+  // gráfica que não controla estoque no sistema não quer estoque_critico
+  // poluindo o workflow; outra quer só pedido_atrasado. Default true em
+  // todos preserva o comportamento de hoje pra quem já tem webhook configurado.
+  notificarStatusMudou    Boolean @default(true)
+  notificarEstoqueCritico Boolean @default(true)
+  notificarPedidoAtrasado Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+
+  @@map("automacao_grafica")
+}
+
+enum StatusAssinatura {
+  TRIALING
+  ATIVA
+  INADIMPLENTE // past_due no Stripe: pagamento falhou mas a assinatura ainda não cancelou
+  CANCELADA
+}
+
+// Cobrança da PLATAFORMA sobre a gráfica (assinatura do SaaS) — diferente do
+// padrão "bring your own account" usado por DadosFiscaisGrafica (onde a
+// credencial é da própria gráfica): aqui a conta Stripe é NOSSA, do
+// dono do grafica-saas. Guarda só o status derivado + IDs de referência — o
+// Stripe é a fonte de verdade do dinheiro, isto aqui é um cache local pro
+// gate de acesso (src/lib/auth/assinatura.ts) não precisar chamar a API do
+// Stripe em toda página. A única escrita em `status` depois da criação vem
+// do webhook (src/app/api/webhooks/stripe/route.ts), nunca de uma Server
+// Action comum.
+model AssinaturaGrafica {
+  id        String @id @default(cuid())
+  graficaId String @unique
+
+  status StatusAssinatura @default(TRIALING)
+
+  // true = acesso concedido via /admin/graficas (super admin), não uma
+  // assinatura Stripe real. status continua "ATIVA" (mesmo campo que já
+  // libera acesso, ver assinaturaEstaLiberada) — este campo só diferencia
+  // "grátis de propósito" de "pagante de verdade" em relatórios/UI, nunca
+  // influencia o gate de acesso em si.
+  cortesia Boolean @default(false)
+
+  stripeCustomerId     String? @unique
+  stripeSubscriptionId String? @unique
+  stripePriceId        String?
+
+  trialExpiraEm        DateTime?
+  periodoAtualExpiraEm DateTime? // current_period_end do Stripe, pra exibir "próxima cobrança em"
+  canceladaEm          DateTime?
+
+  // Início da janela de 15 dias de tolerância depois de ultrapassar o teto
+  // de uso do plano (orçamentos/mês ou usuários) — null = dentro do limite
+  // hoje. Ver src/lib/billing/limite-uso.ts.
+  limiteExcedidoDesde DateTime?
+
+  // Início da janela de carência de INADIMPLENTE (2 meses, ver
+  // DIAS_CARENCIA_INADIMPLENCIA em src/lib/billing/status.ts) — decisão de
+  // produto de 2026-08-15: bloquear acesso na primeira falha de cobrança do
+  // Stripe é agressivo demais (cartão vencido por um dia, banco recusando
+  // por engano). Setado por sincronizarSubscription quando o status
+  // TRANSICIONA pra INADIMPLENTE (nunca resetado por resyncs subsequentes
+  // enquanto continuar INADIMPLENTE); voltado a null assim que sai desse
+  // status (ATIVA ou CANCELADA). null = nunca entrou em INADIMPLENTE, ou já
+  // saiu.
+  inadimplenteDesde DateTime?
+
+  // Quando o e-mail de "seu trial está quase acabando" foi disparado (ver
+  // src/app/api/cron/lifecycle/route.ts, cron diário) — idempotência pra
+  // não mandar o aviso duas vezes. null = ainda não enviado. Fica null pra
+  // sempre em gráficas que nunca chegam a 2 dias do fim do trial (ex:
+  // assinam antes) ou que não estão em TRIALING.
+  avisoTrialEnviadoEm DateTime?
+
+  // Reserva atômica contra checkout duplicado: iniciarCheckout só cria uma
+  // Stripe Checkout Session se conseguir gravar este timestamp via updateMany
+  // condicionado (nenhuma reserva viva no momento) — duas requisições
+  // concorrentes (duas abas, duplo clique) nunca passam as duas, porque a
+  // segunda vê o timestamp que a primeira acabou de gravar e falha a
+  // condição. null = sem checkout em andamento. Ver src/app/configuracoes/assinatura/actions.ts.
+  checkoutIniciadoEm DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+
+  @@map("assinatura_grafica")
+}
+
+// Registro de cada pergunta enviada ao assistente — existe só pra rate limiting
+// (mesmo padrão de TentativaLogin: conta linhas numa janela de tempo). NÃO
+// guarda o texto da pergunta: não precisa pra esse propósito, e menos dado
+// guardado é menos dado pra vazar. Protege contra spam/gasto de token do n8n
+// da própria gráfica, tanto de um usuário sozinho quanto da gráfica toda.
+model PerguntaAssistenteLog {
+  id        String   @id @default(cuid())
+  graficaId String
+  usuarioId String
+  createdAt DateTime @default(now())
+
+  @@index([usuarioId, createdAt])
+  @@index([graficaId, createdAt])
+  @@map("pergunta_assistente_log")
+}
+
+// Perfil de negócio da GRÁFICA (tenant), não confundir com SegmentoCliente
+// acima (perfil comercial de um cliente da gráfica) — achado A6 da Parte 6
+// da auditoria de abrangência (2026-08-27): nada no schema dizia que TIPO
+// de gráfica o tenant é, então defaults (categorias de custo sugeridas,
+// pacote de dados de exemplo) ficavam implicitamente calibrados só no
+// perfil da gráfica-piloto (rótulos/etiquetas). Mesmo padrão
+// enum-fechado+OUTRO do resto do schema — ver Grafica.segmento/segmentoOutro.
+enum SegmentoGrafica {
+  ROTULOS_ETIQUETAS
+  OFFSET_COMERCIAL
+  COMUNICACAO_VISUAL
+  ESTAMPARIA_VESTUARIO
+  BRINDES_PERSONALIZADOS
+  EMBALAGEM_CARTONAGEM
+  EDITORIAL_LIVRO
+  CORTE_LASER_ACRILICO
+  GRAFICA_RAPIDA
+  // Leva 2 (achado F9 da Parte 7 da auditoria de abrangência,
+  // pesquisa-abrangencia-modulos.md, 2026-08-31) — SERIGRAFIA e FLEXOGRAFIA
+  // já tinham ModeloCalculo próprio no motor de preço sem ter valor
+  // correspondente aqui; BORDADO/PAPELARIA_CONVITES/SINALIZACAO_ADESIVAGEM
+  // cobrem segmentos reais de mercado que não caíam em nenhum valor
+  // existente. Mesmo padrão enum-fechado+OUTRO acima — nunca restritivo, só
+  // amplia a lista de opção.
+  SERIGRAFIA
+  FLEXOGRAFIA
+  BORDADO
+  PAPELARIA_CONVITES
+  SINALIZACAO_ADESIVAGEM
+  OUTRO
+}
+
+// Tipo da chave PIX cadastrada em Grafica.chavePix (achado F6 da Parte 7 da
+// auditoria de abrangência, pesquisa-abrangencia-modulos.md, 2026-08-31) —
+// só rotula o campo pra exibição ("Chave PIX (CPF): ..."), nunca valida o
+// FORMATO do valor digitado (não confere dígito verificador de CPF/CNPJ nem
+// formato de e-mail/telefone — texto livre em Grafica.chavePix). Os 5
+// valores reais de chave PIX no arranjo BACEN, +OUTRO de escape (mesmo
+// padrão enum-fechado+OUTRO do resto do schema, aqui sem campo-irmão
+// `xxxOutro` — os tipos reais já esgotam o universo do BACEN; OUTRO só cobre
+// "não quis especificar", sem detalhe adicional a coletar).
+enum TipoChavePix {
+  CPF
+  CNPJ
+  EMAIL
+  TELEFONE
+  ALEATORIA
+  OUTRO
+}

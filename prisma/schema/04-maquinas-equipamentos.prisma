@@ -1,0 +1,483 @@
+// Uma prensa offset física do tenant. Produtos com modeloCalculo=OFFSET escolhem
+// uma prensa específica em ItemGrafica.prensaId — cada prensa tem seu próprio
+// custo de hora-máquina, chapas, torres etc. (ver spec §2, antes vivia em
+// ParametrosGrafica como uma "prensa virtual" única por gráfica).
+model Prensa {
+  id        String  @id @default(cuid())
+  graficaId String
+  nome      String
+  ativa     Boolean @default(true)
+
+  custoHoraMaq       Decimal @default(0) @db.Decimal(12, 4)
+  torres             Int     @default(4)
+  custoChapa         Decimal @default(0) @db.Decimal(12, 4)
+  folhasAcerto       Int     @default(150)
+  tempoAcertoH       Decimal @default(0.5) @db.Decimal(6, 4)
+  custoMilheiroRod   Decimal @default(0) @db.Decimal(12, 4)
+  rodagemMinima      Decimal @default(0) @db.Decimal(12, 4)
+  perdaPercentPadrao Decimal @default(0.03) @db.Decimal(5, 4)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  produtos            ItemGrafica[]
+  registrosManutencao RegistroManutencao[]
+  apontamentosEtapa   ApontamentoEtapa[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("prensas")
+}
+
+// Uma máquina flexográfica física do tenant. Produtos com modeloCalculo=FLEXOGRAFIA
+// escolhem uma máquina específica em ItemGrafica.maquinaFlexografiaId — mesma
+// filosofia da Prensa (custo de hora-máquina, setup e rodagem por máquina, não por
+// gráfica). Tabela separada de Prensa (não polimórfica) de propósito: o projeto já
+// trata SIMPLES/M2/OFFSET como caminhos paralelos não-unificados, e unificar Prensa
+// numa estrutura polimórfica arriscaria migrar dado real de produção do Offset à
+// toa. Nesting de material é 1D (largura da bobina, reaproveitando BobinaMaterial
+// tal como já existe pro M2), não 2D como o Offset — a bobina define a largura útil,
+// o cilindro define o comprimento fixo consumido por volta (passoCilindroM).
+model MaquinaFlexografia {
+  id        String  @id @default(cuid())
+  graficaId String
+  nome      String
+  ativa     Boolean @default(true)
+
+  // Teto físico de largura útil de impressão da máquina — usado como limite superior
+  // no nesting (min contra a largura útil da bobina escolhida no produto), não como
+  // a largura em si (essa vem da BobinaMaterial, igual M2).
+  larguraMaquinaM     Decimal @default(0) @db.Decimal(6, 3)
+  // Repeat do cilindro instalado — comprimento fixo consumido a cada volta,
+  // independente do tamanho da peça (v1 assume 1 repeat por volta, ver
+  // calcularFlexografia).
+  passoCilindroM      Decimal @default(0) @db.Decimal(6, 3)
+  // Nº de estações/cores da máquina — teto de cores por passagem, mesmo papel de
+  // Prensa.torres.
+  numeroEstacoesCores Int     @default(6)
+  custoHoraMaq        Decimal @default(0) @db.Decimal(12, 4)
+  tempoAcertoH        Decimal @default(1) @db.Decimal(6, 4)
+  // Metros lineares de bobina perdidos no acerto/registro por entrada — equivalente
+  // contínuo de Prensa.folhasAcerto (que é um nº de folhas, não de metros).
+  metrosAcerto        Decimal @default(0) @db.Decimal(6, 3)
+  custoMetroLinearRod Decimal @default(0) @db.Decimal(12, 4)
+  rodagemMinima       Decimal @default(0) @db.Decimal(12, 4)
+  perdaPercentPadrao  Decimal @default(0.03) @db.Decimal(5, 4)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  produtos            ItemGrafica[]
+  registrosManutencao RegistroManutencao[]
+  apontamentosEtapa   ApontamentoEtapa[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("maquinas_flexografia")
+}
+
+// Uma impressora digital física do tenant (pequeno formato, tiragem curta —
+// HP Indigo, Xerox, Konica Minolta, Canon, Ricoh). Produtos com
+// modeloCalculo=DIGITAL escolhem uma impressora específica em
+// ItemGrafica.impressoraDigitalId — mesma filosofia de Prensa/
+// MaquinaFlexografia (custo por máquina, não por gráfica), mas sem nesting:
+// impressão digital não precisa de bobinas/folhas, só custo por clique +
+// custo do substrato (ver src/lib/pricing/digital.ts).
+model ImpressoraDigital {
+  id        String  @id @default(cuid())
+  graficaId String
+  nome      String
+  ativa     Boolean @default(true)
+
+  custoPorClique Decimal @default(0) @db.Decimal(12, 4)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  produtos            ItemGrafica[]
+  registrosManutencao RegistroManutencao[]
+  apontamentosEtapa   ApontamentoEtapa[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("impressoras_digitais")
+}
+
+// Tag de processo pra MaquinaSetupPorPeca — separada de propósito do
+// ModeloCalculo do produto: aqui é só o filtro de qual máquina serve pra qual
+// produto no <Select> de configuração, não o modelo de cálculo em si (os 4
+// ModeloCalculo correspondentes chamam a mesma função calcularSetupPorPeca).
+// TAMPOGRAFIA/GRAVACAO_LASER/DTG/TRANSFER/OUTRO (achado A3 da auditoria de
+// abrangência) mapeiam pra ModeloCalculo.PERSONALIZACAO — diferente de
+// SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE, que continuam 1:1 com seu próprio
+// ModeloCalculo homônimo. OUTRO segue o mesmo padrão enum-fechado + escape
+// do resto do schema (ver CategoriaEquipamento/MaterialSubstrato/etc.) —
+// pareado com MaquinaSetupPorPeca.tipoProcessoOutro.
+enum ProcessoSetupPorPeca {
+  SERIGRAFIA
+  SUBLIMACAO
+  ESTAMPAGEM_QUENTE
+  TAMPOGRAFIA
+  GRAVACAO_LASER
+  DTG
+  TRANSFER
+  OUTRO
+}
+
+// Máquina física pros processos de "setup por peça" — serigrafia
+// (tela/matriz), sublimação (prensa térmica), estampagem a quente (hot
+// stamping) e a família PERSONALIZACAO (tampografia, gravação a laser, DTG,
+// transfer e o que mais a gráfica cadastrar via OUTRO). Tabela ÚNICA pros
+// vários processos (tag tipoProcesso), não uma tabela por processo: mesmo
+// racional de "1 função de cálculo compartilhada" decidido pra
+// src/lib/pricing (calcularSetupPorPeca), evita duplicar CRUD/schema pra um
+// custo que tem exatamente a mesma forma em todos os processos (custo fixo
+// de setup por arte/matriz/tela + custo variável por peça + piso do job).
+model MaquinaSetupPorPeca {
+  id                String               @id @default(cuid())
+  graficaId         String
+  nome              String
+  tipoProcesso      ProcessoSetupPorPeca
+  tipoProcessoOutro String? // só usado quando tipoProcesso = OUTRO
+  ativa             Boolean              @default(true)
+
+  custoPorSetup Decimal @default(0) @db.Decimal(12, 4) // R$ por tela/matriz/arte
+  custoPorPeca  Decimal @default(0) @db.Decimal(12, 4) // variável por peça
+  custoMinimo   Decimal @default(0) @db.Decimal(12, 4) // piso do job
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  produtos            ItemGrafica[]
+  registrosManutencao RegistroManutencao[]
+  apontamentosEtapa   ApontamentoEtapa[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@index([tipoProcesso])
+  @@map("maquinas_setup_por_peca")
+}
+
+// Achado A4 da Parte 1 da auditoria de abrangência (pesquisa-abrangencia-
+// modulos.md): bordado não cabe em MaquinaSetupPorPeca (calcularSetupPorPeca)
+// porque lá o custo por peça é FIXO na máquina (custoPorPeca) — em bordado o
+// custo por peça varia com o número de PONTOS da arte de cada pedido, um
+// logo de 3.000 pontos e uma arte de costas de 15.000 pontos custam 5×
+// diferente na mesma máquina, na mesma camiseta. Por isso é um model (e um
+// ModeloCalculo) próprio, não mais um tipoProcesso de MaquinaSetupPorPeca —
+// mesmo padrão de FK/índice/@@map desse model, mas sem tipoProcesso (não há
+// "sabor" de bordado, é sempre a mesma fórmula por pontos).
+// custoPorMilPontos/custoMatrizDigitalizacao são o custo VARIÁVEL por pedido
+// (ver OrcamentoItem.numeroPontos) — @default(0) só pra permitir criar a
+// máquina com nome e ajustar os custos na tela seguinte (mesmo padrão de
+// criarMaquinaSetupPorPeca/criarImpressoraDigital: "Nova máquina" grava só o
+// nome, os custos ficam zerados até o usuário editar). cabecas é
+// informativo/produtivo (não entra na fórmula de custo desta v1) —
+// @default(1) pela mesma razão de criação com o mínimo de campos.
+// custoHoraMaq/custoMinimo nullable = opcionais de verdade (nem todo bordado
+// cobra hora de máquina separada nem tem piso de job).
+model MaquinaBordado {
+  id                       String   @id @default(cuid())
+  graficaId                String
+  nome                     String
+  custoPorMilPontos        Decimal  @default(0) @db.Decimal(10, 2)
+  custoMatrizDigitalizacao Decimal  @default(0) @db.Decimal(10, 2)
+  cabecas                  Int      @default(1)
+  custoHoraMaq             Decimal? @db.Decimal(10, 2)
+  custoMinimo              Decimal? @db.Decimal(10, 2)
+  ativa                    Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica  Grafica       @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  produtos ItemGrafica[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("maquinas_bordado")
+}
+
+// Achado A6 da Parte 1 da auditoria de abrangência (pesquisa-abrangencia-
+// modulos.md): corte/gravação a laser, router CNC, plotter de recorte,
+// montagem de letra caixa/totem — nenhum modelo cobra por TEMPO DE MÁQUINA
+// hoje (Equipamento.CORTE_LASER_ROUTER/PLOTTER_RECORTE existem só como
+// cadastro informativo, nunca influenciam preço — ver comentário do model
+// Equipamento). Mesmo padrão de FK/índice/@@map de MaquinaSetupPorPeca, sem
+// tipoProcesso (não há "sabor" — a gráfica escolhe cobrar por tempo, por
+// metro de corte, ou os dois somados, tudo na mesma máquina). custoHoraMaq/
+// custoSetupPorJob são o custo VARIÁVEL por pedido (ver
+// OrcamentoItem.tempoEstimadoMin/metrosCorte) — @default(0) pela mesma razão
+// de MaquinaBordado acima (criar só com nome, ajustar custo depois).
+// custoMinimo/custoPorMetroCorte nullable = opcionais de verdade (corte a
+// metro só faz sentido pra plotter/router; nem toda máquina tem piso).
+model MaquinaTempo {
+  id                 String   @id @default(cuid())
+  graficaId          String
+  nome               String
+  custoHoraMaq       Decimal  @default(0) @db.Decimal(10, 2)
+  custoSetupPorJob   Decimal  @default(0) @db.Decimal(10, 2)
+  custoMinimo        Decimal? @db.Decimal(10, 2)
+  custoPorMetroCorte Decimal? @db.Decimal(10, 2)
+  ativa              Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica  Grafica       @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  produtos ItemGrafica[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("maquinas_tempo")
+}
+
+// Categorias reais de equipamento de gráfica levantadas por pesquisa
+// (2026-08-22) — cobre o que sobra fora de Offset/Flexografia (que já têm
+// motor de custo próprio, ver Prensa/MaquinaFlexografia). Lista fechada com
+// OUTRO de escape (mesmo padrão de UnidadeMedida/MaterialSubstrato/etc. no
+// resto do schema) — nunca trava um equipamento real fora da lista.
+enum CategoriaEquipamento {
+  GUILHOTINA // corte de papel/papelão — ex: Polar, Guarani, Wohlenberg
+  LAMINADORA // plastificação/laminação — ex: Ricall, Foliant, GMP
+  DOBRADEIRA
+  ENCADERNADORA // wire-o, espiral, capa dura — ex: Duplo, Marpax
+  GRAMPEADEIRA // alceadeira/grampeadeira de miolo — ex: Müller Martini, CP Bourg
+  PLOTTER_RECORTE // corte de vinil/adesivo
+  IMPRESSORA_GRANDE_FORMATO // banner, lona, adesivo — ex: Roland, Mimaki, HP Latex, Epson
+  // Segunda leva de categorias (pesquisa 2026-08-23) — cobre o fluxo de
+  // pré-impressão Offset (CTP) e o que uma gráfica rápida/comunicação visual
+  // tem além de papel: impressão digital de curto tiro, personalização
+  // (serigrafia/sublimação), acabamento a quente e corte de material rígido.
+  CTP // chapeadora — grava a chapa de offset — ex: Agfa, Kodak, Fujifilm, Heidelberg Suprasetter
+  IMPRESSORA_DIGITAL // pequeno formato, tiragem curta — ex: HP Indigo, Xerox, Konica Minolta, Canon, Ricoh
+  SERIGRAFIA // mesa/carrossel serigráfico, manual ou automático
+  SUBLIMACAO // prensa térmica + impressora — ex: Metalnox, MAQmei (prensa); Epson SureColor F (impressora)
+  ESTAMPAGEM_QUENTE // hot stamping — aplica filme metalizado/pigmentado com calor e pressão
+  CORTE_LASER_ROUTER // corte/gravação de acrílico, ACM, MDF — ex: Visutec, MultiCam
+  // Terceira leva (achados A1/A2/A5 da Parte 7 da auditoria de abrangência,
+  // pesquisa-abrangencia-modulos.md, versão CORRIGIDA pela revisão Opus
+  // 2026-08-31). BORDADO substitui a proposta original de
+  // ProcessoSetupPorPeca.BORDADO (descartada por conflitar com o achado
+  // A4/Parte 1 — bordado cobra por PONTO da arte, não por peça fixa como
+  // calcularSetupPorPeca assume): entra só como cadastro informativo, sem
+  // motor de custo próprio, o mesmo papel que Equipamento já cumpre pro
+  // resto desta lista.
+  BORDADO // bordadeira mono ou multicabeça — ex: Juki, Brother, Tajima
+  CORTE_VINCO // corta e vinca papel/papelão simultaneamente (cartonagem) — ex: Makpel, DellMarck, Slottec
+  VINCADORA // só vinca (não corta) — etapa anterior à dobra em cartonagem/gofragem
+  OUTRO
+}
+
+// Equipamento físico da gráfica que NÃO tem motor de custo próprio na
+// precificação — diferente de Prensa/MaquinaFlexografia (usados só por
+// ItemGrafica com modeloCalculo=OFFSET/FLEXOGRAFIA), nenhum produto do
+// catálogo referencia um Equipamento. É cadastro + rastreio de manutenção
+// puramente informativo (ver RegistroManutencao.equipamentoId abaixo) —
+// nunca influencia preço de nenhum orçamento. marca/modelo são texto livre
+// opcional (não é catálogo de modelos exatos, só contexto pra quem
+// registra a parada depois).
+model Equipamento {
+  id             String               @id @default(cuid())
+  graficaId      String
+  nome           String
+  categoria      CategoriaEquipamento
+  categoriaOutro String? // só usado quando categoria = OUTRO
+  marca          String?
+  modelo         String?
+  ativo          Boolean              @default(true)
+
+  // Achado A3 da Parte 7 (impressora de grande formato sem largura/
+  // tecnologia cadastrável) — textos livres/nullable de propósito: sem
+  // enum fechado pra tecnologiaImpressao (solvente/eco-solvente/UV/
+  // sublimática) por decisão deliberada da revisão Opus 2026-08-31, mesmo
+  // raciocínio de marca/modelo acima (contexto informativo, não catálogo
+  // fechado). Faz sentido pra qualquer categoria de Equipamento, não só
+  // IMPRESSORA_GRANDE_FORMATO — nenhuma validação de categoria aqui.
+  larguraMaximaMm     Int?
+  tecnologiaImpressao String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  registrosManutencao RegistroManutencao[]
+  apontamentosEtapa   ApontamentoEtapa[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("equipamentos")
+}
+
+enum TipoRegistroManutencao {
+  PREVENTIVA // manutenção agendada, planejada com antecedência
+  QUEBRA // parada não planejada — máquina quebrou ou precisou parar de repente
+}
+
+// Um período em que uma Prensa, MaquinaFlexografia OU Equipamento ficou
+// indisponível pra produção — cobre tanto manutenção PREVENTIVA agendada
+// quanto QUEBRA/parada reativa (o `tipo` só existe pra segmentar isso em
+// relatórios; o comportamento de "está parada agora" é sempre baseado em
+// dataFim, nunca em tipo). dataFim null = parada ainda em andamento; é o
+// que buscarManutencoesAtivas (src/lib/manutencao-maquina.ts) usa pra
+// decidir exibir o aviso "essa máquina está parada" na tela de Máquinas e
+// no cadastro de produto Offset/Flexografia. Três FKs opcionais, nunca mais
+// de uma preenchida na mesma linha (validado na Server Action, não há
+// CHECK no banco — mesmo padrão de validação em app do resto do schema) —
+// mesmo princípio de ItemGrafica.prensaId/maquinaFlexografiaId: Prensa,
+// MaquinaFlexografia e Equipamento são tabelas paralelas não-unificadas de
+// propósito (ver comentário em MaquinaFlexografia), então o registro de
+// parada segue a mesma filosofia em vez de virar o ponto que força uma
+// hierarquia comum entre as três. onDelete=Cascade (diferente do Restrict
+// em ItemGrafica.prensaId): um histórico de manutenção sem a máquina que
+// ele descreve não tem valor — não faz sentido travar a exclusão da
+// máquina por causa disso.
+model RegistroManutencao {
+  id        String @id @default(cuid())
+  graficaId String
+
+  prensaId              String?
+  maquinaFlexografiaId  String?
+  equipamentoId         String?
+  // Generalização do mesmo padrão pras 2 máquinas novas de Feature A —
+  // exatamente 1 dentre as 5 FKs preenchida por registro (validado em
+  // validarSelecaoMaquina, src/lib/manutencao-maquina.ts).
+  impressoraDigitalId   String?
+  maquinaSetupPorPecaId String?
+
+  tipo   TipoRegistroManutencao @default(QUEBRA)
+  motivo String // texto livre — "trocou o rolo de tinta", "manutenção preventiva trimestral" etc.
+
+  dataInicio DateTime  @default(now())
+  dataFim    DateTime? // null = parada ainda em andamento
+
+  // Quem registrou — sem FK direta pra Usuario (mesmo padrão de
+  // MovimentacaoEstoque.criadoPorId): resolvido em batch na tela quando
+  // precisa exibir o nome, pra não travar o registro se o usuário for removido.
+  registradoPorId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  prensa              Prensa?              @relation(fields: [prensaId], references: [id], onDelete: Cascade)
+  maquinaFlexografia  MaquinaFlexografia?  @relation(fields: [maquinaFlexografiaId], references: [id], onDelete: Cascade)
+  equipamento         Equipamento?         @relation(fields: [equipamentoId], references: [id], onDelete: Cascade)
+  impressoraDigital   ImpressoraDigital?   @relation(fields: [impressoraDigitalId], references: [id], onDelete: Cascade)
+  maquinaSetupPorPeca MaquinaSetupPorPeca? @relation(fields: [maquinaSetupPorPecaId], references: [id], onDelete: Cascade)
+
+  @@index([graficaId])
+  @@index([prensaId])
+  @@index([maquinaFlexografiaId])
+  @@index([equipamentoId])
+  @@index([impressoraDigitalId])
+  @@index([maquinaSetupPorPecaId])
+  @@map("registros_manutencao")
+}
+
+// Achado F1 da Parte 7 da auditoria de abrangência
+// (pesquisa-abrangencia-modulos.md, "F. Documento e transação") — lista
+// fechada com OUTRO de escape (mesmo padrão de CategoriaEquipamento/
+// MaterialSubstrato/etc.), cobrindo o ferramental reutilizável que hoje só
+// existe como CUSTO (ConfiguracaoClicheEtiqueta/Flexografia.
+// custoClichePorCm2, ConfiguracaoAcabamento.custoFerramental,
+// OrcamentoItemPrecificacaoEtiqueta.custoFaca), nunca como a ferramenta
+// física em si.
+enum TipoFerramental {
+  FACA_CORTE_VINCO // corte e vinco de caixa/embalagem/cartão
+  CLICHE_FLEXO // clichê de flexografia — lavado e reaproveitado em repetição
+  CLICHE_HOT_STAMPING // clichê/matriz de estampagem a quente
+  TELA_SERIGRAFIA // tela de serigrafia, por arte/cor
+  MATRIZ_BORDADO // matriz/programa de bordado digitalizado
+  CILINDRO_ROTOGRAVURA
+  FERRAMENTA_ACABAMENTO // molde/dispositivo de acabamento que não se encaixa nos tipos acima
+  OUTRO
+}
+
+// De quem é a ferramenta física — GRAFICA (patrimônio da própria gráfica,
+// reutilizável em qualquer cliente que peça o mesmo produto) ou CLIENTE
+// (encomendada e paga pelo cliente, guardada pela gráfica pra repetição —
+// não pode ser usada pra outro cliente, e pode precisar ser devolvida, ver
+// StatusFerramental.DEVOLVIDO_AO_CLIENTE).
+enum ProprietarioFerramental {
+  GRAFICA
+  CLIENTE
+}
+
+enum StatusFerramental {
+  ATIVO
+  EM_MANUTENCAO
+  DESCARTADO
+  DEVOLVIDO_AO_CLIENTE
+}
+
+// Cadastro da ferramenta física (faca, clichê, tela, matriz...) — distinto
+// de tudo que já existe no schema, que só guarda o CUSTO dela. Puramente
+// informativo/cadastral: NUNCA entra automaticamente na precificação (ver
+// OrcamentoItem.ferramentalId abaixo) — o vendedor pode vincular um item de
+// orçamento a um Ferramental já existente só como referência/aviso, o preço
+// continua 100% manual (custoFaca/custoClichePorCm2 etc. não mudam de
+// comportamento). Nunca hard delete (mesmo princípio de Cliente/Usuario):
+// desativadoEm marca remoção reversível sem apagar o vínculo histórico em
+// OrcamentoItem.ferramentalId.
+model Ferramental {
+  id        String          @id @default(cuid())
+  graficaId String
+  tipo      TipoFerramental
+  // Só usado quando tipo=OUTRO — mesmo padrão de categoriaOutro/segmentoOutro.
+  tipoOutro String?
+  // Identificação interna curta (ex: "FC-0042") — não é obrigatoriamente
+  // único no mundo real (duas gráficas podem ter o mesmo código de
+  // etiqueta interna), mas é único DENTRO da gráfica pra evitar confusão.
+  codigo    String
+  descricao String?         @db.Text
+
+  // Dono da ferramenta física — ver comentário de ProprietarioFerramental.
+  // SetNull: desativar/remover o cliente não pode apagar o cadastro da
+  // ferramenta, só perde a referência de dono (mesmo padrão de
+  // ItemGrafica.categoriaCusto).
+  clienteId    String?
+  proprietario ProprietarioFerramental @default(GRAFICA)
+
+  // Qual produto do catálogo usa esta ferramenta — opcional (algumas
+  // ferramentas, ex: tela de serigrafia por arte avulsa, não têm um produto
+  // fixo associado). SetNull, mesmo raciocínio de clienteId acima.
+  itemGraficaId String?
+
+  localizacao String?
+
+  // Contador manual de repetições/tiragens já produzidas com esta
+  // ferramenta — puramente informativo (ex: acompanhar vida útil de clichê
+  // flexográfico, ver pesquisa no achado F1), nunca incrementado
+  // automaticamente por nenhum motor ainda. @default(0) preserva
+  // comportamento pra toda ferramenta cadastrada sem esse dado.
+  tiragensAcumuladas Int @default(0)
+
+  status StatusFerramental @default(ATIVO)
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  // null = ativo/visível nas listas de seleção. Preenchido = removido
+  // (soft delete, reversível) — mesmo precedente de Cliente.desativadoEm.
+  // Distinto de `status`: status descreve o ESTADO FÍSICO da ferramenta
+  // (em manutenção, descartada, devolvida...), desativadoEm é sobre
+  // aparecer ou não nas listas/seleções da gráfica.
+  desativadoEm DateTime?
+
+  grafica     Grafica      @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  cliente     Cliente?     @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  itemGrafica ItemGrafica? @relation(fields: [itemGraficaId], references: [id], onDelete: SetNull)
+
+  itensOrcamento OrcamentoItem[]
+
+  @@unique([graficaId, codigo])
+  @@index([graficaId])
+  @@index([graficaId, status])
+  @@index([clienteId])
+  @@index([itemGraficaId])
+  @@map("ferramentais")
+}

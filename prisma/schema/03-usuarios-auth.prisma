@@ -1,0 +1,396 @@
+enum BaseComissao {
+  VALOR // % sobre o total do orçamento aprovado
+  LUCRO // % sobre valor - custo estimado dos itens
+}
+
+enum PapelUsuario {
+  DONO
+  ADMIN
+  OPERADOR
+}
+
+model Usuario {
+  id        String       @id @default(cuid())
+  graficaId String
+  nome      String
+  email     String       @unique
+  senhaHash String
+  papel     PapelUsuario @default(OPERADOR)
+  createdAt DateTime     @default(now())
+
+  // Concedido individualmente pelo DONO em /usuarios. Só tem efeito se
+  // Grafica.compartilharMeuNegocio também estiver ligado — ver podeVerMeuNegocio.
+  // Irrelevante pra DONO, que sempre tem acesso.
+  acessoMeuNegocio Boolean @default(false)
+
+  // null = ainda não confirmou o código de 6 dígitos enviado no cadastro
+  // (ver exigirEmailVerificado). Só se aplica a quem se cadastra sozinho
+  // via /registro — usuário convidado em /usuarios já nasce com isso
+  // preenchido (confiança transitiva: quem convida já provou a própria
+  // identidade). Contas anteriores a esta feature foram "perdoadas" na
+  // migração (emailVerificadoEm = createdAt).
+  emailVerificadoEm DateTime?
+
+  // Acesso cross-tenant a /admin/graficas (conceder/revogar cortesia) — não
+  // tem relação com `papel` (DONO/ADMIN/OPERADOR), que é sempre escopado à
+  // própria gráfica. Só true pro dono da plataforma. Nunca exposto/editável
+  // por nenhuma tela — só setado direto no banco (bootstrap único).
+  superAdmin Boolean @default(false)
+
+  // null = este usuário não recebe comissão (não é vendedor). Taxa pessoal,
+  // independente do papel — DONO/ADMIN/OPERADOR podem todos vender. Ver
+  // model Comissao e ParametrosGrafica.comissaoVendedorBase.
+  comissaoPercent Decimal? @db.Decimal(5, 4)
+
+  // null = ativo. Preenchido = funcionário removido da gráfica: perde acesso
+  // NA HORA (exigirUsuarioAutenticado recusa, e as sessões são apagadas junto
+  // no momento da remoção), some das listas e para de receber e-mail de etapa.
+  //
+  // Desativa em vez de apagar de propósito: Orcamento.usuarioId,
+  // Comissao.usuarioId e LogAuditoria.usuarioId apontam pra cá. Apagar o
+  // cadastro ou faria a exclusão falhar, ou deixaria o histórico órfão — e o
+  // log de auditoria ficaria cego justamente sobre quem saiu da empresa, que
+  // é quando mais se precisa dele. Comissão pendente continua devida e
+  // pagável depois da remoção.
+  //
+  // É data (não boolean) porque "quando saiu" é a pergunta que aparece junto
+  // com "quem fez isso" numa investigação. Reversível: voltar pra null
+  // reativa.
+  desativadoEm DateTime?
+
+  // Achado A5 da auditoria de abrangência (Parte 6/Configurações,
+  // pesquisa-abrangencia-modulos.md, 2026-08-27) — perfil reutilizável de
+  // permissão por módulo, pra não configurar OPERADOR por OPERADOR quando
+  // vários fazem a mesma função (ex: 3 de acabamento no mesmo turno). Só tem
+  // efeito pra papel OPERADOR (mesma restrição de PermissaoUsuario) e só é
+  // CONSULTADO quando não existe override individual em PermissaoUsuario pro
+  // módulo em questão — ver resolverPermissaoOperador em
+  // src/lib/auth/permissoes.ts pra ordem exata de resolução. null = sem
+  // perfil atribuído, comportamento 100% igual ao de hoje (só PermissaoUsuario
+  // individual, ausência = sem acesso). onDelete: SetNull (não Restrict nem
+  // Cascade): apagar um PerfilAcesso nunca pode apagar usuário nem travar a
+  // exclusão do perfil — o usuário só volta a depender exclusivamente de
+  // PermissaoUsuario individual, o fallback mais seguro.
+  perfilAcessoId String?
+
+  grafica                       Grafica                     @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  perfilAcesso                  PerfilAcesso?               @relation(fields: [perfilAcessoId], references: [id], onDelete: SetNull)
+  orcamentos                    Orcamento[]
+  sessoes                       Sessao[]
+  permissoes                    PermissaoUsuario[]
+  tokensResetSenha              TokenResetSenha[]
+  tokensVerificacaoEmail        TokenVerificacaoEmail[]
+  comissoes                     Comissao[]
+  responsaveisEstagio           ResponsavelEstagio[]
+  responsaveisAdministrativo    ResponsavelAdministrativo[]
+  solicitacoesCompraFeitas      SolicitacaoCompra[]         @relation("SolicitacoesCompraSolicitadas")
+  solicitacoesCompraAprovadas   SolicitacaoCompra[]         @relation("SolicitacoesCompraAprovadas")
+  // Achado A8 da auditoria de abrangência — ver Cliente.vendedorId.
+  clientesVendedor              Cliente[]
+  // Achado A4 da auditoria de abrangência (Parte 3/Compras) — ver model
+  // CotacaoFornecedor.
+  cotacoesFornecedorRegistradas CotacaoFornecedor[]
+
+  @@index([graficaId])
+  @@index([perfilAcessoId])
+  @@map("usuarios")
+}
+
+// Só existe controle granular por módulo pra papel OPERADOR — DONO e ADMIN
+// sempre têm acesso total, não passam por aqui (ver podeVerModulo/
+// podeEditarModulo em src/lib/auth/permissoes.ts). Ausência de linha pra um
+// módulo = sem acesso nenhum (nem ver), é o padrão mais seguro por omissão.
+enum ModuloPermissao {
+  ORCAMENTO
+  CLIENTES
+  CATALOGO
+  PRODUCAO
+  FINANCEIRO
+  CONFIGURACOES
+  // Lançar custo real de pedido (podeEditar) e ver lucro/margem (podeVer) —
+  // separado de PRODUCAO de propósito: um operador de chão de fábrica pode
+  // precisar lançar retrabalho sem enxergar o P&L do pedido (ver fase
+  // "custo real", fase-custo-real.md §2.6).
+  CUSTOS
+  // Módulo de COMPRAS (SolicitacaoCompra) — separado de PRODUCAO/CATALOGO de
+  // propósito: quem compra matéria-prima nem sempre é quem opera a produção
+  // ou mexe no catálogo.
+  COMPRAS
+}
+
+model PermissaoUsuario {
+  id         String          @id @default(cuid())
+  usuarioId  String
+  modulo     ModuloPermissao
+  podeVer    Boolean         @default(false)
+  podeEditar Boolean         @default(false)
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, modulo])
+  @@map("permissoes_usuario")
+}
+
+// Achado A5 da auditoria de abrangência (Parte 6/Configurações,
+// pesquisa-abrangencia-modulos.md, 2026-08-27) — perfil de acesso reutilizável
+// ("Impressor", "Acabamento", "Vendedor externo"): em vez de configurar
+// PermissaoUsuario módulo por módulo pra cada OPERADOR novo, o DONO monta o
+// perfil uma vez e atribui a quantos usuários quiser (Usuario.perfilAcessoId).
+// Aditivo de propósito — PermissaoUsuario continua existindo do jeito que
+// está e continua vencendo o perfil quando as duas coexistem pro mesmo
+// usuário+módulo (override individual, ver resolverPermissaoOperador em
+// src/lib/auth/permissoes.ts). Só se aplica a OPERADOR, igual PermissaoUsuario
+// — DONO/ADMIN nunca consultam nem esta tabela nem a de override individual.
+model PerfilAcesso {
+  id        String @id @default(cuid())
+  graficaId String
+  nome      String // "Impressor", "Acabamento", "Vendedor externo"
+
+  grafica    Grafica           @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  permissoes PermissaoPerfil[]
+  // Usuários que têm este perfil atribuído (Usuario.perfilAcessoId) — usado
+  // pra avisar/bloquear a exclusão do perfil quando ainda está em uso, e pra
+  // listar "quem usa este perfil" na tela de detalhe.
+  usuarios   Usuario[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("perfis_acesso")
+}
+
+model PermissaoPerfil {
+  id         String          @id @default(cuid())
+  perfilId   String
+  modulo     ModuloPermissao
+  podeVer    Boolean         @default(false)
+  podeEditar Boolean         @default(false)
+
+  perfil PerfilAcesso @relation(fields: [perfilId], references: [id], onDelete: Cascade)
+
+  @@unique([perfilId, modulo])
+  @@map("permissoes_perfil")
+}
+
+// Achado A4 da Parte 6 da auditoria de abrangência (Configurações,
+// pesquisa-abrangencia-modulos.md, 2026-09-02) — hoje duas travas de
+// autorização por VALOR eram fixas em código: desconto de orçamento acima de
+// ParametrosGrafica.descontoMaxSemAprovacao só DONO/ADMIN aprova (limite
+// único pra gráfica inteira), e aprovação de SolicitacaoCompra não tinha
+// teto de valor nenhum — quem tem permissão de COMPRAS aprova R$ 50 ou
+// R$ 50.000 igual. Este model dá um teto CONFIGURÁVEL por papel ou por
+// usuário específico pras duas travas, sem exigir aprovação em múltiplos
+// níveis encadeados (fora de escopo de propósito — 1 nível + 1 teto resolve
+// o porte do cliente-alvo, gráfica de 5 a 30 pessoas).
+enum TipoAlcada {
+  DESCONTO_ORCAMENTO // limite em % de desconto (ver resolverLimiteDesconto)
+  APROVACAO_COMPRA // limite em R$ da solicitação de compra (ver resolverLimiteAprovacaoCompra)
+}
+
+model AlcadaAprovacao {
+  id        String     @id @default(cuid())
+  graficaId String
+  tipo      TipoAlcada
+
+  // Alvo: por PAPEL (cobre a gráfica inteira em poucas linhas) ou por
+  // USUÁRIO específico (exceção pontual, ex: um vendedor sênior com alçada
+  // maior que o resto do papel OPERADOR). Exatamente um dos dois preenchido
+  // — validado na action, mesmo padrão de "exatamente um preenchido" que
+  // RegistroManutencao já usa pras 5 FKs de máquina (ver
+  // validarSelecaoMaquina em src/lib/manutencao-maquina.ts), aqui sem FK de
+  // banco pro papel (é um enum, não uma tabela). usuarioId sem FK formal de
+  // propósito, mesmo espírito de RegistroManutencao.registradoPorId —
+  // resolvido em código, nunca precisa sobreviver à remoção de um usuário
+  // (uma alçada de usuário removido simplesmente para de bater com ninguém).
+  papel     PapelUsuario?
+  usuarioId String?
+
+  // % em DESCONTO_ORCAMENTO (0-100), R$ em APROVACAO_COMPRA — resolução em
+  // src/lib/alcada-aprovacao.ts (resolverLimiteDesconto/
+  // resolverLimiteAprovacaoCompra): alçada do usuário > alçada do papel >
+  // comportamento de hoje (fallback sem esta tabela configurada).
+  limite Decimal @db.Decimal(12, 2)
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+
+  @@index([graficaId, tipo])
+  @@map("alcadas_aprovacao")
+}
+
+// Sessão opaca: o cookie do usuário guarda só o token bruto, nunca persistido em texto puro aqui.
+// Guardar apenas o hash do token faz um vazamento do banco não virar sessões utilizáveis,
+// e apagar a linha revoga a sessão imediatamente (logout, troca de senha, etc).
+model Sessao {
+  id        String   @id @default(cuid())
+  usuarioId String
+  tokenHash String   @unique
+  userAgent String?
+  ip        String?
+  criadaEm  DateTime @default(now())
+  expiraEm  DateTime
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+  @@map("sessoes")
+}
+
+// Mesma filosofia de Sessao: guarda só o HASH do token de reset, nunca o
+// valor bruto — vazamento do banco não vira link de redefinição de senha
+// utilizável. usadoEm torna o token de uso único mesmo dentro da janela
+// de validade (1h, ver src/lib/auth/token-reset.ts).
+model TokenResetSenha {
+  id        String    @id @default(cuid())
+  usuarioId String
+  tokenHash String    @unique
+  expiraEm  DateTime
+  usadoEm   DateTime?
+  createdAt DateTime  @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+  @@map("tokens_reset_senha")
+}
+
+// Mesma filosofia de TokenResetSenha: guarda só o HASH do código (nunca o
+// valor bruto de 6 dígitos), usadoEm torna de uso único. tentativas conta
+// palpites errados NESTE código especificamente — ao chegar no limite
+// (ver LIMITE_TENTATIVAS em src/lib/auth/verificacao-email.ts), o código
+// vira inválido mesmo dentro da janela de expiração, forçando reenvio.
+// Proteção extra necessária porque 6 dígitos é um espaço bem menor (1 em
+// 1.000.000) que o token de 256 bits do reset de senha.
+model TokenVerificacaoEmail {
+  id         String    @id @default(cuid())
+  usuarioId  String
+  codigoHash String
+  expiraEm   DateTime
+  usadoEm    DateTime?
+  tentativas Int       @default(0)
+  createdAt  DateTime  @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+  @@map("tokens_verificacao_email")
+}
+
+// Registro de tentativas de login (sucesso e falha) para permitir bloqueio temporário
+// por e-mail e por IP contra ataques de força bruta, sobrevivendo a reinícios do servidor.
+model TentativaLogin {
+  id        String   @id @default(cuid())
+  email     String
+  ip        String
+  sucesso   Boolean
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt])
+  @@map("tentativas_login")
+}
+
+// Conta tentativas de cadastro (/registro) por IP — sem isso, um bot pode criar
+// gráficas/usuários sem limite (spam de dados + custo de CPU do hash argon2id
+// a cada tentativa, já que ele só é evitado quando o e-mail já existe).
+model TentativaRegistro {
+  id        String   @id @default(cuid())
+  ip        String
+  createdAt DateTime @default(now())
+
+  @@index([ip, createdAt])
+  @@map("tentativas_registro")
+}
+
+// Conta tentativas de pedido de reset de senha, por e-mail E por IP —
+// evita spam de e-mail pro mesmo destinatário e limita um atacante
+// disparando pedidos pra vários e-mails (mesmo padrão de TentativaLogin).
+model TentativaResetSenha {
+  id        String   @id @default(cuid())
+  email     String
+  ip        String
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt])
+  @@map("tentativas_reset_senha")
+}
+
+// Mesmo padrão de TentativaResetSenha, por pedidoId em vez de e-mail —
+// responderArtePublica (src/app/a/[token]/actions.ts) é uma Server Action
+// sem autenticação (o token É a credencial), e o branch de "pedir alteração"
+// não é idempotente por natureza (diferente de "aprovar", que trava sozinho
+// em arteAprovadaEm): cada chamada dispara um e-mail novo pro(s) DONO(s) da
+// gráfica. Sem este limite, quem tiver o link (ele circula por WhatsApp,
+// fica no histórico do cliente) podia martelar a action e encher a caixa de
+// entrada do dono — ou, na escala errada, estourar a cota diária de envio do
+// Gmail/Workspace do EMAIL_WEBHOOK_URL, que é compartilhado com reset de
+// senha e verificação de e-mail de TODOS os tenants (achado da auditoria de
+// 2026-07-26). Limita por pedidoId (o alvo real do abuso, não muda trocando
+// de IP) e por IP (limita quem tenta abusar de vários pedidos).
+model TentativaRespostaArte {
+  id        String   @id @default(cuid())
+  pedidoId  String
+  ip        String
+  createdAt DateTime @default(now())
+
+  @@index([pedidoId, createdAt])
+  @@index([ip, createdAt])
+  @@map("tentativas_resposta_arte")
+}
+
+// Mesmo padrão de TentativaResetSenha, só que por usuarioId em vez de
+// email (usuário já está autenticado nesse ponto do fluxo, não precisa
+// aceitar e-mail cru) — limita quantos códigos NOVOS podem ser pedidos,
+// não quantos palpites (isso é TokenVerificacaoEmail.tentativas). As duas
+// defesas juntas: no máximo LIMITE_VERIFICACAO_EMAIL_POR_USUARIO códigos
+// por janela, cada um valendo só 5 palpites.
+model TentativaVerificacaoEmail {
+  id        String   @id @default(cuid())
+  usuarioId String
+  ip        String
+  createdAt DateTime @default(now())
+
+  @@index([usuarioId, createdAt])
+  @@index([ip, createdAt])
+  @@map("tentativas_verificacao_email")
+}
+
+// Área ADMINISTRATIVA (não é etapa de produção — por isso não reaproveita
+// ResponsavelEstagio/StatusPedido, que é o motor de estado do Pedido) que
+// pode ter um ou mais responsáveis atribuídos. NOTA_FISCAL (pedido do usuário
+// em 2026-08-15/16: notificar quem emite a NF-e quando um orçamento é
+// aprovado e já está pronto pra emitir) e PRAZO_PRODUCAO (achado A9 da
+// auditoria de abrangência em 2026-08-24: sem isto, o alerta de
+// prazo/atraso de pedido em src/lib/alerta-prazo-email.ts só sabia mandar
+// pro vendedor + todo DONO da gráfica, sem jeito de rotear pra um PCP
+// dedicado sem promovê-lo a DONO) — enum deixado aberto pra outras áreas
+// administrativas futuras (cobrança, etc.) sem precisar de migration nova,
+// só adicionar valor ao enum + linha na UI.
+// PRAZO_PRODUCAO adicionado 2026-08-24 (achado A9 da auditoria de
+// abrangência) pra rotear o alerta de prazo/atraso de pedido
+// (src/lib/alerta-prazo-email.ts) pra um responsável dedicado em vez de
+// sempre cair em todos os DONOs. COMPRAS adicionado 2026-08-31 (achado A9,
+// restante pendente) pro mesmo tratamento no alerta de estoque crítico
+// (src/lib/alerta-estoque.ts). COBRANCA adicionado junto (mesmo achado,
+// mesma rodada) só como valor cadastrável — hoje não existe nenhum disparo
+// de e-mail de "conta a receber vencida" no código pra rotear (só a tela
+// /financeiro/contas-receber destacando visualmente as vencidas), então
+// marcar um funcionário aqui não liga nada ainda; fica pronto pro dia que
+// esse alerta for construído.
+enum AreaAdministrativa {
+  NOTA_FISCAL
+  PRAZO_PRODUCAO
+  COBRANCA
+  COMPRAS
+}
+
+model ResponsavelAdministrativo {
+  id        String             @id @default(cuid())
+  usuarioId String
+  area      AreaAdministrativa
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, area])
+  @@index([area])
+  @@map("responsaveis_administrativo")
+}

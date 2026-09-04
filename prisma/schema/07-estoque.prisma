@@ -1,0 +1,98 @@
+// SAIDA_PRODUCAO e ESTORNO_CANCELAMENTO substituem os antigos valores
+// genéricos SAIDA/ENTRADA (renomeados na migration desta fase — eram os
+// únicos dois tipos que existiam: SAIDA = baixa automática Fila→Impressão,
+// ENTRADA = estorno de cancelamento de pedido). Os três novos cobrem o que
+// a fase "custo real" precisa: compra registrada, baixa manual (perda/
+// quebra/uso avulso) e ajuste de contagem física.
+enum TipoMovimentacao {
+  SAIDA_PRODUCAO
+  ESTORNO_CANCELAMENTO
+  ENTRADA_COMPRA
+  SAIDA_MANUAL
+  AJUSTE_INVENTARIO
+}
+
+// Como o custo unitário snapshotado numa MovimentacaoEstoque foi obtido —
+// hoje só PRECO_CADASTRO existe (lê ItemGrafica.precoCompra no momento da
+// baixa); os outros dois entram quando houver disciplina de compra
+// lançada o suficiente pra sustentar um cálculo melhor (ver fase-custo-real.md §1.1).
+enum MetodoCusteio {
+  PRECO_CADASTRO
+  ULTIMA_COMPRA
+  MEDIO_PONDERADO
+}
+
+model MovimentacaoEstoque {
+  id            String           @id @default(cuid())
+  itemGraficaId String
+  // Qual pedido de produção gerou essa saída (quando aplicável) — permite
+  // comparar consumo real vs. previsto pela ficha técnica por pedido, em vez
+  // de depender de parsear o texto livre de `motivo`.
+  pedidoId      String?
+  tipo          TipoMovimentacao
+  quantidade    Decimal          @db.Decimal(12, 4)
+  motivo        String?
+  createdAt     DateTime         @default(now())
+
+  // Qual variante da matéria-prima moveu (quando ela tem variantes) —
+  // itemGraficaId continua apontando pro "pai", pra joins/relatórios; isso
+  // aqui só desambigua QUAL saldo (2mm ou 5mm) foi decrementado. SetNull,
+  // igual pedidoId: preserva o histórico do movimento mesmo se a variante
+  // um dia for desativada/apagada.
+  varianteId String?
+
+  // Snapshot de custo no momento da baixa — nunca recalculado retroativamente
+  // (mesmo princípio do preço travado do orçamento). Nulo em movimentações
+  // anteriores a esta fase: a UI mostra "—", nunca zero (zero mentiria que o
+  // custo foi apurado como R$ 0). 4 casas em custoUnitario porque insumo
+  // cotado por m²/milheiro tem preço fracionário — arredondar em 2 casas na
+  // origem gera desvio acumulado visível em tiragem grande.
+  custoUnitario     Decimal?      @db.Decimal(12, 4)
+  custoTotal        Decimal?      @db.Decimal(12, 2)
+  metodoCusteio     MetodoCusteio @default(PRECO_CADASTRO)
+  // Quando o preço usado no snapshot foi atualizado pela última vez — base
+  // do alerta "preço de custo não atualizado há N dias".
+  precoReferenciaEm DateTime?
+
+  documento    String? // nº da nota fiscal, só usado em ENTRADA_COMPRA
+  criadoPorId  String? // null quando a movimentação foi gerada pelo sistema (baixa automática)
+  // De qual fornecedor veio a compra — só relevante/preenchido em
+  // ENTRADA_COMPRA. Opcional: nem toda gráfica cadastra fornecedor pra
+  // toda compra, e histórico de compras sem fornecedor continua válido.
+  fornecedorId String?
+
+  // Qual SolicitacaoCompra gerou esta entrada (quando aplicável) — mesmo
+  // papel de `pedidoId` só que do lado de compras: liga a ENTRADA_COMPRA ao
+  // pedido de compra que a originou (ver avancarStatusCompra em
+  // src/app/compras/status-transicao.ts). @unique porque uma solicitação só
+  // gera no máximo uma entrada de estoque, ao confirmar RECEBIDO — CONFERIDO
+  // (a etapa seguinte) é só a auditoria do que já entrou, não gera outra.
+  // null pra toda movimentação que não veio de uma solicitação de compra
+  // (compra avulsa lançada direto, ajuste manual, etc.).
+  solicitacaoCompraId String? @unique
+
+  // Restrict (não Cascade) porque isso é o histórico de movimentação de
+  // estoque em si — apagar o ItemGrafica junto apagaria o próprio registro
+  // que a movimentação existe pra preservar. Não é SetNull (como pedido/
+  // variante abaixo) porque itemGraficaId não é opcional: uma movimentação
+  // sem "o que moveu" não faz sentido. Hoje não existe nenhum fluxo no app
+  // que apague um ItemGrafica, então isso é defensivo — mas se um dia
+  // existir, Restrict força uma decisão explícita em vez de apagar
+  // histórico financeiro/estoque silenciosamente.
+  itemGrafica       ItemGrafica           @relation(fields: [itemGraficaId], references: [id], onDelete: Restrict)
+  pedido            Pedido?               @relation(fields: [pedidoId], references: [id], onDelete: SetNull)
+  variante          VarianteMateriaPrima? @relation(fields: [varianteId], references: [id], onDelete: SetNull)
+  custoPedido       CustoPedido?
+  // SetNull: desativar/apagar um fornecedor não pode apagar o histórico de
+  // compra em si, só perde a referência de quem vendeu.
+  fornecedor        Fornecedor?           @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
+  // SetNull: mesma razão de `pedido` acima — apagar a solicitação (hoje não
+  // existe fluxo que apague) não pode invalidar o histórico de estoque.
+  solicitacaoCompra SolicitacaoCompra?    @relation(fields: [solicitacaoCompraId], references: [id], onDelete: SetNull)
+
+  @@index([itemGraficaId])
+  @@index([pedidoId])
+  @@index([varianteId])
+  @@index([fornecedorId])
+  @@map("movimentacoes_estoque")
+}

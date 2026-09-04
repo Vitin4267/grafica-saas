@@ -1,0 +1,108 @@
+enum TipoArquivoArmazenado {
+  ARTE_PEDIDO
+  ARTE_ORCAMENTO
+  LOGO_GRAFICA
+  ANALISE_TINTA // reservado pra Cálculo de gasto de tinta com IA
+  PLANILHA_IMPORTACAO // reservado pro Importador de planilha com IA (ver ImportacaoPlanilha)
+}
+
+enum TipoImportacaoPlanilha {
+  CLIENTES
+  CATALOGO
+  PEDIDOS
+}
+
+enum StatusImportacaoPlanilha {
+  MAPEANDO // arquivo recebido, aguardando/mostrando sugestão da IA
+  CONFIRMADO // usuário confirmou o mapeamento, escrita ainda não começou
+  PROCESSANDO // escrita em andamento
+  CONCLUIDO // terminou (mesmo com linhas com erro — ver linhasComErro)
+  ERRO // falhou antes de terminar (webhook, arquivo expirado etc.)
+}
+
+// Um upload de planilha do Importador com IA — serve tanto de registro de
+// auditoria/resultado quanto de CONTADOR DE COTA MENSAL (ver
+// src/lib/billing/limite-importacao.ts): a linha é criada ao pedir a
+// sugestão de mapeamento, ANTES da chamada ao webhook de IA (mesmo
+// raciocínio de AnaliseTintaLog — falha de rede depois ainda consome cota,
+// porque a plataforma já pagou a chamada). Cota é compartilhada entre os 3
+// tipos (contada por graficaId+createdAt do mês corrente, não por tipo).
+model ImportacaoPlanilha {
+  id        String @id @default(cuid())
+  graficaId String
+  usuarioId String
+
+  tipo   TipoImportacaoPlanilha
+  status StatusImportacaoPlanilha @default(MAPEANDO)
+
+  nomeArquivo     String
+  // Pathname no store PRIVADO do Blob — null depois que o arquivo é apagado
+  // ao concluir a importação ou expirar sem confirmação (ver
+  // expirarImportacoesAbandonadas em src/lib/lifecycle-cron.ts).
+  arquivoPathname String?
+
+  linhasTotal      Int
+  linhasImportadas Int @default(0)
+  linhasComErro    Int @default(0)
+
+  // Sugestão da IA (passo 1) e o que o usuário de fato CONFIRMOU (passo 2) —
+  // { "Coluna A": "nome", "Coluna B": "ignorar", ... }, uma entrada por
+  // COLUNA da planilha, nunca por linha — cabe folgado num Json.
+  mapeamentoSugerido   Json?
+  mapeamentoConfirmado Json?
+
+  // Até 50 mensagens de erro por linha ("Linha 12: e-mail inválido") —
+  // capado na aplicação, nunca guarda as linhas originais aqui.
+  erros Json?
+
+  // Preenchido só quando status=ERRO (falha de webhook, arquivo expirado
+  // sem confirmação etc.).
+  mensagemErro String?
+
+  createdAt   DateTime  @default(now())
+  concluidoEm DateTime?
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+
+  // [graficaId, createdAt]: cota mensal (conta linhas do mês corrente, mesmo
+  // padrão de inicioDoMesUTC em billing/uso.ts). [status, createdAt]: cron
+  // de expiração de mapeamento abandonado.
+  @@index([graficaId, createdAt])
+  @@index([status, createdAt])
+  @@map("importacoes_planilha")
+}
+
+// Razão de TODO arquivo que a gráfica sobe pro Vercel Blob (arte de pedido,
+// logo, imagem de análise de tinta) — existe pra sustentar a cota de
+// armazenamento por plano (ver src/lib/billing/limite-armazenamento.ts),
+// não pra guardar o arquivo em si (isso continua no Blob; aqui só o
+// tamanho e a referência). Uma linha por arquivo VIVO: ao substituir uma
+// arte/logo, a linha antiga é apagada na mesma operação que confirma a
+// nova (ver src/lib/billing/armazenamento.ts), nunca acumula histórico.
+//
+// url null = reserva pendente (a soma da cota já conta esta linha antes do
+// put() no Blob terminar, pra duas escritas concorrentes não furarem o
+// limite — ver reservarEspaco). Uma reserva que nunca vira upload de
+// verdade (crash entre reservar e subir) é varrida pelo cron de
+// reconciliação (src/lib/lifecycle-cron.ts) depois de 1h.
+//
+// onDelete: Cascade em graficaId apaga as LINHAS quando a Grafica é
+// apagada, mas não os blobs — eles viram órfão e são recolhidos pela mesma
+// reconciliação (varre o Blob inteiro, não só o razão).
+model ArquivoArmazenado {
+  id           String                @id @default(cuid())
+  graficaId    String
+  tipo         TipoArquivoArmazenado
+  referenciaId String // pedidoId | graficaId | orcamentoItemId, conforme o tipo
+  bytes        Int
+  url          String?               @unique
+  pathname     String?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+
+  @@index([graficaId])
+  @@index([tipo, referenciaId])
+  @@map("arquivos_armazenados")
+}

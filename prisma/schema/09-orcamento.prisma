@@ -1,0 +1,706 @@
+enum StatusOrcamento {
+  RASCUNHO
+  ENVIADO
+  APROVADO
+  REJEITADO
+}
+
+enum TipoPedidoOrcamento {
+  MODELO_NOVO
+  REPETICAO_SEM_ALTERACAO
+  REPETICAO_COM_ALTERACAO
+}
+
+// Os 6 valores oficiais de modFrete do layout NF-e 4.0 — achado B1 da
+// auditoria de abrangência (2026-08-24): o enum só cobria CIF/FOB (modFrete
+// 0/1), faltando os outros 4, o mais importante sendo SEM_FRETE (modFrete 9
+// = "Sem Ocorrência de Transporte"), que é o caso mais comum de gráfica
+// rápida (retirada no balcão). Ver resolverModalidadeFrete em
+// src/lib/nota-fiscal.ts pro mapeamento pro código que a Focus NFe espera.
+enum TipoFrete {
+  CIF_REMETENTE // modFrete 0 — por conta do emitente
+  FOB_DESTINATARIO // modFrete 1 — por conta do destinatário
+  TERCEIROS // modFrete 2
+  PROPRIO_REMETENTE // modFrete 3 — transporte próprio, por conta do remetente
+  PROPRIO_DESTINATARIO // modFrete 4 — transporte próprio, por conta do destinatário
+  SEM_FRETE // modFrete 9 — sem ocorrência de transporte (ex: retirada no balcão)
+}
+
+model Orcamento {
+  id               String          @id @default(cuid())
+  graficaId        String
+  clienteId        String
+  usuarioId        String
+  status           StatusOrcamento @default(RASCUNHO)
+  total            Decimal         @default(0) @db.Decimal(12, 2)
+  linkPublicoToken String?         @unique
+
+  // Quem respondeu pelo link público, e quando. Nome DECLARADO, não
+  // verificado — quem tem o link digita o que quiser. Vale como registro
+  // (mesma força de uma assinatura em formulário de papel), não como prova
+  // de identidade: a tela deve dizer "aceito por", nunca "confirmado por".
+  // Fica separado de LogAuditoria de propósito — aquele responde "qual
+  // FUNCIONÁRIO mexeu", este responde "qual pessoa do CLIENTE respondeu",
+  // e misturar os dois exigiria usuarioId nulo lá, enfraquecendo o log
+  // interno justamente onde ele precisa ser firme.
+  respostaPublicaNome   String?
+  respostaPublicaEm     DateTime?
+  // Quando o orçamento virou ENVIADO pela última vez (gerarLinkPublico ou
+  // atualizarStatusOrcamento) — âncora da lista de "orçamentos parados"
+  // (ver orcamentoEstaParado em src/lib/orcamento-status.ts). Zerado quando
+  // o cliente pede ajuste (volta pra RASCUNHO) e recalculado do zero ao
+  // reenviar, mesmo ciclo de vida de validoAteEm logo abaixo — mas
+  // deliberadamente um campo PRÓPRIO, não derivado de validoAteEm menos
+  // diasValidadeOrcamentoPadrao: esse cálculo quebraria se a gráfica mudasse
+  // diasValidadeOrcamentoPadrao depois do envio, ou quando renovarValidadeOrcamento
+  // empurra validoAteEm pra frente sem reenviar de fato. null = nunca foi
+  // enviado (RASCUNHO) ou orçamento criado antes desta feature.
+  enviadoEm             DateTime?
+  // Motivo escrito PELO CLIENTE ao recusar, no próprio link público.
+  // Diferente de `observacoes` (nota interna da gráfica, logo abaixo): este
+  // texto veio de fora e é o que o vendedor precisa ler pra saber se perdeu
+  // por preço, por prazo ou por arte. Vai junto no e-mail de recusa.
+  respostaPublicaMotivo String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  // Opcional de propósito — gráfica sem filial cadastrada nunca vê esse
+  // campo no formulário. Filiais COMPARTILHAM catálogo/estoque/financeiro
+  // da gráfica (ver model Filial): isto é só um rótulo de "onde esse
+  // orçamento foi feito", pra relatório, não um tenant separado.
+  filialId String?
+
+  // Dados gerais do pedido — todos opcionais, editáveis a qualquer status
+  // (não só RASCUNHO: frete/transportadora normalmente só são definidos
+  // depois que o cliente já aprovou, e nenhum desses campos entra na conta
+  // de preço). contatoNome/contatoEmail são um snapshot específico DESTE
+  // pedido, diferente de Cliente.nome/Cliente.email (que são o cadastro).
+  vendedor                 String?
+  tipoPedido               TipoPedidoOrcamento?
+  contatoNome              String?
+  contatoEmail             String?
+  // Achado A4 da Parte 5 — quando o vendedor escolhe um ContatoCliente
+  // cadastrado (em vez de digitar contatoNome/contatoEmail à mão), este id
+  // fica salvo aqui. FK opcional que CONVIVE com o snapshot em texto acima
+  // (mesmo precedente de Comissao/opcaoEscolhidaNome): escolher um contato
+  // pré-preenche o snapshot, mas o snapshot continua sendo o que aparece no
+  // PDF/link público — nunca lido daqui, pra não quebrar se o contato for
+  // editado ou desativado depois de o orçamento já ter sido enviado.
+  // SetNull: contato excluído (nunca acontece de verdade, é soft-delete via
+  // ContatoCliente.ativo) não pode travar nada, só perde o vínculo.
+  contatoClienteId         String?
+  condicoesPagamento       String?
+  // Achado A7 da Parte 4 da auditoria de abrangência (2026-08-28) — FK
+  // opcional pra CondicaoPagamento (parcelas ESTRUTURADAS, com âncora e
+  // percentuais), convivendo lado a lado com `condicoesPagamento` acima
+  // (texto livre, exibido no PDF, continua existindo pra quem prefere
+  // digitar). Só usado hoje pra gerar ContaReceber automaticamente na
+  // aprovação (âncora APROVACAO — ver atualizarStatusOrcamento em
+  // src/app/orcamento/[id]/actions.ts e responderOrcamentoPublico em
+  // src/app/o/[token]/actions.ts); âncoras EMISSAO_NOTA/ENTREGA ainda não
+  // têm gatilho automático plumbado (ver comentário em AncoraVencimento).
+  // SetNull: apagar a condição de pagamento (nunca acontece de verdade, é
+  // soft-delete via CondicaoPagamento.ativa) não pode travar o orçamento,
+  // só perde o vínculo — o texto livre continua valendo.
+  condicaoPagamentoId      String?
+  frete                    TipoFrete?
+  transportadora           String?
+  localEntrega             String?
+  // Achado A5 da Parte 5 da auditoria de abrangência (2026-08-28) — quando o
+  // vendedor escolhe um EnderecoCliente cadastrado (normalmente tipo
+  // ENTREGA) em vez de digitar `localEntrega` à mão, este id fica salvo
+  // aqui. FK opcional que CONVIVE com o texto livre acima (mesmo precedente
+  // de contatoClienteId/contatoNome, achado A4): escolher um endereço
+  // pré-preenche `localEntrega`, mas o texto livre continua sendo o que
+  // aparece no PDF/Ordem de Produção — nunca lido daqui, pra não quebrar se
+  // o endereço for editado ou desativado depois de o orçamento já enviado.
+  // SetNull: endereço excluído (nunca acontece de verdade, é soft-delete via
+  // EnderecoCliente.ativo) não pode travar nada, só perde o vínculo.
+  enderecoEntregaId        String?
+  // Estimativa em DIAS, preenchida pelo vendedor ANTES do cliente decidir —
+  // distinto de Pedido.prazoEntrega (data CONFIRMADA, só existe depois da
+  // aprovação). Um é promessa pré-venda em dias, o outro é compromisso
+  // pós-venda com data fixa — nunca unificar os dois.
+  prazoEntregaEstimadoDias Int?
+  // Data-limite computada até quando a proposta vale — não é um novo valor
+  // de StatusOrcamento (evita cron job): orcamentoEstaExpirado() em
+  // src/lib/orcamento-status.ts considera o orçamento vencido mesmo com
+  // status=ENVIADO no banco. Calculado uma vez, quando o orçamento vira
+  // ENVIADO (gerarLinkPublico/atualizarStatusOrcamento), a partir de
+  // ParametrosGrafica.diasValidadeOrcamentoPadrao. Zerado quando o cliente
+  // pede ajuste (volta pra RASCUNHO) e recalculado do zero ao reenviar.
+  // null = nunca expira (todo orçamento criado antes desta feature).
+  validoAteEm              DateTime?
+  // Variação admissível entre a quantidade contratada e a entregue, em %,
+  // snapshotada de ParametrosGrafica.toleranciaTiragemPadraoPercent no
+  // momento do ENVIO — mesmo ciclo de vida de validoAteEm acima: zerada
+  // quando o cliente pede ajuste (volta pra RASCUNHO) e recalculada do
+  // zero ao reenviar. Aparece no PDF (src/lib/pdf/OrcamentoDocumento.tsx)
+  // como respaldo contratual pra faturar a quantidade real. null = ainda
+  // em RASCUNHO/nunca enviado, ou orçamento criado antes desta feature.
+  toleranciaTiragemPercent Decimal?             @db.Decimal(5, 2)
+  // Achado A12 da Parte 5 da auditoria de abrangência (2026-08-30) — campos
+  // opcionais pra cliente órgão público. Aparecem no PDF quando preenchidos.
+  // Não é uma modelagem de licitação, é só o mínimo pra o faturamento não
+  // travar (empenho autoriza a entrega, processo/pregão fica pra referência).
+  notaEmpenho              String?
+  processoLicitatorio      String?
+  // Nota interna — nunca aparece no PDF nem no link público (ver
+  // src/lib/pdf/mapear-dados.ts), só na tela autenticada da gráfica.
+  observacoes              String?
+
+  // Arte anexada já na criação do orçamento, pro cliente ver junto da
+  // proposta (ver /o/[token]). Só visualização — a APROVAÇÃO de arte de
+  // verdade continua em Pedido.arteUrl/arteAprovadaEm, sem mudança nenhuma
+  // nesse fluxo. Editável só enquanto o orçamento está em RASCUNHO (mesma
+  // regra dos outros campos editáveis desta tela). Quando o orçamento vira
+  // Pedido, este valor é copiado pra Pedido.arteUrl automaticamente (ver
+  // orcamento/[id]/actions.ts e o/[token]/actions.ts).
+  arteUrl String?
+
+  // Achados do preflight automático rodado no momento do upload (ver
+  // src/lib/preflight.ts) — array de { checagem, severidade, mensagem }.
+  // null = arquivo ainda não passou pelo preflight (nunca teve arte
+  // enviada, ou foi enviada antes desta feature existir). Recalculado do
+  // zero a cada novo upload (nunca acumula achado de um arquivo antigo).
+  // v1 cobre: DPI efetivo (raster) e sangria via MediaBox×TrimBox (PDF) —
+  // NÃO tenta detectar CMYK/RGB dentro do conteúdo de um PDF já pronto
+  // (só é confiável pra imagem raster), nem checar fonte embutida ainda.
+  preflightAvisos Json?
+
+  // Rastreamento de etapas de produção (data+hora combinados, mesmo padrão
+  // de arteAprovadaEm) + nome de quem é responsável — não precisa ser o
+  // usuário logado, por isso é texto livre e não uma FK pra Usuario. Editável
+  // direto (não é um log de eventos), a qualquer status. etapaConfirmacaoPedido*
+  // corresponde à etapa "Pedido" do formulário físico original — nome do
+  // campo é diferente pra não colidir com o model Pedido (produção) já
+  // existente neste schema.
+  etapaOrcamentoDesenvolvimentoEm          DateTime?
+  etapaOrcamentoDesenvolvimentoResponsavel String?
+  etapaLayoutEm                            DateTime?
+  etapaLayoutResponsavel                   String?
+  etapaAprovacaoEm                         DateTime?
+  etapaAprovacaoResponsavel                String?
+  etapaConfirmacaoPedidoEm                 DateTime?
+  etapaConfirmacaoPedidoResponsavel        String?
+  etapaEntregaEm                           DateTime?
+  etapaEntregaResponsavel                  String?
+
+  // Preenchido quando este orçamento nasceu do botão "Pedir de novo" (ver
+  // duplicarOrcamento em src/app/orcamento/[id]/actions.ts) — rastreio pra um
+  // futuro relatório de "quantos pedidos são reposição". Nunca influencia
+  // preço/itens do novo orçamento (esses são sempre recalculados do zero a
+  // partir do catálogo atual, nunca copiados) — é só um vínculo informativo.
+  // SetNull: hoje só é possível apagar um Orcamento em RASCUNHO
+  // (cancelarOrcamento), e "Pedir de novo" só é oferecido a partir de
+  // APROVADO/REJEITADO, então isto não deveria disparar na prática — mas se
+  // um dia mudar, o duplicado não pode ficar travado por causa disso, só
+  // perde a referência.
+  duplicadoDeId String?
+
+  // Nome da OrcamentoOpcao (ou "Opção A" pra opção-base) que o cliente
+  // escolheu, congelado no momento da aprovação — só preenchido quando o
+  // orçamento chegou a ter opções alternativas (ver model OrcamentoOpcao).
+  // null pra todo orçamento que nunca teve opção nenhuma (o caso de sempre),
+  // inclusive todo orçamento aprovado ANTES desta feature — snapshot, nunca
+  // uma FK (a OrcamentoOpcao escolhida é apagada na promoção, ver
+  // src/lib/orcamento-opcoes.ts), mesmo princípio de Comissao.baseCalculo.
+  opcaoEscolhidaNome String?
+
+  grafica           Grafica            @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  cliente           Cliente            @relation(fields: [clienteId], references: [id])
+  usuario           Usuario            @relation(fields: [usuarioId], references: [id])
+  filial            Filial?            @relation(fields: [filialId], references: [id], onDelete: SetNull)
+  contatoCliente    ContatoCliente?    @relation(fields: [contatoClienteId], references: [id], onDelete: SetNull)
+  condicaoPagamento CondicaoPagamento? @relation(fields: [condicaoPagamentoId], references: [id], onDelete: SetNull)
+  enderecoEntrega   EnderecoCliente?   @relation(fields: [enderecoEntregaId], references: [id], onDelete: SetNull)
+  itens             OrcamentoItem[]
+  opcoes            OrcamentoOpcao[]
+  pedido            Pedido?
+  notaFiscal        NotaFiscal?
+  comissao          Comissao?
+  duplicadoDe       Orcamento?         @relation("DuplicacaoOrcamento", fields: [duplicadoDeId], references: [id], onDelete: SetNull)
+  duplicados        Orcamento[]        @relation("DuplicacaoOrcamento")
+
+  pagamentos                  Pagamento[]
+  contasReceber               ContaReceber[]
+  movimentacoesCreditoCliente MovimentacaoCreditoCliente[]
+
+  @@index([graficaId])
+  @@index([filialId])
+  @@index([duplicadoDeId])
+  @@index([contatoClienteId])
+  @@index([condicaoPagamentoId])
+  @@index([enderecoEntregaId])
+  // Query da lista de "orçamentos parados" (ver /orcamento/parados) —
+  // filtra por graficaId+status=ENVIADO e ordena por enviadoEm.
+  @@index([graficaId, status, enviadoEm])
+  // Achado A10 da Parte 5 da auditoria de abrangência (2026-08-30) — toda
+  // consulta "orçamentos/faturamento deste cliente" (ficha do cliente,
+  // relatorios-negocio.ts) filtrava por clienteId sem nenhum índice
+  // dedicado, varrendo por graficaId inteiro. graficaId primeiro (mesmo
+  // padrão de [graficaId, status, enviadoEm] acima) porque toda query já
+  // filtra por tenant de qualquer forma.
+  @@index([graficaId, clienteId])
+  @@map("orcamentos")
+}
+
+// Quando o relógio da parcela começa a contar — pesquisa de mercado (achado
+// A7 da Parte 4) mostrou 4 âncoras cobrindo a esmagadora maioria das
+// condições praticadas por gráfica brasileira: da aprovação do orçamento,
+// da emissão da nota fiscal, da entrega do pedido, ou "outro" (prazo digitado
+// manualmente, sem gatilho automático — cai no mesmo cadastro manual de
+// sempre). As 3 primeiras disparam geração automática de ContaReceber
+// (achado R1 da auditoria, Parte 7, 2026-09-03 — ver
+// gerarContasReceberDaAprovacao/gerarContasReceberDaEmissaoNota/
+// gerarContasReceberDaEntrega em src/lib/condicao-pagamento.ts, chamadas
+// respectivamente em atualizarStatusOrcamento/responderOrcamentoPublico,
+// emitirNotaFiscal/atualizarStatusNotaFiscal, e avancarStatusPedido na
+// transição pra ENTREGUE). OUTRO nunca dispara nada automático — é
+// deliberadamente "sem gatilho", a gráfica sempre cadastra a parcela à mão.
+enum AncoraVencimento {
+  APROVACAO
+  EMISSAO_NOTA
+  ENTREGA
+  OUTRO
+}
+
+// Um "jeito de cobrar" que a gráfica pratica com frequência — bootstrap lazy
+// com as condições mais comuns do mercado (1x faturado 30 dias; 50%+50% na
+// entrega; 30/60/90 com 2% de acréscimo; 28/42/56 dias da emissão da nota),
+// mesma disciplina de CATEGORIAS_CUSTO_SUGERIDAS/garantirCategoriasCustoPadrao
+// em src/lib/custo-pedido.ts — ver garantirCondicoesPagamentoPadrao em
+// src/lib/condicao-pagamento.ts. Vinculada a um Orcamento via
+// Orcamento.condicaoPagamentoId (FK opcional, convive com o texto livre
+// condicoesPagamento) e usada, no evento que bate com a âncora escolhida
+// (aprovação/emissão de nota/entrega), pra gerar ContaReceber (ver
+// comentário em AncoraVencimento acima e no model ContaReceber). Soft-delete
+// via `ativa` (nunca hard-delete — orçamentos já aprovados continuam
+// referenciando a condição usada, mesmo desativada).
+model CondicaoPagamento {
+  id               String           @id @default(cuid())
+  graficaId        String
+  nome             String
+  ancora           AncoraVencimento @default(APROVACAO)
+  // % somado ao total antes de dividir nas parcelas (ex: 30/60/90 com 2% —
+  // condição praticada como "acréscimo pra prazo maior"). null/0 = sem
+  // acréscimo, a maioria das condições (1x faturado, 50%+50%).
+  acrescimoPercent Decimal?         @db.Decimal(5, 2)
+  ativa            Boolean          @default(true)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  grafica    Grafica                    @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  parcelas   CondicaoPagamentoParcela[]
+  orcamentos Orcamento[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId, ativa])
+  @@map("condicoes_pagamento")
+}
+
+// Uma linha do parcelamento de uma CondicaoPagamento — ex: "30/60/90" tem 3
+// linhas (ordem 1/2/3), cada uma com 1/3 (~33.33%) do total e
+// diasAposAncora 30/60/90. `percentual` de todas as linhas de uma mesma
+// condição deveria somar 100 (validado no server ao salvar, não no banco —
+// mesmo princípio de outras validações de composição deste projeto).
+model CondicaoPagamentoParcela {
+  id                  String  @id @default(cuid())
+  condicaoPagamentoId String
+  ordem               Int
+  percentual          Decimal @db.Decimal(5, 2)
+  diasAposAncora      Int
+
+  condicaoPagamento CondicaoPagamento @relation(fields: [condicaoPagamentoId], references: [id], onDelete: Cascade)
+
+  @@index([condicaoPagamentoId])
+  @@map("condicao_pagamento_parcelas")
+}
+
+enum TipoDesconto {
+  PERCENTUAL
+  VALOR_ABSOLUTO
+  PRECO_FINAL // usuário digita o preço fechado, sistema deriva o desconto
+}
+
+// Opção alternativa de proposta dentro do MESMO orçamento/link público — ex:
+// "Pacote Econômico" vs. "Pacote Premium", cada uma com seu próprio conjunto
+// de itens e total. A opção-base (o que hoje já é Orcamento.itens/total) NÃO
+// tem uma linha aqui — continua vivendo direto em OrcamentoItem com
+// opcaoId=null, exatamente como todo orçamento desde sempre. Por isso não há
+// migração de dado nenhuma: um orçamento existente simplesmente nunca tem
+// nenhuma OrcamentoOpcao, e o resto do sistema (edição, PDF, link público,
+// aprovação) continua enxergando só a opção-base até o dia em que a gráfica
+// adicionar a primeira opção alternativa (ver adicionarOpcaoOrcamento em
+// src/app/orcamento/[id]/opcoes.actions.ts). MVP: no máximo
+// MAX_OPCOES_ALTERNATIVAS (2) linhas por orçamento — 3 opções no total
+// contando a base (ver src/lib/orcamento-opcoes.ts).
+//
+// Ao aprovar, a opção escolhida pelo cliente (ou pelo vendedor, no painel) é
+// PROMOVIDA: seus itens têm opcaoId zerado (viram a opção-base) e todas as
+// outras opções (e a base perdedora, se uma alternativa foi escolhida) são
+// descartadas — ver resolverOpcoesNaAprovacao em src/lib/orcamento-opcoes.ts.
+// Depois da promoção, o orçamento aprovado é indistinguível de um orçamento
+// de opção única de sempre: Pedido, Comissao, PDF, relatórios e ficha técnica
+// nunca precisam saber que opções existiram. Ao rejeitar, todas as opções
+// alternativas são descartadas do mesmo jeito (só a base permanece) — um
+// orçamento em status terminal (APROVADO/REJEITADO) nunca tem linha aqui.
+model OrcamentoOpcao {
+  id          String   @id @default(cuid())
+  orcamentoId String
+  nome        String // "Opção B", "Pacote Premium" etc — texto livre, editável
+  // Cache = soma de itens.precoTotal, mesmo padrão de Orcamento.total —
+  // mantido em sincronia pela action que cria a opção (criada de uma vez só,
+  // como um carrinho — ver adicionarOpcaoOrcamento; MVP não tem edição
+  // incremental de item dentro de uma opção já criada, só remover a opção
+  // inteira e recriar).
+  total       Decimal  @default(0) @db.Decimal(12, 2)
+  ordem       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orcamento Orcamento       @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+  itens     OrcamentoItem[]
+
+  @@index([orcamentoId])
+  @@map("orcamento_opcoes")
+}
+
+model OrcamentoItem {
+  id              String          @id @default(cuid())
+  orcamentoId     String
+  // null = pertence à opção-base do orçamento (Orcamento.itens/total de
+  // sempre, "Opção A" na UI) — comportamento de todo item já existente,
+  // sem migração nenhuma. Preenchido = pertence a uma OrcamentoOpcao
+  // alternativa (ver comentário do model acima); orcamentoId continua
+  // apontando pro orçamento-pai nos dois casos, nunca só opcaoId.
+  opcaoId         String?
+  itemGraficaId   String
+  quantidade      Int
+  larguraCm       Decimal?        @db.Decimal(8, 2)
+  alturaCm        Decimal?        @db.Decimal(8, 2)
+  // Terceira dimensão (caixa/embalagem, acrílico, livro) e espessura de chapa
+  // (corte a laser/router) do ITEM VENDIDO — distinto da espessura do lado da
+  // matéria-prima. Ambos opcionais e ignorados por 100% dos motores de preço
+  // em src/lib/pricing/ hoje (risco zero de mudar preço de ninguém).
+  // profundidadeCm segue a MESMA unidade canônica de largura/altura (cm).
+  // espessuraMm é em MILÍMETRO (chapa é vendida em mm no Brasil) — não
+  // confundir com a unidade de largura/altura/profundidade, que é cm.
+  profundidadeCm  Decimal?        @db.Decimal(8, 2)
+  espessuraMm     Decimal?        @db.Decimal(8, 2)
+  // Unidade em que o usuário efetivamente DIGITOU largura/altura deste item
+  // (mm/cm/m — ver src/lib/unidade-dimensao.ts) — congelada no momento da
+  // criação do item, nunca lida dinamicamente de Grafica.unidadePadraoDimensao
+  // depois: trocar o padrão da gráfica não deve reinterpretar itens já salvos.
+  // larguraCm/alturaCm acima continuam SEMPRE em centímetros; isto é só a
+  // unidade de ENTRADA/EXIBIÇÃO. Default CM preserva o comportamento de toda
+  // linha existente (nunca teve outra unidade).
+  unidadeDimensao UnidadeDimensao @default(CM)
+  cores           String? // ex: "4x0", "4x4" — snapshot legível, sempre preenchido
+  acabamento      String? // texto livre, modo SIMPLES apenas
+
+  // precoUnitario/precoTotal continuam sendo o VALOR VENDIDO (deliberado —
+  // PDF, link público, pagamentos e relatórios já leem estes campos). O
+  // preço sugerido pelo motor vira campo paralelo, nunca substitui estes.
+  precoUnitario Decimal @db.Decimal(12, 2)
+  precoTotal    Decimal @db.Decimal(12, 2)
+
+  // Preço sugerido vs. negociado (ver fase-custo-real.md §2.4, §4.2) — nulo em
+  // item sem desconto registrado, o que inclui todo item criado antes desta
+  // fase (renderiza normalmente, sem "erosão por desconto" pra mostrar).
+  precoSugeridoUnitario Decimal?      @db.Decimal(12, 4)
+  descontoTipo          TipoDesconto?
+  descontoValor         Decimal?      @db.Decimal(12, 4)
+  motivoDesconto        String?       @db.VarChar(300)
+  // Preenchido quando o desconto passa de ParametrosGrafica.descontoMaxSemAprovacao
+  // e um DONO/ADMIN aprova — texto livre de "quem", não FK (mesmo padrão de
+  // LogAuditoria.usuarioNome: sobrevive à remoção do usuário).
+  aprovadoPorId         String?
+
+  // Motor avançado (M2/OFFSET/FLEXOGRAFIA): snapshot do modelo usado + árvore de
+  // custo auditável (spec §0d). Fica null pra itens SIMPLES — nada muda no caminho
+  // existente.
+  modeloCalculo                ModeloCalculo @default(SIMPLES)
+  corFrente                    Int?
+  corVerso                     Int?
+  // Nº de cores da arte — modeloCalculo=FLEXOGRAFIA only. Deliberadamente separado
+  // de corFrente/corVerso (que têm semântica de "frente/verso de folha", lida em
+  // ~20 lugares — PDF, webhook-tinta.ts, pedido-aprovacao.ts) pra não arriscar bug
+  // silencioso de significado errado nesses consumidores.
+  numeroCoresFlexo             Int?
+  // Nº de cliques da impressora digital — modeloCalculo=DIGITAL only.
+  numeroCliques                Int?
+  // Nº de setups (telas/matrizes/artes) — modeloCalculo SERIGRAFIA/
+  // SUBLIMACAO/ESTAMPAGEM_QUENTE only, os 3 compartilham este mesmo campo
+  // (mesma razão de compartilharem calcularSetupPorPeca).
+  numeroSetups                 Int?
+  // Achado B4 da auditoria de abrangência — prazo estimado de entrega EM
+  // DIAS, específico deste item (complementa Orcamento.prazoEntregaEstimadoDias,
+  // que é único no cabeçalho). Quando preenchido, o cabeçalho exibe
+  // automaticamente o MÁXIMO entre os itens com este campo preenchido, sem
+  // exigir que o usuário reescreva nada — se nenhum item tiver o campo
+  // preenchido, o comportamento é 100% idêntico a antes (só o campo do
+  // cabeçalho, manual). Nullable — todo item criado antes desta feature não
+  // tem prazo estimado (valor null é válido).
+  prazoEstimadoDias            Int?
+  // Nº de pontos da arte de bordado — modeloCalculo=BORDADO only (achado A4).
+  // Driver de custo POR PEDIDO (diferente de numeroSetups acima, que é fixo
+  // na máquina): a mesma máquina, na mesma camiseta, custa 5× diferente
+  // entre um logo de 3.000 pontos e uma arte de costas de 15.000 pontos.
+  numeroPontos                 Int?
+  // Tempo estimado de máquina (minutos) e metros de corte — modeloCalculo=
+  // TEMPO_MAQUINA only (achado A6). A gráfica escolhe a base na máquina
+  // (tempo, metro de corte, ou os dois somados) — ambos opcionais e
+  // independentes; o motor só cobra o que estiver preenchido (ver
+  // calcularTempoMaquina em src/lib/pricing/tempo-maquina.ts). Decimal (não
+  // Int) porque o vendedor pode estimar em fração de minuto/metro.
+  tempoEstimadoMin             Decimal?      @db.Decimal(10, 2)
+  metrosCorte                  Decimal?      @db.Decimal(10, 2)
+  // Estimativa de horas — só usada quando o item tem um acabamento anexado
+  // com ConfiguracaoAcabamento.baseCobranca=HORA (ex: instalação, criação de
+  // arte). Independente de modeloCalculo, ao contrário de numeroSetups
+  // acima: acabamento por hora pode ser anexado a qualquer motor.
+  horasEstimadas               Decimal?      @db.Decimal(8, 2)
+  // Achado N10 da auditoria de abrangência (2026-09-03) — custo de
+  // ferramental (faca de corte-e-vinco, matriz...) R$ livre, POR ITEM,
+  // pro motor avançado FORA do M2 com clichê de etiqueta: aquele caso já
+  // tem seu próprio snapshot em OrcamentoItemPrecificacaoEtiqueta.custoFaca
+  // (não duplicado aqui — quando o item tem essa linha, ela é a fonte de
+  // verdade, este campo fica null). ContextoPrecificacao.custoFaca (motor
+  // de preço, ver src/lib/pricing/precificar.ts) já era lido por TODOS os
+  // branches menos OFFSET antes desta correção — hoje só OFFSET grava
+  // aqui (embalagem/cartonagem que paga faca de corte-e-vinco); nenhum
+  // gate de banco impede outro modelo avançado gravar aqui no futuro sem
+  // migration nova.
+  custoFaca                    Decimal?      @db.Decimal(12, 4)
+  // Override opcional, POR ORÇAMENTO, do custo de aquisição do fornecedor —
+  // modeloCalculo=REVENDA only (achado A12). O preço de um brinde muda por
+  // cotação/faixa de quantidade a cada orçamento; quando null, o motor cai no
+  // ItemGrafica.precoCompra do catálogo (mesmo fallback que
+  // ContextoDigital/ContextoSetupPorPeca já usam a partir de precoCompra —
+  // ver src/lib/pricing/carregar.ts).
+  custoAquisicaoUnitario       Decimal?      @db.Decimal(12, 4)
+  // Achado B7 (correção de regressão introduzida pelo A2, 2026-08-24): quando
+  // true, a gráfica só aplica a estampa/gravação — o cliente já trouxe a
+  // peça em branco (camiseta/caneca/boné) — então o motor zera
+  // ContextoDigital/ContextoSetupPorPeca.custoSubstratoPorPeca pra este item
+  // (ver src/lib/orcamento-precificacao.ts). Só faz sentido pra
+  // modeloCalculo=DIGITAL ou um dos 4 de setup-por-peça (SERIGRAFIA/
+  // SUBLIMACAO/ESTAMPAGEM_QUENTE/PERSONALIZACAO) — nunca REVENDA, onde o
+  // "custo de aquisição" É o produto inteiro, não um substrato aplicado.
+  // @default(false) preserva 100% o comportamento de todo item já existente
+  // (continua cobrando o substrato normalmente).
+  materialFornecidoPeloCliente Boolean       @default(false)
+  // Achado B6 — sobrepõe o nome do catálogo (ItemGrafica.itemCatalogo.nome)
+  // no PDF e no link público quando preenchido (ver src/lib/pdf/mapear-dados.ts
+  // e src/app/o/[token]/page.tsx). Puramente descritivo: nunca entra no motor
+  // de preço (DadosItemOrcamento/calcularItemOrcamento em
+  // orcamento-precificacao.ts), mesmo caráter de `acabamento` acima. Nullable
+  // = todo item já existente continua mostrando o nome genérico do catálogo,
+  // comportamento de sempre. Não remove a exigência de itemGraficaId — só
+  // resolve a falta de descrição específica, não a falta de item de catálogo
+  // (parte maior do achado B6, deixada de fora de propósito).
+  descricaoLivre               String?       @db.Text
+  breakdown                    Json?
+
+  // Achado F1 da Parte 7 da auditoria de abrangência — vínculo INFORMATIVO,
+  // opcional, nunca automático na precificação: quando o vendedor escolhe
+  // um Ferramental já cadastrado (do mesmo cliente/produto), a UI pode
+  // sugerir um aviso ("esta faca/clichê já existe, considere não cobrar de
+  // novo") — mas custoFaca/custoClichePorCm2 e o preço final continuam
+  // 100% manuais, ninguém zera isso sozinho. SetNull: desativar/remover o
+  // Ferramental não pode apagar o item de orçamento que só referenciava ele.
+  ferramentalId String?
+
+  orcamento   Orcamento       @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+  opcao       OrcamentoOpcao? @relation(fields: [opcaoId], references: [id], onDelete: Cascade)
+  itemGrafica ItemGrafica     @relation(fields: [itemGraficaId], references: [id])
+  ferramental Ferramental?    @relation(fields: [ferramentalId], references: [id], onDelete: SetNull)
+
+  acabamentos          OrcamentoItemAcabamento[]
+  etiqueta             OrcamentoItemEtiqueta?
+  tinta                OrcamentoItemTinta?
+  precificacaoEtiqueta OrcamentoItemPrecificacaoEtiqueta?
+  filaGangRun          FilaGangRun?
+
+  @@index([orcamentoId])
+  @@index([opcaoId])
+  @@index([ferramentalId])
+  @@map("orcamento_itens")
+}
+
+// Detalhe descritivo/de produção de etiqueta (rótulo adesivo) — só relevante
+// pra item com modeloCalculo=M2 (flexografia). Não entra na conta de preço
+// (o motor M2 em src/lib/pricing/m2.ts só usa geometria + custo por m²) —
+// isso aqui é 100% dado de especificação técnica pra imprimir/produzir, uma
+// tabela separada (não colunas em OrcamentoItem) pra não deixar ~18 colunas
+// sempre nulas em todo item SIMPLES/OFFSET, mesmo raciocínio que já levou
+// OrcamentoItemAcabamento a ser tabela própria.
+model OrcamentoItemEtiqueta {
+  id              String @id @default(cuid())
+  orcamentoItemId String @unique
+
+  materialSubstrato        MaterialSubstrato?
+  materialSubstratoOutro   String? // só usado quando materialSubstrato = OUTRO
+  tipoAdesivo              TipoAdesivo?
+  tipoAdesivoOutro         String? // só usado quando tipoAdesivo = OUTRO
+  durabilidadeAdesivo      String? // PERMANENTE/REMOVIVEL ou outro tipo de durabilidade do adesivo
+  superficieAplicacao      SuperficieAplicacao?
+  superficieAplicacaoOutro String? // só usado quando superficieAplicacao = OUTROS
+  formatoEtiqueta          String?
+
+  coresRotulo       Int?
+  coresContraRotulo Int?
+
+  embalagemQtdPorRolo Int?
+  tubeteMedida        String?
+
+  rotulagem     TipoRotulagem?
+  serrilha      TipoSerrilha?
+  serrilhaOutro String? // só usado quando serrilha = OUTRO
+
+  vernizRotuloTotal           Boolean               @default(false)
+  vernizRotuloReserva         Boolean               @default(false)
+  vernizRotuloTipo            TipoAcabamentoVerniz?
+  vernizRotuloTipoOutro       String? // só usado quando vernizRotuloTipo = OUTRO
+  vernizContraRotuloTotal     Boolean               @default(false)
+  vernizContraRotuloReserva   Boolean               @default(false)
+  vernizContraRotuloTipo      TipoAcabamentoVerniz?
+  vernizContraRotuloTipoOutro String? // só usado quando vernizContraRotuloTipo = OUTRO
+
+  laminacaoRotulo            TipoLaminacao?
+  laminacaoRotuloOutro       String? // só usado quando laminacaoRotulo = OUTRO
+  laminacaoContraRotulo      TipoLaminacao?
+  laminacaoContraRotuloOutro String? // só usado quando laminacaoContraRotulo = OUTRO
+
+  rebobinamento Int? // 1-8, validado em app (src/lib/orcamento-etiqueta.ts) — sem nome pras opções ainda
+
+  orcamentoItem OrcamentoItem              @relation(fields: [orcamentoItemId], references: [id], onDelete: Cascade)
+  hotStampings  OrcamentoItemHotStamping[]
+
+  @@map("orcamento_item_etiquetas")
+}
+
+// Hot/cold stamping pode ter mais de uma variação no mesmo item (ex: dois
+// hots diferentes, cada um com sua própria medida/cor) — por isso é tabela
+// 1:N, diferente de verniz/laminação (que são "um valor por lado", únicos).
+model OrcamentoItemHotStamping {
+  id                      String @id @default(cuid())
+  orcamentoItemEtiquetaId String
+
+  lado                  LadoEtiqueta
+  tipo                  TipoHotStamping
+  tipoOutro             String? // só usado quando tipo = OUTRO
+  tipoEfeitoHotStamping String? // holográfico/espelhado/metalizado/colorido/outro — efeito visual do hot stamping
+  medida                String?
+  cor                   String?
+
+  orcamentoItemEtiqueta OrcamentoItemEtiqueta @relation(fields: [orcamentoItemEtiquetaId], references: [id], onDelete: Cascade)
+
+  @@index([orcamentoItemEtiquetaId])
+  @@map("orcamento_item_hot_stampings")
+}
+
+// Snapshot dos dados que ENTRAM na conta de preço de um item M2 com motor de
+// clichê (ConfiguracaoClicheEtiqueta) — separado de OrcamentoItemEtiqueta de
+// propósito (aquela é 100% descritiva/produção, nunca mexe no motor de preço,
+// ver comentário dela acima; misturar quebraria esse invariante). Criada só
+// quando o produto tem a config de clichê presente; nunca recalculada depois
+// — mesmo espírito de OrcamentoItemAcabamento.
+model OrcamentoItemPrecificacaoEtiqueta {
+  id                   String   @id @default(cuid())
+  orcamentoItemId      String   @unique
+  papelId              String // matéria-prima (ItemGrafica tipo=MATERIA_PRIMA) escolhida NESTE orçamento
+  quantidadeCores      Int // nº de cores da arte → nº de clichês
+  custoClicheCalculado Decimal  @db.Decimal(12, 4) // snapshot = quantidadeCores × custoClicheUnitario no momento do cálculo
+  custoFaca            Decimal? @db.Decimal(12, 4) // opcional, R$ livre (ferramental de corte)
+  custoFrete           Decimal? @db.Decimal(12, 4) // opcional, R$ livre
+  createdAt            DateTime @default(now())
+
+  orcamentoItem OrcamentoItem @relation(fields: [orcamentoItemId], references: [id], onDelete: Cascade)
+  papel         ItemGrafica   @relation("PapelDoItemOrcamentoEtiqueta", fields: [papelId], references: [id], onDelete: Restrict)
+
+  @@map("orcamento_item_precificacao_etiquetas")
+}
+
+// Acabamentos estruturados aplicados a um item de orçamento no motor avançado
+// (substitui o texto livre "acabamento" quando modeloCalculo != SIMPLES).
+model OrcamentoItemAcabamento {
+  id              String  @id @default(cuid())
+  orcamentoItemId String
+  itemGraficaId   String // o SERVICO usado como acabamento
+  qtdBase         Decimal @db.Decimal(12, 4) // snapshot da base de cobrança usada
+  custoCalculado  Decimal @db.Decimal(12, 4)
+
+  orcamentoItem OrcamentoItem @relation(fields: [orcamentoItemId], references: [id], onDelete: Cascade)
+  itemGrafica   ItemGrafica   @relation(fields: [itemGraficaId], references: [id])
+
+  @@index([orcamentoItemId])
+  @@map("orcamento_item_acabamentos")
+}
+
+// Estimativa de gasto de tinta gerada por IA a partir de uma imagem da arte
+// (recurso de plano pago — ver src/lib/billing/recursos-pagos.ts,
+// "calculo_tinta_ia" — disparado manualmente pelo usuário). Tabela separada
+// da OrcamentoItem pelo mesmo motivo de OrcamentoItemEtiqueta: colunas que
+// ficariam nulas na esmagadora maioria dos itens. 1:1 com substituição —
+// refazer a análise sobrescreve esta linha e apaga a imagem antiga do Blob,
+// mesma semântica de Pedido.arteUrl. Histórico de USO (pra rate limit) vive
+// em AnaliseTintaLog, não aqui.
+model OrcamentoItemTinta {
+  id              String @id @default(cuid())
+  orcamentoItemId String @unique
+
+  // Blob PRIVADO (diferente de Pedido.arteUrl, que é público de propósito —
+  // esta imagem nunca é vista fora do tenant). pathname guardado à parte
+  // pra assinar/apagar sem precisar reparsear a URL.
+  imagemUrl      String
+  imagemPathname String
+  imagemTipo     String
+
+  coberturaPercentual Decimal  @db.Decimal(5, 2)
+  coberturaCiano      Decimal? @db.Decimal(5, 2)
+  coberturaMagenta    Decimal? @db.Decimal(5, 2)
+  coberturaAmarelo    Decimal? @db.Decimal(5, 2)
+  coberturaPreto      Decimal? @db.Decimal(5, 2)
+
+  consumoMlPorPeca Decimal @db.Decimal(12, 6)
+  consumoMlTotal   Decimal @db.Decimal(12, 3)
+
+  // String, não enum: valor vem de um LLM externo, normalizado na aplicação
+  // (ALTA/MEDIA/BAIXA, com MEDIA como fallback) — um enum quebraria se a IA
+  // devolvesse um valor inesperado.
+  confianca String
+
+  observacao String? @db.Text
+  modeloIa   String?
+
+  // Snapshot do que foi analisado — o item é editável em RASCUNHO, e sem
+  // isso mudar a quantidade/medida depois transforma consumoMlTotal numa
+  // mentira silenciosa (ver aviso de desatualização na UI).
+  quantidadeSnapshot Int
+  larguraCmSnapshot  Decimal? @db.Decimal(8, 2)
+  alturaCmSnapshot   Decimal? @db.Decimal(8, 2)
+
+  criadoPorUsuarioId String
+  createdAt          DateTime @default(now())
+
+  orcamentoItem OrcamentoItem @relation(fields: [orcamentoItemId], references: [id], onDelete: Cascade)
+
+  @@map("orcamento_item_tinta")
+}
+
+// Log de USO (não de conteúdo) do cálculo de tinta com IA — mesmo padrão de
+// PerguntaAssistenteLog, existe só pra sustentar o rate limit (ver
+// src/lib/rate-limit-tinta.ts): protege o custo de token/imagem da
+// PLATAFORMA contra abuso, já que a IA roda numa conta única, não por tenant.
+model AnaliseTintaLog {
+  id        String   @id @default(cuid())
+  graficaId String
+  usuarioId String
+  createdAt DateTime @default(now())
+
+  @@index([usuarioId, createdAt])
+  @@index([graficaId, createdAt])
+  @@map("analise_tinta_log")
+}

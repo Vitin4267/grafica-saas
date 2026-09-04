@@ -1,0 +1,495 @@
+model Cliente {
+  id        String   @id @default(cuid())
+  graficaId String
+  nome      String
+  email     String?
+  telefone  String?
+  documento String? // CPF ou CNPJ
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // null = ativo. Preenchido = cliente desativado: some das listas e dos
+  // dropdowns de seleção (orçamento, produção, relatórios), mas o histórico
+  // (Orcamento, NotaFiscal) continua intacto — não é hard delete.
+  //
+  // Mesmo precedente de Usuario.desativadoEm: é data (não boolean) porque
+  // "quando saiu" é a pergunta que aparece junto com "quem fez isso" numa
+  // investigação. Reversível: voltar pra null reativa.
+  //
+  // Para o pedido de exclusão de dado pessoal (LGPD), ver anonimizarCliente
+  // em src/app/clientes/actions.ts — que também preenche este campo, mas
+  // além disso sobrescreve nome/documento/contatos, porque desativar sozinho
+  // não atende ao direito de eliminação do titular.
+  desativadoEm DateTime?
+
+  // Conceito distinto de desativado: o cliente existe e continua sendo
+  // atendido, só que só à vista (ou outra restrição comercial) — normalmente
+  // por inadimplência. Não confundir com AssinaturaGrafica.inadimplenteDesde,
+  // que é sobre a GRÁFICA dever ao GrafPro, não sobre o cliente dela.
+  //
+  // Hoje é só um aviso não-bloqueante na aprovação do orçamento
+  // (atualizarStatusOrcamento) — não impede a venda, só avisa quem aprova.
+  bloqueadoParaVenda Boolean @default(false)
+  motivoBloqueio     String?
+
+  // Achado A6 da Parte 4 da auditoria de abrangência (2026-08-27) — controle
+  // de crédito, DIFERENTE de bloqueadoParaVenda acima: aquele é uma decisão
+  // MANUAL do dono ("só à vista"); isto aqui é estouro de limite detectado
+  // AUTOMATICAMENTE pelo sistema (soma de ContaReceber pendente/vencida do
+  // cliente + o orçamento sendo aprovado, ver calcularExposicaoCreditoCliente
+  // em src/lib/credito-cliente.ts) comparado contra um teto configurável.
+  // Deliberadamente NÃO reaproveita bloqueadoParaVenda: são causas
+  // independentes (um cliente pode estourar o limite sem nunca ter sido
+  // bloqueado manualmente, e vice-versa) — mas os DOIS avisos são
+  // compostos num único `aviso` na resposta de atualizarStatusOrcamento, sem
+  // precisar de um segundo campo no resultado.
+  //
+  // null = sem limite configurado (comportamento de hoje, sem regressão).
+  limiteCredito Decimal? @db.Decimal(12, 2)
+
+  // Puramente informativo por enquanto — nenhum motor lê isto ainda (não
+  // existe ainda o conceito de vencimento previsto de um orçamento não
+  // aprovado). Existe pra a gráfica já cadastrar a condição comercial
+  // combinada com o cliente, pronta pra quando um fluxo futuro precisar dela
+  // (ex: sugerir parcelas de ContaReceber na aprovação).
+  prazoPagamentoPadraoDias Int?
+
+  // Espelha bloqueadoParaVenda/motivoBloqueio acima em FORMATO (boolean +
+  // motivo em texto livre, mesmo aviso não-bloqueante na aprovação), mas é
+  // outra causa: "faturamento" aqui é a decisão de travar NOVAS vendas a
+  // prazo por decisão comercial explícita ligada a crédito/cobrança
+  // (ex: fatura em atraso há muito tempo), enquanto bloqueadoParaVenda cobre
+  // qualquer motivo comercial mais amplo ("só à vista" por request do
+  // cliente, briga comercial, etc.) — a gráfica pode usar só um dos dois,
+  // ou os dois ao mesmo tempo, sem conflito.
+  bloqueadoParaFaturamento  Boolean @default(false)
+  motivoBloqueioFaturamento String?
+
+  // Achado A6 da Parte 5 da auditoria de abrangência (2026-08-28) — completa
+  // o achado A6 da Parte 4 acima (limiteCredito/prazoPagamentoPadraoDias, já
+  // existentes): faltava como o cliente PAGA, não só quanto/quando. Mesmo
+  // padrão null=comportamento de hoje dos campos acima.
+  //
+  // Reusa o enum FormaPagamento que já existe em Pagamento.forma — zero
+  // conceito novo. Sem *Outro de escape (diferente de origem/segmento): é só
+  // um valor sugerido pra pré-preencher (ver condicoesPagamento no
+  // orçamento), nunca gravado como valor final em nenhum lugar, então não
+  // precisa do mesmo rigor de um dado fiscal/enum estruturado.
+  formaPagamentoPreferida FormaPagamento?
+
+  // Fração 0-1 (mesma representação de margemPadraoOverride abaixo, nunca
+  // 0-100) — desconto negociado que costuma valer pra este cliente. Só uma
+  // SUGESTÃO de preenchimento (ver defaultValue em DescontoItemForm.tsx):
+  // quem aplica ainda passa pela mesma trava de
+  // ParametrosGrafica.descontoMaxSemAprovacao no momento de aplicar (ver
+  // aplicarDescontoItemOrcamento), então guardar aqui um valor acima do
+  // limite não é uma brecha de aprovação — só adianta o preenchimento.
+  descontoPadraoPercent Decimal? @db.Decimal(5, 4)
+
+  // Nota financeira livre (ex: "só paga com nota + boleto, portal da
+  // prefeitura"). Deliberadamente separado de `observacoes` abaixo (nota
+  // comercial genérica de atendimento): este campo é especificamente sobre
+  // COMO cobrar este cliente — mesmo precedente de preferenciasProducao ser
+  // separado de observacoes por AUDIÊNCIA (produção vs. comercial), aqui é
+  // financeiro vs. comercial.
+  observacaoFinanceira String? @db.Text
+
+  // Endereço — opcional pra cadastro comum, mas exigido pra emitir nota fiscal
+  // (ver DadosFiscaisGrafica / NotaFiscal). enderecoCodigoIbge é nullable e não
+  // bloqueia emissão: o exemplo oficial da Focus NFe envia só município+UF.
+  enderecoCep         String?
+  enderecoLogradouro  String?
+  enderecoNumero      String?
+  enderecoComplemento String?
+  enderecoBairro      String?
+  enderecoMunicipio   String?
+  enderecoCodigoIbge  String?
+  enderecoUf          String?
+
+  // Achado A11 da auditoria de abrangência (pesquisa-abrangencia-modulos.md)
+  // — até aqui Cliente era o único model do domínio comercial sem nenhum
+  // campo de texto livre (Orcamento/Pedido/Entrega/Despesa já têm). Nota
+  // interna — nunca exposta em PDF nem no link público de orçamento (mesma
+  // regra já documentada em Orcamento.observacoes acima), só na tela
+  // autenticada da gráfica.
+  observacoes String? @db.Text
+
+  // Deliberadamente separado de `observacoes`: isto é o que precisa chegar
+  // até o chão de fábrica junto da Ordem de Produção (ver
+  // src/app/producao/[pedidoId]/ordem-producao/route.tsx) — ex: "sempre
+  // mandar arte em RGB", "não aceita variação de tom entre lotes", "só
+  // recebe às terças". `observacoes` é nota comercial interna e nunca sai
+  // da tela da gráfica; este campo é operacional e aparece no documento
+  // impresso que o produtor lê.
+  preferenciasProducao String? @db.Text
+
+  // De onde o cliente veio — mede qual canal traz cliente que fecha (achado
+  // A11). Lista fechada com OUTRO de escape (mesmo padrão de
+  // UnidadeMedida/CategoriaEquipamento/etc. no resto do schema).
+  // origemOutro só é preenchido quando origem=OUTRO.
+  origem      OrigemCliente?
+  origemOutro String?
+
+  // Achado A7 da auditoria de abrangência (pesquisa-abrangencia-modulos.md)
+  // — "Nível 1": não existe segmento de cliente nem forma de dar margem
+  // diferenciada pra revenda/agência. O motor de precificação já tinha o
+  // gancho pronto e dormente (ContextoPrecificacao.margemLucroOverride, ver
+  // src/lib/pricing/precificar.ts) — estes 2 campos são só o cadastro que
+  // alimenta esse gancho via src/lib/orcamento-precificacao.ts. Mesmo padrão
+  // enum-fechado+OUTRO de origem/origemOutro acima. segmentoOutro só é
+  // preenchido quando segmento=OUTRO.
+  segmento      SegmentoCliente?
+  segmentoOutro String?
+
+  // Sobrescreve ParametrosGrafica.margemPadrao só pra ESTE cliente — mesma
+  // representação (fração 0-1, ex: 0.15 = 15%, nunca 0-100) e mesma precisão
+  // de ParametrosGrafica.margemPadrao (schema ~L115). null = motor usa o
+  // padrão da gráfica (comportamento de hoje, sem regressão). Independente
+  // de `segmento`: dá pra ter margem diferenciada sem categorizar o cliente,
+  // e vice-versa.
+  margemPadraoOverride Decimal? @db.Decimal(5, 4)
+
+  // Achado A8 da auditoria de abrangência — vendedor/responsável comercial
+  // do cliente, distinto de Orcamento.usuarioId (quem DIGITOU o orçamento no
+  // sistema). Nullable: maioria das gráficas pequenas não faz essa
+  // distinção (comportamento de hoje, sem regressão). SetNull: vendedor
+  // desligado não pode travar a exclusão do cadastro do usuário nem do
+  // cliente, só perde a atribuição — mesmo padrão de Orcamento.duplicadoDeId.
+  // Só afeta Comissao.usuarioId quando
+  // ParametrosGrafica.comissaoSegueVendedorDoCliente está ligada (default
+  // false).
+  vendedorId String?
+
+  // Achado A1 da auditoria de abrangência (pesquisa-abrangencia-modulos.md,
+  // Parte 5) — distinção Pessoa Física × Pessoa Jurídica, base pra razão
+  // social/IE na emissão de NF-e (ver src/lib/focus-nfe.ts e
+  // verificarProntidaoFiscal em src/lib/nota-fiscal.ts). null = cadastro
+  // anterior a este campo, sem mudança de comportamento na emissão.
+  tipoPessoa TipoPessoa?
+
+  // `nome` continua sendo o rótulo de uso interno (nunca migrado/apagado) —
+  // a emissão fiscal passa a preferir `razaoSocial ?? nome`, porque nome
+  // fantasia não tem validade jurídica pra nota fiscal. razaoSocial/
+  // nomeFantasia só fazem sentido pra JURIDICA, mas não são bloqueados no
+  // banco pra FISICA (validado na tela/action, não aqui).
+  razaoSocial  String?
+  nomeFantasia String?
+
+  // IE só é exigida quando indicadorInscricaoEstadual=CONTRIBUINTE (rejeição
+  // SEFAZ 728 se faltar) e NUNCA pode vir preenchida quando ISENTO (rejeição
+  // 791) — ver verificarProntidaoFiscal e a montagem do payload em
+  // src/lib/focus-nfe.ts. null = cadastro antigo, emissão cai no
+  // comportamento de sempre (não manda nenhum dos dois campos).
+  inscricaoEstadual          String?
+  indicadorInscricaoEstadual IndicadorInscricaoEstadual?
+
+  // Campo do TOMADOR que qualquer NFS-e municipal pede — barato guardar
+  // agora mesmo sem uso imediato (o GrafPro só emite NF-e hoje, ver achado
+  // A3 da mesma Parte da auditoria).
+  inscricaoMunicipal String?
+
+  grafica        Grafica           @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  vendedor       Usuario?          @relation(fields: [vendedorId], references: [id], onDelete: SetNull)
+  orcamentos     Orcamento[]
+  creditoCliente CreditoCliente?
+  // Achado A4 da Parte 5 da auditoria de abrangência — ver ContatoCliente
+  // mais abaixo no schema.
+  contatos       ContatoCliente[]
+  // Achado A5 da Parte 5 da auditoria de abrangência — ver EnderecoCliente
+  // mais abaixo no schema.
+  enderecos      EnderecoCliente[]
+  // Achado A10 da Parte 5 da auditoria de abrangência — ver ContaReceber.clienteId.
+  contasReceber  ContaReceber[]
+  // Achado F1 da Parte 7 da auditoria de abrangência — ferramental (faca,
+  // clichê...) de propriedade deste cliente, ver model Ferramental.
+  ferramentais   Ferramental[]
+
+  // NULL não colide com NULL em unique index do Postgres — várias gráficas
+  // podem ter clientes sem documento cadastrado sem problema. Escopado por
+  // graficaId (não global) porque CPF/CNPJ é único no mundo real, mas nada
+  // impede duas gráficas diferentes atenderem o mesmo cliente.
+  @@unique([graficaId, documento])
+  @@index([graficaId])
+  @@index([vendedorId])
+  @@map("clientes")
+}
+
+// Canal de aquisição do cliente (achado A11 da auditoria de abrangência) —
+// mesmo padrão enum-fechado+OUTRO do resto do schema. CLIENTE_ANTIGO é
+// distinto de INDICACAO: cliente que já comprou antes e voltou por conta
+// própria, sem ninguém ter indicado.
+enum OrigemCliente {
+  INDICACAO
+  REDES_SOCIAIS
+  BUSCA_GOOGLE
+  ANUNCIO
+  FEIRA_EVENTO
+  PROSPECCAO_ATIVA
+  CLIENTE_ANTIGO
+  OUTRO
+}
+
+// Segmento comercial do cliente (achado A7 da auditoria de abrangência,
+// "Nível 1") — mesmo padrão enum-fechado+OUTRO do resto do schema.
+// REVENDA_AGENCIA é o caso que motivou o achado: existem gráficas que só
+// atendem revenda/agência, com margem bem menor que venda direta ao
+// consumidor final (VAREJO). INDUSTRIA e ORGAO_PUBLICO são segmentos com
+// dinâmica de compra própria (grandes volumes recorrentes / licitação),
+// distintos de EMPRESA genérica.
+enum SegmentoCliente {
+  VAREJO
+  EMPRESA
+  REVENDA_AGENCIA
+  INDUSTRIA
+  ORGAO_PUBLICO
+  OUTRO
+}
+
+// Achado A1 da auditoria de abrangência (pesquisa-abrangencia-modulos.md,
+// Parte 5) — distinção Pessoa Física × Pessoa Jurídica do cliente, base pra
+// razão social/Inscrição Estadual na emissão de NF-e. Sem OUTRO de
+// propósito: não existe um terceiro tipo de pessoa no direito brasileiro,
+// diferente dos enums enum-fechado+OUTRO do resto do schema.
+enum TipoPessoa {
+  FISICA
+  JURIDICA
+}
+
+// Tag indIEDest da NF-e 4.0 — decide se a Inscrição Estadual do destinatário
+// é obrigatória (CONTRIBUINTE, rejeição SEFAZ 728 se faltar) ou proibida
+// (ISENTO, rejeição 791 se vier preenchida). NAO_CONTRIBUINTE é o terceiro
+// valor da mesma tag (consumidor final sem IE). Ver mapeamento pros códigos
+// 1/2/9 da Focus NFe em src/lib/focus-nfe.ts.
+enum IndicadorInscricaoEstadual {
+  CONTRIBUINTE
+  ISENTO
+  NAO_CONTRIBUINTE
+}
+
+// Papel da pessoa de contato dentro da empresa cliente (achado A4 da Parte 5
+// da auditoria de abrangência, pesquisa-abrangencia-modulos.md) — quem
+// COMPRA não é necessariamente quem aprova arte, nem quem está no
+// financeiro, nem quem recebe a entrega. Mandar automaticamente o link de
+// aprovação pro contato APROVACAO_ARTE (ou o boleto/NF pro FINANCEIRO) é o
+// que esta lista DESTRAVA pro futuro — nenhum dos dois é implementado nesta
+// rodada, só o cadastro do papel. Mesmo padrão enum-fechado+OUTRO do resto
+// do schema (ver ContatoCliente.funcaoOutro).
+enum FuncaoContatoCliente {
+  COMPRADOR
+  FINANCEIRO
+  APROVACAO_ARTE
+  RECEBIMENTO
+  OUTRO
+}
+
+// Contato individual de um Cliente Pessoa Jurídica (achado A4 da Parte 5 da
+// auditoria de abrangência) — até aqui Cliente.email/telefone tratava a
+// empresa cliente como se fosse uma pessoa só. Não substitui
+// Cliente.email/telefone (que continuam existindo e funcionando exatamente
+// como hoje pra quem nunca cadastrar um contato); é um cadastro adicional,
+// só usado por quem escolher usá-lo — ver Orcamento.contatoClienteId abaixo,
+// que convive com o snapshot em texto Orcamento.contatoNome/contatoEmail
+// (mesmo precedente de Comissao/Orcamento.opcaoEscolhidaNome: FK opcional +
+// snapshot em texto que sobrevive mesmo se o contato mudar ou for
+// desativado depois).
+model ContatoCliente {
+  id        String  @id @default(cuid())
+  clienteId String
+  cliente   Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  nome         String
+  cargo        String?
+  departamento String?
+  email        String?
+  telefone     String?
+  whatsapp     String?
+
+  funcao      FuncaoContatoCliente @default(COMPRADOR)
+  // Só preenchido (e obrigatório, validado na action) quando funcao=OUTRO —
+  // mesmo padrão de Cliente.origemOutro/segmentoOutro.
+  funcaoOutro String?
+
+  // Só um contato principal por cliente — imposto na action
+  // (ver src/app/clientes/actions.ts), não como constraint de banco: um
+  // índice único parcial (WHERE principal) resolveria, mas é mais
+  // complexidade de migração manual do que vale a pena pra esta regra.
+  principal Boolean @default(false)
+
+  // Soft-delete — nunca hard delete, porque o contato pode já estar
+  // referenciado por Orcamento.contatoClienteId (histórico de quem foi
+  // escolhido num orçamento passado não pode quebrar). Contato inativo some
+  // do <select> de novos orçamentos, mas continua existindo pra quem já
+  // aponta pra ele.
+  ativo Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orcamentos Orcamento[]
+
+  @@index([clienteId])
+  @@map("contatos_cliente")
+}
+
+// Tipo do endereço cadastrado (achado A5 da Parte 5 da auditoria de
+// abrangência, pesquisa-abrangencia-modulos.md) — mesmo padrão de ERP
+// brasileiro: endereço comercial/de cadastro, de cobrança (pra onde vai a
+// fatura/boleto) e de entrega (pra onde vai a mercadoria) podem ser 3
+// lugares diferentes. Sem OUTRO de escape: são só 3 papéis fixos, não uma
+// lista aberta como origem/segmento do cliente.
+enum TipoEnderecoCliente {
+  PRINCIPAL
+  COBRANCA
+  ENTREGA
+}
+
+// Endereço adicional de um Cliente (achado A5 da Parte 5 da auditoria de
+// abrangência) — até aqui os 8 campos `endereco*` inline em Cliente eram
+// SIMULTANEAMENTE endereço de cadastro, de cobrança e de entrega, então não
+// dava pra registrar que o faturamento vai pra matriz em São Paulo e a caixa
+// de rótulos vai pra fábrica em Extrema. Não substitui os campos `endereco*`
+// de Cliente (que continuam sendo o endereço FISCAL do destinatário, nada
+// muda na emissão de nota, nada migra pra cá); é um cadastro aditivo e
+// opcional, só usado por quem escolher usá-lo — mesmo precedente de
+// ContatoCliente logo acima não substituir Cliente.email/telefone. Ver
+// Orcamento.enderecoEntregaId abaixo, que convive com o snapshot em texto
+// Orcamento.localEntrega (mesmo padrão de contatoClienteId/contatoNome).
+//
+// Grupos econômicos / matriz-filial do cliente (um Cliente "pai" com vários
+// Cliente "filho") ficam FORA de escopo aqui — o achado que motivou este
+// model é só "várias entregas/cobranças pro MESMO cadastro de cliente", não
+// inferir hierarquia entre cadastros diferentes.
+model EnderecoCliente {
+  id        String  @id @default(cuid())
+  clienteId String
+  cliente   Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  // Rótulo livre de uso interno — "Fábrica Extrema", "Loja Shopping
+  // Iguatemi" — pra reconhecer o endereço numa lista sem precisar ler o
+  // logradouro inteiro.
+  apelido String
+
+  tipo TipoEnderecoCliente @default(ENTREGA)
+
+  // Mesmos nomes/formato dos campos `endereco*` de Cliente (sem o prefixo
+  // `endereco`, redundante aqui dentro do próprio model EnderecoCliente).
+  cep         String?
+  logradouro  String?
+  numero      String?
+  complemento String?
+  bairro      String?
+  municipio   String?
+  codigoIbge  String?
+  uf          String?
+
+  // Quem recebe NESTE endereço — pode ser diferente do ContatoCliente
+  // comercial da empresa (ex: o vigia da doca, não o comprador). Texto
+  // livre, não FK pra ContatoCliente: são conceitos independentes, um
+  // endereço não precisa ter um contato cadastrado pra ter um recebedor.
+  contatoNome     String?
+  contatoTelefone String?
+
+  // Horário de recebimento, doca, agendamento, "tocar interfone" — o tipo de
+  // detalhe que só existe pra ENTREGA, mas o campo fica disponível pra
+  // qualquer tipo (não é validado por tipo, só normalmente vazio pra
+  // PRINCIPAL/COBRANCA).
+  instrucoesEntrega String? @db.Text
+
+  // Só um endereço `padrao: true` por TIPO, por cliente (ex: pode ter um
+  // ENTREGA padrão E um COBRANCA padrão ao mesmo tempo, mas nunca 2 ENTREGA
+  // padrão) — imposto na action via $transaction, mesmo mecanismo de
+  // ContatoCliente.principal acima (não é constraint de banco, mesmo motivo:
+  // um índice único parcial resolveria, mas é mais complexidade de migração
+  // manual do que vale a pena pra esta regra).
+  padrao Boolean @default(false)
+
+  // Soft-delete — nunca hard delete, o endereço pode já estar referenciado
+  // por Orcamento.enderecoEntregaId (histórico de orçamento passado não pode
+  // quebrar). Endereço inativo some do <select> de novos orçamentos, mas
+  // continua existindo pra quem já aponta pra ele.
+  ativo Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orcamentos Orcamento[]
+
+  @@index([clienteId])
+  @@map("enderecos_cliente")
+}
+
+// Saldo adiantado que um CLIENTE tem com a gráfica (ex: conta corporativa
+// B2B que deposita R$5.000 e vai consumindo em pedidos ao longo dos meses)
+// — achado A13 da auditoria de abrangência (2026-08-27). Até aqui não havia
+// onde registrar isso: Pagamento sempre exige um Orcamento APROVADO, que
+// ainda nem existe no momento do depósito adiantado.
+//
+// Não confundir com ContaPrepaga (ver comentário lá): isto aqui é o sentido
+// oposto — o CLIENTE tem saldo com a gráfica (ela deve pra ele), não a
+// gráfica com um fornecedor. Mesma mecânica (saldo sempre derivado da soma
+// das movimentações), sentido do dinheiro invertido.
+//
+// Saldo é SEMPRE calculado a partir da soma de MovimentacaoCreditoCliente
+// (ver saldoCreditoCliente em src/lib/credito-cliente.ts) — deliberadamente
+// SEM campo `saldo` armazenado aqui. Diferente de ContaPrepaga.saldoAtual
+// (que é cache com precedente de corrida documentado ali): CONSUMO precisa
+// reler o saldo real dentro da própria transação pra nunca deixar consumir
+// mais do que existe (ver lançarConsumoCreditoCliente), e um cache
+// incrementado fora dessa checagem reabriria exatamente a corrida que a
+// validação existe pra fechar.
+model CreditoCliente {
+  id        String @id @default(cuid())
+  clienteId String @unique
+
+  cliente       Cliente                      @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  movimentacoes MovimentacaoCreditoCliente[]
+
+  @@map("creditos_cliente")
+}
+
+// AJUSTE cobre correção de lançamento errado (depósito duplicado, valor
+// digitado errado) — pode ir em qualquer direção, por isso valorSinalizado
+// (ver MovimentacaoCreditoCliente abaixo) permite negativo só pra este tipo.
+// ESTORNO é sempre positivo (devolve saldo que tinha sido consumido, ex:
+// pedido cancelado depois de abater do crédito).
+enum TipoMovimentacaoCreditoCliente {
+  DEPOSITO
+  CONSUMO
+  ESTORNO
+  AJUSTE
+}
+
+model MovimentacaoCreditoCliente {
+  id               String                         @id @default(cuid())
+  creditoClienteId String
+  tipo             TipoMovimentacaoCreditoCliente
+  // Sempre positivo pra DEPOSITO/CONSUMO/ESTORNO (o `tipo` já diz a direção
+  // — ver saldoCreditoCliente). Só AJUSTE aceita negativo, pra corrigir
+  // lançamento indevido pra qualquer lado sem precisar de um tipo a mais.
+  valor            Decimal                        @db.Decimal(12, 2)
+  // Presente quando o consumo (ou um estorno de consumo) está ligado a um
+  // orçamento específico — null pra DEPOSITO/AJUSTE, que não têm orçamento
+  // nenhum envolvido. Não é @unique: um mesmo orçamento pode em tese ter um
+  // CONSUMO e depois um ESTORNO (pedido cancelado).
+  orcamentoId      String?
+  // Presente quando um DEPOSITO já nasceu vinculado a um Pagamento existente
+  // (ex: cliente pagou a mais num orçamento aprovado e a diferença virou
+  // crédito) — evita esse valor contar 2x na exportação financeira, mesmo
+  // padrão de ContaReceber.pagamentoId. @unique: um Pagamento nunca gera
+  // mais de um depósito de crédito. null no caminho comum (depósito
+  // adiantado lançado manualmente, sem Pagamento nenhum ainda — é
+  // exatamente o caso que motivou este model, ver comentário em
+  // CreditoCliente acima).
+  pagamentoId      String?                        @unique
+  descricao        String?
+  criadoPorId      String?
+  createdAt        DateTime                       @default(now())
+
+  creditoCliente CreditoCliente @relation(fields: [creditoClienteId], references: [id], onDelete: Cascade)
+  orcamento      Orcamento?     @relation(fields: [orcamentoId], references: [id], onDelete: SetNull)
+  pagamento      Pagamento?     @relation(fields: [pagamentoId], references: [id], onDelete: SetNull)
+
+  @@index([creditoClienteId, createdAt])
+  @@index([orcamentoId])
+  @@map("movimentacoes_credito_cliente")
+}

@@ -1,0 +1,545 @@
+enum FormaPagamento {
+  DINHEIRO
+  PIX
+  CARTAO
+  BOLETO
+  TRANSFERENCIA
+  OUTRO
+}
+
+// Registro de pagamento (entrada, parcela, quitação) de um orçamento aprovado. Saldo
+// devedor é sempre calculado (total - soma dos pagamentos), nunca armazenado — evita
+// dessincronia. Só criado com o orçamento em APROVADO (ver registrarPagamento).
+model Pagamento {
+  id           String         @id @default(cuid())
+  orcamentoId  String
+  valor        Decimal        @db.Decimal(12, 2)
+  forma        FormaPagamento
+  // Só usado quando forma = OUTRO (cheque, vale-troca, permuta...) — sem
+  // isso "Outro" virava caixa preta sem detalhe nenhum nos relatórios.
+  formaDetalhe String?
+  observacao   String?
+  createdAt    DateTime       @default(now())
+
+  orcamento Orcamento @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+
+  // Presente quando este pagamento foi gerado a partir de "marcar conta a
+  // receber como recebida" (ver marcarComoRecebido em
+  // src/app/financeiro/contas-receber/actions.ts) — decisão revista em
+  // 2026-08-15: o comentário original de ContaReceber (acima) dizia que os
+  // dois conviviam sem se referenciar, mas isso deixava a exportação
+  // financeira subestimando receita sempre que alguém usava o botão
+  // "Marcar como recebido" em vez de lançar Pagamento manual na tela do
+  // orçamento. Mesmo padrão de Despesa.comissao. Risco aceito: se alguém
+  // fizer as duas coisas pro mesmo dinheiro, ele conta 2x — não há
+  // deduplicação automática entre os dois caminhos.
+  contaReceber ContaReceber?
+
+  // Presente quando este pagamento é a origem de um DEPOSITO de
+  // CreditoCliente (ver MovimentacaoCreditoCliente.pagamentoId) — cliente
+  // pagou a mais num orçamento aprovado e a diferença virou saldo. null no
+  // caminho comum de depósito adiantado (sem Pagamento nenhum envolvido).
+  movimentacaoCreditoCliente MovimentacaoCreditoCliente?
+
+  // Baixas (recebimento total ou parcial) de ContaReceber financiadas por
+  // este pagamento — achado A8 da Parte 4. Só populado pelo caminho NOVO
+  // (registrarBaixaContaReceber / fechamento automático de saldo parcial em
+  // registrarPagamento); o caminho antigo de valor EXATO continua usando só
+  // ContaReceber.pagamentoId acima, sem nenhuma linha aqui. Ver comentário em
+  // BaixaContaReceber abaixo.
+  baixasContaReceber BaixaContaReceber[]
+
+  @@index([orcamentoId])
+  @@map("pagamentos")
+}
+
+// PARCIAL — achado A8 da Parte 4 da auditoria de abrangência (2026-08-29):
+// até então PENDENTE/PAGA era tudo-ou-nada, sem jeito de registrar um
+// pagamento que cobre só parte do valor (ex: acordo de pagar metade agora).
+// Ver model PagamentoDespesa abaixo.
+enum StatusDespesa {
+  PENDENTE
+  PARCIAL
+  PAGA
+}
+
+// Unidade de avanço de uma série recorrente de Despesa — ver
+// src/lib/despesa-recorrente.ts pra como cada valor avança a data de
+// vencimento. MENSAL é @default porque era o único comportamento que
+// existia antes deste campo (achado A14 da auditoria de abrangência).
+enum PeriodicidadeDespesa {
+  SEMANAL
+  QUINZENAL
+  MENSAL
+  BIMESTRAL
+  TRIMESTRAL
+  SEMESTRAL
+  ANUAL
+}
+
+// Contraparte de Pagamento: dinheiro SAINDO da gráfica (fornecedor, aluguel,
+// conta fixa), não entrando. descricao continua texto livre; categoria
+// também continua existindo como texto livre (histórico), mas agora tem um
+// par estruturado opcional (categoriaCustoId) reaproveitando o MESMO
+// CategoriaCusto já usado em CustoPedido — evita "Aluguel" vs "aluguel" vs
+// "ALUGUEL " quebrando agrupamento em relatório. Fornecedor JÁ é modelo
+// relacional configurável hoje (ver model Fornecedor), só não tem vínculo
+// com Despesa ainda.
+//
+// status/pagoEm nunca são editados por um form genérico de edição — só pelas
+// actions marcarComoPaga/marcarComoPendente (ver src/app/financeiro/actions.ts),
+// pra nunca existir uma combinação inconsistente tipo "paga sem data de pagamento".
+//
+// vencimento é a PRIMEIRA data-pura (sem hora) do schema inteiro — guardada
+// sempre como meia-noite UTC (`${valor}T00:00:00Z`) e SEMPRE exibida com
+// `timeZone: "UTC"` no formatador (src/lib/data.ts), pra não variar um dia
+// conforme o fuso de quem tá vendo. Todo campo de data-pura futuro deve
+// seguir o mesmo padrão.
+model Despesa {
+  id                    String          @id @default(cuid())
+  graficaId             String
+  descricao             String
+  categoria             String?
+  categoriaCustoId      String? // par estruturado opcional de `categoria` (ver comentário acima)
+  valor                 Decimal         @db.Decimal(12, 2)
+  vencimento            DateTime
+  status                StatusDespesa   @default(PENDENTE)
+  formaPagamento        FormaPagamento?
+  // Só usado quando formaPagamento = OUTRO — mesmo par de Pagamento.formaDetalhe.
+  formaPagamentoDetalhe String?
+  pagoEm                DateTime?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  // Recorrência: recorrente=true marca que essa ocorrência faz parte de uma
+  // série. serieRecorrenciaId agrupa as ocorrências da mesma série
+  // (a primeira ocorrência recebe o próprio id como serieRecorrenciaId — ver
+  // criarDespesa). Só a ocorrência de VENCIMENTO MAIS RECENTE de uma série é
+  // consultada pra decidir se gera a próxima (ver src/lib/despesa-recorrente.ts)
+  // — então desmarcar "recorrente" só nessa ocorrência mais recente já
+  // encerra a série, sem precisar tocar nas anteriores.
+  recorrente         Boolean              @default(false)
+  serieRecorrenciaId String?
+  // Unidade de avanço da série — ver enum PeriodicidadeDespesa acima.
+  // @default(MENSAL) preserva o comportamento de toda série criada antes
+  // deste campo existir, sem precisar de backfill.
+  periodicidade      PeriodicidadeDespesa @default(MENSAL)
+  // Série para de gerar novas ocorrências quando a PRÓXIMA ocorrência
+  // ultrapassaria essa data — as ocorrências já geradas antes disso
+  // continuam existindo normalmente. null = sem fim (comportamento de hoje).
+  recorrenciaAteEm   DateTime?            @db.Date
+  // true: cada ocorrência nova nasce com valor 0 ("a confirmar") em vez de
+  // copiar o valor da anterior — pra série cujo valor muda a cada vencimento
+  // (ex: conta de luz/água). false (default): copia o valor da ocorrência
+  // anterior, como sempre foi.
+  valorVariavel      Boolean              @default(false)
+
+  grafica        Grafica         @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  // SetNull, não Restrict: uma categoria de custo nunca é apagada de
+  // verdade (só desativada, ativa=false), mas se algum dia for, a despesa
+  // não pode ficar travada por causa disso — só perde o vínculo estruturado,
+  // o texto livre em `categoria` continua intacto.
+  categoriaCusto CategoriaCusto? @relation(fields: [categoriaCustoId], references: [id], onDelete: SetNull)
+
+  // Presente quando esta despesa foi gerada a partir de "marcar comissão
+  // como paga" (ver marcarComissaoPaga em src/app/financeiro/comissoes/actions.ts)
+  // — deixa o pagamento aparecer no relatório/exportação financeira normal
+  // sem duplicar os campos de Comissao aqui.
+  comissao Comissao?
+
+  // Presente quando esta despesa foi gerada a partir de uma RECARGA de conta
+  // prepaga (ver lancarMovimentacaoContaPrepaga em
+  // src/app/financeiro/contas-prepagas/actions.ts) — mesmo padrão de
+  // Despesa.comissao acima, pra recarga de carteira (ex: Lalamove) não ficar
+  // de fora do relatório/exportação financeira.
+  movimentacaoContaPrepaga MovimentacaoContaPrepaga?
+
+  // Cada baixa (total ou parcial) registrada contra esta despesa — achado A8
+  // da Parte 4. Ver model PagamentoDespesa abaixo e saldoDespesa em
+  // src/lib/baixa-financeira.ts pra como o saldo em aberto é sempre
+  // recalculado a partir daqui, nunca armazenado.
+  pagamentosDespesa PagamentoDespesa[]
+
+  // Trava contra duplicata em `gerarDespesasRecorrentesPendentes`: duas
+  // requisições concorrentes (duas abas, dois usuários abrindo /financeiro
+  // ao mesmo tempo) podem ambas decidir gerar a ocorrência do mesmo mês
+  // pra mesma série — essa constraint faz a segunda tentativa falhar no
+  // banco em vez de criar uma despesa duplicada (ver catch de P2002 lá).
+  @@unique([serieRecorrenciaId, vencimento])
+  @@index([graficaId])
+  @@index([graficaId, status, vencimento])
+  @@index([graficaId, serieRecorrenciaId])
+  @@map("despesas")
+}
+
+// Uma baixa (pagamento total ou parcial) contra uma Despesa — achado A8 da
+// Parte 4 da auditoria de abrangência (2026-08-29). Despesa nunca teve um
+// model de "pagamento" próprio como Orcamento tem (Pagamento): status/pagoEm/
+// formaPagamento viviam direto nela, tudo-ou-nada. Esta tabela passa a ser a
+// fonte de verdade de CADA pagamento registrado (1:N simples — diferente de
+// BaixaContaReceber, que é N:N porque ali Pagamento já existe como entidade
+// própria e uma linha pode em tese quitar mais de uma ContaReceber). Os
+// campos status/pagoEm/formaPagamento/formaPagamentoDetalhe em Despesa
+// continuam existindo e refletem o estado mais recente (pra não quebrar
+// nenhuma tela que já lê direto de lá), mas o saldo em aberto é sempre
+// recalculado a partir da soma destas linhas — ver saldoDespesa em
+// src/lib/baixa-financeira.ts. Criada só por marcarComoPaga (mesmo cuidado
+// de status/pagoEm de Despesa: nunca editada por form genérico).
+model PagamentoDespesa {
+  id           String         @id @default(cuid())
+  despesaId    String
+  valor        Decimal        @db.Decimal(12, 2)
+  forma        FormaPagamento
+  // Só usado quando forma = OUTRO — mesmo par de Pagamento.formaDetalhe.
+  formaDetalhe String?
+  observacao   String?
+  createdAt    DateTime       @default(now())
+
+  despesa Despesa @relation(fields: [despesaId], references: [id], onDelete: Cascade)
+
+  @@index([despesaId])
+  @@map("pagamentos_despesa")
+}
+
+// Saldo prepago tipo "vale" (ex: carteira de um serviço de entrega como
+// Lalamove) — diferente de Despesa, que é conta a pagar; aqui o dinheiro já
+// saiu antes, numa recarga, e cada uso (corrida, envio) só debita de um
+// saldo que a gráfica precisa monitorar pra não ficar negativo/zerado.
+// saldoAtual é cache redundante da soma de MovimentacaoContaPrepaga — existe
+// só pra não recalcular a soma inteira em toda leitura da tela; sempre
+// atualizado na MESMA transação que cria a movimentação.
+//
+// Não confundir com CreditoCliente (achado A13 da auditoria de abrangência,
+// 2026-08-27): isto aqui é a carteira da PRÓPRIA gráfica junto a um
+// FORNECEDOR (ela deve/tem saldo lá). CreditoCliente é o sentido oposto —
+// um CLIENTE da gráfica com saldo adiantado (ela deve pra ele). Modelos
+// irmãos na mecânica (saldo sempre derivado das movimentações), opostos no
+// sentido do dinheiro.
+model ContaPrepaga {
+  id         String   @id @default(cuid())
+  graficaId  String
+  nome       String // ex: "Lalamove"
+  saldoAtual Decimal  @default(0) @db.Decimal(12, 2)
+  ativa      Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  grafica       Grafica                    @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  movimentacoes MovimentacaoContaPrepaga[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("contas_prepagas")
+}
+
+enum TipoMovimentacaoContaPrepaga {
+  RECARGA
+  DEBITO
+}
+
+model MovimentacaoContaPrepaga {
+  id          String                       @id @default(cuid())
+  contaId     String
+  tipo        TipoMovimentacaoContaPrepaga
+  valor       Decimal                      @db.Decimal(12, 2)
+  motivo      String?
+  criadoPorId String?
+  createdAt   DateTime                     @default(now())
+
+  // Despesa gerada quando tipo=RECARGA (só recarga é dinheiro saindo da
+  // gráfica de verdade; débito só consome saldo já lançado antes) — ver
+  // comentário em Despesa.movimentacaoContaPrepaga acima. Null pra DEBITO.
+  despesaId String? @unique
+
+  conta   ContaPrepaga @relation(fields: [contaId], references: [id], onDelete: Cascade)
+  despesa Despesa?     @relation(fields: [despesaId], references: [id], onDelete: SetNull)
+
+  @@index([contaId, createdAt])
+  @@map("movimentacoes_conta_prepaga")
+}
+
+// PARCIAL — achado A8 da Parte 4 da auditoria de abrangência (2026-08-29):
+// até então PENDENTE/RECEBIDO era tudo-ou-nada, e a reconciliação com
+// Pagamento só casava em valor EXATO (ver comentário em registrarPagamento
+// em src/app/orcamento/[id]/actions.ts) — um pagamento parcial ou com sobra
+// não mexia em nada, deixando o sistema contar como recebido dinheiro que
+// nunca entrou. Ver model BaixaContaReceber abaixo.
+enum StatusContaReceber {
+  PENDENTE
+  PARCIAL
+  RECEBIDO
+  CANCELADO
+}
+
+// Uma parcela/pagamento esperado de um Orcamento aprovado — o par simétrico
+// de Despesa (que é dinheiro SAINDO), mas pro dinheiro que o CLIENTE ainda
+// deve. Pode haver várias linhas por orçamento (parcelamento). Até
+// 2026-08-28 nunca era gerado automaticamente — o vendedor/financeiro
+// cadastrava as parcelas manualmente na tela do orçamento aprovado (ver
+// criarContaReceber em src/app/financeiro/contas-receber/actions.ts, que
+// continua sendo o único caminho MANUAL). Achado A7 da Parte 4 da auditoria
+// de abrangência: quando Orcamento.condicaoPagamentoId aponta pra uma
+// CondicaoPagamento (parcelas estruturadas — ver model abaixo), as linhas
+// daqui nascem automaticamente na aprovação, uma vez, como SNAPSHOT — nunca
+// recalculadas/regeneradas se a condição mudar depois (mesma disciplina de
+// Comissao).
+//
+// Diferente de Pagamento (que registra dinheiro JÁ recebido, sem noção de
+// "esperado"/"vencimento"): ContaReceber é o lado da EXPECTATIVA — o que
+// ainda falta cobrar e quando. Até 2026-08-15 os dois conviviam sem se
+// referenciar; revisto porque isso deixava a exportação financeira (ver
+// src/app/financeiro/exportar/route.ts, que só lê Pagamento) subestimando
+// receita sempre que o recebimento era registrado por aqui (marcarComoRecebido)
+// em vez de um Pagamento lançado manualmente na tela do orçamento. Agora
+// marcarComoRecebido cria o Pagamento espelhado — ver pagamentoId abaixo.
+//
+// status/recebidoEm nunca são editados por um form genérico — só pelas
+// actions registrarBaixaContaReceber/cancelarContaReceber (ver
+// src/app/financeiro/contas-receber/actions.ts), mesmo cuidado de Despesa
+// pra nunca existir "recebido sem data de recebimento".
+model ContaReceber {
+  id          String             @id @default(cuid())
+  graficaId   String
+  orcamentoId String
+  descricao   String // ex: "Parcela 1/3", "Entrada", "Pagamento único"
+  valor       Decimal            @db.Decimal(12, 2)
+  vencimento  DateTime // data-pura (meia-noite UTC), mesmo padrão de Despesa.vencimento
+  status      StatusContaReceber @default(PENDENTE)
+  recebidoEm  DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  // Pagamento gerado quando a conta é quitada NUM SÓ pagamento de valor
+  // EXATO (caminho antigo, preservado 100% — ver registrarPagamento em
+  // src/app/orcamento/[id]/actions.ts e registrarBaixaContaReceber). Quando a
+  // conta é fechada por uma ou mais baixas parciais (ver BaixaContaReceber
+  // abaixo), este campo continua null mesmo com status RECEBIDO — o(s)
+  // pagamento(s) responsável(is) fica(m) só nas linhas de `baixas`. Os dois
+  // caminhos nunca coexistem na mesma conta (ver saldoContaReceber em
+  // src/lib/baixa-financeira.ts).
+  pagamentoId String? @unique
+
+  // Achado A10 da Parte 5 da auditoria de abrangência (2026-08-30) — antes só
+  // dava pra chegar no cliente via ContaReceber → Orcamento → clienteId, o
+  // que impedia um índice direto pra "quanto o cliente X me deve". Preenchida
+  // na CRIAÇÃO a partir de Orcamento.clienteId (tanto no caminho automático,
+  // gerarContasReceberDaAprovacao em src/lib/condicao-pagamento.ts, quanto no
+  // manual, criarContaReceber em src/app/financeiro/contas-receber/actions.ts)
+  // — nunca escrita depois disso. Sincronização garantida por construção:
+  // alterarClienteOrcamento (src/app/orcamento/[id]/actions.ts) só permite
+  // trocar o cliente enquanto o orçamento está em RASCUNHO, e ContaReceber só
+  // nasce depois de APROVADO — o vínculo nunca pode dessincronizar. Nullable
+  // + SetNull (mesmo padrão de Orcamento.duplicadoDeId): contas criadas antes
+  // desta coluna existir (ou cujo cliente foi apagado — nunca acontece de
+  // verdade, é soft-delete via Cliente.desativadoEm) não travam por causa
+  // disso, só perdem o vínculo direto (ainda alcançável via orcamento.clienteId).
+  clienteId String?
+
+  grafica   Grafica    @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamento Orcamento  @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+  cliente   Cliente?   @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  pagamento Pagamento? @relation(fields: [pagamentoId], references: [id], onDelete: SetNull)
+
+  // Baixas parciais (ou o fechamento final de uma conta que já teve baixas
+  // parciais) — achado A8 da Parte 4. Vazio pra toda conta fechada pelo
+  // caminho antigo (pagamentoId acima) ou ainda PENDENTE.
+  baixas BaixaContaReceber[]
+
+  @@index([graficaId, status, vencimento])
+  @@index([orcamentoId])
+  // Achado A10 da Parte 5 — ver comentário em clienteId acima. Sustenta a
+  // consulta "contas em aberto/vencidas deste cliente" na ficha do cliente.
+  @@index([clienteId])
+  @@map("contas_a_receber")
+}
+
+// Uma baixa (recebimento total ou parcial) de uma ContaReceber financiada
+// por um Pagamento — achado A8 da Parte 4 da auditoria de abrangência
+// (2026-08-29). N:N com valor (não um FK direto em nenhum dos dois lados)
+// porque uma parcela pode levar mais de um pagamento pra fechar (recebimento
+// parcial, o motivo desta tabela existir) e, em tese, um mesmo Pagamento
+// poderia financiar baixas em mais de uma ContaReceber — não construído hoje
+// (nenhuma tela oferece isso), mas o modelo não impede.
+//
+// Só existe pro caminho NOVO: pagamento em valor EXATO continua fechando a
+// conta direto via ContaReceber.pagamentoId, sem nenhuma linha aqui (ver
+// comentário lá). Criada por registrarBaixaContaReceber (escolha explícita
+// de qual conta) e pelo fechamento automático em registrarPagamento quando o
+// valor bate exato com o SALDO REMANESCENTE de uma conta já PARCIAL — nunca
+// em silêncio numa situação ambígua (ver comentários nas duas actions).
+// Saldo em aberto sempre recalculado somando estas linhas — nunca
+// armazenado, mesma disciplina de CreditoCliente — ver saldoContaReceber em
+// src/lib/baixa-financeira.ts.
+model BaixaContaReceber {
+  id             String   @id @default(cuid())
+  contaReceberId String
+  pagamentoId    String
+  valor          Decimal  @db.Decimal(12, 2)
+  createdAt      DateTime @default(now())
+
+  contaReceber ContaReceber @relation(fields: [contaReceberId], references: [id], onDelete: Cascade)
+  pagamento    Pagamento    @relation(fields: [pagamentoId], references: [id], onDelete: Cascade)
+
+  @@index([contaReceberId])
+  @@index([pagamentoId])
+  @@map("baixas_conta_receber")
+}
+
+enum StatusComissao {
+  PENDENTE
+  PAGA
+  // Achado N2 da auditoria de abrangência — cancelarPedido (ver
+  // src/app/producao/actions.ts) marca a Comissao do orçamento como
+  // CANCELADA quando ainda estava PENDENTE, pra o vendedor não receber
+  // comissão de uma venda que não vai mais acontecer. Uma comissão já PAGA
+  // não é revertida automaticamente (mesmo critério de custo manual: dinheiro
+  // que já saiu não é estornado sozinho, a gráfica decide à parte).
+  CANCELADA
+}
+
+// Comissão de um vendedor sobre um orçamento aprovado — registro histórico
+// (nunca recalculado): guarda SNAPSHOT da taxa do usuário e da política de
+// cálculo da gráfica no momento da aprovação, pra não mudar retroativamente
+// se o dono trocar a config depois. Ver src/lib/comissao.ts (cálculo puro) e
+// o gatilho em src/app/orcamento/[id]/actions.ts (atualizarStatusOrcamento).
+model Comissao {
+  id                 String         @id @default(cuid())
+  graficaId          String
+  orcamentoId        String         @unique // no máximo 1 comissão por orçamento
+  usuarioId          String // vendedor — snapshot de Orcamento.usuarioId
+  baseCalculo        BaseComissao // snapshot de ParametrosGrafica.comissaoVendedorBase
+  percentualAplicado Decimal        @db.Decimal(5, 4) // snapshot de Usuario.comissaoPercent
+  valorBase          Decimal        @db.Decimal(12, 2) // total ou lucro, conforme baseCalculo
+  valorComissao      Decimal        @db.Decimal(12, 2)
+  status             StatusComissao @default(PENDENTE)
+  pagoEm             DateTime?
+  createdAt          DateTime       @default(now())
+
+  // Despesa gerada quando marcada como paga (opcional — só existe depois do
+  // pagamento) — ver comentário em Despesa.comissao acima.
+  despesaId String? @unique
+
+  grafica   Grafica   @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamento Orcamento @relation(fields: [orcamentoId], references: [id])
+  usuario   Usuario   @relation(fields: [usuarioId], references: [id])
+  despesa   Despesa?  @relation(fields: [despesaId], references: [id], onDelete: SetNull)
+
+  @@index([graficaId, status])
+  @@index([usuarioId])
+  @@map("comissoes")
+}
+
+// Categoria de custo configurável por gráfica, usada pra lançar custos reais
+// de produção num pedido específico (papel, ferramental/faca, laminação,
+// clichê, impressão, frete, mão de obra, retrabalho etc — inspirado na
+// planilha real de controle de uma gráfica cliente). NUNCA fixo no código —
+// mesmo princípio já aplicado a UnidadeDimensao: cada gráfica tem seu
+// próprio jeito de separar custo, então isto é só um rótulo configurável,
+// com um conjunto padrão sugerido na primeira vez que a gráfica abre a tela
+// (ver bootstrapCategoriasCustoPadrao), nunca um enum travado.
+model CategoriaCusto {
+  id        String   @id @default(cuid())
+  graficaId String
+  nome      String
+  ordem     Int      @default(0)
+  ativa     Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  grafica         Grafica               @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  custos          CustoPedido[]
+  custosPrevistos PedidoCustoPrevisto[]
+  itensGrafica    ItemGrafica[]
+  despesas        Despesa[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("categorias_custo")
+}
+
+enum OrigemCusto {
+  MANUAL
+  CONSUMO_ESTOQUE
+  COMISSAO
+  SERVICO_INSUMO
+  // Rateio do custo de chapa + acerto de máquina entre os pedidos que
+  // dividiram uma mesma chapa no gang run (ver GrupoGangRun/FilaGangRun
+  // abaixo e combinarGrupoGangRun em src/lib/gang-run-servico.ts).
+  GANG_RUN
+  // Compra feita especificamente pra este pedido (SolicitacaoCompra
+  // origem=PEDIDO_ESPECIFICO), gerado ao confirmar RECEBIDO — achado A3 da
+  // auditoria de abrangência (Parte 3/Compras). Ver criarCustoAutomaticoCompra
+  // em src/lib/custo-pedido.ts.
+  COMPRA
+  // Terceirização de etapa (EtapaTerceirizada.valorFinal preenchido) —
+  // achado E1 da auditoria de abrangência (Parte 2/Produção, 2026-09-01). Ver
+  // criarCustoAutomaticoTerceirizacao em src/lib/custo-pedido.ts.
+  TERCEIRIZACAO
+}
+
+// Um lançamento de custo REAL incorrido num pedido específico — diferente do
+// custo ESTIMADO pelo motor de precificação (OrcamentoItem.breakdown), que é
+// uma previsão feita na hora do orçamento. Isto aqui é o gasto de verdade,
+// lançado manualmente durante/depois da produção (ex: "paguei R$ 60 de faca
+// nova pra este pedido"). Alimenta lucro por pedido (receita do orçamento
+// aprovado − soma destes custos) e o gráfico de custos por categoria do Meu
+// Negócio. graficaId duplicado de pedido.graficaId de propósito — mesmo
+// padrão usado em Comissao/MovimentacaoEstoque, evita join extra pra
+// escopar por tenant em toda query de relatório.
+model CustoPedido {
+  id               String   @id @default(cuid())
+  graficaId        String
+  pedidoId         String
+  categoriaCustoId String
+  valor            Decimal  @db.Decimal(12, 2)
+  observacao       String?
+  createdAt        DateTime @default(now())
+
+  // De onde veio este lançamento (ver fase-custo-real.md §1.4). CONSUMO_ESTOQUE
+  // é gerado automaticamente na baixa Fila→Impressão e nunca duplicado
+  // (movimentacaoEstoqueId é único). Se já existir custo MANUAL na mesma
+  // categoria/pedido quando o automático nasce, ele vem com
+  // possivelDuplicidade=true em vez de somar calado.
+  origem                OrigemCusto @default(MANUAL)
+  movimentacaoEstoqueId String?     @unique
+  // Mesmo padrão de movimentacaoEstoqueId acima, agora pro achado A3 (Parte
+  // 3/Compras): qual SolicitacaoCompra origem=PEDIDO_ESPECIFICO gerou este
+  // lançamento origem=COMPRA ao confirmar RECEBIDO — único porque uma
+  // solicitação nunca gera dois CustoPedido (dedup, mesmo raciocínio de uma
+  // solicitação gerar no máximo uma MovimentacaoEstoque).
+  solicitacaoCompraId   String?     @unique
+  // Mesmo padrão de solicitacaoCompraId acima, agora pro achado E1 (Parte 2/
+  // Produção): qual EtapaTerceirizada gerou este lançamento origem=
+  // TERCEIRIZACAO ao ter valorFinal preenchido — único porque uma
+  // terceirização nunca gera dois CustoPedido (mesmo dedup).
+  etapaTerceirizadaId   String?     @unique
+  valorCalculado        Decimal?    @db.Decimal(12, 2) // o que o sistema apurou, antes de qualquer edição manual
+  editadoManualmente    Boolean     @default(false)
+  possivelDuplicidade   Boolean     @default(false)
+
+  criadoPorId String?
+  // Cancelamento de pedido: nunca deleta custo de origem automática, só
+  // marca estornadoEm e exclui da soma (mesmo princípio do estorno de
+  // estoque, que já usa histórico real em vez de recalcular). Custo manual
+  // não é estornado automaticamente (frete pago é frete pago).
+  estornadoEm DateTime?
+
+  grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  pedido              Pedido               @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  // Restrict: não deixa apagar uma categoria ainda referenciada por um
+  // lançamento de custo — a gráfica precisa desativar (ativa=false) em vez
+  // de excluir, preservando o histórico de custos já lançados.
+  categoriaCusto      CategoriaCusto       @relation(fields: [categoriaCustoId], references: [id], onDelete: Restrict)
+  movimentacaoEstoque MovimentacaoEstoque? @relation(fields: [movimentacaoEstoqueId], references: [id], onDelete: SetNull)
+  // SetNull, mesmo raciocínio de movimentacaoEstoque acima: apagar a
+  // solicitação (hoje não existe fluxo que apague) não pode apagar o custo
+  // já lançado, só perde a referência de qual solicitação o gerou.
+  solicitacaoCompra   SolicitacaoCompra?   @relation(fields: [solicitacaoCompraId], references: [id], onDelete: SetNull)
+  // SetNull, mesmo raciocínio de solicitacaoCompra acima: apagar a
+  // terceirização (hoje não existe fluxo que apague) não pode apagar o custo
+  // já lançado, só perde a referência de qual terceirização o gerou.
+  etapaTerceirizada   EtapaTerceirizada?   @relation(fields: [etapaTerceirizadaId], references: [id], onDelete: SetNull)
+
+  @@index([graficaId])
+  @@index([pedidoId])
+  @@index([categoriaCustoId])
+  @@map("custos_pedido")
+}

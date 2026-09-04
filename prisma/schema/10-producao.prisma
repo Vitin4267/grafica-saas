@@ -1,0 +1,678 @@
+// Como o Pedido soube da transição de etapa — achado B1/B2 da Parte 2
+// (Produção) da auditoria de abrangência. APP é o painel autenticado
+// (/producao, lista ou Kanban); LINK_PUBLICO é o e-mail sem login pro
+// responsável da etapa (/p/[token]); QR_ETIQUETA é a etiqueta física
+// escaneada no chão de fábrica (/q/[token]) — os mesmos 3 canais que já
+// chamavam avancarStatusPedido antes desta feature.
+enum OrigemConfirmacaoEtapa {
+  APP
+  LINK_PUBLICO
+  QR_ETIQUETA
+}
+
+// Um registro por ENTRADA numa etapa de um Pedido (StatusPedido) — o rastro
+// que faltava antes desta feature: só existia Pedido.status (o estado
+// ATUAL), sem nenhum histórico de quando cada etapa começou/terminou, quem
+// confirmou ou em qual máquina rodou. Aberto por avancarStatusPedido dentro
+// da MESMA transação do CAS que muda Pedido.status (nunca fora dela — uma
+// corrida que confirmasse o status sem abrir/fechar o apontamento junto
+// deixaria o histórico inconsistente com o status real) e fechado
+// (finalizadoEm) no mesmo instante em que o PRÓXIMO apontamento é aberto.
+// Backfill: pedidos que já existiam antes desta migração não ganham
+// histórico retroativo (aceitável, ver achado B1) — a linha do tempo
+// começa a partir de agora. Sem quantidadeBoa/quantidadeRefugo (achado B3,
+// rastreio de refugo) — deliberadamente fora de escopo desta rodada.
+model ApontamentoEtapa {
+  id        String @id @default(cuid())
+  graficaId String
+  pedidoId  String
+
+  status StatusPedido
+
+  iniciadoEm   DateTime  @default(now())
+  finalizadoEm DateTime?
+
+  // Quem apontou — sem FK direta pra Usuario (mesmo padrão de
+  // MovimentacaoEstoque.criadoPorId): não trava o apontamento se o usuário
+  // for removido depois. Só preenchido quando origemConfirmacao=APP.
+  operadorId            String?
+  // Nome DECLARADO por quem confirmou pelo link público/QR sem login (mesmo
+  // padrão de Pedido.arteRespondidaPor) — não verificado, vale como
+  // registro. Hoje sempre null na prática: nem /p/[token] nem /q/[token]
+  // coletam nome ainda (ver relatório da tarefa B1/B2 — deliberadamente
+  // fora de escopo desta rodada, o campo só já nasce pronto pra quando
+  // alguém construir essa UI).
+  operadorNomeDeclarado String?
+
+  origemConfirmacao OrigemConfirmacaoEtapa
+
+  observacao String?
+
+  // 5 FKs opcionais, mesmo padrão de RegistroManutencao — mas AQUI 0
+  // preenchidas também é válido, diferente de lá (validado em app via
+  // validarSelecaoMaquinaOpcional, src/lib/manutencao-maquina.ts): nem toda
+  // etapa tem máquina associada (ARTE, CONFERENCIA, EMBALAGEM, EXPEDICAO,
+  // ENTREGUE não têm "motor" nenhum) e os canais público/QR não coletam
+  // essa informação ainda. "Mais de uma preenchida" continua sendo sempre
+  // erro. onDelete=SetNull (diferente do Cascade de RegistroManutencao):
+  // apagar uma máquina do cadastro não pode apagar o HISTÓRICO de produção
+  // que passou por ela.
+  prensaId              String?
+  maquinaFlexografiaId  String?
+  equipamentoId         String?
+  impressoraDigitalId   String?
+  maquinaSetupPorPecaId String?
+
+  createdAt DateTime @default(now())
+
+  grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  pedido              Pedido               @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  prensa              Prensa?              @relation(fields: [prensaId], references: [id], onDelete: SetNull)
+  maquinaFlexografia  MaquinaFlexografia?  @relation(fields: [maquinaFlexografiaId], references: [id], onDelete: SetNull)
+  equipamento         Equipamento?         @relation(fields: [equipamentoId], references: [id], onDelete: SetNull)
+  impressoraDigital   ImpressoraDigital?   @relation(fields: [impressoraDigitalId], references: [id], onDelete: SetNull)
+  maquinaSetupPorPeca MaquinaSetupPorPeca? @relation(fields: [maquinaSetupPorPecaId], references: [id], onDelete: SetNull)
+
+  @@index([graficaId])
+  @@index([pedidoId])
+  @@index([prensaId])
+  @@index([maquinaFlexografiaId])
+  @@index([equipamentoId])
+  @@index([impressoraDigitalId])
+  @@index([maquinaSetupPorPecaId])
+  @@map("apontamentos_etapa")
+}
+
+// FSM linear completa do Pedido (visão de produto 2026-08-21): Arte →
+// Clichê/Faca → Produção → Acabamento → Conferência → Embalagem → Expedição
+// → Entregue — os dois estágios anteriores (Orçamento/Aprovado) são
+// StatusOrcamento, não entram aqui, porque um Pedido só nasce quando o
+// Orçamento já está Aprovado. Expandido de 5 pros 8 estágios abaixo (mais
+// CANCELADO) na migration 20260821230000_expande_status_pedido_10_etapas via
+// ALTER TYPE RENAME VALUE (não recriação do enum): FILA→ARTE,
+// IMPRESSAO→PRODUCAO, PRONTO→EXPEDICAO preservam o dado de pedidos
+// existentes automaticamente; CLICHE_FACA/CONFERENCIA/EMBALAGEM são
+// estágios novos, sem pedido nenhum neles até que algum avance até lá pela
+// primeira vez. Ver SEQUENCIA_STATUS_PEDIDO em src/lib/producao-estagios.ts
+// pra ordem canônica (a ordem de declaração aqui só espelha ela, não é a
+// fonte de verdade — a aplicação nunca depende de ordem de enum do Postgres).
+enum StatusPedido {
+  ARTE
+  CLICHE_FACA
+  PRODUCAO
+  ACABAMENTO
+  CONFERENCIA
+  EMBALAGEM
+  EXPEDICAO
+  ENTREGUE
+  // Terminal, assim como ENTREGUE — mas ao contrário dela, cancelar um
+  // pedido que já passou por Clichê/Faca→Produção estorna automaticamente a
+  // matéria-prima baixada (ver cancelarPedido em src/app/producao/actions.ts).
+  // Alcançável a partir de qualquer estágio ANTES de ENTREGUE — nunca de
+  // ENTREGUE (produto já saiu, cancelar não desfaz uma entrega física).
+  CANCELADO
+}
+
+// Pedido nasce quando um Orcamento é aprovado: acompanha a produção física.
+model Pedido {
+  id          String       @id @default(cuid())
+  graficaId   String
+  orcamentoId String       @unique
+  status      StatusPedido @default(ARTE)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Data pura (meia-noite UTC, mesmo padrão de Despesa.vencimento — ver
+  // src/lib/data.ts), definida na aprovação do orçamento. Opcional: nem todo
+  // pedido tem prazo prometido, e sem prazo nunca gera alerta de atraso.
+  prazoEntrega          DateTime?
+  // Dedup do evento pedido_atrasado (webhook-automacao.ts): uma vez enviado
+  // o alerta pra este pedido, nunca reenviar — evita spam a cada
+  // carregamento de /producao enquanto o pedido continua atrasado. Canal
+  // separado do campo abaixo: este dispara pro webhook de AUTOMAÇÃO da
+  // própria gráfica (n8n), só depois do prazo já vencido.
+  alertaAtrasoEnviadoEm DateTime?
+
+  // Limiar mais urgente (5, 3 ou 0 dias até o prazo) já avisado por E-MAIL
+  // ao vendedor do orçamento + DONO da gráfica (ver
+  // src/lib/alerta-prazo-email.ts, rodando no cron diário). Cascata que só
+  // anda pra frente — 5 → 3 → 0 — nunca reenvia um limiar já ultrapassado,
+  // mas pula direto pro mais urgente ainda não avisado se o cron perder um
+  // dia (ex: de "não avisado" direto pra 0 se o pedido já venceu no
+  // primeiro run). Null = nenhum alerta de prazo ainda enviado por e-mail.
+  alertaPrazoUltimoLimiarDias Int?
+
+  // Aprovação de arte: opt-in por pedido — se a gráfica nunca envia uma
+  // arte (arteUrl null), o pedido avança normalmente sem nenhum gate. Uma
+  // vez enviada, avancarPedido bloqueia a saída de FILA até arteAprovadaEm
+  // ser preenchido (ver src/app/producao/actions.ts). arteLinkToken é
+  // gerado sob demanda (mesmo padrão de Orcamento.linkPublicoToken) e
+  // reaproveitado entre reenvios do mesmo pedido — só o token muda de
+  // "significado" (aprovado/pendente), nunca de valor, então o link que a
+  // gráfica já mandou pro cliente continua válido após um reenvio.
+  arteUrl               String?
+  arteAprovadaEm        DateTime?
+  arteComentarioCliente String?
+  arteLinkToken         String?   @unique
+  // Mesmo campo/formato de Orcamento.preflightAvisos (ver comentário lá) —
+  // quando a arte do orçamento é copiada pro Pedido na aprovação, os
+  // achados de preflight são copiados junto (não recalculados, é o mesmo
+  // arquivo); um reenvio de arte na Produção recalcula do zero.
+  preflightAvisos       Json?
+  // Nome DECLARADO por quem respondeu pelo link público — não é verificado
+  // (quem tem o link digita o que quiser), vale como registro, igual a uma
+  // assinatura em formulário de papel. Nunca escrever "confirmado por" na
+  // tela a partir disto, só "aprovado por". Mesmo par existe em Orcamento
+  // (respostaPublicaNome/Em) pro aceite do orçamento.
+  arteRespondidaPor     String?
+
+  // Link público evergreen: "confirmar a etapa atual deste pedido", sem
+  // login (ver ResponsavelEstagio e src/app/p/[token]). Gerado na criação
+  // do Pedido e NUNCA rotacionado — como o status é um FSM estritamente
+  // linear e só existe uma etapa viva por vez, o token não precisa saber
+  // "qual" etapa confirma, só lê o status atual. Deixa de fazer sentido
+  // quando o pedido chega em ENTREGUE/CANCELADO (terminal) — a página trata
+  // isso como "nada pra confirmar agora", não como link inválido.
+  producaoLinkToken String? @unique
+
+  // QR físico colado no produto, pra atualizar status direto do chão de
+  // fábrica sem voltar ao desktop (ver src/app/q/[token]). Mesmo princípio
+  // de producaoLinkToken (token evergreen, "credencial" = posse do token),
+  // mas token PRÓPRIO e deliberadamente mais permissivo: só existe depois
+  // que um usuário autenticado da gráfica baixa a etiqueta pela primeira vez
+  // (gerado inline em src/app/producao/[pedidoId]/etiqueta/route.tsx — nunca
+  // em massa na criação do Pedido, só sob demanda), e a tela /q/[token]
+  // (src/app/q/[token]/actions.ts) não aplica rate limit nem a checagem de
+  // "etapaEsperada" que producaoLinkToken tem (ver confirmarEstagioPublico)
+  // — a etiqueta impressa circula só
+  // fisicamente dentro da própria gráfica, ao contrário do link por e-mail
+  // que pode ficar aberto numa aba esquecida por dias. Mesma restrição de
+  // ESTAGIOS_ATRIBUIVEIS continua valendo (nunca avança a partir de FILA por
+  // aqui — essa transição baixa estoque e exige a tela de confirmação de
+  // perda de material, que não existe nesta versão mobile).
+  qrToken String? @unique
+
+  // Data da aprovação do orçamento (autenticada ou pelo link público) — até
+  // esta fase, o dashboard somava faturamento por createdAt do orçamento
+  // porque este campo não existia. Também é o gatilho que congela
+  // PedidoCustoPrevisto e os três snapshots abaixo (ver fase-custo-real.md §1.2, §3.1).
+  aprovadoEm DateTime?
+
+  // Snapshots tirados no momento de aprovadoEm — nunca recalculados depois,
+  // mesmo que o motor de precificação ou o preço de matéria-prima mudem.
+  precoSugeridoTotal  Decimal? @db.Decimal(12, 2)
+  valorNegociadoTotal Decimal? @db.Decimal(12, 2)
+  custoPrevistoTotal  Decimal? @db.Decimal(12, 2)
+
+  // Fechamento é ato explícito (tela /pedidos/{id}/fechamento), não
+  // automático ao entrar em Entregue — custo atrasado (frete que chega na
+  // semana seguinte) é regra, não exceção. Reabrir exige permissão
+  // custosVerLucro e gera auditoria.
+  fechadoEm    DateTime?
+  fechadoPorId String?
+
+  grafica   Grafica   @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamento Orcamento @relation(fields: [orcamentoId], references: [id])
+
+  movimentacoes       MovimentacaoEstoque[]
+  custos              CustoPedido[]
+  custosPrevisto      PedidoCustoPrevisto[]
+  // Achado B1/B2 da Parte 2 (Produção) — histórico de transição de etapa,
+  // ver ApontamentoEtapa.
+  apontamentos        ApontamentoEtapa[]
+  entrega             Entrega?
+  filaGangRun         FilaGangRun[]
+  // Lado inverso de SolicitacaoCompra.pedidoId — compras feitas
+  // especificamente pra este pedido (origem=PEDIDO_ESPECIFICO, achado A3 da
+  // auditoria de abrangência, Parte 3/Compras).
+  solicitacoesCompra  SolicitacaoCompra[]
+  // Achado E1 da auditoria de abrangência (Parte 2/Produção) — etapas deste
+  // pedido enviadas pra terceirização (laminação, UV, acabamento de livro
+  // etc.), ver model EtapaTerceirizada.
+  etapasTerceirizadas EtapaTerceirizada[]
+
+  @@index([graficaId])
+  @@map("pedidos")
+}
+
+// Achado A1 da auditoria de abrangência (Parte 2/Produção, pesquisa-
+// abrangencia-modulos.md, 2026-09-01), Fase 1 (barata): liga/desliga e
+// renomeia, por tenant, cada um dos 8 estágios de StatusPedido que fazem
+// parte de SEQUENCIA_STATUS_PEDIDO (CANCELADO fica de fora — é terminal,
+// alcançável de qualquer estágio, nunca parte do caminho linear). Bootstrap
+// lazy na primeira leitura (ver garantirEtapasGraficaPadrao em
+// src/lib/etapa-grafica.ts), mesmo padrão de garantirCategoriasCustoPadrao
+// em src/lib/custo-pedido.ts: as 8 linhas só são criadas quando uma gráfica
+// realmente precisa, todas ativa=true/rotulo=null/ordem=posição atual — uma
+// gráfica que nunca abriu esta tela se comporta EXATAMENTE como antes desta
+// feature (resolverSequencia cai no array literal quando não há linha
+// nenhuma, ver mesmo arquivo).
+//
+// ativa=false remove o status da sequência que avancarStatusPedido usa pra
+// decidir "qual é o próximo válido" — pula direto pro próximo ativo.
+// ARTE/PRODUCAO/ENTREGUE NUNCA podem ficar ativa=false (ver
+// ETAPAS_SEMPRE_ATIVAS em src/lib/etapa-grafica.ts, validado nas actions
+// desta tela, não só na UI): ARTE é o status @default(ARTE) de todo Pedido
+// novo (desligá-lo quebraria a criação de pedido); PRODUCAO é a etapa de
+// destino cuja ENTRADA dispara a baixa de estoque automática (ver
+// status-transicao.ts) — sem ela sempre presente e sempre alcançável, a
+// baixa de estoque poderia nunca disparar; ENTREGUE é o status terminal que
+// vários outros pontos do código conferem literalmente (alertas de atraso,
+// filtro de "pedidos finalizados") — desligá-lo faria um pedido desta
+// gráfica nunca alcançar esse status de verdade.
+//
+// rotulo=null usa o rótulo padrão do sistema (ROTULOS_STATUS_PEDIDO); um
+// valor customizado aparece no Kanban, na lista de produção, no e-mail ao
+// responsável de etapa e nas telas públicas (/p/[token], /q/[token]) no
+// lugar do padrão — ex: serigrafia renomeia CLICHE_FACA pra "Queima de
+// tela", comunicação visual renomeia EXPEDICAO pra "Instalação".
+model EtapaGrafica {
+  id        String       @id @default(cuid())
+  graficaId String
+  status    StatusPedido
+  ativa     Boolean      @default(true)
+  rotulo    String?
+  ordem     Int
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+
+  @@unique([graficaId, status])
+  @@index([graficaId])
+  @@map("etapas_grafica")
+}
+
+enum StatusEntrega {
+  AGUARDANDO
+  EM_TRANSITO
+  ENTREGUE
+  // Estado lateral, alcançável a partir de qualquer status ATIVO
+  // (AGUARDANDO ou EM_TRANSITO) — nunca terminal: a tela permite resolver o
+  // problema e voltar pro fluxo normal (ver TRANSICOES_VALIDAS em
+  // src/lib/entrega-status.ts).
+  PROBLEMA
+}
+
+// Status ESTRUTURADO da entrega física de um pedido — substitui o texto
+// livre que hoje só existe em Orcamento.frete/transportadora/localEntrega
+// (preenchido uma vez na aprovação do orçamento, nunca mais atualizado).
+// 1:1 com Pedido (não com Orcamento): entrega só faz sentido depois que a
+// produção física começou — ver ESTAGIOS_PRE_PRODUCAO em
+// src/lib/producao-estagios.ts (Arte/Clichê-Faca ainda não têm nada físico
+// pra rastrear). Não confundir com StatusPedido.ENTREGUE (que marca a
+// PRODUÇÃO como concluída e fora da fila) — este model é o rastreamento
+// OPERACIONAL da entrega em si (motorista, quando saiu, quando chegou),
+// independente e mais granular.
+model Entrega {
+  id        String        @id @default(cuid())
+  graficaId String
+  pedidoId  String        @unique
+  status    StatusEntrega @default(AGUARDANDO)
+
+  // Texto livre, não cadastro relacional — mesmo princípio de
+  // Despesa.categoria: motorista de entrega (motoboy da Lalamove, alguém da
+  // equipe) não repete o bastante numa gráfica rápida pra justificar uma
+  // tabela própria.
+  motorista String?
+
+  dataSaida   DateTime?
+  dataEntrega DateTime?
+
+  // Detalhe do problema (quando status === PROBLEMA) ou qualquer observação
+  // livre sobre a entrega — nunca obrigatório no schema, mas a tela exige
+  // preenchido antes de mandar pra PROBLEMA (ver EntregaPedidoSecao.tsx).
+  observacoes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  pedido  Pedido  @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+
+  @@index([graficaId])
+  @@map("entregas")
+}
+
+// Achado E1 da auditoria de abrangência (Parte 2/Produção,
+// pesquisa-abrangencia-modulos.md, 2026-09-01): nada no schema modelava um
+// pedido que sai FISICAMENTE da gráfica pra uma operação terceirizada
+// (laminação, UV, acabamento de livro etc.) e volta depois — o card ficava
+// parado numa etapa (geralmente ACABAMENTO) por dias sem ninguém saber se é
+// lentidão interna ou se está no terceiro, e o custo do terceiro só entrava
+// como CustoPedido origem=MANUAL, sem prazo, sem fornecedor vinculado, sem
+// alerta. Forma fiscal correspondente no Brasil: remessa para
+// industrialização por encomenda (CFOP 5901/6901), retorno (5902/6902) —
+// notaRemessa/notaRetorno abaixo guardam só o Nº da nota, mesmo papel de
+// SolicitacaoCompra.documento (não emitem nota, só registram).
+enum SituacaoTerceirizacao {
+  AGUARDANDO_ENVIO
+  ENVIADO
+  RETORNADO
+  PROBLEMA
+}
+
+model EtapaTerceirizada {
+  id        String @id @default(cuid())
+  graficaId String
+  pedidoId  String
+
+  // Etapa do PEDIDO em que a terceirização aconteceu (ex: ACABAMENTO) —
+  // congelado no momento da criação deste registro, nunca acompanha se o
+  // Pedido avançar de status depois (mesmo princípio de
+  // ApontamentoEtapa.status).
+  status StatusPedido
+
+  // Fornecedor formal (Fornecedor já existe no schema, usado por
+  // SolicitacaoCompra) OU nome livre pra terceiro não cadastrado — mesmo par
+  // estruturado/escape já usado em vários textos livres do schema (ex:
+  // Despesa.categoria). Validado na action pra nunca nascer com os dois
+  // vazios ao mesmo tempo (não é constraint de banco).
+  fornecedorId   String?
+  fornecedorNome String?
+
+  situacao SituacaoTerceirizacao @default(AGUARDANDO_ENVIO)
+
+  enviadoEm       DateTime?
+  // Data pura (meia-noite UTC), mesmo padrão de Pedido.prazoEntrega — ver
+  // src/lib/data.ts.
+  previsaoRetorno DateTime?
+  retornadoEm     DateTime?
+
+  valorAcordado Decimal? @db.Decimal(10, 2)
+  valorFinal    Decimal? @db.Decimal(10, 2)
+
+  // CFOP 5901/6901 (remessa) e 5902/6902 (retorno) — só o Nº da nota, mesmo
+  // papel informativo de SolicitacaoCompra.documento. Continuam existindo
+  // INTACTOS depois do achado R3 abaixo — quem prefere digitar o número de
+  // uma nota emitida fora do sistema (ou não tem Focus NFe configurado)
+  // nunca perde esse caminho.
+  notaRemessa String?
+  notaRetorno String?
+
+  // Achado R3 da auditoria de abrangência (Parte 2/Produção, rodada 20,
+  // 2026-09-03) — resultado ESTRUTURADO da emissão da NF-e de REMESSA (CFOP
+  // 5901/6901, ver resolverCfopTerceirizacao em src/lib/nota-fiscal.ts)
+  // quando emitida direto do sistema via Focus NFe, em vez de só o número
+  // digitado em notaRemessa acima. Campos FLAT aqui (não um relacionamento
+  // pra NotaFiscal) porque NotaFiscal é 1:1 com Orcamento
+  // (orcamentoId String @unique NOT NULL, ver model abaixo) e não existe
+  // Orcamento nenhum pra uma remessa de terceirização — reaproveitar aquele
+  // model exigiria tornar orcamentoId opcional/reestruturar, fora do escopo
+  // deste achado (ver resumo da rodada 20/R3).
+  //
+  // Só a REMESSA tem emissão real pelo sistema. O RETORNO (CFOP 5902/6902)
+  // é, pela tabela CFOP oficial, uma SAÍDA do ESTABELECIMENTO TERCEIRIZADO
+  // (quem devolve a mercadoria já industrializada) — nunca da gráfica, que
+  // só o RECEBE de volta (entrada 1902/2902 do lado dela). Como este
+  // sistema só tem acesso à conta Focus NFe da PRÓPRIA gráfica (nunca a do
+  // terceiro), não há como emitir essa nota por aqui — notaRetorno continua
+  // sendo só o número digitado da nota que veio do terceiro junto com a
+  // mercadoria, comportamento inalterado.
+  remessaNfeStatus       StatusNotaFiscal?
+  remessaNfeNumero       String?
+  remessaNfeSerie        String?
+  remessaNfeChaveAcesso  String?
+  remessaNfeXmlUrl       String?
+  remessaNfeDanfeUrl     String?
+  remessaNfeMensagemErro String?           @db.Text
+
+  // Preenchido quando situacao=PROBLEMA — mesmo princípio de
+  // Entrega.observacoes (a tela exige preenchido antes de mandar pra
+  // PROBLEMA, ver avancarStatusEntrega em producao/entrega-transicao.ts).
+  observacao String? @db.Text
+
+  // Dedup do alerta de retorno atrasado (verificarEDispararAlertasAtraso,
+  // src/lib/alerta-atraso.ts) — mesmo papel de Pedido.alertaAtrasoEnviadoEm,
+  // campo PRÓPRIO porque o vencimento aqui é previsaoRetorno (não
+  // Pedido.prazoEntrega): os dois podem estar atrasados em momentos
+  // diferentes, e uma terceirização atrasada não implica pedido atrasado.
+  alertaAtrasoEnviadoEm DateTime?
+
+  criadoPorId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica           Grafica      @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  // Cascade: pedidoId é obrigatório (mesmo raciocínio de CustoPedido.pedido
+  // acima) — hoje não existe fluxo que apague um Pedido, mas um FK NOT NULL
+  // não pode usar SetNull de qualquer forma.
+  pedido            Pedido       @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  // SetNull, mesmo raciocínio de SolicitacaoCompra.fornecedor: apagar/
+  // desativar um Fornecedor não pode apagar o histórico da terceirização, só
+  // perde a referência de qual fornecedor formal a atendeu (fornecedorNome
+  // preserva o registro textual independente disso).
+  fornecedor        Fornecedor?  @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
+  // Lado inverso de CustoPedido.etapaTerceirizadaId — o CustoPedido origem
+  // TERCEIRIZACAO gerado quando valorFinal é preenchido.
+  custoPedidoGerado CustoPedido?
+
+  @@index([graficaId])
+  @@index([pedidoId])
+  @@index([fornecedorId])
+  @@map("etapas_terceirizadas")
+}
+
+enum OrigemPrevisao {
+  MOTOR_PRECIFICACAO
+  FICHA_TECNICA
+  MANUAL
+}
+
+// Previsão de custo por categoria, congelada no momento em que o orçamento
+// é aprovado (ver fase-custo-real.md §2.3, §3.1). Existe pra responder
+// "orçado vs. realizado" por categoria — não um total só, porque um total
+// diz "estourei R$ 780" e por categoria diz "o papel veio 34% acima do
+// previsto e apareceu um frete não orçado". Nunca recalculada depois: se o
+// preço da matéria-prima mudar após a aprovação, esta linha não se altera.
+model PedidoCustoPrevisto {
+  id               String         @id @default(cuid())
+  graficaId        String
+  pedidoId         String
+  categoriaCustoId String
+  valor            Decimal        @db.Decimal(12, 2)
+  origem           OrigemPrevisao
+  detalhe          String? // ex: "Papel Couché 150g — 420 folhas"
+  createdAt        DateTime       @default(now())
+
+  grafica        Grafica        @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  pedido         Pedido         @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  categoriaCusto CategoriaCusto @relation(fields: [categoriaCustoId], references: [id], onDelete: Restrict)
+
+  @@index([graficaId, pedidoId])
+  @@index([categoriaCustoId])
+  @@map("pedido_custo_previsto")
+}
+
+enum StatusFilaGangRun {
+  // Esperando outros itens compatíveis aparecerem — aparece na tela
+  // /producao/gang-run agrupado com outros candidatos do mesmo
+  // papel+gramatura+prensa+folha+cores.
+  AGUARDANDO
+  // Um operador decidiu rodar o grupo junto (ver GrupoGangRun) — o rateio
+  // de chapa/acerto já foi lançado como CustoPedido (origem=GANG_RUN).
+  COMBINADO
+  // Saiu da fila sem ser combinado: o pedido foi cancelado, ou avançou pra
+  // IMPRESSAO sozinho (o operador decidiu não esperar, ver
+  // cancelarCandidatosDoPedido em src/lib/gang-run-servico.ts).
+  CANCELADO
+}
+
+// Um evento de "rodar junto" — quando um operador decide, na tela
+// /producao/gang-run, combinar um grupo de candidatos que compartilham
+// papel+gramatura+prensa+folha+cores numa mesma chapa física. Existe como
+// registro próprio (não só um campo em FilaGangRun) pra guardar o custo
+// TOTAL de chapa+acerto rateado entre os itens combinados — auditável depois
+// (ver combinarGrupoGangRun em src/lib/gang-run-servico.ts).
+//
+// MVP: não otimiza automaticamente QUAIS candidatos combinar nem em quantas
+// chapas físicas eles cabem juntos (bin-packing 2D é NP-difícil) — o
+// operador escolhe manualmente quando o grupo já tem candidatos suficientes
+// pra valer a pena rodar, e o sistema assume que 1 chapa é compartilhada
+// entre todos os itens do grupo (ver custoChapas/custoSetup abaixo, que já
+// são fixos por combo cor+prensa no motor Offset, independentes da
+// quantidade — ver src/lib/pricing/offset.ts).
+model GrupoGangRun {
+  id        String @id @default(cuid())
+  graficaId String
+
+  // Chave de compatibilidade física — mesma folha/prensa/papel/cores, ver
+  // comentário de FilaGangRun abaixo.
+  papelId      String
+  gramaturaGm2 Decimal @db.Decimal(6, 1)
+  prensaId     String
+  folhaId      String
+  corFrente    Int
+  corVerso     Int
+
+  // Custo TOTAL de chapa(s) + acerto de máquina da rodada compartilhada —
+  // pago UMA vez pelo grupo inteiro (não por item), rateado
+  // proporcionalmente ao espaço de cada item na folha (ver
+  // FilaGangRun.custoRateado). Snapshot de um dos itens do grupo no momento
+  // da combinação (todos têm o mesmo valor, por construção da chave acima).
+  custoChapasTotal Decimal @db.Decimal(12, 2)
+  custoSetupTotal  Decimal @db.Decimal(12, 2)
+
+  combinadoEm    DateTime @default(now())
+  combinadoPorId String?
+
+  grafica Grafica       @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  itens   FilaGangRun[]
+
+  @@index([graficaId])
+  @@map("grupos_gang_run")
+}
+
+// Candidato a gang run: um OrcamentoItem com modeloCalculo=OFFSET cuja
+// quantidade sozinha não preenche uma chapa/folha inteira (fracaoFolha < 1,
+// ver ehCandidatoGangRun em src/lib/gang-run.ts) — em vez de rodar uma
+// chapa exclusiva só pra ele, fica esperando outros pedidos da MESMA
+// gráfica com o MESMO papel+gramatura+prensa+folha+cores (ver
+// chaveGrupoGangRun) pra dividir o custo fixo de chapa+acerto. Criado uma
+// vez, na aprovação do orçamento (junto com o Pedido, ver
+// registrarCandidatosGangRun) — nunca recalculado depois, mesmo que o
+// motor de precificação mude.
+//
+// 1:1 com OrcamentoItem (um item Offset entra na fila no máximo uma vez).
+// pedidoId é denormalizado do Orcamento (Pedido.orcamentoId é @unique) só
+// pra não precisar de join toda vez que a fila lê/atualiza por pedido (ex:
+// cancelarPedido cancelando os candidatos deste pedido).
+model FilaGangRun {
+  id              String            @id @default(cuid())
+  graficaId       String
+  orcamentoItemId String            @unique
+  pedidoId        String
+  status          StatusFilaGangRun @default(AGUARDANDO)
+
+  // Chave de compatibilidade física: só itens com os MESMOS seis valores
+  // abaixo podem compartilhar uma chapa/folha (ver chaveGrupoGangRun em
+  // src/lib/gang-run.ts). papelId/prensaId vêm de ItemGrafica (matéria-prima
+  // e prensa do produto, ver schema de ItemGrafica); folhaId é o
+  // FormatoFolha que o motor de nesting ESCOLHEU pra este item específico
+  // (metricas.folhaEscolhida.id do breakdown salvo em OrcamentoItem —
+  // produtos com mais de um formato cadastrado podem escolher formatos
+  // diferentes conforme o tamanho da peça). Sem FK formal pra
+  // papel/prensa/folha de propósito: isto é um snapshot de agrupamento, não
+  // um vínculo que precise ser mantido consistente se o cadastro mudar
+  // depois (mesmo princípio de CategoriaCusto.nome livre em Despesa).
+  papelId      String
+  gramaturaGm2 Decimal @db.Decimal(6, 1)
+  prensaId     String
+  folhaId      String
+  corFrente    Int
+  corVerso     Int
+
+  // nUp = quantas peças deste item cabem numa folha (motor de nesting já
+  // existente, calcularImposicao em src/lib/pricing/offset.ts).
+  // fracaoFolha = quantidade/nUp — quanto da capacidade de UMA folha este
+  // item sozinho ocupa (< 1 é o que faz dele um candidato, ver
+  // ehCandidatoGangRun). Soma de fracaoFolha do grupo >= 1 é o sinal
+  // (informativo, não automático) de "já dá pra encher uma chapa juntando
+  // estes pedidos".
+  nUpPeca        Int
+  quantidadePeca Int
+  fracaoFolha    Decimal @db.Decimal(8, 4)
+
+  // Snapshot do que chapa+acerto custariam se este item rodasse SOZINHO
+  // (igual ao que já foi orçado em OrcamentoItem.breakdown.detalhes.chapas/
+  // setup) — usado só pra mostrar "quanto está economizando" na tela depois
+  // de combinado; nunca é o valor efetivamente cobrado (esse é
+  // custoRateado, abaixo).
+  custoChapasIndividual Decimal @db.Decimal(12, 2)
+  custoSetupIndividual  Decimal @db.Decimal(12, 2)
+
+  grupoGangRunId String?
+  // Fatia do GrupoGangRun.custoChapasTotal+custoSetupTotal atribuída a este
+  // item (proporcional a fracaoFolha, ver ratearCustoSetup) — preenchido só
+  // quando status=COMBINADO. O mesmo valor é lançado como CustoPedido
+  // (origem=GANG_RUN) no Pedido deste item.
+  custoRateado   Decimal? @db.Decimal(12, 2)
+
+  criadoEm           DateTime  @default(now())
+  canceladoEm        DateTime?
+  motivoCancelamento String?
+
+  grafica       Grafica       @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamentoItem OrcamentoItem @relation(fields: [orcamentoItemId], references: [id], onDelete: Cascade)
+  pedido        Pedido        @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  grupo         GrupoGangRun? @relation(fields: [grupoGangRunId], references: [id], onDelete: SetNull)
+
+  @@index([graficaId, status])
+  @@index([graficaId, papelId, gramaturaGm2, prensaId, folhaId, corFrente, corVerso, status])
+  @@index([pedidoId])
+  @@map("fila_gang_run")
+}
+
+// Atribuição gráfica-wide (não por Pedido individual) de quem é responsável
+// por cada etapa de produção — configurada em /usuarios. Usada em dois
+// pontos: (1) e-mail automático quando um Pedido ENTRA nesse status (ver
+// avancarStatusPedido em src/app/producao/status-transicao.ts), (2) bypass
+// de permissão pra confirmar em app sem precisar de PRODUCAO.podeEditar
+// completo (ver podeConfirmarEstagio em src/lib/auth/permissoes.ts). Só
+// cobre as 5 etapas "vivas" atribuíveis (PRODUCAO/ACABAMENTO/CONFERENCIA/
+// EMBALAGEM/EXPEDICAO, ver ESTAGIOS_ATRIBUIVEIS) — ARTE (estágio inicial) e
+// CLICHE_FACA (etapa que baixa matéria-prima do estoque ao ser deixada)
+// ficam de fora (decisão do produto: evita expor a tela de perda de
+// material do estoque a um link sem login) e ENTREGUE/CANCELADO são
+// terminais, sem transição de "confirmar" alguma.
+model ResponsavelEstagio {
+  id        String       @id @default(cuid())
+  usuarioId String
+  status    StatusPedido
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, status])
+  @@index([status])
+  @@map("responsaveis_estagio")
+}
+
+// Rate limit da confirmação pública de etapa (src/app/p/[token]) — tabela
+// separada de TentativaRespostaArte pra não misturar os dois orçamentos de
+// tentativa (abuso num fluxo não deve travar o outro).
+model TentativaConfirmacaoEstagio {
+  id        String   @id @default(cuid())
+  pedidoId  String
+  ip        String
+  createdAt DateTime @default(now())
+
+  @@index([pedidoId, createdAt])
+  @@index([ip, createdAt])
+  @@map("tentativas_confirmacao_estagio")
+}
+
+// Rate limit da resposta pública ao orçamento (src/app/o/[token]) — mesmo
+// padrão de TentativaRespostaArte/TentativaConfirmacaoEstagio, tabela
+// própria pra não misturar o orçamento de tentativas dos três fluxos
+// públicos por token.
+model TentativaRespostaOrcamento {
+  id          String   @id @default(cuid())
+  orcamentoId String
+  ip          String
+  createdAt   DateTime @default(now())
+
+  @@index([orcamentoId, createdAt])
+  @@index([ip, createdAt])
+  @@map("tentativas_resposta_orcamento")
+}
