@@ -71,13 +71,13 @@ export function ConfiguracaoAcabamentoForm({
         </Select>
 
         <Select
-          label="Estágio de aplicação"
+          label="Estágio de aplicação (organizacional)"
           name="estagio"
           defaultValue={configuracao?.estagio ?? "POS_REFILE"}
-          hint="Pré-refile cobra pela folha de máquina antes do corte final (ex: BOPP em offset). Pós-refile cobra pela peça já cortada."
+          hint="Só organiza o fluxo de produção — indica se este acabamento acontece antes ou depois do corte de refile. Não muda o preço: quem define isso é a base de cobrança acima (ex: 'Por folha impressa' já cobra sempre pela folha de máquina antes do refile, independente da opção escolhida aqui)."
         >
-          <option value="PRE_REFILE">Antes do refile (folha de máquina)</option>
-          <option value="POS_REFILE">Depois do refile (peça final)</option>
+          <option value="PRE_REFILE">Antes do refile (na folha de máquina)</option>
+          <option value="POS_REFILE">Depois do refile (na peça já cortada)</option>
         </Select>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

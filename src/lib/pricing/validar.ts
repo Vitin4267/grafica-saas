@@ -88,11 +88,18 @@ export function validarPedidoOffset(pedido: PedidoOffset, contexto: ContextoOffs
       { precoPorKg: contexto.precoPorKg }
     );
   }
-  if (contexto.gramaturaGm2 < 30 || contexto.gramaturaGm2 > 500) {
+  // Achado N13 — faixa configurável por gráfica (ParametrosGrafica.
+  // gramaturaMinGm2/gramaturaMaxGm2), não mais uma constante fixa. Defaults
+  // 30/500 quando o contexto não informa (fixture de teste antiga, ou
+  // gráfica sem ParametrosGrafica ainda) preservam o comportamento de
+  // sempre. Ver comentário de ContextoOffset em tipos.ts.
+  const gramaturaMinGm2 = contexto.gramaturaMinGm2 ?? 30;
+  const gramaturaMaxGm2 = contexto.gramaturaMaxGm2 ?? 500;
+  if (contexto.gramaturaGm2 < gramaturaMinGm2 || contexto.gramaturaGm2 > gramaturaMaxGm2) {
     throw new ErroPrecificacao(
       "GRAMATURA_INVALIDA",
-      "A gramatura do papel precisa estar entre 30 e 500 g/m².",
-      { gramaturaGm2: contexto.gramaturaGm2 }
+      `A gramatura do papel precisa estar entre ${gramaturaMinGm2} e ${gramaturaMaxGm2} g/m². Ajuste em Configurações se sua gráfica trabalha fora dessa faixa (ex: cartonagem, editorial).`,
+      { gramaturaGm2: contexto.gramaturaGm2, gramaturaMinGm2, gramaturaMaxGm2 }
     );
   }
 }

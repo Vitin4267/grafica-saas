@@ -33,9 +33,11 @@ import { ArrowLeftIcon } from "@/components/icons";
 import {
   calcularMargemItemOrcamento,
   calcularMargemAgregadaOrcamento,
+  lerAvisoGramaturaAproximada,
   LIMIAR_MARGEM_RUIM,
   LIMIAR_MARGEM_ATENCAO,
 } from "@/lib/orcamento-margem";
+import { Alert } from "@/components/ui/Alert";
 import { OrcamentoAcoes } from "./OrcamentoAcoes";
 import { OpcoesOrcamento } from "./OpcoesOrcamento";
 import { MAX_OPCOES_ALTERNATIVAS } from "@/lib/orcamento-opcoes";
@@ -354,6 +356,17 @@ export default async function OrcamentoDetalhePage({
         )
       : null;
 
+  // Achado N12 — aviso de gramatura aproximada (item OFFSET cujo R$/kg veio
+  // da gramatura mais próxima cadastrada, não da gramatura real do papel).
+  // Diferente de margensPorItemId acima, não é model-gated por status — vale
+  // a pena avisar tanto no RASCUNHO (antes de aprovar) quanto depois, já que
+  // é sobre o custo do papel usado no cálculo, não sobre desconto/margem.
+  const avisosGramaturaPorItemId = new Map(
+    orcamento.itens
+      .map((item) => [item.id, lerAvisoGramaturaAproximada(item.breakdown)] as const)
+      .filter((par): par is [string, { gramaturaBasePapel: number }] => par[1] !== null)
+  );
+
   function mapearTinta(item: NonNullable<typeof orcamento>["itens"][number]) {
     if (!item.tinta) return null;
     return {
@@ -553,6 +566,15 @@ export default async function OrcamentoDetalhePage({
                     />
                   </Card>
                 )}
+                {avisosGramaturaPorItemId.get(item.id) && (
+                  <div className="mb-4 -mt-2">
+                    <Alert variant="warning">
+                      Preço estimado a partir da gramatura mais próxima cadastrada (
+                      {avisosGramaturaPorItemId.get(item.id)!.gramaturaBasePapel}g/m²) — o papel
+                      escolhido neste item não tem preço cadastrado na gramatura exata.
+                    </Alert>
+                  </div>
+                )}
                 <AnaliseTintaCard
                   orcamentoItemId={item.id}
                   podeUsar={acessoTinta.liberado}
@@ -635,6 +657,13 @@ export default async function OrcamentoDetalhePage({
                     </span>
                   ))}
                 </div>
+                {avisosGramaturaPorItemId.get(item.id) && (
+                  <Alert variant="warning">
+                    Preço estimado a partir da gramatura mais próxima cadastrada (
+                    {avisosGramaturaPorItemId.get(item.id)!.gramaturaBasePapel}g/m²) — o papel
+                    escolhido neste item não tem preço cadastrado na gramatura exata.
+                  </Alert>
+                )}
                 {item.etiqueta && <EtiquetaResumo etiqueta={item.etiqueta} />}
                 {orcamento.status !== "REJEITADO" && (
                   <AnaliseTintaCard

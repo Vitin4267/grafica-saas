@@ -57,7 +57,11 @@ async function criarCondicao(
 // endereço/documento + item com NCM) — o mínimo que verificarProntidaoFiscal
 // (src/lib/nota-fiscal.ts) exige antes de deixar emitirNotaFiscal/
 // atualizarStatusNotaFiscal chegarem até a chamada da Focus NFe.
-async function criarFixtureFiscal(opts: { total: number; condicaoPagamentoId?: string | null }) {
+async function criarFixtureFiscal(opts: {
+  total: number;
+  condicaoPagamentoId?: string | null;
+  descricaoLivre?: string | null;
+}) {
   const s = sufixo();
   const grafica = await prisma.grafica.create({
     data: { nome: `Teste NFe ContaReceber ${s}`, slug: `teste-nfe-conta-receber-${s}` },
@@ -123,11 +127,19 @@ async function criarFixtureFiscal(opts: { total: number; condicaoPagamentoId?: s
       quantidade: 1,
       precoUnitario: opts.total,
       precoTotal: opts.total,
+      descricaoLivre: opts.descricaoLivre ?? null,
     },
   });
 
   graficaIdsParaLimpar.push(grafica.id);
-  return { graficaId: grafica.id, clienteId: cliente.id, usuarioId: dono.id, orcamentoId: orcamento.id, dono };
+  return {
+    graficaId: grafica.id,
+    clienteId: cliente.id,
+    usuarioId: dono.id,
+    orcamentoId: orcamento.id,
+    dono,
+    nomeCatalogo: catalogo.nome,
+  };
 }
 
 function formDataDe(campos: Record<string, string>): FormData {
@@ -279,6 +291,54 @@ describe("emissão de NF-e — geração automática de ContaReceber (achado R1)
         where: { orcamentoId: f.orcamentoId },
       });
       expect(contasDepoisDaSegundaConsulta).toHaveLength(2);
+    },
+    TIMEOUT_MS
+  );
+});
+
+// Achado N17 da auditoria de abrangência: descricaoLivre (OrcamentoItem) já
+// sobrepõe o nome do catálogo no PDF/link público do orçamento — a emissão
+// de NF-e ignorava isso e sempre mandava o nome genérico. Confirma que
+// emitirNotaFiscal prioriza descricaoLivre quando preenchido e cai no nome
+// do catálogo quando não (regressão zero).
+describe("emissão de NF-e — descrição do item (achado N17)", () => {
+  it(
+    "item com descricaoLivre preenchido: NF-e usa esse texto, não o nome genérico do catálogo",
+    async () => {
+      const f = await criarFixtureFiscal({
+        total: 300,
+        descricaoLivre: "Banner 3×1m lona 440g com bastão e corda",
+      });
+      vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(f.dono as never);
+      const fetchMock = vi.fn().mockResolvedValueOnce(
+        respostaFocusNfe({ status: "autorizado", numero: "3003", serie: "1", chave_nfe: "35260" })
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const resultado = await emitirNotaFiscal(null, formDataDe({ orcamentoId: f.orcamentoId }));
+      expect(resultado.ok).toBe(true);
+
+      const corpoEnviado = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+      expect(corpoEnviado.items[0].descricao).toBe("Banner 3×1m lona 440g com bastão e corda");
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "item sem descricaoLivre: NF-e cai no nome do catálogo",
+    async () => {
+      const f = await criarFixtureFiscal({ total: 300 });
+      vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(f.dono as never);
+      const fetchMock = vi.fn().mockResolvedValueOnce(
+        respostaFocusNfe({ status: "autorizado", numero: "3004", serie: "1", chave_nfe: "35260" })
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const resultado = await emitirNotaFiscal(null, formDataDe({ orcamentoId: f.orcamentoId }));
+      expect(resultado.ok).toBe(true);
+
+      const corpoEnviado = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+      expect(corpoEnviado.items[0].descricao).toBe(f.nomeCatalogo);
     },
     TIMEOUT_MS
   );

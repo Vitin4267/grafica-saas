@@ -143,23 +143,43 @@ export function verificarProntidaoFiscal(input: {
   return { pronto: pendencias.length === 0, pendencias };
 }
 
+// CFOP fixo de venda interestadual de mercadoria adquirida/recebida de
+// terceiros destinada a NÃO CONTRIBUINTE de ICMS (pessoa física, ou empresa
+// isenta/sem inscrição estadual) — tabela CFOP oficial, não configurável por
+// gráfica, mesmo padrão de CFOP_TERCEIRIZACAO logo abaixo: a SEFAZ exige
+// esse código especificamente por causa do DIFAL (EC 87/2015), não é uma
+// preferência de negócio que caiba num campo de configuração.
+const CFOP_INTERESTADUAL_NAO_CONTRIBUINTE = "6108";
+
 // Decide entre o CFOP interno (mesma UF) e o interestadual (UF diferente)
 // pra um item de NF-e — achado A3 da auditoria de abrangência: antes disso
 // TODA emissão usava cfopPadrao (5xxx) mesmo pra clientes de outro estado,
-// silenciosamente. Escopo deliberadamente contido: não distingue cliente
-// contribuinte vs não-contribuinte de ICMS (6102 vs 6108, com implicação de
-// DIFAL) — isso depende do indicador de contribuinte do cliente, campo que
-// ainda não existe no schema (achado A1, não construído). UF ausente de
-// qualquer lado cai no cfopPadrao — mesmo comportamento de sempre, sem
-// regressão pra dado incompleto.
+// silenciosamente. Achado N7 (auditoria de abrangência, 2026-09-03) religou
+// a distinção contribuinte vs não-contribuinte (6102 vs 6108, com implicação
+// de DIFAL): o comentário antigo aqui dizia que isso "dependia de um campo
+// que ainda não existe no schema" — DESATUALIZADO, Cliente.indicadorInscricaoEstadual
+// (achado A1) já existe e já é lido em verificarProntidaoFiscal/focus-nfe.ts.
+// A distinção só se aplica no caso interestadual (dentro do mesmo estado não
+// há DIFAL, cfopPadrao cobre contribuinte e não-contribuinte igual); indicador
+// ausente (cliente antigo, undefined/null) cai no cfopPadraoInterestadual
+// configurado — mesmo comportamento de sempre, sem regressão pra dado
+// incompleto. UF ausente de qualquer lado cai no cfopPadrao.
 export function resolverCfop(input: {
   ufEmitente: string | null;
   ufDestinatario: string | null;
   cfopPadrao: string;
   cfopPadraoInterestadual: string;
+  indicadorInscricaoEstadual?: IndicadorInscricaoEstadual | null;
 }): string {
   if (!input.ufEmitente || !input.ufDestinatario) return input.cfopPadrao;
-  return input.ufEmitente === input.ufDestinatario ? input.cfopPadrao : input.cfopPadraoInterestadual;
+  if (input.ufEmitente === input.ufDestinatario) return input.cfopPadrao;
+  if (
+    input.indicadorInscricaoEstadual === "NAO_CONTRIBUINTE" ||
+    input.indicadorInscricaoEstadual === "ISENTO"
+  ) {
+    return CFOP_INTERESTADUAL_NAO_CONTRIBUINTE;
+  }
+  return input.cfopPadraoInterestadual;
 }
 
 // Achado R3 da auditoria de abrangência (Parte 2/Produção, rodada 20,

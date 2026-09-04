@@ -2,6 +2,7 @@ import { type Dec, paraDecimal, tetoInteiro, maiorDec } from "./decimal";
 import { ErroPrecificacao } from "./erros";
 import { validarPedidoOffset } from "./validar";
 import type { ContextoOffset, FormatoFolhaInput, ParametrosPrensa, PedidoOffset } from "./tipos";
+import type { OrigemPrecoPapel } from "./papel";
 
 const DEFAULTS_OFFSET = {
   sangria: 0.003,
@@ -67,6 +68,12 @@ export type ResultadoOffset = {
   folhaEscolhida: { id: string; nome: string };
   larguraEfetivaM: Dec; // w'' — reaproveitado pelo cálculo de acabamento (base M2, se aplicável)
   alturaEfetivaM: Dec; // h''
+  // Achado N12 — puro passthrough de contexto.gramaturaBasePapel/
+  // origemPrecoPapel (já resolvidos em resolverPrecoPapel, ver
+  // carregarContextoPrecificacao). Nenhum cálculo aqui, só carregam até
+  // metricas/breakdown pra UI avisar sobre gramatura aproximada.
+  gramaturaBasePapel: number;
+  origemPrecoPapel: OrigemPrecoPapel;
 };
 
 type Candidato = {
@@ -183,5 +190,10 @@ export function calcularOffset(
     folhaEscolhida: { id: escolhido.folha.id, nome: escolhido.folha.nome },
     larguraEfetivaM: wLinha,
     alturaEfetivaM: hLinha,
+    // Ausentes (fixtures de teste que montam ContextoOffset à mão, ver tipos.ts)
+    // = "EXATO" e a própria gramatura escolhida, equivalente a resolverPrecoPapel
+    // quando a gramatura bate exatamente — nenhum aviso falso.
+    gramaturaBasePapel: contexto.gramaturaBasePapel ?? contexto.gramaturaGm2,
+    origemPrecoPapel: contexto.origemPrecoPapel ?? "EXATO",
   };
 }

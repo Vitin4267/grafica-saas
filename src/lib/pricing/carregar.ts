@@ -37,6 +37,9 @@ export async function carregarParametrosTenant(graficaId: string): Promise<Param
 
     margemSegurancaPadrao: Number(registro.margemSegurancaPadrao),
     gapPecasPadrao: Number(registro.gapPecasPadrao),
+
+    gramaturaMinGm2: Number(registro.gramaturaMinGm2),
+    gramaturaMaxGm2: Number(registro.gramaturaMaxGm2),
   };
 }
 
@@ -273,7 +276,11 @@ export async function carregarContextoPrecificacao(
     }
 
     const gramaturaEscolhida = Number(item.gramaturaGm2 ?? 0);
-    const { precoKg } = resolverPrecoPapel(
+    // Achado N12 — origem/gramaturaBase antes eram descartados aqui (só
+    // precoKg era lido). Repassados pro contexto pra chegar até o
+    // breakdown do item e avisar quando o R$/kg veio de uma gramatura
+    // aproximada (mais próxima cadastrada), não da gramatura real do papel.
+    const { precoKg, gramaturaBase, origem } = resolverPrecoPapel(
       item.papel.tabelaPrecoPapel.map((linha) => ({
         gramatura: linha.gramatura,
         precoKg: Number(linha.precoKg),
@@ -291,6 +298,8 @@ export async function carregarContextoPrecificacao(
       gramaturaGm2: gramaturaEscolhida,
       precoPorKg: precoKg,
       viraFolha: item.viraFolha,
+      gramaturaBasePapel: gramaturaBase,
+      origemPrecoPapel: origem,
     };
     contexto.parametrosPrensa = await carregarParametrosPrensa(item.prensa.id, graficaId);
     contexto.prensaUsada = { id: item.prensa.id, nome: item.prensa.nome };
@@ -418,7 +427,7 @@ export async function resolverConfigAcabamentos(
   graficaId: string
 ): Promise<ConfigAcabamento[]> {
   const itens = await prisma.itemGrafica.findMany({
-    where: { id: { in: itemGraficaIds }, graficaId },
+    where: { id: { in: itemGraficaIds }, graficaId, ativo: true },
     include: { itemCatalogo: true, configuracaoAcabamento: true },
   });
 

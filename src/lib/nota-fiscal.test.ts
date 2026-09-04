@@ -239,6 +239,63 @@ describe("resolverCfop", () => {
     });
     expect(resultado).toBe("6404");
   });
+
+  // Achado N7 da auditoria de abrangência (2026-09-03): distinção
+  // contribuinte vs não-contribuinte no CFOP interestadual (6102 vs 6108).
+  it("interestadual + cliente CONTRIBUINTE: usa cfopPadraoInterestadual normalmente", () => {
+    const resultado = resolverCfop({
+      ufEmitente: "PR",
+      ufDestinatario: "SP",
+      indicadorInscricaoEstadual: "CONTRIBUINTE",
+      ...base,
+    });
+    expect(resultado).toBe("6102");
+  });
+
+  it("interestadual + cliente NAO_CONTRIBUINTE: usa CFOP fixo 6108, ignora cfopPadraoInterestadual", () => {
+    const resultado = resolverCfop({
+      ufEmitente: "PR",
+      ufDestinatario: "SP",
+      indicadorInscricaoEstadual: "NAO_CONTRIBUINTE",
+      ...base,
+    });
+    expect(resultado).toBe("6108");
+  });
+
+  it("interestadual + cliente ISENTO: também usa CFOP fixo 6108 (sem IE, mesmo tratamento de não-contribuinte)", () => {
+    const resultado = resolverCfop({
+      ufEmitente: "PR",
+      ufDestinatario: "SP",
+      indicadorInscricaoEstadual: "ISENTO",
+      ...base,
+    });
+    expect(resultado).toBe("6108");
+  });
+
+  it("mesma UF + cliente NAO_CONTRIBUINTE: não há DIFAL dentro do estado, cfopPadrao normal (5102), não 6108", () => {
+    const resultado = resolverCfop({
+      ufEmitente: "PR",
+      ufDestinatario: "PR",
+      indicadorInscricaoEstadual: "NAO_CONTRIBUINTE",
+      ...base,
+    });
+    expect(resultado).toBe("5102");
+  });
+
+  it("interestadual + indicador ausente (cliente antigo, undefined): cai no cfopPadraoInterestadual, sem regressão", () => {
+    const resultado = resolverCfop({ ufEmitente: "PR", ufDestinatario: "SP", ...base });
+    expect(resultado).toBe("6102");
+  });
+
+  it("interestadual + indicador null: cai no cfopPadraoInterestadual, sem regressão", () => {
+    const resultado = resolverCfop({
+      ufEmitente: "PR",
+      ufDestinatario: "SP",
+      indicadorInscricaoEstadual: null,
+      ...base,
+    });
+    expect(resultado).toBe("6102");
+  });
 });
 
 describe("resolverModalidadeFrete", () => {

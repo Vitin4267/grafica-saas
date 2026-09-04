@@ -236,6 +236,16 @@ model ParametrosGrafica {
   descontoMaxSemAprovacao       Decimal @default(100) @db.Decimal(5, 2) // % — 100 = sem trava (comportamento de hoje)
   diasPrecoInsumoDesatualizado  Int     @default(90)
 
+  // Achado N13 da auditoria de abrangência — faixa de gramatura aceita pelo
+  // validador do offset (ver validarPedidoOffset em src/lib/pricing/validar.ts).
+  // Antes era uma constante fixa 30-500 g/m² no código: travava com erro
+  // fatal a cotação de embalagem/cartonagem (duplex/triplex 450-600 g/m²,
+  // micro-ondulado E-flute >500) e de editorial (papel bíblia 22-40 g/m²).
+  // Defaults 30/500 preservam 100% do comportamento de hoje pra quem já usa
+  // o sistema — mesmo espírito de descontoMaxSemAprovacao acima.
+  gramaturaMinGm2 Decimal @default(30) @db.Decimal(6, 1)
+  gramaturaMaxGm2 Decimal @default(500) @db.Decimal(6, 1)
+
   // Achado A6 da Parte 4 da auditoria de abrangência (2026-08-27) — mesmo
   // espírito de descontoMaxSemAprovacao acima: por padrão, estourar
   // Cliente.limiteCredito na aprovação de um orçamento é só um AVISO
@@ -989,7 +999,7 @@ model DadosFiscaisGrafica {
 
   naturezaOperacaoPadrao  String @default("Venda de mercadoria")
   cfopPadrao              String @default("5102") // venda dentro do estado, mercadoria de terceiros
-  cfopPadraoInterestadual String @default("6102") // venda interestadual (UF do cliente != UF da gráfica), mercadoria de terceiros — ver resolverCfop em src/lib/nota-fiscal.ts. Não distingue contribuinte/não-contribuinte de ICMS (6102 vs 6108) — gap remanescente, ver achado A1/A3 em pesquisa-abrangencia-modulos.md
+  cfopPadraoInterestadual String @default("6102") // venda interestadual (UF do cliente != UF da gráfica) pra cliente CONTRIBUINTE de ICMS, mercadoria de terceiros — ver resolverCfop em src/lib/nota-fiscal.ts. Cliente não-contribuinte/isento (Cliente.indicadorInscricaoEstadual) usa 6108 fixo, não este campo — achado N7 em pesquisa-abrangencia-modulos.md
   csosnPadrao             String @default("102") // Simples Nacional, tributada sem permissão de crédito — só lido/enviado quando regimeTributario=SIMPLES_NACIONAL
 
   // Só relevantes/obrigatórios (validado na Server Action, não CHECK no
@@ -2156,6 +2166,21 @@ enum BaseCobranca {
   CENTO
 }
 
+// Achado N14 da auditoria de abrangência (Parte 7, 2026-09-03): campo
+// DESCRITIVO, não usado pelo motor de precificação. Decisão tomada após
+// investigar calcularQtdBase/calcularCustoAcabamento (src/lib/pricing/
+// acabamento.ts) — o motor só tem UMA noção de quantidade de folha
+// (ContextoAcabamento.folhasBoas/folhasPerda, calculadas em offset.ts), e ela
+// já É a folha de máquina ANTES do refile (é literalmente como
+// BaseCobranca.FOLHA_IMPRESSA é definida e documentada). Não existe, em
+// nenhum lugar do motor, uma segunda contagem de "folhas depois do refile"
+// pra esse campo escolher entre uma e outra — depois do refile o que existe
+// é contagem de PEÇA (ctx.quantidade), já coberta por BaseCobranca.UNIDADE.
+// Fazer o campo governar o cálculo exigiria inventar essa segunda contagem,
+// que não corresponde a nada físico além do que UNIDADE já cobre — trocado
+// por deixar o campo puramente organizacional (indica ao fluxo de produção
+// SE este acabamento acontece antes ou depois do corte de refile, sem afetar
+// o preço). Ver rótulo/hint em ConfiguracaoAcabamentoForm.tsx.
 enum EstagioAcabamento {
   PRE_REFILE
   POS_REFILE

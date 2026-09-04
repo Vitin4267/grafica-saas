@@ -1,3 +1,5 @@
+import type { OrigemPrecoPapel } from "./papel";
+
 export type ModeloCalculo =
   | "SIMPLES"
   | "M2"
@@ -83,6 +85,24 @@ export type ContextoOffset = {
   gramaturaGm2: number;
   precoPorKg: number;
   viraFolha: boolean;
+  // Achado N12 — devolvidos por resolverPrecoPapel (src/lib/pricing/papel.ts)
+  // e antes descartados pelo chamador (carregarContextoPrecificacao). Só
+  // repassados adiante (ResultadoOffset -> metricas -> breakdown) pra UI
+  // avisar quando o R$/kg usado veio de uma gramatura diferente da
+  // realmente escolhida no item (fallback pela mais próxima cadastrada).
+  // Opcionais só pra não quebrar fixtures de teste que montam este contexto
+  // à mão sem chamar resolverPrecoPapel (validar.test.ts, golden.test.ts) —
+  // carregarContextoPrecificacao (caminho real) sempre preenche os dois.
+  // Ausente = tratado como "EXATO" (sem aviso), mesmo default do resultado
+  // de resolverPrecoPapel quando a gramatura bate exatamente.
+  gramaturaBasePapel?: number;
+  origemPrecoPapel?: OrigemPrecoPapel;
+  // Faixa aceita pelo validador (achado N13) — vem de
+  // ParametrosTenant.gramaturaMinGm2/gramaturaMaxGm2. Opcional aqui só pra
+  // não quebrar fixture de teste antiga; validarPedidoOffset cai pro default
+  // 30/500 (mesmo comportamento de sempre) quando omitido.
+  gramaturaMinGm2?: number;
+  gramaturaMaxGm2?: number;
 };
 
 // ---------- Cenário 3 (acabamento) ----------
@@ -91,7 +111,7 @@ export type ConfigAcabamento = {
   itemGraficaId: string;
   nome: string;
   baseCobranca: BaseCobranca;
-  estagio: EstagioAcabamento;
+  estagio: EstagioAcabamento; // descritivo — não lido por acabamento.ts (achado N14)
   custoUnitario: number; // = ItemGrafica.precoCompra do serviço
   custoSetup: number;
   custoMinimo: number;
@@ -126,6 +146,14 @@ export type ParametrosTenant = {
 
   margemSegurancaPadrao: number;
   gapPecasPadrao: number;
+
+  // Achado N13 — faixa de gramatura aceita pelo validador do offset (ver
+  // ContextoOffset acima e validarPedidoOffset em validar.ts). Opcional
+  // igual aos outros dois campos acima: carregarParametrosTenant sempre
+  // popula com o valor real (default 30/500 no schema), fixtures de teste
+  // antigas que não passam esses campos continuam válidas.
+  gramaturaMinGm2?: number;
+  gramaturaMaxGm2?: number;
 };
 
 // ---------- Parâmetros da prensa (custo de máquina, só OFFSET) ----------

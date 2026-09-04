@@ -414,6 +414,77 @@ describe("validarPedidoOffset — GRAMATURA_INVALIDA (faixa válida: 30 a 500 g/
   });
 });
 
+// Achado N13 da auditoria de abrangência — faixa configurável por gráfica
+// (ParametrosGrafica.gramaturaMinGm2/gramaturaMaxGm2, plumada via
+// ContextoOffset.gramaturaMinGm2/gramaturaMaxGm2). Cobre tanto o caso de uma
+// gráfica de embalagem/cartonagem (duplex/triplex, até 600 g/m²) quanto uma
+// editorial (papel bíblia, a partir de 22 g/m²).
+describe("validarPedidoOffset — GRAMATURA_INVALIDA com faixa configurável (ParametrosGrafica.gramaturaMinGm2/gramaturaMaxGm2)", () => {
+  it("aceita gramatura de cartão duplex (550) quando a faixa é ampliada pra 30–600", () => {
+    expect(() =>
+      validarPedidoOffset(
+        pedidoOffsetValido(),
+        contextoOffsetValido({ gramaturaGm2: 550, gramaturaMinGm2: 30, gramaturaMaxGm2: 600 })
+      )
+    ).not.toThrow();
+  });
+
+  it("dispara com gramatura de cartão duplex (550) quando a faixa NÃO é ampliada (default 30–500)", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido({ gramaturaGm2: 550 }))
+    );
+    expect(erro).toBe("GRAMATURA_INVALIDA");
+  });
+
+  it("aceita papel bíblia (22) quando a faixa é reduzida pra 20–500", () => {
+    expect(() =>
+      validarPedidoOffset(
+        pedidoOffsetValido(),
+        contextoOffsetValido({ gramaturaGm2: 22, gramaturaMinGm2: 20, gramaturaMaxGm2: 500 })
+      )
+    ).not.toThrow();
+  });
+
+  it("dispara com papel bíblia (22) quando a faixa NÃO é reduzida (default mínimo 30)", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido({ gramaturaGm2: 22 }))
+    );
+    expect(erro).toBe("GRAMATURA_INVALIDA");
+  });
+
+  it("fronteiras da faixa configurada são inclusivas (não lança em 20 nem em 600)", () => {
+    expect(() =>
+      validarPedidoOffset(
+        pedidoOffsetValido(),
+        contextoOffsetValido({ gramaturaGm2: 20, gramaturaMinGm2: 20, gramaturaMaxGm2: 600 })
+      )
+    ).not.toThrow();
+    expect(() =>
+      validarPedidoOffset(
+        pedidoOffsetValido(),
+        contextoOffsetValido({ gramaturaGm2: 600, gramaturaMinGm2: 20, gramaturaMaxGm2: 600 })
+      )
+    ).not.toThrow();
+  });
+
+  it("dispara logo fora das fronteiras da faixa configurada (19,99 e 600,01)", () => {
+    const erroAbaixo = codigoDoErro(() =>
+      validarPedidoOffset(
+        pedidoOffsetValido(),
+        contextoOffsetValido({ gramaturaGm2: 19.99, gramaturaMinGm2: 20, gramaturaMaxGm2: 600 })
+      )
+    );
+    expect(erroAbaixo).toBe("GRAMATURA_INVALIDA");
+    const erroAcima = codigoDoErro(() =>
+      validarPedidoOffset(
+        pedidoOffsetValido(),
+        contextoOffsetValido({ gramaturaGm2: 600.01, gramaturaMinGm2: 20, gramaturaMaxGm2: 600 })
+      )
+    );
+    expect(erroAcima).toBe("GRAMATURA_INVALIDA");
+  });
+});
+
 describe("validarSomaEncargos — ENCARGOS_INVALIDOS (limiar: soma >= 0,85 dispara)", () => {
   it("fronteira válida: soma logo abaixo de 85% (0,849999) não lança", () => {
     expect(() => validarSomaEncargos(0.849999)).not.toThrow();

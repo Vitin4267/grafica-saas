@@ -233,7 +233,14 @@ export function precificar(
 
     const resultado = calcularOffset(
       pedido.pedido,
-      { ...contexto.offset, viraFolha: contexto.viraFolha },
+      {
+        ...contexto.offset,
+        viraFolha: contexto.viraFolha,
+        // Achado N13 — faixa de gramatura configurável (ParametrosGrafica),
+        // não mais fixa em validarPedidoOffset. Ver tipos.ts/validar.ts.
+        gramaturaMinGm2: contexto.parametros.gramaturaMinGm2,
+        gramaturaMaxGm2: contexto.parametros.gramaturaMaxGm2,
+      },
       contexto.parametrosPrensa
     );
 
@@ -283,6 +290,13 @@ export function precificar(
         folhaEscolhida: resultado.folhaEscolhida,
         pesoTotalPedidoKg: resultado.pesoTotalPedidoKg.toNumber(),
         prensaUsada: contexto.prensaUsada ?? null,
+        // Achado N12 — origem/gramaturaBase de resolverPrecoPapel, antes
+        // descartados em carregarContextoPrecificacao. Chegam até aqui via
+        // ResultadoOffset (passthrough puro, ver offset.ts) pra UI avisar
+        // quando o R$/kg cobrado veio de uma gramatura diferente da
+        // realmente escolhida no item.
+        gramaturaBasePapel: resultado.gramaturaBasePapel,
+        origemPrecoPapel: resultado.origemPrecoPapel,
       },
     };
   }

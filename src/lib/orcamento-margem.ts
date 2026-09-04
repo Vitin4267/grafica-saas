@@ -41,6 +41,27 @@ function lerCustoTotalBreakdown(breakdown: Prisma.JsonValue | null): number | nu
   return Number.isFinite(numero) ? numero : null;
 }
 
+// Achado N12 — resolverPrecoPapel (src/lib/pricing/papel.ts) já calculava
+// origem "EXATO"/"APROXIMADO" e a gramatura realmente usada pro R$/kg, mas
+// carregarContextoPrecificacao descartava os dois (só lia precoKg). Agora
+// chegam até breakdown.metricas (ver precificar.ts, branch OFFSET) — esta
+// função só lê de volta pra a tela avisar o vendedor, mesmo espírito de
+// lerCustoTotalBreakdown acima (nenhum cálculo novo, só leitura do que o
+// motor já gravou). Retorna null sempre que não há aviso a mostrar (item
+// não-OFFSET, sem breakdown, ou gramatura bateu exata).
+export function lerAvisoGramaturaAproximada(
+  breakdown: Prisma.JsonValue | null
+): { gramaturaBasePapel: number } | null {
+  if (!breakdown || typeof breakdown !== "object" || Array.isArray(breakdown)) return null;
+  const metricas = (breakdown as Record<string, unknown>).metricas;
+  if (!metricas || typeof metricas !== "object") return null;
+  const { origemPrecoPapel, gramaturaBasePapel } = metricas as Record<string, unknown>;
+  if (origemPrecoPapel !== "APROXIMADO") return null;
+  const numero = Number(gramaturaBasePapel);
+  if (!Number.isFinite(numero)) return null;
+  return { gramaturaBasePapel: numero };
+}
+
 // Retorna null quando o custo do item não pode ser estimado (sem
 // breakdown.custoTotal do motor avançado E sem precoCompra cadastrado no
 // catálogo) — nesse caso não mostra alerta nenhum pra esse item, em vez de

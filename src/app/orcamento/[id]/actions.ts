@@ -3214,7 +3214,7 @@ export async function emitirNotaFiscal(
           return {
             numeroItem: indice + 1,
             codigoProduto: item.itemGraficaId,
-            descricao: item.itemGrafica.itemCatalogo.nome,
+            descricao: item.descricaoLivre ?? item.itemGrafica.itemCatalogo.nome,
             ncm: item.itemGrafica.itemCatalogo.ncm!,
             origemMercadoria: item.itemGrafica.itemCatalogo.origemMercadoria,
             cfop: resolverCfop({
@@ -3222,6 +3222,7 @@ export async function emitirNotaFiscal(
               ufDestinatario: orcamento.cliente.enderecoUf,
               cfopPadrao: dadosFiscais.cfopPadrao,
               cfopPadraoInterestadual: dadosFiscais.cfopPadraoInterestadual,
+              indicadorInscricaoEstadual: orcamento.cliente.indicadorInscricaoEstadual,
             }),
             unidade: resolverUnidadeFiscal(
               item.itemGrafica.itemCatalogo.unidade,

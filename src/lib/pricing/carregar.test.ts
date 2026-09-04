@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { prisma } from "@/lib/prisma";
-import { carregarContextoPrecificacao } from "./carregar";
+import { carregarContextoPrecificacao, resolverConfigAcabamentos } from "./carregar";
 import { ErroPrecificacao } from "./erros";
 
 // Teste de INTEGRAÇÃO de verdade (toca o Postgres de dev via DATABASE_URL,
@@ -197,6 +197,65 @@ describe(
 );
 
 describe(
+  "resolverConfigAcabamentos — achado N16 (filtro de ativo)",
+  () => {
+    async function criarAcabamento(graficaId: string, s: string, ativo: boolean) {
+      const catalogo = await prisma.itemCatalogo.create({
+        data: { graficaId, tipo: "SERVICO", categoria: "Acabamento", nome: `Laminação ${s}` },
+      });
+      return prisma.itemGrafica.create({
+        data: {
+          graficaId,
+          itemCatalogoId: catalogo.id,
+          modeloCalculo: "M2",
+          ativo,
+          precoCompra: 2,
+          configuracaoAcabamento: {
+            create: { baseCobranca: "M2", estagio: "POS_REFILE", custoSetup: 10, custoMinimo: 5 },
+          },
+        },
+      });
+    }
+
+    it(
+      "acabamento ativo aparece nas opções (resolve normalmente)",
+      async () => {
+        const { grafica, s } = await criarGrafica();
+        const acabamento = await criarAcabamento(grafica.id, s, true);
+
+        const resolvidos = await resolverConfigAcabamentos([acabamento.id], grafica.id);
+
+        expect(resolvidos).toHaveLength(1);
+        expect(resolvidos[0]).toMatchObject({
+          itemGraficaId: acabamento.id,
+          baseCobranca: "M2",
+          custoUnitario: 2,
+          custoSetup: 10,
+          custoMinimo: 5,
+        });
+      },
+      TIMEOUT_MS
+    );
+
+    it(
+      "acabamento desativado não aparece mais nas opções (lança CUSTO_INVALIDO)",
+      async () => {
+        const { grafica, s } = await criarGrafica();
+        const acabamento = await criarAcabamento(grafica.id, s, false);
+
+        await expect(resolverConfigAcabamentos([acabamento.id], grafica.id)).rejects.toMatchObject({
+          codigo: "CUSTO_INVALIDO",
+        });
+        await expect(resolverConfigAcabamentos([acabamento.id], grafica.id)).rejects.toBeInstanceOf(
+          ErroPrecificacao
+        );
+      },
+      TIMEOUT_MS
+    );
+  }
+);
+
+describe(
   "carregarContextoPrecificacao — M2 / ConfiguracaoEmenda (achado A9)",
   () => {
     it(
@@ -252,6 +311,94 @@ describe(
         expect(contexto.m2?.configuracaoEmenda).toMatchObject({
           custoPorMetroLinear: 15,
           sobreposicaoM: 0.05,
+        });
+      },
+      TIMEOUT_MS
+    );
+  }
+);
+
+describe(
+  "carregarContextoPrecificacao — OFFSET / origem do preço do papel (achado N12)",
+  () => {
+    async function criarProdutoOffset(
+      grafica: { id: string },
+      s: string,
+      opts: { gramaturasCadastradas: number[]; gramaturaEscolhida: number }
+    ) {
+      const prensa = await prisma.prensa.create({
+        data: { graficaId: grafica.id, nome: `Prensa Offset ${s}` },
+      });
+      const catalogoPapel = await prisma.itemCatalogo.create({
+        data: { graficaId: grafica.id, tipo: "MATERIA_PRIMA", categoria: "Papel", nome: `Couché ${s}` },
+      });
+      const papel = await prisma.itemGrafica.create({
+        data: {
+          graficaId: grafica.id,
+          itemCatalogoId: catalogoPapel.id,
+          modeloCalculo: "SIMPLES",
+          tabelaPrecoPapel: {
+            create: opts.gramaturasCadastradas.map((gramatura) => ({
+              gramatura,
+              precoKg: 10 + gramatura / 100,
+            })),
+          },
+        },
+      });
+      const catalogoProduto = await prisma.itemCatalogo.create({
+        data: { graficaId: grafica.id, tipo: "PRODUTO", categoria: "Livro", nome: `Livro Offset ${s}` },
+      });
+      const produto = await prisma.itemGrafica.create({
+        data: {
+          graficaId: grafica.id,
+          itemCatalogoId: catalogoProduto.id,
+          modeloCalculo: "OFFSET",
+          prensaId: prensa.id,
+          papelId: papel.id,
+          gramaturaGm2: opts.gramaturaEscolhida,
+          formatosFolha: { create: [{ nome: `Fechada ${s}`, larguraFolha: 0.66, alturaFolha: 0.96 }] },
+        },
+      });
+      return produto;
+    }
+
+    it(
+      "gramatura cadastrada exatamente: contexto.offset.origemPrecoPapel = EXATO e gramaturaBasePapel = a própria gramatura",
+      async () => {
+        const { grafica, s } = await criarGrafica();
+        const produto = await criarProdutoOffset(grafica, s, {
+          gramaturasCadastradas: [90, 150, 300],
+          gramaturaEscolhida: 150,
+        });
+
+        const contexto = await carregarContextoPrecificacao(produto.id, grafica.id);
+
+        expect(contexto.offset).toMatchObject({
+          origemPrecoPapel: "EXATO",
+          gramaturaBasePapel: 150,
+          precoPorKg: 11.5,
+        });
+      },
+      TIMEOUT_MS
+    );
+
+    it(
+      "gramatura NÃO cadastrada: cai no fallback e contexto.offset.origemPrecoPapel = APROXIMADO, com gramaturaBasePapel da linha realmente usada (não a gramatura pedida)",
+      async () => {
+        const { grafica, s } = await criarGrafica();
+        // 75 não está cadastrado — 90 é o mais próximo (distância 15 vs 45 de 120).
+        const produto = await criarProdutoOffset(grafica, s, {
+          gramaturasCadastradas: [90, 120],
+          gramaturaEscolhida: 75,
+        });
+
+        const contexto = await carregarContextoPrecificacao(produto.id, grafica.id);
+
+        expect(contexto.offset).toMatchObject({
+          origemPrecoPapel: "APROXIMADO",
+          gramaturaBasePapel: 90,
+          precoPorKg: 10.9,
+          gramaturaGm2: 75, // a gramatura REAL da folha (peso) não muda, só o R$/kg usado é aproximado
         });
       },
       TIMEOUT_MS

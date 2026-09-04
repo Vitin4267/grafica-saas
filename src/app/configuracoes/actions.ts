@@ -372,6 +372,39 @@ export async function salvarParametros(
     };
   }
 
+  // Achado N13 da auditoria de abrangência — faixa de gramatura aceita pelo
+  // validador do offset (ver validarPedidoOffset em src/lib/pricing/validar.ts).
+  // Mesmo cuidado de presença dos blocos acima (campo ausente/"" não pode
+  // virar 0 silenciosamente).
+  const gramaturaMinGm2Bruto = formData.get("gramaturaMinGm2");
+  if (typeof gramaturaMinGm2Bruto !== "string" || gramaturaMinGm2Bruto.trim() === "") {
+    return { ok: false, mensagem: 'Preencha o campo "Gramatura mínima (g/m²)".' };
+  }
+  const gramaturaMinGm2 = Number(gramaturaMinGm2Bruto);
+  if (!Number.isFinite(gramaturaMinGm2) || gramaturaMinGm2 <= 0) {
+    return {
+      ok: false,
+      mensagem: 'Gramatura mínima (g/m²) precisa ser um número maior que zero.',
+    };
+  }
+  const gramaturaMaxGm2Bruto = formData.get("gramaturaMaxGm2");
+  if (typeof gramaturaMaxGm2Bruto !== "string" || gramaturaMaxGm2Bruto.trim() === "") {
+    return { ok: false, mensagem: 'Preencha o campo "Gramatura máxima (g/m²)".' };
+  }
+  const gramaturaMaxGm2 = Number(gramaturaMaxGm2Bruto);
+  if (!Number.isFinite(gramaturaMaxGm2) || gramaturaMaxGm2 <= 0) {
+    return {
+      ok: false,
+      mensagem: 'Gramatura máxima (g/m²) precisa ser um número maior que zero.',
+    };
+  }
+  if (gramaturaMinGm2 >= gramaturaMaxGm2) {
+    return {
+      ok: false,
+      mensagem: 'A "Gramatura mínima" precisa ser menor que a "Gramatura máxima".',
+    };
+  }
+
   const somaEncargos =
     dados.margemPadrao +
     dados.impostoPercent +
@@ -420,6 +453,8 @@ export async function salvarParametros(
       diasPrecoInsumoDesatualizado,
       prazoEmDiasUteis,
       diasFuncionamento,
+      gramaturaMinGm2,
+      gramaturaMaxGm2,
     },
   });
 
@@ -561,6 +596,17 @@ export async function salvarParametros(
   if (diasPrecoInsumoDesatualizadoAntes !== diasPrecoInsumoDesatualizado) {
     antesTextos.push(`Dias para avisar preço de insumo desatualizado: ${diasPrecoInsumoDesatualizadoAntes}`);
     depoisTextos.push(`Dias para avisar preço de insumo desatualizado: ${diasPrecoInsumoDesatualizado}`);
+  }
+
+  const gramaturaMinGm2Antes = parametrosAntes ? Number(parametrosAntes.gramaturaMinGm2) : 30;
+  if (gramaturaMinGm2Antes !== gramaturaMinGm2) {
+    antesTextos.push(`Gramatura mínima aceita: ${gramaturaMinGm2Antes} g/m²`);
+    depoisTextos.push(`Gramatura mínima aceita: ${gramaturaMinGm2} g/m²`);
+  }
+  const gramaturaMaxGm2Antes = parametrosAntes ? Number(parametrosAntes.gramaturaMaxGm2) : 500;
+  if (gramaturaMaxGm2Antes !== gramaturaMaxGm2) {
+    antesTextos.push(`Gramatura máxima aceita: ${gramaturaMaxGm2Antes} g/m²`);
+    depoisTextos.push(`Gramatura máxima aceita: ${gramaturaMaxGm2} g/m²`);
   }
 
   const prazoEmDiasUteisAntes = parametrosAntes?.prazoEmDiasUteis ?? true;

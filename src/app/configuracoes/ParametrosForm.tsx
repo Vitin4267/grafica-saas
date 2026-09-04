@@ -125,7 +125,7 @@ export function ParametrosForm({
     <form action={formAction} className="flex flex-col gap-6">
       <GrupoParametros
         titulo="Precificação"
-        resumo="Overhead, margem, imposto, comissão embutida, taxa financeira, faixas do medidor de margem, unidade de medida, nesting de bobina e custo de tinta."
+        resumo="Overhead, margem, imposto, comissão embutida, taxa financeira, faixas do medidor de margem, unidade de medida, nesting de bobina, faixa de gramatura do offset e custo de tinta."
         aberto
       >
         <Card className="flex flex-col gap-4 p-6">
@@ -319,6 +319,38 @@ export function ParametrosForm({
               step="0.0001"
               min="0"
               defaultValue={parametros.gapPecasPadrao}
+            />
+          </div>
+        </Card>
+
+        <Card className="flex flex-col gap-4 p-6">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+              Faixa de gramatura do offset
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Gramatura de papel aceita ao cotar um item OFFSET — fora dessa
+              faixa a cotação é recusada. Ajuste se sua gráfica trabalha com
+              papel bíblia (editorial, ~22-40 g/m²) ou cartão duplex/triplex e
+              micro-ondulado (embalagem/cartonagem, até 600 g/m² ou mais).
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input
+              label="Gramatura mínima (g/m²)"
+              name="gramaturaMinGm2"
+              type="number"
+              step="0.1"
+              min="0.1"
+              defaultValue={parametros.gramaturaMinGm2 ?? 30}
+            />
+            <Input
+              label="Gramatura máxima (g/m²)"
+              name="gramaturaMaxGm2"
+              type="number"
+              step="0.1"
+              min="0.1"
+              defaultValue={parametros.gramaturaMaxGm2 ?? 500}
             />
           </div>
         </Card>

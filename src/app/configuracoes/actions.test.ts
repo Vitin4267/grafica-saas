@@ -76,6 +76,8 @@ async function criarFixture(): Promise<Fixture> {
       toleranciaTiragemPadraoPercent: 10,
       toleranciaTiragemPercent: 0,
       diasPrecoInsumoDesatualizado: 90,
+      gramaturaMinGm2: 30,
+      gramaturaMaxGm2: 500,
     },
   });
 
@@ -138,6 +140,8 @@ describe("salvarParametros", () => {
       formData.append("toleranciaTiragemPadraoPercent", "10");
       formData.append("toleranciaTiragemPercent", "5"); // Novo campo
       formData.append("diasPrecoInsumoDesatualizado", "90");
+      formData.append("gramaturaMinGm2", "30");
+      formData.append("gramaturaMaxGm2", "500");
       formData.append("prazoEmDiasUteis", "on");
       formData.append("diaFuncionamento", "0");
       formData.append("diaFuncionamento", "1");
@@ -212,6 +216,8 @@ describe("salvarParametros", () => {
       formData.append("toleranciaTiragemPadraoPercent", "10");
       formData.append("toleranciaTiragemPercent", "0"); // Sem tolerância
       formData.append("diasPrecoInsumoDesatualizado", "90");
+      formData.append("gramaturaMinGm2", "30");
+      formData.append("gramaturaMaxGm2", "500");
       formData.append("prazoEmDiasUteis", "on");
       formData.append("diaFuncionamento", "0");
       formData.append("diaFuncionamento", "1");
