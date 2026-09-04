@@ -179,7 +179,11 @@ export async function carregarParametrosMaquinaTempo(
 export async function carregarContextoPrecificacao(
   itemGraficaId: string,
   graficaId: string,
-  dadosEtiqueta?: { papelId: string; quantidadeCores: number }
+  dadosEtiqueta?: { papelId: string; quantidadeCores: number },
+  // Achado N4 — mesmo padrão de dadosEtiqueta acima: o papel do motor
+  // Digital (agora com imposição) também é escolhido NO ORÇAMENTO, não fixo
+  // no produto (ver ContextoDigital em tipos.ts).
+  dadosDigital?: { papelId: string }
 ): Promise<ContextoPrecificacao> {
   const item = await prisma.itemGrafica.findFirstOrThrow({
     where: { id: itemGraficaId, graficaId },
@@ -340,9 +344,43 @@ export async function carregarContextoPrecificacao(
         "Este produto usa o modelo Digital mas não tem uma impressora selecionada — configure isso na tela do produto, no catálogo."
       );
     }
+    // Achado N4 — o motor Digital agora faz imposição igual ao Offset, então
+    // precisa de um PAPEL (matéria-prima) com FormatoFolha cadastrado. O
+    // papel é escolhido NO ORÇAMENTO (mesmo padrão de dadosEtiqueta acima),
+    // não fixo no produto — uma gráfica rápida troca o papel carregado na
+    // impressora com frequência maior do que cadastraria produtos novos no
+    // catálogo pra cada combinação.
+    if (!dadosDigital) {
+      throw new ErroPrecificacao(
+        "DIGITAL_SEM_PAPEL",
+        "Este produto usa o modelo Digital — escolha o papel/substrato deste orçamento (ele define quantas peças cabem por folha)."
+      );
+    }
+
+    const papelDigital = await prisma.itemGrafica.findFirst({
+      where: {
+        id: dadosDigital.papelId,
+        graficaId,
+        ativo: true,
+        itemCatalogo: { tipo: "MATERIA_PRIMA" },
+      },
+      include: { formatosFolha: true },
+    });
+    if (!papelDigital) {
+      throw new ErroPrecificacao(
+        "PAPEL_INVALIDO",
+        "O papel escolhido não é válido — verifique se ele ainda existe e está ativo no catálogo."
+      );
+    }
 
     contexto.digital = {
-      custoSubstratoPorPeca: Number(item.precoCompra ?? 0),
+      folhas: papelDigital.formatosFolha.map((f) => ({
+        id: f.id,
+        nome: f.nome,
+        larguraFolha: Number(f.larguraFolha),
+        alturaFolha: Number(f.alturaFolha),
+      })),
+      custoPorFolha: Number(papelDigital.precoCompra ?? 0),
     };
     contexto.parametrosImpressoraDigital = await carregarParametrosImpressoraDigital(
       item.impressoraDigital.id,

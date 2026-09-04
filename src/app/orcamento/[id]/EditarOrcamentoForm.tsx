@@ -147,11 +147,16 @@ export function EditarOrcamentoForm({
     modeloCalculo === "REVENDA" ||
     modeloCalculo === "BORDADO" ||
     modeloCalculo === "TEMPO_MAQUINA";
-  // Diferente de usaMotorAvancado: só M2/OFFSET/FLEXOGRAFIA EXIGEM largura/
-  // altura pro cálculo em si (nesting) — Digital, os 3 de setup-por-peça,
-  // Revenda, Bordado e Tempo de máquina têm a dimensão opcional (ver design
-  // "dimensões opcionais" do plano).
-  const exigeDimensao = modeloCalculo === "M2" || modeloCalculo === "OFFSET" || modeloCalculo === "FLEXOGRAFIA";
+  // Diferente de usaMotorAvancado: M2/OFFSET/FLEXOGRAFIA/DIGITAL (achado N4:
+  // agora faz imposição igual ao Offset) EXIGEM largura/altura pro cálculo em
+  // si (nesting) — os 3 de setup-por-peça, Revenda, Bordado e Tempo de
+  // máquina têm a dimensão opcional (ver design "dimensões opcionais" do
+  // plano).
+  const exigeDimensao =
+    modeloCalculo === "M2" ||
+    modeloCalculo === "OFFSET" ||
+    modeloCalculo === "FLEXOGRAFIA" ||
+    modeloCalculo === "DIGITAL";
   const usaModeloDigital = modeloCalculo === "DIGITAL";
   // Achado B7 — mesmo agrupamento de SeletorItemOrcamento.tsx (os 5
   // compartilham a mesma checkbox "material fornecido pelo cliente").
@@ -166,8 +171,8 @@ export function EditarOrcamentoForm({
   // marcado como "cobra por área" (simplesCobraPorArea); sem a flag,
   // preencher dimensão não muda mais o preço (sempre por peça).
   const mostraDimensao =
+    // DIGITAL não entra mais aqui separado — exigeDimensao já cobre (achado N4).
     exigeDimensao ||
-    modeloCalculo === "DIGITAL" ||
     modeloCalculo === "SERIGRAFIA" ||
     modeloCalculo === "SUBLIMACAO" ||
     modeloCalculo === "ESTAMPAGEM_QUENTE" ||
@@ -647,6 +652,33 @@ export function EditarOrcamentoForm({
                 />
               </div>
             </details>
+          </div>
+        )}
+
+        {usaModeloDigital && (
+          <div className="flex flex-col gap-4 rounded-xl border border-slate-300 p-4 dark:border-slate-700">
+            <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              Papel/substrato deste orçamento
+            </p>
+            {papeisDisponiveis.length === 0 ? (
+              <span className="text-xs text-slate-500">
+                Nenhuma matéria-prima de papel cadastrada ainda — cadastre em Catálogo. O papel precisa
+                ter pelo menos um formato de folha cadastrado (aba &quot;Formatos de folha&quot; do
+                papel) pra calcular quantas peças cabem por folha.
+              </span>
+            ) : (
+              <Select label="Papel" name="papelId" defaultValue={valoresIniciais.papelId} required>
+                <option value="" disabled>
+                  Selecione o papel
+                </option>
+                {papeisDisponiveis.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nome}
+                    {p.precoCompra ? ` — R$ ${p.precoCompra}/folha` : ""}
+                  </option>
+                ))}
+              </Select>
+            )}
           </div>
         )}
 

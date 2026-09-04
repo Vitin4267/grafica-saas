@@ -114,6 +114,7 @@ export default async function OrcamentoDetalhePage({
             tinta: true,
             acabamentos: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
             precificacaoEtiqueta: true,
+            precificacaoDigital: true, // achado N4
           },
         },
         opcoes: {
@@ -536,7 +537,7 @@ export default async function OrcamentoDetalhePage({
                     custoAquisicaoUnitario: item.custoAquisicaoUnitario?.toString() ?? "",
                     materialFornecidoPeloCliente: item.materialFornecidoPeloCliente,
                     etiqueta: etiquetaParaCampos(item.etiqueta),
-                    papelId: item.precificacaoEtiqueta?.papelId ?? "",
+                    papelId: item.precificacaoEtiqueta?.papelId ?? item.precificacaoDigital?.papelId ?? "",
                     quantidadeCores: item.precificacaoEtiqueta?.quantidadeCores.toString() ?? "",
                     // Achado N10 — precificacaoEtiqueta.custoFaca é a fonte de
                     // verdade pra M2 com clichê (comportamento de sempre);

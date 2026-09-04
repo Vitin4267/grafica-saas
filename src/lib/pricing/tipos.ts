@@ -200,29 +200,46 @@ export type ParametrosMaquinaFlexo = {
   perdaPercentPadrao: number;
 };
 
-// ---------- Cenário 5 (digital, sem nesting) ----------
+// ---------- Cenário 5 (digital, imposição em folha — achado N4) ----------
 
+// Achado N4 da auditoria de código (2026-09-04): o motor Digital passou a
+// fazer IMPOSIÇÃO igual ao Offset — antes cobrava clique e substrato POR
+// PEÇA (Q × numeroCliques × custoPorClique, Q × custoSubstratoPorPeca), o
+// que superfaturava em até Nx quando N peças cabiam numa mesma folha (ex:
+// 1000 cartões de visita 24-up custavam como 1000 cliques/folhas, quando o
+// real é ~42). larguraM/alturaM viram OBRIGATÓRIOS (antes eram opcionais,
+// só pra alimentar um acabamento M2 anexado) — sem eles não dá pra calcular
+// nUp. numeroCliques deixa de ser "cliques por peça" e vira um OVERRIDE
+// opcional de "cliques por FOLHA" (default 1) — só preencha pra forçar outro
+// valor, ex: frente-e-verso que exige 2 passadas na mesma folha.
 export type PedidoDigital = {
+  larguraM: number; // w
+  alturaM: number; // h
   quantidade: number; // Q
-  numeroCliques?: number; // default 1 (1 clique por peça) se omitido
-  // Digital não precisa de dimensões pro CUSTO em si (sem nesting) — opcionais
-  // de propósito, ao contrário de M2/OFFSET/FLEXOGRAFIA. Só existem aqui pra
-  // alimentar um eventual acabamento anexado com baseCobranca=M2 (ver
-  // ctxAcabamento em precificar.ts); ausentes = 0, e orcamento-precificacao.ts
-  // bloqueia ANTES de chegar aqui se esse acabamento existir sem elas
-  // (evita R$0 silencioso).
-  larguraM?: number;
-  alturaM?: number;
+  numeroCliques?: number; // override opcional de cliques POR FOLHA — default 1 se omitido (ver comentário acima)
+  sangria?: number; // por lado, default 0.002-0.005 (spec §2.2, mesmo default do Offset)
+  margemLateral?: number; // m_lat, refile/margens laterais da folha, default 0.01
+  gapPecas?: number; // g, gap entre peças na folha, default 0.002
 };
 
 export type ContextoDigital = {
-  custoSubstratoPorPeca: number; // = ItemGrafica.precoCompra do material, mesma fonte que M2 já usa
+  // Formatos de folha do PAPEL (matéria-prima) escolhido NESTE ORÇAMENTO —
+  // diferente do Offset (onde o papel é fixo no PRODUTO, configurado uma vez
+  // em Catálogo), o papel do Digital é escolhido por orçamento, mesmo padrão
+  // de OrcamentoItemPrecificacaoEtiqueta.papelId (motor de clichê de
+  // etiqueta) — uma gráfica rápida troca o papel carregado na impressora com
+  // frequência maior do que cadastraria produtos novos pra cada combinação.
+  folhas: FormatoFolhaInput[];
+  // = ItemGrafica.precoCompra do papel escolhido — custo por FOLHA física
+  // (não mais por peça: uma folha de 24-up custeia 24 peças de uma vez só,
+  // igual ao Offset).
+  custoPorFolha: number;
   // Achado B7 (correção de regressão do A2/2026-08-24): quando true, o
-  // custoSubstratoPorPeca=0 acima é INTENCIONAL (o cliente trouxe a peça em
-  // branco) — distingue de "gráfica esqueceu de cadastrar precoCompra", que
-  // continua barrado por validarPedidoDigital. Sem essa distinção, o guard
-  // de silêncio (calcularQtdBase/validarPedidoDigital) rejeitava o zero
-  // legítimo do B7 com o mesmo erro genérico de configuração ausente.
+  // custoPorFolha=0 acima é INTENCIONAL (o cliente trouxe o material) —
+  // distingue de "gráfica esqueceu de cadastrar precoCompra", que continua
+  // barrado por validarPedidoDigital. nUp/numeroFolhas continuam calculados
+  // normalmente mesmo assim — a impressora ainda processa fisicamente as
+  // folhas trazidas pelo cliente, então cliques continuam sendo cobrados.
   materialFornecidoPeloCliente?: boolean;
 };
 

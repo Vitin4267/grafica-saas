@@ -321,15 +321,19 @@ export function precificar(
       contexto.parametrosImpressoraDigital
     );
 
-    // Sem nesting — largura/altura são opcionais (default 0) e só existem
-    // aqui pra alimentar um eventual acabamento M2-based (ver comentário em
-    // PedidoDigital). orcamento-precificacao.ts já bloqueou antes de chegar
-    // aqui se esse acabamento existir sem dimensões informadas.
+    // Achado N4 — largura/altura agora são OBRIGATÓRIAS (o motor faz
+    // imposição, ver calcularDigital) — nunca mais `?? 0`. folhasBoas/
+    // folhasPerda alimentam um eventual acabamento FOLHA_IMPRESSA anexado
+    // (antes impossível no Digital, que não tinha noção de folha física —
+    // folhasPerda fica 0 porque o motor Digital não modela perda de folha
+    // de acerto/máquina, diferente do Offset).
     const ctxAcabamento: ContextoAcabamento = {
       quantidade: pedido.pedido.quantidade,
-      larguraEfetivaM: pedido.pedido.larguraM ?? 0,
-      alturaEfetivaM: pedido.pedido.alturaM ?? 0,
-      ...ctxAcabamentoExtra(contexto, pedido.pedido.larguraM ?? 0, pedido.pedido.alturaM ?? 0),
+      larguraEfetivaM: pedido.pedido.larguraM,
+      alturaEfetivaM: pedido.pedido.alturaM,
+      folhasBoas: resultado.numeroFolhas,
+      folhasPerda: 0,
+      ...ctxAcabamentoExtra(contexto, pedido.pedido.larguraM, pedido.pedido.alturaM),
     };
     const acabamentos = calcularAcabamentos(pedido.acabamentos, ctxAcabamento);
 
@@ -350,9 +354,13 @@ export function precificar(
     return {
       ...composicao,
       metricas: {
+        nUp: resultado.nUp,
+        rotacionado: resultado.rotacionado,
+        numeroFolhas: resultado.numeroFolhas,
         numeroCliques: resultado.numeroCliques,
         custoCliques: resultado.custoCliques.toNumber(),
         custoSubstrato: resultado.custoSubstrato.toNumber(),
+        folhaEscolhida: resultado.folhaEscolhida,
         impressoraDigitalUsada: contexto.impressoraDigitalUsada ?? null,
       },
     };

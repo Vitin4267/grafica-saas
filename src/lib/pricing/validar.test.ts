@@ -87,8 +87,12 @@ function contextoFlexografiaValido(
   };
 }
 
+// Achado N4 — Digital agora faz imposição igual ao Offset: larguraM/alturaM
+// viraram obrigatórios e contexto.folhas precisa ter ao menos um FormatoFolha.
 function pedidoDigitalValido(overrides: Partial<PedidoDigital> = {}): PedidoDigital {
   return {
+    larguraM: 0.09,
+    alturaM: 0.05,
     quantidade: 100,
     ...overrides,
   };
@@ -96,7 +100,8 @@ function pedidoDigitalValido(overrides: Partial<PedidoDigital> = {}): PedidoDigi
 
 function contextoDigitalValido(overrides: Partial<ContextoDigital> = {}): ContextoDigital {
   return {
-    custoSubstratoPorPeca: 0.5,
+    folhas: [{ id: "folha-32x45", nome: "SRA3", larguraFolha: 0.32, alturaFolha: 0.45 }],
+    custoPorFolha: 0.5,
     ...overrides,
   };
 }
@@ -697,22 +702,56 @@ describe("validarPedidoDigital — NUMERO_CLIQUES_INVALIDO (só quando informado
   });
 });
 
-describe("validarPedidoDigital — CUSTO_INVALIDO (custoSubstratoPorPeca)", () => {
-  it("dispara com custoSubstratoPorPeca zero", () => {
+describe("validarPedidoDigital — CUSTO_INVALIDO (custoPorFolha)", () => {
+  it("dispara com custoPorFolha zero", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoDigital(pedidoDigitalValido(), contextoDigitalValido({ custoSubstratoPorPeca: 0 }))
+      validarPedidoDigital(pedidoDigitalValido(), contextoDigitalValido({ custoPorFolha: 0 }))
     );
     expect(erro).toBe("CUSTO_INVALIDO");
   });
 
-  it("dispara com custoSubstratoPorPeca negativo", () => {
+  it("dispara com custoPorFolha negativo", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoDigital(
-        pedidoDigitalValido(),
-        contextoDigitalValido({ custoSubstratoPorPeca: -1 })
-      )
+      validarPedidoDigital(pedidoDigitalValido(), contextoDigitalValido({ custoPorFolha: -1 }))
     );
     expect(erro).toBe("CUSTO_INVALIDO");
+  });
+
+  it("materialFornecidoPeloCliente=true não lança mesmo com custoPorFolha zero (achado B7)", () => {
+    expect(() =>
+      validarPedidoDigital(
+        pedidoDigitalValido(),
+        contextoDigitalValido({ custoPorFolha: 0, materialFornecidoPeloCliente: true })
+      )
+    ).not.toThrow();
+  });
+});
+
+// Achado N4 — largura/altura viraram obrigatórias (o motor faz imposição) e
+// contexto.folhas precisa ter ao menos um FormatoFolha cadastrado no papel
+// escolhido, mesmas exigências de validarPedidoOffset.
+describe("validarPedidoDigital — DIMENSAO_INVALIDA (achado N4, largura/altura agora obrigatórias)", () => {
+  it("dispara com larguraM zero ou ausente", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoDigital(pedidoDigitalValido({ larguraM: 0 }), contextoDigitalValido())
+    );
+    expect(erro).toBe("DIMENSAO_INVALIDA");
+  });
+
+  it("dispara com alturaM negativa", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoDigital(pedidoDigitalValido({ alturaM: -0.05 }), contextoDigitalValido())
+    );
+    expect(erro).toBe("DIMENSAO_INVALIDA");
+  });
+});
+
+describe("validarPedidoDigital — MATERIAL_SEM_FOLHA (achado N4)", () => {
+  it("dispara quando o papel escolhido não tem nenhum FormatoFolha cadastrado", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoDigital(pedidoDigitalValido(), contextoDigitalValido({ folhas: [] }))
+    );
+    expect(erro).toBe("MATERIAL_SEM_FOLHA");
   });
 });
 

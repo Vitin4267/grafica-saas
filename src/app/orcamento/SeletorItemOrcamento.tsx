@@ -11,6 +11,7 @@ import {
   type CamposPrecificacaoEtiqueta,
   type PapelDisponivel,
 } from "./CamposPrecificacaoEtiquetaOrcamento";
+import { CamposPrecificacaoDigitalOrcamento } from "./CamposPrecificacaoDigitalOrcamento";
 import {
   UNIDADES_DIMENSAO,
   ROTULO_UNIDADE_DIMENSAO,
@@ -221,9 +222,10 @@ export function SeletorItemOrcamento({
     usaModeloRevenda ||
     usaModeloBordado ||
     usaModeloTempoMaquina;
-  // DIGITAL e os 3 de setup-por-peça não precisam de largura/altura pro custo
-  // em si (sem nesting) — só M2/OFFSET/FLEXOGRAFIA exigem dimensão aqui.
-  const exigeDimensao = usaModeloM2 || usaModeloOffset || usaModeloFlexografia;
+  // Os 3 de setup-por-peça não precisam de largura/altura pro custo em si
+  // (sem nesting) — M2/OFFSET/FLEXOGRAFIA/DIGITAL (achado N4: agora faz
+  // imposição igual ao Offset) exigem dimensão aqui.
+  const exigeDimensao = usaModeloM2 || usaModeloOffset || usaModeloFlexografia || usaModeloDigital;
   const usaClicheEtiqueta = usaModeloM2 && itemSelecionado?.usaClicheEtiqueta === true;
   // Achado N1 — pra um produto SIMPLES sem a flag simplesCobraPorArea,
   // preencher largura/altura não muda mais o preço (sempre por peça), então
@@ -652,6 +654,16 @@ export function SeletorItemOrcamento({
           papeisDisponiveis={papeisDisponiveis}
           valores={valores.precificacaoEtiqueta}
           onChange={(precificacaoEtiqueta) => onChange({ ...valores, precificacaoEtiqueta })}
+        />
+      )}
+
+      {usaModeloDigital && (
+        <CamposPrecificacaoDigitalOrcamento
+          papeisDisponiveis={papeisDisponiveis}
+          papelId={valores.precificacaoEtiqueta.papelId}
+          onChange={(papelId) =>
+            onChange({ ...valores, precificacaoEtiqueta: { ...valores.precificacaoEtiqueta, papelId } })
+          }
         />
       )}
 

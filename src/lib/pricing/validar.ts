@@ -129,9 +129,13 @@ export function validarPedidoFlexografia(pedido: PedidoFlexografia, contexto: Co
   }
 }
 
-// Digital não tem dimensões (sem nesting) — só quantidade + nº de cliques.
+// Achado N4 da auditoria de código (2026-09-04) — Digital agora faz
+// imposição igual ao Offset: reaproveita validarComum (exige quantidade E
+// largura/altura > 0, antes só quantidade) e passa a exigir pelo menos um
+// FormatoFolha cadastrado no papel escolhido, mesma exigência de
+// validarPedidoOffset acima pra contexto.folhas.
 export function validarPedidoDigital(pedido: PedidoDigital, contexto: ContextoDigital) {
-  validarQuantidade(pedido.quantidade);
+  validarComum(pedido.quantidade, pedido.larguraM, pedido.alturaM);
 
   if (
     pedido.numeroCliques !== undefined &&
@@ -139,18 +143,24 @@ export function validarPedidoDigital(pedido: PedidoDigital, contexto: ContextoDi
   ) {
     throw new ErroPrecificacao(
       "NUMERO_CLIQUES_INVALIDO",
-      "O número de cliques precisa ser um inteiro maior ou igual a 1.",
+      "O número de cliques por folha precisa ser um inteiro maior ou igual a 1.",
       { numeroCliques: pedido.numeroCliques }
     );
   }
-  // materialFornecidoPeloCliente=true (achado B7) zera custoSubstratoPorPeca
-  // DE PROPÓSITO — só barra o zero quando não há essa justificativa (o caso
-  // de sempre: gráfica esqueceu de cadastrar precoCompra no catálogo).
-  if (contexto.custoSubstratoPorPeca <= 0 && !contexto.materialFornecidoPeloCliente) {
+  if (contexto.folhas.length === 0) {
+    throw new ErroPrecificacao(
+      "MATERIAL_SEM_FOLHA",
+      "Este papel não tem nenhum formato de folha cadastrado."
+    );
+  }
+  // materialFornecidoPeloCliente=true (achado B7) zera custoPorFolha DE
+  // PROPÓSITO — só barra o zero quando não há essa justificativa (o caso de
+  // sempre: gráfica esqueceu de cadastrar precoCompra no papel escolhido).
+  if (contexto.custoPorFolha <= 0 && !contexto.materialFornecidoPeloCliente) {
     throw new ErroPrecificacao(
       "CUSTO_INVALIDO",
-      "O preço de compra do substrato precisa ser maior que zero.",
-      { custoSubstratoPorPeca: contexto.custoSubstratoPorPeca }
+      "O preço de compra do papel (substrato) precisa ser maior que zero.",
+      { custoPorFolha: contexto.custoPorFolha }
     );
   }
 }

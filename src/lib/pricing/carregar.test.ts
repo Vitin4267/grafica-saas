@@ -66,8 +66,11 @@ describe(
       TIMEOUT_MS
     );
 
+    // Achado N4 da auditoria de código (2026-09-04) — o motor Digital passou
+    // a fazer imposição igual ao Offset: precisa de um papel (matéria-prima)
+    // escolhido NO ORÇAMENTO (dadosDigital), do qual vêm os FormatoFolha.
     it(
-      "caminho feliz: carrega custoSubstratoPorPeca (do precoCompra) e os parâmetros da impressora vinculada",
+      "lança DIGITAL_SEM_PAPEL quando a impressora está configurada mas nenhum papel foi escolhido no orçamento",
       async () => {
         const { grafica, s } = await criarGrafica();
         const impressora = await prisma.impressoraDigital.create({
@@ -81,14 +84,87 @@ describe(
             graficaId: grafica.id,
             itemCatalogoId: catalogo.id,
             modeloCalculo: "DIGITAL",
-            precoCompra: 0.3,
             impressoraDigitalId: impressora.id,
           },
         });
 
-        const contexto = await carregarContextoPrecificacao(produto.id, grafica.id);
+        await expect(carregarContextoPrecificacao(produto.id, grafica.id)).rejects.toMatchObject({
+          codigo: "DIGITAL_SEM_PAPEL",
+        });
+      },
+      TIMEOUT_MS
+    );
 
-        expect(contexto.digital).toMatchObject({ custoSubstratoPorPeca: 0.3 });
+    it(
+      "lança PAPEL_INVALIDO quando o papelId informado não existe ou não é MATERIA_PRIMA ativa",
+      async () => {
+        const { grafica, s } = await criarGrafica();
+        const impressora = await prisma.impressoraDigital.create({
+          data: { graficaId: grafica.id, nome: `HP Indigo ${s}`, custoPorClique: 0.08 },
+        });
+        const catalogo = await prisma.itemCatalogo.create({
+          data: { graficaId: grafica.id, tipo: "PRODUTO", categoria: "Cartão", nome: `Cartão Digital ${s}` },
+        });
+        const produto = await prisma.itemGrafica.create({
+          data: {
+            graficaId: grafica.id,
+            itemCatalogoId: catalogo.id,
+            modeloCalculo: "DIGITAL",
+            impressoraDigitalId: impressora.id,
+          },
+        });
+
+        await expect(
+          carregarContextoPrecificacao(produto.id, grafica.id, undefined, { papelId: "id-que-nao-existe" })
+        ).rejects.toMatchObject({ codigo: "PAPEL_INVALIDO" });
+      },
+      TIMEOUT_MS
+    );
+
+    it(
+      "caminho feliz: carrega folhas + custoPorFolha do papel escolhido no orçamento e os parâmetros da impressora vinculada",
+      async () => {
+        const { grafica, s } = await criarGrafica();
+        const impressora = await prisma.impressoraDigital.create({
+          data: { graficaId: grafica.id, nome: `HP Indigo ${s}`, custoPorClique: 0.08 },
+        });
+        const catalogoPapel = await prisma.itemCatalogo.create({
+          data: { graficaId: grafica.id, tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: `Couché Digital ${s}` },
+        });
+        const papel = await prisma.itemGrafica.create({
+          data: {
+            graficaId: grafica.id,
+            itemCatalogoId: catalogoPapel.id,
+            modeloCalculo: "SIMPLES",
+            precoCompra: 0.8, // custo por FOLHA (achado N4)
+            formatosFolha: {
+              create: [{ nome: `SRA3 ${s}`, larguraFolha: 0.32, alturaFolha: 0.45 }],
+            },
+          },
+        });
+        const catalogo = await prisma.itemCatalogo.create({
+          data: { graficaId: grafica.id, tipo: "PRODUTO", categoria: "Cartão", nome: `Cartão Digital ${s}` },
+        });
+        const produto = await prisma.itemGrafica.create({
+          data: {
+            graficaId: grafica.id,
+            itemCatalogoId: catalogo.id,
+            modeloCalculo: "DIGITAL",
+            impressoraDigitalId: impressora.id,
+          },
+        });
+
+        const contexto = await carregarContextoPrecificacao(produto.id, grafica.id, undefined, {
+          papelId: papel.id,
+        });
+
+        expect(contexto.digital?.custoPorFolha).toBe(0.8);
+        expect(contexto.digital?.folhas).toHaveLength(1);
+        expect(contexto.digital?.folhas[0]).toMatchObject({
+          nome: `SRA3 ${s}`,
+          larguraFolha: 0.32,
+          alturaFolha: 0.45,
+        });
         expect(contexto.parametrosImpressoraDigital).toMatchObject({ custoPorClique: 0.08 });
         expect(contexto.impressoraDigitalUsada).toMatchObject({ id: impressora.id, nome: impressora.nome });
       },

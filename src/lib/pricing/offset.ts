@@ -1,6 +1,7 @@
 import { type Dec, paraDecimal, tetoInteiro, maiorDec } from "./decimal";
 import { ErroPrecificacao } from "./erros";
 import { validarPedidoOffset } from "./validar";
+import { calcularImposicao, type ResultadoImposicao } from "./imposicao";
 import type { ContextoOffset, FormatoFolhaInput, ParametrosPrensa, PedidoOffset } from "./tipos";
 import type { OrigemPrecoPapel } from "./papel";
 
@@ -11,44 +12,12 @@ const DEFAULTS_OFFSET = {
   gapPecas: 0.002,
 };
 
-export type ResultadoImposicao = { nUp: number; rotacionado: boolean };
-
-// Retorna null quando nUp=0 (peça não cabe nesse formato de folha em nenhuma orientação).
-export function calcularImposicao(
-  pedido: PedidoOffset,
-  folha: FormatoFolhaInput
-): ResultadoImposicao | null {
-  const sangria = paraDecimal(pedido.sangria ?? DEFAULTS_OFFSET.sangria);
-  const pinca = paraDecimal(pedido.pinca ?? DEFAULTS_OFFSET.pinca);
-  const mLat = paraDecimal(pedido.margemLateral ?? DEFAULTS_OFFSET.margemLateral);
-  const g = paraDecimal(pedido.gapPecas ?? DEFAULTS_OFFSET.gapPecas);
-
-  const wLinha = paraDecimal(pedido.larguraM).plus(sangria.times(2));
-  const hLinha = paraDecimal(pedido.alturaM).plus(sangria.times(2));
-
-  const lF = paraDecimal(folha.larguraFolha);
-  const aF = paraDecimal(folha.alturaFolha);
-  const lu = lF.minus(pinca).minus(mLat.times(2));
-  const au = aF.minus(mLat.times(2));
-
-  const normal = lu
-    .plus(g)
-    .div(wLinha.plus(g))
-    .floor()
-    .times(au.plus(g).div(hLinha.plus(g)).floor())
-    .toNumber();
-  const rotacionada = lu
-    .plus(g)
-    .div(hLinha.plus(g))
-    .floor()
-    .times(au.plus(g).div(wLinha.plus(g)).floor())
-    .toNumber();
-
-  const nUp = Math.max(normal, rotacionada);
-  if (nUp <= 0) return null;
-
-  return { nUp, rotacionado: rotacionada > normal };
-}
+// Achado N4 da auditoria de código (2026-09-04) — calcularImposicao foi
+// extraída pra src/lib/pricing/imposicao.ts, já que o motor DIGITAL passou a
+// reaproveitar a MESMA geometria (nUp por formato de folha) em vez de
+// reimplementar. Reexportada aqui pra não quebrar quem já importava daqui
+// (src/lib/pricing/index.ts e testes existentes).
+export { calcularImposicao, type ResultadoImposicao } from "./imposicao";
 
 export type ResultadoOffset = {
   nUp: number;
@@ -110,7 +79,15 @@ export function calcularOffset(
   const candidatos: Candidato[] = [];
 
   for (const folha of contexto.folhas) {
-    const imposicao = calcularImposicao(pedido, folha);
+    // Achado N4 — imposicao.ts default de pinca é 0 (motores sem prensa,
+    // como o Digital, não têm essa perda física). O Offset precisa continuar
+    // resolvendo o PRÓPRIO default (0,012) quando pedido.pinca vier ausente
+    // — nunca herdar o 0 do módulo compartilhado, senão nUp fica maior do
+    // que a prensa real permite.
+    const imposicao = calcularImposicao(
+      { ...pedido, pinca: pedido.pinca ?? DEFAULTS_OFFSET.pinca },
+      folha
+    );
     if (!imposicao) continue;
 
     const folhasBoas = Math.ceil(Q / imposicao.nUp);

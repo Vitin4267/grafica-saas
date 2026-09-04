@@ -20,13 +20,17 @@ type ModeloCalculoPrecificavel =
 
 // Os 4 modelos de "setup por peça" — SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE/
 // PERSONALIZACAO (achado A3 da auditoria de abrangência: tampografia,
-// gravação a laser, DTG, transfer e OUTRO) — DIGITAL, REVENDA e os novos
-// BORDADO/TEMPO_MAQUINA (achados A4/A6) não têm nesting (sem largura/altura
-// pro CUSTO em si), diferente de M2/OFFSET/FLEXOGRAFIA. Usado tanto pra
-// pular a guarda de dimensão obrigatória quanto, na montagem do
-// PedidoPrecificacao, pra escolher o branch certo.
+// gravação a laser, DTG, transfer e OUTRO) — REVENDA e os novos BORDADO/
+// TEMPO_MAQUINA (achados A4/A6) não têm nesting (sem largura/altura pro
+// CUSTO em si), diferente de M2/OFFSET/FLEXOGRAFIA. Usado tanto pra pular a
+// guarda de dimensão obrigatória quanto, na montagem do PedidoPrecificacao,
+// pra escolher o branch certo.
+//
+// Achado N4 da auditoria de código (2026-09-04) — DIGITAL SAIU deste
+// conjunto: o motor agora faz imposição igual ao Offset (nUp por FormatoFolha
+// do papel escolhido), então largura/altura viraram OBRIGATÓRIAS pro CUSTO
+// em si, não só pra alimentar um acabamento M2 anexado.
 const MODELOS_SEM_NESTING = new Set<ModeloCalculoPrecificavel>([
-  "DIGITAL",
   "SERIGRAFIA",
   "SUBLIMACAO",
   "ESTAMPAGEM_QUENTE",
@@ -63,9 +67,11 @@ export type DadosItemOrcamento = {
   // Só usado pelo motor avançado (M2/OFFSET) — SIMPLES continua com o campo de
   // texto livre OrcamentoItem.acabamento, sem custo (ver src/lib/orcamento.ts).
   acabamentoIds: string[];
-  // Motor de clichê de etiqueta (só M2 com ConfiguracaoClicheEtiqueta) — papel
-  // escolhido NESTE orçamento (matéria-prima) e quantidade de cores da arte.
-  // custoFaca/custoFrete são R$ livres, por item, independentes do modelo.
+  // Papel (matéria-prima) escolhido NESTE orçamento — campo compartilhado por
+  // dois motores: clichê de etiqueta (M2 com ConfiguracaoClicheEtiqueta, usa
+  // junto com quantidadeCores) e Digital (achado N4, define os FormatoFolha
+  // disponíveis pra imposição). custoFaca/custoFrete são R$ livres, por
+  // item, independentes do modelo.
   papelId: string | null;
   quantidadeCores: number | null;
   custoFaca: number | null;
@@ -74,7 +80,9 @@ export type DadosItemOrcamento = {
   // (semânticos de frente/verso de folha do Offset, lidos em ~20 lugares fora
   // deste escopo).
   numeroCoresFlexo: number | null;
-  // Só usado por DIGITAL — opcional (default 1 no motor se ausente).
+  // Só usado por DIGITAL — override OPCIONAL de cliques POR FOLHA (achado
+  // N4: default 1 no motor se ausente; deixe em branco pro sistema calcular
+  // pela imposição).
   numeroCliques: number | null;
   // Só usado por SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE/PERSONALIZACAO (os 4
   // compartilham este campo, mesma razão de compartilharem calcularSetupPorPeca).
@@ -154,6 +162,11 @@ export type ResultadoItemOrcamento =
         custoFaca: string | null;
         custoFrete: string | null;
       } | null;
+      // Achado N4 — papel (matéria-prima) escolhido pro motor Digital
+      // realmente usado no cálculo (contexto.digital só existe quando o
+      // motor resolveu o papel com sucesso, mesmo padrão de
+      // precificacaoEtiqueta acima). null pra qualquer outro modeloCalculo.
+      precificacaoDigital: { papelId: string } | null;
     }
   | { ok: false; mensagem: string };
 
@@ -235,9 +248,10 @@ export async function calcularItemOrcamento(
     }
   }
 
-  // Guarda de DIGITAL — nº de cliques é opcional (default 1 no motor), mas
-  // quando informado precisa ser um inteiro válido. Mesmo cuidado das guardas
-  // acima: precisa vir antes do branch SIMPLES.
+  // Guarda de DIGITAL — nº de cliques (por folha, achado N4) é um override
+  // opcional (default 1 no motor), mas quando informado precisa ser um
+  // inteiro válido. Mesmo cuidado das guardas acima: precisa vir antes do
+  // branch SIMPLES.
   if (
     itemGrafica.modeloCalculo === "DIGITAL" &&
     dados.numeroCliques !== null &&
@@ -336,12 +350,14 @@ export async function calcularItemOrcamento(
       breakdown: null,
       acabamentos: [],
       precificacaoEtiqueta: null,
+      precificacaoDigital: null,
     };
   }
 
-  // Motor avançado M2/OFFSET/FLEXOGRAFIA exige dimensões reais da peça (usadas
-  // pro nesting). DIGITAL e os 3 de setup-por-peça NÃO têm nesting — largura/
-  // altura são opcionais pra eles (ver PedidoDigital/PedidoSetupPorPeca em
+  // Motor avançado M2/OFFSET/FLEXOGRAFIA/DIGITAL (achado N4) exige dimensões
+  // reais da peça (usadas pro nesting/imposição). Os 3 de setup-por-peça,
+  // REVENDA, BORDADO e TEMPO_MAQUINA NÃO têm nesting — largura/altura são
+  // opcionais pra eles (ver PedidoSetupPorPeca etc. em
   // src/lib/pricing/tipos.ts), então pulam esta guarda.
   if (!MODELOS_SEM_NESTING.has(itemGrafica.modeloCalculo) && (!larguraCm || !alturaCm)) {
     return {
@@ -368,6 +384,11 @@ export async function calcularItemOrcamento(
       graficaId,
       dados.papelId && dados.quantidadeCores
         ? { papelId: dados.papelId, quantidadeCores: dados.quantidadeCores }
+        : undefined,
+      // Achado N4 — mesmo papelId acima, reaproveitado pro motor Digital
+      // (não precisa de quantidadeCores, diferente da etiqueta).
+      itemGrafica.modeloCalculo === "DIGITAL" && dados.papelId
+        ? { papelId: dados.papelId }
         : undefined
     );
     if (dados.custoFrete !== null) contexto.custoFreteEstimado = dados.custoFrete;
@@ -398,7 +419,7 @@ export async function calcularItemOrcamento(
       if (contexto.digital) {
         contexto.digital = {
           ...contexto.digital,
-          custoSubstratoPorPeca: 0,
+          custoPorFolha: 0,
           materialFornecidoPeloCliente: true,
         };
       }
@@ -450,10 +471,11 @@ export async function calcularItemOrcamento(
       };
     }
 
-    // DIGITAL e os 3 de setup-por-peça: largura/altura são opcionais (guarda
-    // acima já garantiu que, se ausentes, nenhum acabamento M2-based está
-    // anexado) — undefined quando não informadas, nunca uma divisão por um
-    // null.
+    // Os 3 de setup-por-peça/REVENDA/BORDADO/TEMPO_MAQUINA: largura/altura são
+    // opcionais (guarda acima já garantiu que, se ausentes, nenhum acabamento
+    // M2-based está anexado) — undefined quando não informadas, nunca uma
+    // divisão por um null. DIGITAL (achado N4) NÃO usa isto — a guarda de
+    // dimensão obrigatória já garantiu larguraCm/alturaCm presentes pra ele.
     const larguraMOpcional = larguraCm !== null ? larguraCm / 100 : undefined;
     const alturaMOpcional = alturaCm !== null ? alturaCm / 100 : undefined;
 
@@ -482,13 +504,15 @@ export async function calcularItemOrcamento(
         acabamentos,
       };
     } else if (itemGrafica.modeloCalculo === "DIGITAL") {
+      // Achado N4 — larguraCm/alturaCm são garantidos não-null aqui (guarda
+      // de dimensão obrigatória acima, DIGITAL saiu de MODELOS_SEM_NESTING).
       pedido = {
         tipo: "DIGITAL",
         pedido: {
           quantidade,
           numeroCliques: dados.numeroCliques ?? undefined,
-          larguraM: larguraMOpcional,
-          alturaM: alturaMOpcional,
+          larguraM: larguraCm! / 100,
+          alturaM: alturaCm! / 100,
         },
         acabamentos,
       };
@@ -650,6 +674,11 @@ export async function calcularItemOrcamento(
             custoFrete: dados.custoFrete !== null ? String(dados.custoFrete) : null,
           }
         : null,
+      // Achado N4 — mesma lógica de precificacaoEtiqueta acima: usa
+      // contexto.digital (nunca dados.papelId truthy sozinho) como fonte de
+      // verdade, protege contra um papelId adulterado/de outro modelo — se o
+      // motor não resolveu o papel de verdade, não gravamos nada.
+      precificacaoDigital: contexto.digital ? { papelId: dados.papelId! } : null,
     };
   } catch (erro) {
     if (erro instanceof ErroPrecificacao) {

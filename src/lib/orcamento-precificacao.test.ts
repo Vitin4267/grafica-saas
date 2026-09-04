@@ -479,6 +479,26 @@ describe("calcularItemOrcamento — materialFornecidoPeloCliente (achado B7)", (
     return { grafica, s };
   }
 
+  // Achado N4 — o motor Digital agora exige um papel (matéria-prima) com
+  // FormatoFolha cadastrado, escolhido NO ORÇAMENTO (dados.papelId), pra
+  // resolver a imposição. Peça 10×10cm numa folha 50×40cm sem sangria/
+  // margem/gap (zerados no fixture de largura/altura abaixo) cabe 5×4=20 —
+  // números redondos só pra facilitar a conta manual dos testes.
+  async function criarPapelDigital(graficaId: string, s: string, precoCompraPorFolha: number) {
+    const catalogoPapel = await prisma.itemCatalogo.create({
+      data: { graficaId, tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: `Papel Digital ${s}` },
+    });
+    return prisma.itemGrafica.create({
+      data: {
+        graficaId,
+        itemCatalogoId: catalogoPapel.id,
+        modeloCalculo: "SIMPLES",
+        precoCompra: precoCompraPorFolha,
+        formatosFolha: { create: [{ nome: `Folha 50x40 ${s}`, larguraFolha: 0.5, alturaFolha: 0.4 }] },
+      },
+    });
+  }
+
   it(
     "DIGITAL: materialFornecidoPeloCliente=true zera custoSubstrato no breakdown",
     async () => {
@@ -486,6 +506,9 @@ describe("calcularItemOrcamento — materialFornecidoPeloCliente (achado B7)", (
       const impressora = await prisma.impressoraDigital.create({
         data: { graficaId: grafica.id, nome: `HP Indigo ${s}`, custoPorClique: 0.08 },
       });
+      // substrato caro de propósito (por FOLHA agora, achado N4), pra
+      // diferença ficar óbvia
+      const papel = await criarPapelDigital(grafica.id, s, 12);
       const catalogo = await prisma.itemCatalogo.create({
         data: { graficaId: grafica.id, tipo: "PRODUTO", categoria: "Camiseta", nome: `Camiseta Digital ${s}` },
       });
@@ -494,13 +517,22 @@ describe("calcularItemOrcamento — materialFornecidoPeloCliente (achado B7)", (
           graficaId: grafica.id,
           itemCatalogoId: catalogo.id,
           modeloCalculo: "DIGITAL",
-          precoCompra: 12, // substrato caro de propósito, pra diferença ficar óbvia
           impressoraDigitalId: impressora.id,
         },
       });
 
-      const dadosSemFlag = dadosBase({ materialFornecidoPeloCliente: false });
-      const dadosComFlag = dadosBase({ materialFornecidoPeloCliente: true });
+      const dadosSemFlag = dadosBase({
+        larguraCm: 10,
+        alturaCm: 10,
+        papelId: papel.id,
+        materialFornecidoPeloCliente: false,
+      });
+      const dadosComFlag = dadosBase({
+        larguraCm: 10,
+        alturaCm: 10,
+        papelId: papel.id,
+        materialFornecidoPeloCliente: true,
+      });
 
       const resultadoSemFlag = await calcularItemOrcamento(produto, grafica.id, dadosSemFlag);
       const resultadoComFlag = await calcularItemOrcamento(produto, grafica.id, dadosComFlag);
@@ -618,6 +650,21 @@ describe("calcularItemOrcamento — margemLucroOverride (achado A7)", () => {
       const impressora = await prisma.impressoraDigital.create({
         data: { graficaId: grafica.id, nome: `HP Indigo ${s}`, custoPorClique: 0.08 },
       });
+      // Achado N4 — papel (matéria-prima) com FormatoFolha, escolhido no
+      // orçamento; peça 10×10cm numa folha 50×40cm sem sangria/margem/gap
+      // cabe 5×4=20 por folha.
+      const catalogoPapel = await prisma.itemCatalogo.create({
+        data: { graficaId: grafica.id, tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: `Papel Digital ${s}` },
+      });
+      const papel = await prisma.itemGrafica.create({
+        data: {
+          graficaId: grafica.id,
+          itemCatalogoId: catalogoPapel.id,
+          modeloCalculo: "SIMPLES",
+          precoCompra: 1,
+          formatosFolha: { create: [{ nome: `Folha 50x40 ${s}`, larguraFolha: 0.5, alturaFolha: 0.4 }] },
+        },
+      });
       const catalogo = await prisma.itemCatalogo.create({
         data: { graficaId: grafica.id, tipo: "PRODUTO", categoria: "Cartão", nome: `Cartão Digital ${s}` },
       });
@@ -626,13 +673,22 @@ describe("calcularItemOrcamento — margemLucroOverride (achado A7)", () => {
           graficaId: grafica.id,
           itemCatalogoId: catalogo.id,
           modeloCalculo: "DIGITAL",
-          precoCompra: 1,
           impressoraDigitalId: impressora.id,
         },
       });
 
-      const dadosSemOverride = dadosBase({ margemLucroOverride: null });
-      const dadosComOverride = dadosBase({ margemLucroOverride: 0.05 });
+      const dadosSemOverride = dadosBase({
+        larguraCm: 10,
+        alturaCm: 10,
+        papelId: papel.id,
+        margemLucroOverride: null,
+      });
+      const dadosComOverride = dadosBase({
+        larguraCm: 10,
+        alturaCm: 10,
+        papelId: papel.id,
+        margemLucroOverride: 0.05,
+      });
 
       const resultadoSemOverride = await calcularItemOrcamento(produto, grafica.id, dadosSemOverride);
       const resultadoComOverride = await calcularItemOrcamento(produto, grafica.id, dadosComOverride);
@@ -708,7 +764,24 @@ describe("calcularItemOrcamento — guard METRO_LINEAR/HORA (achado A1)", () => 
         },
       },
     });
-    return { produto, acabamento };
+    // Achado N4 — o motor Digital agora exige um papel (matéria-prima) com
+    // FormatoFolha cadastrado, escolhido NO ORÇAMENTO (dados.papelId), pra
+    // resolver a imposição. Folha bem maior que a peça (100×200cm) só pra
+    // garantir que cabe 1 vez (nUp≥1) sem precisar calibrar a conta — estes
+    // testes cobrem o guard de METRO_LINEAR/HORA, não a imposição em si.
+    const catalogoPapel = await prisma.itemCatalogo.create({
+      data: { graficaId: grafica.id, tipo: "MATERIA_PRIMA", categoria: "Papéis", nome: `Papel Digital ${s}` },
+    });
+    const papel = await prisma.itemGrafica.create({
+      data: {
+        graficaId: grafica.id,
+        itemCatalogoId: catalogoPapel.id,
+        modeloCalculo: "SIMPLES",
+        precoCompra: 10,
+        formatosFolha: { create: [{ nome: `Folha 3x3 ${s}`, larguraFolha: 3, alturaFolha: 3 }] },
+      },
+    });
+    return { produto, acabamento, papel };
   }
 
   it(
@@ -733,12 +806,12 @@ describe("calcularItemOrcamento — guard METRO_LINEAR/HORA (achado A1)", () => 
   it(
     "DIGITAL com acabamento METRO_LINEAR anexado e largura/altura informadas: calcula normalmente",
     async () => {
-      const { produto, acabamento } = await criarProdutoDigitalComAcabamento("METRO_LINEAR");
+      const { produto, acabamento, papel } = await criarProdutoDigitalComAcabamento("METRO_LINEAR");
 
       const resultado = await calcularItemOrcamento(
         produto,
         produto.graficaId,
-        dadosBase({ acabamentoIds: [acabamento.id], larguraCm: 100, alturaCm: 200 })
+        dadosBase({ acabamentoIds: [acabamento.id], larguraCm: 100, alturaCm: 200, papelId: papel.id })
       );
 
       expect(resultado.ok).toBe(true);
@@ -749,12 +822,12 @@ describe("calcularItemOrcamento — guard METRO_LINEAR/HORA (achado A1)", () => 
   it(
     "DIGITAL com acabamento HORA anexado e sem horasEstimadas: bloqueia com mensagem amigável",
     async () => {
-      const { produto, acabamento } = await criarProdutoDigitalComAcabamento("HORA");
+      const { produto, acabamento, papel } = await criarProdutoDigitalComAcabamento("HORA");
 
       const resultado = await calcularItemOrcamento(
         produto,
         produto.graficaId,
-        dadosBase({ acabamentoIds: [acabamento.id], larguraCm: 100, alturaCm: 200 })
+        dadosBase({ acabamentoIds: [acabamento.id], larguraCm: 100, alturaCm: 200, papelId: papel.id })
       );
 
       expect(resultado.ok).toBe(false);
@@ -768,12 +841,18 @@ describe("calcularItemOrcamento — guard METRO_LINEAR/HORA (achado A1)", () => 
   it(
     "DIGITAL com acabamento HORA anexado e horasEstimadas preenchido: calcula normalmente",
     async () => {
-      const { produto, acabamento } = await criarProdutoDigitalComAcabamento("HORA");
+      const { produto, acabamento, papel } = await criarProdutoDigitalComAcabamento("HORA");
 
       const resultado = await calcularItemOrcamento(
         produto,
         produto.graficaId,
-        dadosBase({ acabamentoIds: [acabamento.id], larguraCm: 100, alturaCm: 200, horasEstimadas: 2 })
+        dadosBase({
+          acabamentoIds: [acabamento.id],
+          larguraCm: 100,
+          alturaCm: 200,
+          horasEstimadas: 2,
+          papelId: papel.id,
+        })
       );
 
       expect(resultado.ok).toBe(true);

@@ -521,6 +521,7 @@ model OrcamentoItem {
   etiqueta             OrcamentoItemEtiqueta?
   tinta                OrcamentoItemTinta?
   precificacaoEtiqueta OrcamentoItemPrecificacaoEtiqueta?
+  precificacaoDigital  OrcamentoItemPrecificacaoDigital? // achado N4 — papel escolhido neste orçamento pro motor Digital
   filaGangRun          FilaGangRun?
 
   @@index([orcamentoId])
@@ -621,6 +622,31 @@ model OrcamentoItemPrecificacaoEtiqueta {
   papel         ItemGrafica   @relation("PapelDoItemOrcamentoEtiqueta", fields: [papelId], references: [id], onDelete: Restrict)
 
   @@map("orcamento_item_precificacao_etiquetas")
+}
+
+// Achado N4 da auditoria de código (2026-09-04) — snapshot do papel
+// (matéria-prima) escolhido NESTE ORÇAMENTO pro motor Digital, que passou a
+// fazer IMPOSIÇÃO igual ao Offset (lê os FormatoFolha do papel pra calcular
+// quantas peças cabem por folha). Mesmo padrão de
+// OrcamentoItemPrecificacaoEtiqueta acima — mas o papel do Digital é
+// escolhido POR ORÇAMENTO, nunca fixo no produto: diferente do Offset (onde
+// FormatoFolha/papelId são configurados uma vez em Catálogo, no PRODUTO), uma
+// gráfica rápida troca o papel carregado na impressora com frequência maior
+// do que cadastraria produtos novos pra cada combinação — mesma razão pela
+// qual o motor de clichê de etiqueta já escolhe o papel no orçamento, não no
+// produto. nUp/numeroFolhas calculados NÃO são colunas aqui — já vão pro
+// snapshot auditável em OrcamentoItem.breakdown (mesmo padrão do Offset, ver
+// ResultadoOffset.nUp/folhasTotais em offset.ts).
+model OrcamentoItemPrecificacaoDigital {
+  id              String   @id @default(cuid())
+  orcamentoItemId String   @unique
+  papelId         String // matéria-prima (ItemGrafica tipo=MATERIA_PRIMA) escolhida NESTE orçamento — fornece os FormatoFolha pra imposição e o custo por folha (precoCompra)
+  createdAt       DateTime @default(now())
+
+  orcamentoItem OrcamentoItem @relation(fields: [orcamentoItemId], references: [id], onDelete: Cascade)
+  papel         ItemGrafica   @relation("PapelDoItemOrcamentoDigital", fields: [papelId], references: [id], onDelete: Restrict)
+
+  @@map("orcamento_item_precificacao_digital")
 }
 
 // Acabamentos estruturados aplicados a um item de orçamento no motor avançado
