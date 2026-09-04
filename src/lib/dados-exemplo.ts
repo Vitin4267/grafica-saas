@@ -480,6 +480,306 @@ const PACOTE_ESTAMPARIA_VESTUARIO: PacoteExemplo = {
 };
 
 // ---------------------------------------------------------------------------
+// Pacote BRINDES_PERSONALIZADOS — caneta e chaveiro personalizados (SIMPLES,
+// com baseCompra + impressão/sublimação mínima). Brindes corporativos,
+// presentes, promocionais — geralmente comprados semiacabados e personalizados.
+// ---------------------------------------------------------------------------
+
+const NOME_PRODUTO_CANETA_BRINDE = `${PREFIXO_EXEMPLO}Caneta Azul Personalizada`;
+const NOME_PRODUTO_CHAVEIRO_BRINDE = `${PREFIXO_EXEMPLO}Chaveiro Acrílico Gravado`;
+const NOME_ACABAMENTO_GRAVACAO_BRINDE = `${PREFIXO_EXEMPLO}Gravação a Laser`;
+const NOME_ACABAMENTO_EMBALAGEM_BRINDE = `${PREFIXO_EXEMPLO}Embalagem Personalizada`;
+
+async function criarCatalogoBrindesPersonalizados(
+  tx: Prisma.TransactionClient,
+  graficaId: string
+): Promise<void> {
+  // Produto Simples — caneta personalizada, preço fixo por unidade.
+  const itemCatalogoCaneta = await tx.itemCatalogo.create({
+    data: {
+      graficaId,
+      tipo: "PRODUTO",
+      categoria: "Brindes",
+      nome: NOME_PRODUTO_CANETA_BRINDE,
+    },
+  });
+  await tx.itemGrafica.create({
+    data: {
+      graficaId,
+      itemCatalogoId: itemCatalogoCaneta.id,
+      precoCompra: 2.5, // caneta em branco
+      precoVenda: 8.5, // referência — vendida com personalização mínima
+      modeloCalculo: "SIMPLES",
+    },
+  });
+
+  // Produto Simples — chaveiro de acrílico com gravação, preço fixo.
+  const itemCatalogoChaveiro = await tx.itemCatalogo.create({
+    data: {
+      graficaId,
+      tipo: "PRODUTO",
+      categoria: "Brindes",
+      nome: NOME_PRODUTO_CHAVEIRO_BRINDE,
+    },
+  });
+  await tx.itemGrafica.create({
+    data: {
+      graficaId,
+      itemCatalogoId: itemCatalogoChaveiro.id,
+      precoCompra: 3.8,
+      precoVenda: 14.5,
+      modeloCalculo: "SIMPLES",
+    },
+  });
+
+  await criarAcabamentosExemplo(tx, graficaId, [
+    {
+      nome: NOME_ACABAMENTO_GRAVACAO_BRINDE,
+      categoria: "Acabamento",
+      unidade: "UNIDADE",
+      precoCompra: 0.8,
+      precoVenda: 2.5,
+      baseCobranca: "UNIDADE",
+      estagio: "POS_REFILE",
+      custoSetup: 15,
+      custoMinimo: 20,
+    },
+    {
+      nome: NOME_ACABAMENTO_EMBALAGEM_BRINDE,
+      categoria: "Acabamento",
+      unidade: "UNIDADE",
+      precoCompra: 0.3,
+      precoVenda: 1.5,
+      baseCobranca: "UNIDADE",
+      estagio: "POS_REFILE",
+      custoSetup: 0,
+      custoMinimo: 10,
+    },
+  ]);
+}
+
+const PACOTE_BRINDES_PERSONALIZADOS: PacoteExemplo = {
+  nomeProdutoAvancado: NOME_PRODUTO_CANETA_BRINDE,
+  nomeProdutoSimples: NOME_PRODUTO_CHAVEIRO_BRINDE,
+  criarCatalogo: criarCatalogoBrindesPersonalizados,
+  dadosAvancado: { ...DADOS_ITEM_VAZIO, quantidade: 500 },
+  dadosSimples: { ...DADOS_ITEM_VAZIO, quantidade: 200 },
+};
+
+// ---------------------------------------------------------------------------
+// Pacote CORTE_LASER_ACRILICO — display/troféu em acrílico (M2 por área de
+// material cortado) + luminária de corte a laser (SIMPLES). Equipamento
+// principal é o laser (máquina de corte com potência/velocidade/foco).
+// ---------------------------------------------------------------------------
+
+const NOME_MAQUINA_LASER = `${PREFIXO_EXEMPLO}Cortadora Laser CO2`;
+const NOME_PRODUTO_DISPLAY_ACRILICO = `${PREFIXO_EXEMPLO}Display em Acrílico Cristal`;
+const NOME_PRODUTO_LUMINARIA_LASER = `${PREFIXO_EXEMPLO}Luminária de Corte a Laser`;
+const NOME_ACABAMENTO_POLIMENTO_LASER = `${PREFIXO_EXEMPLO}Polimento de Borda`;
+const NOME_ACABAMENTO_GRAVACAO_LASER = `${PREFIXO_EXEMPLO}Gravação Profunda`;
+
+async function criarCatalogoCorteAcrilico(
+  tx: Prisma.TransactionClient,
+  graficaId: string
+): Promise<void> {
+  const maquina = await tx.prensa.create({
+    data: {
+      graficaId,
+      nome: NOME_MAQUINA_LASER,
+      custoHoraMaq: 180, // laser é caro por hora
+      torres: 1,
+      custoChapa: 35, // "chapa" de acrílico na máquina
+      folhasAcerto: 3, // menos acerto em laser
+      tempoAcertoH: 0.25,
+      custoMilheiroRod: 50, // não se aplica bem a laser, mas segue modelo Offset
+      rodagemMinima: 1,
+      perdaPercentPadrao: 0.02,
+    },
+  });
+
+  // Produto M2 — display de acrílico (precisa de folha/bobina, usa modelo Offset
+  // adaptado). Na prática, o laser corta a peça de um painel de acrílico, então
+  // a área de material é o que interessa (M2).
+  const itemCatalogoDisplay = await tx.itemCatalogo.create({
+    data: {
+      graficaId,
+      tipo: "PRODUTO",
+      categoria: "Corte a Laser",
+      nome: NOME_PRODUTO_DISPLAY_ACRILICO,
+    },
+  });
+  await tx.itemGrafica.create({
+    data: {
+      graficaId,
+      itemCatalogoId: itemCatalogoDisplay.id,
+      precoCompra: 25, // custo de folha/painel de acrílico cristal por m²
+      precoVenda: 85, // referência — o motor M2 recalcula
+      modeloCalculo: "M2",
+      custoImpressaoM2: 15, // insumo laser (gastos com tubo/lentes)
+      areaMinimaFaturavel: 0.1,
+      bobinas: {
+        create: [{ larguraNominal: 0.6, refile: 0.01 }],
+      },
+    },
+  });
+
+  // Produto Simples — luminária de corte a laser, vendida como peça pronta.
+  const itemCatalogoLuminaria = await tx.itemCatalogo.create({
+    data: {
+      graficaId,
+      tipo: "PRODUTO",
+      categoria: "Corte a Laser",
+      nome: NOME_PRODUTO_LUMINARIA_LASER,
+    },
+  });
+  await tx.itemGrafica.create({
+    data: {
+      graficaId,
+      itemCatalogoId: itemCatalogoLuminaria.id,
+      precoCompra: 12,
+      precoVenda: 45,
+      modeloCalculo: "SIMPLES",
+    },
+  });
+
+  await criarAcabamentosExemplo(tx, graficaId, [
+    {
+      nome: NOME_ACABAMENTO_POLIMENTO_LASER,
+      categoria: "Acabamento",
+      unidade: "METRO_QUADRADO",
+      precoCompra: 2.5,
+      precoVenda: 10,
+      baseCobranca: "M2",
+      estagio: "POS_REFILE",
+      custoSetup: 0,
+      custoMinimo: 15,
+    },
+    {
+      nome: NOME_ACABAMENTO_GRAVACAO_LASER,
+      categoria: "Acabamento",
+      unidade: "UNIDADE",
+      precoCompra: 1.5,
+      precoVenda: 6.0,
+      baseCobranca: "UNIDADE",
+      estagio: "POS_REFILE",
+      custoSetup: 25,
+      custoMinimo: 30,
+    },
+  ]);
+}
+
+const PACOTE_CORTE_LASER_ACRILICO: PacoteExemplo = {
+  nomeProdutoAvancado: NOME_PRODUTO_DISPLAY_ACRILICO,
+  nomeProdutoSimples: NOME_PRODUTO_LUMINARIA_LASER,
+  criarCatalogo: criarCatalogoCorteAcrilico,
+  dadosAvancado: {
+    ...DADOS_ITEM_VAZIO,
+    quantidade: 10,
+    larguraCm: 30,
+    alturaCm: 20,
+  },
+  dadosSimples: { ...DADOS_ITEM_VAZIO, quantidade: 5 },
+};
+
+// ---------------------------------------------------------------------------
+// Pacote EMBALAGEM_CARTONAGEM — caixa de papelão personalizada (M2, similar
+// a banner) + saco de papel com logotipo (SIMPLES). Máquina: não tem máquina
+// dedicada (terceiriza corte/dobra), só precisa de material (papelão, tinta).
+// ---------------------------------------------------------------------------
+
+const NOME_PRODUTO_CAIXA_PAPELAO = `${PREFIXO_EXEMPLO}Caixa de Papelão Personalizada`;
+const NOME_PRODUTO_SACO_PAPEL = `${PREFIXO_EXEMPLO}Saco de Papel com Logo`;
+const NOME_ACABAMENTO_MONTAGEM_CAIXA = `${PREFIXO_EXEMPLO}Montagem e Colagem`;
+const NOME_ACABAMENTO_IMPRESSAO_DETALHE = `${PREFIXO_EXEMPLO}Impressão Detalhe Cor`;
+
+async function criarCatalogoEmbalagemCartonagem(
+  tx: Prisma.TransactionClient,
+  graficaId: string
+): Promise<void> {
+  // Produto M2 — caixa de papelão (modelo similar a Banner: custo no precoCompra,
+  // sem máquina própria — o motor M2 tira de precoCompra do produto).
+  const itemCatalogoCaixa = await tx.itemCatalogo.create({
+    data: {
+      graficaId,
+      tipo: "PRODUTO",
+      categoria: "Embalagem",
+      nome: NOME_PRODUTO_CAIXA_PAPELAO,
+    },
+  });
+  await tx.itemGrafica.create({
+    data: {
+      graficaId,
+      itemCatalogoId: itemCatalogoCaixa.id,
+      precoCompra: 4.5, // custo de papelão/material por m²
+      precoVenda: 18, // referência — o motor M2 recalcula
+      modeloCalculo: "M2",
+      custoImpressaoM2: 3.5, // tinta offset/flexo para embalagem
+      areaMinimaFaturavel: 0.25,
+      bobinas: {
+        create: [{ larguraNominal: 1.2, refile: 0.02 }],
+      },
+    },
+  });
+
+  // Produto Simples — saco de papel com logo.
+  const itemCatalogoSaco = await tx.itemCatalogo.create({
+    data: {
+      graficaId,
+      tipo: "PRODUTO",
+      categoria: "Embalagem",
+      nome: NOME_PRODUTO_SACO_PAPEL,
+    },
+  });
+  await tx.itemGrafica.create({
+    data: {
+      graficaId,
+      itemCatalogoId: itemCatalogoSaco.id,
+      precoCompra: 0.5,
+      precoVenda: 2.2,
+      modeloCalculo: "SIMPLES",
+    },
+  });
+
+  await criarAcabamentosExemplo(tx, graficaId, [
+    {
+      nome: NOME_ACABAMENTO_MONTAGEM_CAIXA,
+      categoria: "Acabamento",
+      unidade: "UNIDADE",
+      precoCompra: 0.4,
+      precoVenda: 2.0,
+      baseCobranca: "UNIDADE",
+      estagio: "POS_REFILE",
+      custoSetup: 10,
+      custoMinimo: 20,
+    },
+    {
+      nome: NOME_ACABAMENTO_IMPRESSAO_DETALHE,
+      categoria: "Acabamento",
+      unidade: "METRO_QUADRADO",
+      precoCompra: 1.2,
+      precoVenda: 5.0,
+      baseCobranca: "M2",
+      estagio: "PRE_REFILE",
+      custoSetup: 0,
+      custoMinimo: 15,
+    },
+  ]);
+}
+
+const PACOTE_EMBALAGEM_CARTONAGEM: PacoteExemplo = {
+  nomeProdutoAvancado: NOME_PRODUTO_CAIXA_PAPELAO,
+  nomeProdutoSimples: NOME_PRODUTO_SACO_PAPEL,
+  criarCatalogo: criarCatalogoEmbalagemCartonagem,
+  dadosAvancado: {
+    ...DADOS_ITEM_VAZIO,
+    quantidade: 1000,
+    larguraCm: 40,
+    alturaCm: 30,
+  },
+  dadosSimples: { ...DADOS_ITEM_VAZIO, quantidade: 5000 },
+};
+
+// ---------------------------------------------------------------------------
 // Helpers compartilhados por todos os pacotes
 // ---------------------------------------------------------------------------
 
@@ -536,13 +836,17 @@ async function criarAcabamentosExemplo(
 
 // Mapeia o segmento da gráfica pro pacote dedicado — só os segmentos com
 // motor de cálculo claramente diferente do padrão ganharam pacote próprio
-// até agora; os demais (ROTULOS_ETIQUETAS, OFFSET_COMERCIAL,
-// BRINDES_PERSONALIZADOS, EMBALAGEM_CARTONAGEM, EDITORIAL_LIVRO,
-// CORTE_LASER_ACRILICO, GRAFICA_RAPIDA, OUTRO) caem no PACOTE_PADRAO — é
-// razoavelmente representativo pra todos eles (motor Offset + Simples).
+// até agora; os demais (ROTULOS_ETIQUETAS, OFFSET_COMERCIAL, EDITORIAL_LIVRO,
+// GRAFICA_RAPIDA, OUTRO) caem no PACOTE_PADRAO — é razoavelmente
+// representativo pra todos eles (motor Offset + Simples). Achado E4 (Parte 7):
+// adicionados BRINDES_PERSONALIZADOS, CORTE_LASER_ACRILICO,
+// EMBALAGEM_CARTONAGEM com pacotes dedicados.
 const PACOTES_POR_SEGMENTO: Partial<Record<SegmentoGrafica, PacoteExemplo>> = {
   COMUNICACAO_VISUAL: PACOTE_COMUNICACAO_VISUAL,
   ESTAMPARIA_VESTUARIO: PACOTE_ESTAMPARIA_VESTUARIO,
+  BRINDES_PERSONALIZADOS: PACOTE_BRINDES_PERSONALIZADOS,
+  CORTE_LASER_ACRILICO: PACOTE_CORTE_LASER_ACRILICO,
+  EMBALAGEM_CARTONAGEM: PACOTE_EMBALAGEM_CARTONAGEM,
 };
 
 async function resolverPacote(graficaId: string): Promise<PacoteExemplo> {

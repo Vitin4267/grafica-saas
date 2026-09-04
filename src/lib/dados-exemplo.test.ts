@@ -146,6 +146,89 @@ describe("carregarDadosExemplo — escolha de pacote por segmento", () => {
     },
     TIMEOUT_MS
   );
+
+  it(
+    "segmento BRINDES_PERSONALIZADOS carrega o pacote de caneta e chaveiro (SIMPLES)",
+    async () => {
+      const grafica = await criarGrafica("Teste Exemplo Brindes", "BRINDES_PERSONALIZADOS");
+
+      const resultado = await carregarDadosExemplo(grafica.id);
+      expect(resultado.ok).toBe(true);
+
+      const produtoCaneta = await prisma.itemCatalogo.findFirst({
+        where: { graficaId: grafica.id, nome: `${PREFIXO_EXEMPLO}Caneta Azul Personalizada` },
+      });
+      expect(produtoCaneta).not.toBeNull();
+
+      const itemCaneta = await prisma.itemGrafica.findFirst({
+        where: { graficaId: grafica.id, itemCatalogoId: produtoCaneta!.id },
+      });
+      expect(itemCaneta?.modeloCalculo).toBe("SIMPLES");
+
+      const produtoChaveiro = await prisma.itemCatalogo.findFirst({
+        where: { graficaId: grafica.id, nome: `${PREFIXO_EXEMPLO}Chaveiro Acrílico Gravado` },
+      });
+      expect(produtoChaveiro).not.toBeNull();
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "segmento CORTE_LASER_ACRILICO carrega o pacote de display (M2, com máquina laser)",
+    async () => {
+      const grafica = await criarGrafica("Teste Exemplo Laser", "CORTE_LASER_ACRILICO");
+
+      const resultado = await carregarDadosExemplo(grafica.id);
+      expect(resultado.ok).toBe(true);
+
+      const produtoDisplay = await prisma.itemCatalogo.findFirst({
+        where: { graficaId: grafica.id, nome: `${PREFIXO_EXEMPLO}Display em Acrílico Cristal` },
+      });
+      expect(produtoDisplay).not.toBeNull();
+
+      const itemDisplay = await prisma.itemGrafica.findFirst({
+        where: { graficaId: grafica.id, itemCatalogoId: produtoDisplay!.id },
+        include: { bobinas: true },
+      });
+      expect(itemDisplay?.modeloCalculo).toBe("M2");
+      expect(itemDisplay?.bobinas.length).toBeGreaterThan(0);
+
+      const maquinaLaser = await prisma.prensa.findFirst({
+        where: { graficaId: grafica.id, nome: `${PREFIXO_EXEMPLO}Cortadora Laser CO2` },
+      });
+      expect(maquinaLaser).not.toBeNull();
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "segmento EMBALAGEM_CARTONAGEM carrega o pacote de caixa (M2, sem máquina própria)",
+    async () => {
+      const grafica = await criarGrafica("Teste Exemplo Embalagem", "EMBALAGEM_CARTONAGEM");
+
+      const resultado = await carregarDadosExemplo(grafica.id);
+      expect(resultado.ok).toBe(true);
+
+      const produtoCaixa = await prisma.itemCatalogo.findFirst({
+        where: { graficaId: grafica.id, nome: `${PREFIXO_EXEMPLO}Caixa de Papelão Personalizada` },
+      });
+      expect(produtoCaixa).not.toBeNull();
+
+      const itemCaixa = await prisma.itemGrafica.findFirst({
+        where: { graficaId: grafica.id, itemCatalogoId: produtoCaixa!.id },
+        include: { bobinas: true },
+      });
+      expect(itemCaixa?.modeloCalculo).toBe("M2");
+      expect(itemCaixa?.prensaId).toBeNull();
+      expect(itemCaixa?.bobinas.length).toBeGreaterThan(0);
+
+      const produtoSaco = await prisma.itemCatalogo.findFirst({
+        where: { graficaId: grafica.id, nome: `${PREFIXO_EXEMPLO}Saco de Papel com Logo` },
+      });
+      expect(produtoSaco).not.toBeNull();
+    },
+    TIMEOUT_MS
+  );
 });
 
 // Cobre o achado F9 da Parte 7 da auditoria de abrangência (2026-08-31):
@@ -348,6 +431,121 @@ describe("gerarOrcamentoExemplo — motor de preço roda sem erro pra cada pacot
       if (resultado.ok) {
         const orcamento = await prisma.orcamento.findUnique({ where: { id: resultado.orcamentoId } });
         expect(Number(orcamento?.total)).toBeGreaterThan(0);
+      }
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "pacote BRINDES_PERSONALIZADOS (SIMPLES) carrega e gera orçamento com total > 0",
+    async () => {
+      const grafica = await criarGrafica("Teste Orcamento Brindes", "BRINDES_PERSONALIZADOS");
+      const usuario = await prisma.usuario.create({
+        data: {
+          graficaId: grafica.id,
+          nome: "Dono Teste",
+          email: `dono-${sufixo()}@teste.com`,
+          senhaHash: "hash",
+          papel: "DONO",
+        },
+      });
+
+      const resultado = await carregarDadosExemplo(grafica.id);
+      expect(resultado.ok).toBe(true);
+
+      const produtoCaneta = await prisma.itemCatalogo.findFirst({
+        where: { graficaId: grafica.id, nome: `${PREFIXO_EXEMPLO}Caneta Azul Personalizada` },
+      });
+      expect(produtoCaneta).not.toBeNull();
+
+      const itemCaneta = await prisma.itemGrafica.findFirst({
+        where: { graficaId: grafica.id, itemCatalogoId: produtoCaneta!.id },
+      });
+      expect(itemCaneta?.modeloCalculo).toBe("SIMPLES");
+
+      const orcamento = await gerarOrcamentoExemplo(grafica.id, usuario.id);
+      expect(orcamento.ok).toBe(true);
+      if (orcamento.ok) {
+        const orcamentoDb = await prisma.orcamento.findUnique({ where: { id: orcamento.orcamentoId } });
+        expect(Number(orcamentoDb?.total)).toBeGreaterThan(0);
+      }
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "pacote CORTE_LASER_ACRILICO (M2) carrega e gera orçamento com total > 0",
+    async () => {
+      const grafica = await criarGrafica("Teste Orcamento Laser", "CORTE_LASER_ACRILICO");
+      const usuario = await prisma.usuario.create({
+        data: {
+          graficaId: grafica.id,
+          nome: "Dono Teste",
+          email: `dono-${sufixo()}@teste.com`,
+          senhaHash: "hash",
+          papel: "DONO",
+        },
+      });
+
+      const resultado = await carregarDadosExemplo(grafica.id);
+      expect(resultado.ok).toBe(true);
+
+      const produtoDisplay = await prisma.itemCatalogo.findFirst({
+        where: { graficaId: grafica.id, nome: `${PREFIXO_EXEMPLO}Display em Acrílico Cristal` },
+      });
+      expect(produtoDisplay).not.toBeNull();
+
+      const itemDisplay = await prisma.itemGrafica.findFirst({
+        where: { graficaId: grafica.id, itemCatalogoId: produtoDisplay!.id },
+        include: { bobinas: true },
+      });
+      expect(itemDisplay?.modeloCalculo).toBe("M2");
+      expect(itemDisplay?.bobinas.length).toBeGreaterThan(0);
+
+      const orcamento = await gerarOrcamentoExemplo(grafica.id, usuario.id);
+      expect(orcamento.ok).toBe(true);
+      if (orcamento.ok) {
+        const orcamentoDb = await prisma.orcamento.findUnique({ where: { id: orcamento.orcamentoId } });
+        expect(Number(orcamentoDb?.total)).toBeGreaterThan(0);
+      }
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "pacote EMBALAGEM_CARTONAGEM (M2) carrega e gera orçamento com total > 0",
+    async () => {
+      const grafica = await criarGrafica("Teste Orcamento Embalagem", "EMBALAGEM_CARTONAGEM");
+      const usuario = await prisma.usuario.create({
+        data: {
+          graficaId: grafica.id,
+          nome: "Dono Teste",
+          email: `dono-${sufixo()}@teste.com`,
+          senhaHash: "hash",
+          papel: "DONO",
+        },
+      });
+
+      const resultado = await carregarDadosExemplo(grafica.id);
+      expect(resultado.ok).toBe(true);
+
+      const produtoCaixa = await prisma.itemCatalogo.findFirst({
+        where: { graficaId: grafica.id, nome: `${PREFIXO_EXEMPLO}Caixa de Papelão Personalizada` },
+      });
+      expect(produtoCaixa).not.toBeNull();
+
+      const itemCaixa = await prisma.itemGrafica.findFirst({
+        where: { graficaId: grafica.id, itemCatalogoId: produtoCaixa!.id },
+        include: { bobinas: true },
+      });
+      expect(itemCaixa?.modeloCalculo).toBe("M2");
+      expect(itemCaixa?.bobinas.length).toBeGreaterThan(0);
+
+      const orcamento = await gerarOrcamentoExemplo(grafica.id, usuario.id);
+      expect(orcamento.ok).toBe(true);
+      if (orcamento.ok) {
+        const orcamentoDb = await prisma.orcamento.findUnique({ where: { id: orcamento.orcamentoId } });
+        expect(Number(orcamentoDb?.total)).toBeGreaterThan(0);
       }
     },
     TIMEOUT_MS
