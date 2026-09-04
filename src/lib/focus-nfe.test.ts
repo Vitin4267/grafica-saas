@@ -4,11 +4,12 @@ import {
   normalizarDocumentoDestinatario,
   normalizarCnpjEmitente,
   mapearIndicadorInscricaoEstadual,
+  mapearOrigemMercadoria,
   montarCamposIeDestinatario,
   resolverNomeDestinatario,
   type ItemNfe,
 } from "./focus-nfe";
-import type { IndicadorInscricaoEstadual } from "@/generated/prisma/enums";
+import type { IndicadorInscricaoEstadual, OrigemMercadoria } from "@/generated/prisma/enums";
 
 const itemBase: ItemNfe = {
   numeroItem: 1,
@@ -33,6 +34,49 @@ describe("mapearItemNfePayload", () => {
     expect(payload).not.toHaveProperty("icms_base_calculo");
     expect(payload).not.toHaveProperty("icms_aliquota");
     expect(payload).not.toHaveProperty("icms_valor");
+  });
+
+  // Achado N6 da auditoria de abrangência (Parte 7, 2026-09-03):
+  // mapearItemNfePayload mandava icms_origem: "0" fixo pra todo item, de
+  // toda gráfica — sem campo nenhum de origem no catálogo. Regressão zero:
+  // item sem origem configurada continua caindo em "0" (nacional).
+  it("item sem origemMercadoria configurada (undefined): icms_origem cai em '0' — regressão zero", () => {
+    const payload = mapearItemNfePayload(itemBase);
+    expect(payload.icms_origem).toBe("0");
+  });
+
+  it("item com origemMercadoria null: icms_origem cai em '0'", () => {
+    const payload = mapearItemNfePayload({ ...itemBase, origemMercadoria: null });
+    expect(payload.icms_origem).toBe("0");
+  });
+
+  it("item com origemMercadoria NACIONAL_0: icms_origem '0'", () => {
+    const payload = mapearItemNfePayload({ ...itemBase, origemMercadoria: "NACIONAL_0" });
+    expect(payload.icms_origem).toBe("0");
+  });
+
+  it("item com origemMercadoria de brinde importado (ESTRANGEIRA_IMPORTACAO_DIRETA_1): icms_origem '1'", () => {
+    const payload = mapearItemNfePayload({
+      ...itemBase,
+      origemMercadoria: "ESTRANGEIRA_IMPORTACAO_DIRETA_1",
+    });
+    expect(payload.icms_origem).toBe("1");
+  });
+
+  it("item com origemMercadoria estrangeira adquirida no mercado interno (ex: ACM importado comprado de distribuidor nacional): icms_origem '2'", () => {
+    const payload = mapearItemNfePayload({
+      ...itemBase,
+      origemMercadoria: "ESTRANGEIRA_MERCADO_INTERNO_2",
+    });
+    expect(payload.icms_origem).toBe("2");
+  });
+
+  it("item com conteúdo de importação acima de 70% (NACIONAL_CONTEUDO_IMPORTACAO_ACIMA_70_8): icms_origem '8'", () => {
+    const payload = mapearItemNfePayload({
+      ...itemBase,
+      origemMercadoria: "NACIONAL_CONTEUDO_IMPORTACAO_ACIMA_70_8",
+    });
+    expect(payload.icms_origem).toBe("8");
   });
 
   it("Simples Nacional: PIS/COFINS caem no default '07' preservando o comportamento atual", () => {
@@ -163,6 +207,34 @@ describe("mapearIndicadorInscricaoEstadual", () => {
 
   it("null (cliente antigo, sem indicador cadastrado) retorna undefined", () => {
     expect(mapearIndicadorInscricaoEstadual(null)).toBeUndefined();
+  });
+});
+
+// Achado N6 da auditoria de abrangência (2026-09-03): os 9 códigos da
+// Tabela B do CST/ICMS (Convênio S/N 70/2012).
+describe("mapearOrigemMercadoria", () => {
+  const casos: [OrigemMercadoria, string][] = [
+    ["NACIONAL_0", "0"],
+    ["ESTRANGEIRA_IMPORTACAO_DIRETA_1", "1"],
+    ["ESTRANGEIRA_MERCADO_INTERNO_2", "2"],
+    ["NACIONAL_CONTEUDO_IMPORTACAO_40_A_70_3", "3"],
+    ["NACIONAL_PROCESSO_PRODUTIVO_BASICO_4", "4"],
+    ["NACIONAL_CONTEUDO_IMPORTACAO_ATE_40_5", "5"],
+    ["ESTRANGEIRA_IMPORTACAO_DIRETA_SEM_SIMILAR_6", "6"],
+    ["ESTRANGEIRA_MERCADO_INTERNO_SEM_SIMILAR_7", "7"],
+    ["NACIONAL_CONTEUDO_IMPORTACAO_ACIMA_70_8", "8"],
+  ];
+
+  it.each(casos)("%s mapeia pro código %s", (origem, codigo) => {
+    expect(mapearOrigemMercadoria(origem)).toBe(codigo);
+  });
+
+  it("null (item sem origem configurada) retorna '0' — mesmo comportamento fixo de sempre", () => {
+    expect(mapearOrigemMercadoria(null)).toBe("0");
+  });
+
+  it("undefined (campo nem passado) retorna '0'", () => {
+    expect(mapearOrigemMercadoria(undefined)).toBe("0");
   });
 });
 

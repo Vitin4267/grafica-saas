@@ -27,6 +27,11 @@ export type ItemOrigemParaRecalculo = {
   metrosCorte: Decimalish | null;
   horasEstimadas: Decimalish | null;
   custoAquisicaoUnitario: Decimalish | null;
+  // Achado N10 — coluna direta em OrcamentoItem (fora do M2 com clichê de
+  // etiqueta, que usa precificacaoEtiqueta.custoFaca abaixo). Hoje só
+  // preenchida por itens OFFSET — ver comentário em OrcamentoItem.custoFaca
+  // no schema.
+  custoFaca: Decimalish | null;
   materialFornecidoPeloCliente: boolean;
   acabamentos: { itemGraficaId: string }[];
   precificacaoEtiqueta: {
@@ -73,8 +78,15 @@ export function montarDadosItemParaRecalculo(
     acabamentoIds: item.acabamentos.map((a) => a.itemGraficaId),
     papelId: item.precificacaoEtiqueta?.papelId ?? null,
     quantidadeCores: item.precificacaoEtiqueta?.quantidadeCores ?? null,
+    // Achado N10 — precificacaoEtiqueta.custoFaca continua a fonte de
+    // verdade pra M2 com clichê (comportamento de sempre); item.custoFaca
+    // (coluna direta, hoje só OFFSET) é o fallback pra todo o resto.
     custoFaca:
-      item.precificacaoEtiqueta?.custoFaca != null ? Number(item.precificacaoEtiqueta.custoFaca) : null,
+      item.precificacaoEtiqueta?.custoFaca != null
+        ? Number(item.precificacaoEtiqueta.custoFaca)
+        : item.custoFaca != null
+          ? Number(item.custoFaca)
+          : null,
     custoFrete:
       item.precificacaoEtiqueta?.custoFrete != null ? Number(item.precificacaoEtiqueta.custoFrete) : null,
     margemLucroOverride,

@@ -319,6 +319,31 @@ export function EditarOrcamentoForm({
                 </div>
               )}
 
+              {/* Achado N10 da auditoria de abrangência — custo de
+                  ferramental (faca de corte-e-vinco) R$ livre, opcional, por
+                  item — mesmo campo/name "custoFaca" que o bloco de
+                  precificação de etiqueta usa mais abaixo (usaClicheEtiqueta
+                  é exclusivo de M2, nunca renderiza ao mesmo tempo que este
+                  bloco de OFFSET, então não há dois inputs com o mesmo name
+                  no ar). O motor de preço já lê esse valor pra qualquer
+                  modelo (ver precificar.ts); só faltava o campo aqui. */}
+              {modeloCalculo === "OFFSET" && (
+                <Input
+                  label={
+                    <>
+                      Custo de ferramental (R$)
+                      <CampoAjuda texto="Custo da faca de corte e vinco (o molde usado pra recortar/vincar embalagem, caixa, cartão). É um ferramental que se paga uma vez só, mas normalmente é cobrado dentro do primeiro pedido que usa esse formato." />
+                    </>
+                  }
+                  name="custoFaca"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  defaultValue={valoresIniciais.custoFaca}
+                  placeholder="opcional"
+                />
+              )}
+
               {modeloCalculo === "FLEXOGRAFIA" && (
                 <Input
                   label={

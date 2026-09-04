@@ -15,6 +15,7 @@ import { ArrowLeftIcon } from "@/components/icons";
 import { formatoMoeda } from "@/lib/moeda";
 import { formatoInstanteRealComHora } from "@/lib/data";
 import { FornecedorForm } from "./FornecedorForm";
+import { ENDERECO_VAZIO } from "@/app/clientes/EnderecoFields";
 
 const LIMITE_COMPRAS_RECENTES = 10;
 
@@ -85,6 +86,16 @@ export default async function FornecedorDetalhePage({
           nome={fornecedor.nome}
           contato={fornecedor.contato ?? ""}
           ativo={fornecedor.ativo}
+          documento={fornecedor.documento ?? ""}
+          endereco={{
+            ...ENDERECO_VAZIO,
+            cep: fornecedor.enderecoCep ?? "",
+            logradouro: fornecedor.enderecoLogradouro ?? "",
+            numero: fornecedor.enderecoNumero ?? "",
+            bairro: fornecedor.enderecoBairro ?? "",
+            municipio: fornecedor.enderecoMunicipio ?? "",
+            uf: fornecedor.enderecoUf ?? "",
+          }}
         />
 
         <Card className="mt-6 flex flex-col gap-1 p-6">

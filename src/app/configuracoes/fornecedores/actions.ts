@@ -62,8 +62,21 @@ export async function criarFornecedor(
   redirect(`/configuracoes/fornecedores/${novoFornecedor.id}`);
 }
 
-// Edita nome/contato de um fornecedor já existente — nunca mexe em `ativo`,
-// ver alternarAtivoFornecedor pra isso.
+// Achado R3 da auditoria de abrangência (rodada 20, 2026-09-03) — campos
+// opcionais de documento/endereço, necessários pra usar este fornecedor
+// como destinatário de uma NF-e de remessa de terceirização (ver
+// fornecedorProntoParaNfe em src/lib/nota-fiscal.ts). Lidos aqui com o
+// mesmo helper "presente e vazio = limpar" que o resto do formulário usa
+// implicitamente (string vazia -> null), nunca "ausente = não mexer" (este
+// formulário sempre reenvia todos os campos, diferente de uma transição
+// parcial).
+function campoTextoOuNull(formData: FormData, nome: string): string | null {
+  const valor = String(formData.get(nome) ?? "").trim();
+  return valor || null;
+}
+
+// Edita nome/contato/dados fiscais de um fornecedor já existente — nunca
+// mexe em `ativo`, ver alternarAtivoFornecedor pra isso.
 export async function editarFornecedor(
   _estadoAnterior: SalvarFornecedorResult | null,
   formData: FormData
@@ -88,11 +101,28 @@ export async function editarFornecedor(
     return { ok: false, mensagem: MENSAGEM_NOME_VAZIO };
   }
   const contato = String(formData.get("contato") ?? "").trim();
+  const documento = campoTextoOuNull(formData, "documento");
+  const enderecoLogradouro = campoTextoOuNull(formData, "enderecoLogradouro");
+  const enderecoNumero = campoTextoOuNull(formData, "enderecoNumero");
+  const enderecoBairro = campoTextoOuNull(formData, "enderecoBairro");
+  const enderecoMunicipio = campoTextoOuNull(formData, "enderecoMunicipio");
+  const enderecoUf = campoTextoOuNull(formData, "enderecoUf")?.toUpperCase().slice(0, 2) ?? null;
+  const enderecoCep = campoTextoOuNull(formData, "enderecoCep");
 
   try {
     await prisma.fornecedor.update({
       where: { id: fornecedorId },
-      data: { nome, contato: contato || null },
+      data: {
+        nome,
+        contato: contato || null,
+        documento,
+        enderecoLogradouro,
+        enderecoNumero,
+        enderecoBairro,
+        enderecoMunicipio,
+        enderecoUf,
+        enderecoCep,
+      },
     });
   } catch (erro) {
     if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2002") {

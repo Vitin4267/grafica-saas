@@ -414,6 +414,37 @@ export function SeletorItemOrcamento({
               </div>
             )}
 
+            {/* Achado N10 da auditoria de abrangência — custo de ferramental
+                (faca de corte-e-vinco, matriz...) R$ livre, opcional, por
+                item — embalagem/cartonagem impressa em offset costuma pagar
+                essa faca no primeiro pedido de um formato novo. Reaproveita
+                o mesmo estado de precificacaoEtiqueta.custoFaca (não é
+                exclusivo de etiqueta — ver CamposPrecificacaoEtiquetaOrcamento.tsx
+                e OrcamentoItem.custoFaca no schema), então nenhum campo novo
+                nem mudança na action é necessária: o motor de preço já lê
+                esse valor pra qualquer modelo (ver precificar.ts). */}
+            {usaModeloOffset && (
+              <Input
+                label={
+                  <>
+                    Custo de ferramental (R$)
+                    <CampoAjuda texto="Custo da faca de corte e vinco (o molde usado pra recortar/vincar embalagem, caixa, cartão). É um ferramental que se paga uma vez só, mas normalmente é cobrado dentro do primeiro pedido que usa esse formato." />
+                  </>
+                }
+                type="number"
+                min={0}
+                step="0.01"
+                value={valores.precificacaoEtiqueta.custoFaca}
+                onChange={(e) =>
+                  onChange({
+                    ...valores,
+                    precificacaoEtiqueta: { ...valores.precificacaoEtiqueta, custoFaca: e.target.value },
+                  })
+                }
+                placeholder="opcional"
+              />
+            )}
+
             {usaModeloFlexografia && (
               <Input
                 label={

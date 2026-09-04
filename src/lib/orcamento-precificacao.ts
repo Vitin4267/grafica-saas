@@ -136,6 +136,14 @@ export type ResultadoItemOrcamento =
       metrosCorte: number | null;
       horasEstimadas: number | null;
       custoAquisicaoUnitario: number | null;
+      // Achado N10 — ecoa o valor REALMENTE usado no cálculo
+      // (contexto.custoFaca), mesmo padrão de custoAquisicaoUnitario acima.
+      // Só populado pra OFFSET por enquanto (escopo do achado): os outros
+      // modelos avançados já leem contexto.custoFaca no motor (ver
+      // precificar.ts), mas ainda não têm UI/coluna própria — null aqui não
+      // significa "não suportado pelo motor", só "não persistido ainda"
+      // (ver OrcamentoItem.custoFaca no schema).
+      custoFaca: number | null;
       materialFornecidoPeloCliente: boolean;
       breakdown: Prisma.InputJsonValue | null;
       acabamentos: AcabamentoParaGravar[];
@@ -323,6 +331,7 @@ export async function calcularItemOrcamento(
       metrosCorte: null,
       horasEstimadas: null,
       custoAquisicaoUnitario: null,
+      custoFaca: null,
       materialFornecidoPeloCliente: false,
       breakdown: null,
       acabamentos: [],
@@ -610,6 +619,14 @@ export async function calcularItemOrcamento(
       // acima, nunca dados.custoAquisicaoUnitario cru.
       custoAquisicaoUnitario:
         itemGrafica.modeloCalculo === "REVENDA" ? contexto.revenda!.custoAquisicaoUnitario : null,
+      // Achado N10 — ecoa o valor REALMENTE usado no cálculo
+      // (contexto.custoFaca, já mutado logo acima a partir de
+      // dados.custoFaca quando informado), mesmo padrão de
+      // custoAquisicaoUnitario acima. Model-gated pra OFFSET só porque é o
+      // escopo deste achado — OrcamentoItem.custoFaca no schema não tem
+      // esse gate, então estender pra outro modelo no futuro não precisa de
+      // migration nova, só soltar esta condição.
+      custoFaca: itemGrafica.modeloCalculo === "OFFSET" ? (contexto.custoFaca ?? null) : null,
       // Ecoa o valor de entrada como veio — não há fallback/resolução
       // nenhuma pra este campo (diferente de custoAquisicaoUnitario acima),
       // é usado direto pra decidir se zera o substrato.

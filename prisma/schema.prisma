@@ -2161,6 +2161,32 @@ enum EstagioAcabamento {
   POS_REFILE
 }
 
+// Código de origem da mercadoria (Tabela B do CST/ICMS, Convênio S/N 70/2012)
+// exigido em TODO item de NF-e — achado N6 da auditoria de abrangência
+// (Parte 7, 2026-09-03): mapearItemNfePayload em src/lib/focus-nfe.ts mandava
+// icms_origem: "0" (nacional) fixo pra todo item, de toda gráfica, sem
+// nenhum campo pra configurar diferente. Gráfica de brindes que revende
+// produto importado (ModeloCalculo.REVENDA), comunicação visual com
+// ACM/acrílico importado, DTF com filme importado — todas emitiam NF-e
+// declarando origem nacional errada (afeta ICMS interestadual da Resolução
+// SF 13/2012 e a FCI). Sufixo numérico no nome de cada valor evita ambiguidade
+// entre os 5 códigos "Nacional" (0/3/4/5/8) e os 4 "Estrangeira" (1/2/6/7) —
+// ver mapearOrigemMercadoria em src/lib/focus-nfe.ts pro código exato
+// enviado à Focus NFe. @default(NACIONAL_0) preserva o comportamento atual
+// pra todo item já cadastrado e todo item novo, até a gráfica configurar
+// diferente.
+enum OrigemMercadoria {
+  NACIONAL_0 // Nacional, exceto os códigos 3, 4, 5 e 8
+  ESTRANGEIRA_IMPORTACAO_DIRETA_1
+  ESTRANGEIRA_MERCADO_INTERNO_2 // adquirida no mercado interno
+  NACIONAL_CONTEUDO_IMPORTACAO_40_A_70_3 // conteúdo de importação > 40% e ≤ 70%
+  NACIONAL_PROCESSO_PRODUTIVO_BASICO_4
+  NACIONAL_CONTEUDO_IMPORTACAO_ATE_40_5 // conteúdo de importação ≤ 40%
+  ESTRANGEIRA_IMPORTACAO_DIRETA_SEM_SIMILAR_6 // sem produto nacional similar
+  ESTRANGEIRA_MERCADO_INTERNO_SEM_SIMILAR_7 // adquirida no mercado interno, sem produto nacional similar
+  NACIONAL_CONTEUDO_IMPORTACAO_ACIMA_70_8 // conteúdo de importação > 70%
+}
+
 // Catálogo: base é mestre e compartilhada entre todas as gráficas (graficaId=null,
 // só criada via seed). Cada gráfica pode complementar com itens próprios que faltem
 // (graficaId preenchido, criados pelo botão "Adicionar" em /catalogo) — esses ficam
@@ -2178,6 +2204,11 @@ model ItemCatalogo {
   unidade      UnidadeMedida?
   unidadeOutro String? // só usado quando unidade = OUTRO
   ncm          String? // classificação fiscal (NF-e) — nullable, só exigido no momento de emitir nota
+  // Código de origem da mercadoria (Tabela B do CST/ICMS) — achado N6 da
+  // auditoria de abrangência. @default(NACIONAL_0) preserva o comportamento
+  // de sempre (icms_origem "0" fixo) pra todo item existente e todo item
+  // novo até a gráfica configurar diferente. Ver enum OrigemMercadoria acima.
+  origemMercadoria OrigemMercadoria @default(NACIONAL_0)
   createdAt    DateTime         @default(now())
 
   grafica      Grafica?      @relation(fields: [graficaId], references: [id], onDelete: Cascade)
@@ -2722,6 +2753,24 @@ model Fornecedor {
   contato   String? // telefone/e-mail/observação livre
   ativo     Boolean  @default(true)
   createdAt DateTime @default(now())
+
+  // Achado R3 da auditoria de abrangência (Parte 2/Produção, rodada 20,
+  // 2026-09-03) — CNPJ/CPF + endereço, necessários pra usar este fornecedor
+  // como DESTINATÁRIO de uma NF-e de remessa pra industrialização emitida
+  // direto do sistema (ver emitirNfeRemessaTerceirizacao em
+  // src/app/producao/terceirizacao-nfe-actions.ts e
+  // fornecedorProntoParaNfe em src/lib/nota-fiscal.ts). Todos opcionais: um
+  // Fornecedor cadastrado sem esses dados continua funcionando normalmente
+  // em SolicitacaoCompra/EtapaTerceirizada (comportamento de sempre) — só
+  // fica de fora do botão de emissão automática até alguém completar o
+  // cadastro (a terceirização em si nunca é bloqueada, só a emissão).
+  documento          String? // CNPJ (14) ou CPF (11), decidido pelo comprimento na emissão — mesmo critério de normalizarDocumentoDestinatario
+  enderecoLogradouro String?
+  enderecoNumero     String?
+  enderecoBairro     String?
+  enderecoMunicipio  String?
+  enderecoUf         String?
+  enderecoCep        String?
 
   grafica            Grafica               @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   movimentacoes      MovimentacaoEstoque[]
@@ -4036,6 +4085,18 @@ model OrcamentoItem {
   // arte). Independente de modeloCalculo, ao contrário de numeroSetups
   // acima: acabamento por hora pode ser anexado a qualquer motor.
   horasEstimadas               Decimal?      @db.Decimal(8, 2)
+  // Achado N10 da auditoria de abrangência (2026-09-03) — custo de
+  // ferramental (faca de corte-e-vinco, matriz...) R$ livre, POR ITEM,
+  // pro motor avançado FORA do M2 com clichê de etiqueta: aquele caso já
+  // tem seu próprio snapshot em OrcamentoItemPrecificacaoEtiqueta.custoFaca
+  // (não duplicado aqui — quando o item tem essa linha, ela é a fonte de
+  // verdade, este campo fica null). ContextoPrecificacao.custoFaca (motor
+  // de preço, ver src/lib/pricing/precificar.ts) já era lido por TODOS os
+  // branches menos OFFSET antes desta correção — hoje só OFFSET grava
+  // aqui (embalagem/cartonagem que paga faca de corte-e-vinco); nenhum
+  // gate de banco impede outro modelo avançado gravar aqui no futuro sem
+  // migration nova.
+  custoFaca                    Decimal?      @db.Decimal(12, 4)
   // Override opcional, POR ORÇAMENTO, do custo de aquisição do fornecedor —
   // modeloCalculo=REVENDA only (achado A12). O preço de um brinde muda por
   // cotação/faixa de quantidade a cada orçamento; quando null, o motor cai no
@@ -4699,9 +4760,39 @@ model EtapaTerceirizada {
   valorFinal    Decimal? @db.Decimal(10, 2)
 
   // CFOP 5901/6901 (remessa) e 5902/6902 (retorno) — só o Nº da nota, mesmo
-  // papel informativo de SolicitacaoCompra.documento.
+  // papel informativo de SolicitacaoCompra.documento. Continuam existindo
+  // INTACTOS depois do achado R3 abaixo — quem prefere digitar o número de
+  // uma nota emitida fora do sistema (ou não tem Focus NFe configurado)
+  // nunca perde esse caminho.
   notaRemessa String?
   notaRetorno String?
+
+  // Achado R3 da auditoria de abrangência (Parte 2/Produção, rodada 20,
+  // 2026-09-03) — resultado ESTRUTURADO da emissão da NF-e de REMESSA (CFOP
+  // 5901/6901, ver resolverCfopTerceirizacao em src/lib/nota-fiscal.ts)
+  // quando emitida direto do sistema via Focus NFe, em vez de só o número
+  // digitado em notaRemessa acima. Campos FLAT aqui (não um relacionamento
+  // pra NotaFiscal) porque NotaFiscal é 1:1 com Orcamento
+  // (orcamentoId String @unique NOT NULL, ver model abaixo) e não existe
+  // Orcamento nenhum pra uma remessa de terceirização — reaproveitar aquele
+  // model exigiria tornar orcamentoId opcional/reestruturar, fora do escopo
+  // deste achado (ver resumo da rodada 20/R3).
+  //
+  // Só a REMESSA tem emissão real pelo sistema. O RETORNO (CFOP 5902/6902)
+  // é, pela tabela CFOP oficial, uma SAÍDA do ESTABELECIMENTO TERCEIRIZADO
+  // (quem devolve a mercadoria já industrializada) — nunca da gráfica, que
+  // só o RECEBE de volta (entrada 1902/2902 do lado dela). Como este
+  // sistema só tem acesso à conta Focus NFe da PRÓPRIA gráfica (nunca a do
+  // terceiro), não há como emitir essa nota por aqui — notaRetorno continua
+  // sendo só o número digitado da nota que veio do terceiro junto com a
+  // mercadoria, comportamento inalterado.
+  remessaNfeStatus       StatusNotaFiscal?
+  remessaNfeNumero       String?
+  remessaNfeSerie        String?
+  remessaNfeChaveAcesso  String?
+  remessaNfeXmlUrl       String?
+  remessaNfeDanfeUrl     String?
+  remessaNfeMensagemErro String?           @db.Text
 
   // Preenchido quando situacao=PROBLEMA — mesmo princípio de
   // Entrega.observacoes (a tela exige preenchido antes de mandar pra

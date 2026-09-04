@@ -797,6 +797,7 @@ export async function editarOrcamento(
             metrosCorte: resultado.metrosCorte,
             horasEstimadas: resultado.horasEstimadas,
             custoAquisicaoUnitario: resultado.custoAquisicaoUnitario,
+            custoFaca: resultado.custoFaca,
             materialFornecidoPeloCliente: resultado.materialFornecidoPeloCliente,
             breakdown: resultado.breakdown ?? undefined,
           },
@@ -1751,6 +1752,7 @@ export async function adicionarItemOrcamento(
             metrosCorte: resultado.metrosCorte,
             horasEstimadas: resultado.horasEstimadas,
             custoAquisicaoUnitario: resultado.custoAquisicaoUnitario,
+            custoFaca: resultado.custoFaca,
             materialFornecidoPeloCliente: resultado.materialFornecidoPeloCliente,
             breakdown: resultado.breakdown ?? undefined,
             etiqueta:
@@ -2406,6 +2408,9 @@ export async function duplicarOrcamento(
     metrosCorte: number | null;
     horasEstimadas: number | null;
     custoAquisicaoUnitario: number | null;
+    // Achado N10 — ver comentário em ResultadoItemOrcamento.custoFaca
+    // (src/lib/orcamento-precificacao.ts).
+    custoFaca: number | null;
     materialFornecidoPeloCliente: boolean;
     breakdown: Prisma.InputJsonValue | null;
     etiqueta: (typeof original.itens)[number]["etiqueta"];
@@ -2455,6 +2460,7 @@ export async function duplicarOrcamento(
       metrosCorte: itemOriginal.metrosCorte,
       horasEstimadas: itemOriginal.horasEstimadas,
       custoAquisicaoUnitario: itemOriginal.custoAquisicaoUnitario,
+      custoFaca: itemOriginal.custoFaca,
       materialFornecidoPeloCliente: itemOriginal.materialFornecidoPeloCliente,
       acabamentos: itemOriginal.acabamentos,
       precificacaoEtiqueta: itemOriginal.precificacaoEtiqueta,
@@ -2556,6 +2562,7 @@ export async function duplicarOrcamento(
       metrosCorte: resultado.metrosCorte,
       horasEstimadas: resultado.horasEstimadas,
       custoAquisicaoUnitario: resultado.custoAquisicaoUnitario,
+      custoFaca: resultado.custoFaca,
       materialFornecidoPeloCliente: resultado.materialFornecidoPeloCliente,
       breakdown: resultado.breakdown ?? null,
       etiqueta: itemOriginal.etiqueta,
@@ -2614,6 +2621,7 @@ export async function duplicarOrcamento(
           metrosCorte: item.metrosCorte,
           horasEstimadas: item.horasEstimadas,
           custoAquisicaoUnitario: item.custoAquisicaoUnitario,
+          custoFaca: item.custoFaca,
           materialFornecidoPeloCliente: item.materialFornecidoPeloCliente,
           breakdown: item.breakdown ?? undefined,
           // Descritivo de produção (nunca entra na conta de preço, ver
@@ -3208,6 +3216,7 @@ export async function emitirNotaFiscal(
             codigoProduto: item.itemGraficaId,
             descricao: item.itemGrafica.itemCatalogo.nome,
             ncm: item.itemGrafica.itemCatalogo.ncm!,
+            origemMercadoria: item.itemGrafica.itemCatalogo.origemMercadoria,
             cfop: resolverCfop({
               ufEmitente: dadosFiscais.enderecoUf,
               ufDestinatario: orcamento.cliente.enderecoUf,

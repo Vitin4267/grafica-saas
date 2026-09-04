@@ -63,3 +63,52 @@ export const PIS_COFINS_SITUACAO_TRIBUTARIA_OPCOES: OpcaoCodigoFiscal[] = [
   { valor: "08", rotulo: "08 — Sem incidência" },
   { valor: "09", rotulo: "09 — Com suspensão" },
 ];
+
+// Origem da mercadoria (Tabela B do CST/ICMS, Convênio S/N 70/2012) —
+// achado N6 da auditoria de abrangência (Parte 7, 2026-09-03). Diferente
+// das listas acima: ISTO é um enum Prisma de verdade (OrigemMercadoria, ver
+// schema.prisma), não um campo String livre — cada item de catálogo sempre
+// tem uma origem (@default(NACIONAL_0)), nunca "outro"/texto livre. `valor`
+// aqui é o NOME do enum (não o código numérico): rótulo em português claro,
+// SEM o número do código (jargão fiscal — ver CampoAjuda em NcmForm.tsx pra
+// quem já conhece o código, público-alvo é leigo). Ordem = ordem numérica
+// do código, pra facilitar quem já conhece a tabela.
+export const ORIGEM_MERCADORIA_VALORES = [
+  "NACIONAL_0",
+  "ESTRANGEIRA_IMPORTACAO_DIRETA_1",
+  "ESTRANGEIRA_MERCADO_INTERNO_2",
+  "NACIONAL_CONTEUDO_IMPORTACAO_40_A_70_3",
+  "NACIONAL_PROCESSO_PRODUTIVO_BASICO_4",
+  "NACIONAL_CONTEUDO_IMPORTACAO_ATE_40_5",
+  "ESTRANGEIRA_IMPORTACAO_DIRETA_SEM_SIMILAR_6",
+  "ESTRANGEIRA_MERCADO_INTERNO_SEM_SIMILAR_7",
+  "NACIONAL_CONTEUDO_IMPORTACAO_ACIMA_70_8",
+] as const;
+
+export type OrigemMercadoriaValor = (typeof ORIGEM_MERCADORIA_VALORES)[number];
+
+export const ROTULO_ORIGEM_MERCADORIA: Record<OrigemMercadoriaValor, string> = {
+  NACIONAL_0: "Nacional",
+  ESTRANGEIRA_IMPORTACAO_DIRETA_1: "Estrangeira — importação direta",
+  ESTRANGEIRA_MERCADO_INTERNO_2: "Estrangeira — adquirida no mercado interno",
+  NACIONAL_CONTEUDO_IMPORTACAO_40_A_70_3: "Nacional — conteúdo de importação entre 40% e 70%",
+  NACIONAL_PROCESSO_PRODUTIVO_BASICO_4: "Nacional — produção conforme processos produtivos básicos",
+  NACIONAL_CONTEUDO_IMPORTACAO_ATE_40_5: "Nacional — conteúdo de importação até 40%",
+  ESTRANGEIRA_IMPORTACAO_DIRETA_SEM_SIMILAR_6: "Estrangeira — importação direta, sem similar nacional",
+  ESTRANGEIRA_MERCADO_INTERNO_SEM_SIMILAR_7: "Estrangeira — mercado interno, sem similar nacional",
+  NACIONAL_CONTEUDO_IMPORTACAO_ACIMA_70_8: "Nacional — conteúdo de importação acima de 70%",
+};
+
+// Código numérico correspondente — só usado no tooltip de ajuda (CampoAjuda
+// em NcmForm.tsx), nunca no rótulo visível principal do <Select>.
+export const CODIGO_ORIGEM_MERCADORIA: Record<OrigemMercadoriaValor, string> = {
+  NACIONAL_0: "0",
+  ESTRANGEIRA_IMPORTACAO_DIRETA_1: "1",
+  ESTRANGEIRA_MERCADO_INTERNO_2: "2",
+  NACIONAL_CONTEUDO_IMPORTACAO_40_A_70_3: "3",
+  NACIONAL_PROCESSO_PRODUTIVO_BASICO_4: "4",
+  NACIONAL_CONTEUDO_IMPORTACAO_ATE_40_5: "5",
+  ESTRANGEIRA_IMPORTACAO_DIRETA_SEM_SIMILAR_6: "6",
+  ESTRANGEIRA_MERCADO_INTERNO_SEM_SIMILAR_7: "7",
+  NACIONAL_CONTEUDO_IMPORTACAO_ACIMA_70_8: "8",
+};

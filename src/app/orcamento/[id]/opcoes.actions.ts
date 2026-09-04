@@ -128,6 +128,9 @@ export async function adicionarOpcaoOrcamento(
     metrosCorte: number | null;
     horasEstimadas: number | null;
     custoAquisicaoUnitario: number | null;
+    // Achado N10 — ver comentário em ResultadoItemOrcamento.custoFaca
+    // (src/lib/orcamento-precificacao.ts).
+    custoFaca: number | null;
     materialFornecidoPeloCliente: boolean;
     breakdown: Prisma.InputJsonValue | null;
     etiqueta: ItemEntrada["etiqueta"];
@@ -219,6 +222,7 @@ export async function adicionarOpcaoOrcamento(
       metrosCorte: resultado.metrosCorte,
       horasEstimadas: resultado.horasEstimadas,
       custoAquisicaoUnitario: resultado.custoAquisicaoUnitario,
+      custoFaca: resultado.custoFaca,
       materialFornecidoPeloCliente: resultado.materialFornecidoPeloCliente,
       breakdown: resultado.breakdown,
       etiqueta: entrada.etiqueta,
@@ -283,6 +287,7 @@ export async function adicionarOpcaoOrcamento(
           metrosCorte: item.metrosCorte,
           horasEstimadas: item.horasEstimadas,
           custoAquisicaoUnitario: item.custoAquisicaoUnitario,
+          custoFaca: item.custoFaca,
           materialFornecidoPeloCliente: item.materialFornecidoPeloCliente,
           breakdown: item.breakdown ?? undefined,
           etiqueta:

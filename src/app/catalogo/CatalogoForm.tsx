@@ -8,6 +8,7 @@ import { Select } from "@/components/ui/Select";
 import { Alert } from "@/components/ui/Alert";
 import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { ROTULO_UNIDADE, rotuloUnidade } from "@/lib/unidade";
+import { ORIGEM_MERCADORIA_VALORES, ROTULO_ORIGEM_MERCADORIA } from "@/lib/nota-fiscal-tabelas";
 import { gerarChave } from "@/lib/chave-local";
 import {
   AlertTriangleIcon,
@@ -642,12 +643,30 @@ function NovoItemForm({
         )}
 
         {tipo === "PRODUTO" && (
-          <Input
-            label="NCM (opcional)"
-            name="ncm"
-            placeholder="ex: 49111090"
-            hint="Classificação fiscal — só necessária se for emitir nota fiscal desse produto depois."
-          />
+          <>
+            <Input
+              label="NCM (opcional)"
+              name="ncm"
+              placeholder="ex: 49111090"
+              hint="Classificação fiscal — só necessária se for emitir nota fiscal desse produto depois."
+            />
+            <Select
+              label={
+                <>
+                  Origem da mercadoria
+                  <CampoAjuda texto="De onde vem o material — nacional ou importado. Só necessária se for emitir nota fiscal desse produto depois; dá pra deixar Nacional e ajustar mais tarde na página do produto." />
+                </>
+              }
+              name="origemMercadoria"
+              defaultValue="NACIONAL_0"
+            >
+              {ORIGEM_MERCADORIA_VALORES.map((valor) => (
+                <option key={valor} value={valor}>
+                  {ROTULO_ORIGEM_MERCADORIA[valor]}
+                </option>
+              ))}
+            </Select>
+          </>
         )}
 
         <Input

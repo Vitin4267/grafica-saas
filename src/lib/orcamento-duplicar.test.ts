@@ -18,6 +18,7 @@ describe("montarDadosItemParaRecalculo", () => {
       metrosCorte: null,
       horasEstimadas: null,
       custoAquisicaoUnitario: null,
+      custoFaca: null,
       materialFornecidoPeloCliente: false,
       acabamentos: [{ itemGraficaId: "acab-1" }, { itemGraficaId: "acab-2" }],
       precificacaoEtiqueta: null,
@@ -62,6 +63,7 @@ describe("montarDadosItemParaRecalculo", () => {
       metrosCorte: null,
       horasEstimadas: null,
       custoAquisicaoUnitario: null,
+      custoFaca: null,
       materialFornecidoPeloCliente: false,
       acabamentos: [],
       precificacaoEtiqueta: null,
@@ -85,6 +87,9 @@ describe("montarDadosItemParaRecalculo", () => {
       metrosCorte: null,
       horasEstimadas: null,
       custoAquisicaoUnitario: null,
+      // custoFaca de OrcamentoItem presente também — precificacaoEtiqueta
+      // (M2 com clichê) precisa continuar ganhando, nunca os dois somados.
+      custoFaca: "999.99",
       materialFornecidoPeloCliente: false,
       acabamentos: [],
       precificacaoEtiqueta: {
@@ -99,6 +104,34 @@ describe("montarDadosItemParaRecalculo", () => {
     expect(dados.quantidadeCores).toBe(3);
     expect(dados.custoFaca).toBe(12.5);
     expect(dados.custoFrete).toBeNull();
+  });
+
+  // Achado N10 da auditoria de abrangência — item OFFSET (sem
+  // precificacaoEtiqueta, que é exclusivo do M2 com clichê) precisa cair no
+  // fallback de OrcamentoItem.custoFaca, senão duplicar/"pedir de novo" um
+  // orçamento OFFSET com ferramental perderia esse custo silenciosamente.
+  it("usa OrcamentoItem.custoFaca como fallback quando não há precificacaoEtiqueta (ex: item OFFSET)", () => {
+    const dados = montarDadosItemParaRecalculo({
+      quantidade: 500,
+      larguraCm: 10,
+      alturaCm: 10,
+      corFrente: 4,
+      corVerso: 0,
+      numeroCoresFlexo: null,
+      numeroCliques: null,
+      numeroSetups: null,
+      numeroPontos: null,
+      tempoEstimadoMin: null,
+      metrosCorte: null,
+      horasEstimadas: null,
+      custoAquisicaoUnitario: null,
+      custoFaca: "450.00",
+      materialFornecidoPeloCliente: false,
+      acabamentos: [],
+      precificacaoEtiqueta: null,
+    }, null);
+
+    expect(dados.custoFaca).toBe(450);
   });
 });
 

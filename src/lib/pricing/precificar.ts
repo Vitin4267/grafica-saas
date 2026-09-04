@@ -256,6 +256,14 @@ export function precificar(
       custoFreteEstimado: contexto.custoFreteEstimado
         ? paraDecimal(contexto.custoFreteEstimado)
         : undefined,
+      // Achado N10 da auditoria de abrangência — OFFSET era o único dos 8
+      // branches deste orquestrador que não repassava contexto.custoFaca
+      // pra comporPreco: o valor era lido do formulário, validado e gravado
+      // em ContextoPrecificacao.custoFaca, mas descartado sem erro aqui,
+      // silenciosamente ausente do preço final. Mesmo padrão dos outros 7
+      // branches (M2, DIGITAL, REVENDA, BORDADO, TEMPO_MAQUINA, os 4 de
+      // setup-por-peça, FLEXOGRAFIA) logo abaixo/acima neste arquivo.
+      custoFaca: contexto.custoFaca !== undefined ? paraDecimal(contexto.custoFaca) : undefined,
       parametros: contexto.parametros,
       margemLucroOverride: contexto.margemLucroOverride,
       detalhesExtras: {

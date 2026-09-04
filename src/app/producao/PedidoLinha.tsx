@@ -68,6 +68,7 @@ export function PedidoLinha({
   entrega,
   terceirizacoes,
   fornecedores,
+  focusNfeConfigurado,
   maquinas = [],
   sugestaoMaquinaValor = "",
   sequencia,
@@ -130,6 +131,12 @@ export function PedidoLinha({
   // pra popular o select do formulário.
   terceirizacoes: TerceirizacaoResumo[];
   fornecedores: FornecedorOpcao[];
+  // Achado R3 — token da Focus NFe configurado (grafica-level, resolvido
+  // uma vez em producao/page.tsx) — gate coarse pro botão "Emitir NF-e de
+  // remessa"; a checagem FINA (CNPJ/endereço completos, inclusive por
+  // filial) roda dentro da própria Server Action, ver
+  // terceirizacao-nfe-actions.ts.
+  focusNfeConfigurado: boolean;
   // Achado B2 — máquinas ATIVAS da gráfica (grafica-wide, buscada uma vez em
   // producao/page.tsx) e a sugestão pré-calculada a partir da máquina que os
   // ITENS deste pedido usaram na precificação (ver sugerirMaquinaPedido em
@@ -336,6 +343,7 @@ export function PedidoLinha({
           terceirizacoes={terceirizacoes}
           fornecedores={fornecedores}
           podeEditar={podeEditar}
+          focusNfeConfigurado={focusNfeConfigurado}
         />
       )}
 

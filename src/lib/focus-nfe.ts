@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { IndicadorInscricaoEstadual, TipoFrete } from "@/generated/prisma/enums";
+import type { IndicadorInscricaoEstadual, OrigemMercadoria, TipoFrete } from "@/generated/prisma/enums";
 import { resolverModalidadeFrete } from "@/lib/nota-fiscal";
 
 // Cliente fino da API da Focus NFe (https://doc.focusnfe.com.br) — sem SDK
@@ -44,6 +44,12 @@ export type ItemNfe = {
   quantidade: number;
   valorUnitario: number;
   valorBruto: number;
+  // Código de origem da mercadoria (Tabela B do CST/ICMS) — achado N6 da
+  // auditoria de abrangência. null/ausente (item sem origem configurada,
+  // nunca deveria acontecer já que ItemCatalogo.origemMercadoria tem
+  // @default(NACIONAL_0), mas é defesa em profundidade) cai em "0"
+  // (nacional) — mesmo comportamento fixo de sempre. Ver mapearOrigemMercadoria.
+  origemMercadoria?: OrigemMercadoria | null;
   icmsSituacaoTributaria: string; // CSOSN (Simples Nacional) ou CST-ICMS (Regime Normal)
   // Campos abaixo só existem pra gráfica em Regime Normal (Lucro
   // Presumido/Real) — Simples Nacional não manda nenhum deles, e o payload
@@ -165,6 +171,29 @@ export function mapearIndicadorInscricaoEstadual(
   return mapa[indicador];
 }
 
+// Mapeia OrigemMercadoria (enum interno, ver schema.prisma) pro código
+// icms_origem que a Focus NFe/SEFAZ espera (Tabela B do CST/ICMS, Convênio
+// S/N 70/2012) — achado N6 da auditoria de abrangência (2026-09-03): até
+// aqui mapearItemNfePayload mandava "0" fixo pra todo item, de toda
+// gráfica. null/undefined (item sem origem configurada) cai em "0"
+// (nacional) — mesmo comportamento de sempre, mesmo princípio de dado
+// ausente de mapearIndicadorInscricaoEstadual/resolverModalidadeFrete.
+export function mapearOrigemMercadoria(origem: OrigemMercadoria | null | undefined): string {
+  if (!origem) return "0";
+  const mapa: Record<OrigemMercadoria, string> = {
+    NACIONAL_0: "0",
+    ESTRANGEIRA_IMPORTACAO_DIRETA_1: "1",
+    ESTRANGEIRA_MERCADO_INTERNO_2: "2",
+    NACIONAL_CONTEUDO_IMPORTACAO_40_A_70_3: "3",
+    NACIONAL_PROCESSO_PRODUTIVO_BASICO_4: "4",
+    NACIONAL_CONTEUDO_IMPORTACAO_ATE_40_5: "5",
+    ESTRANGEIRA_IMPORTACAO_DIRETA_SEM_SIMILAR_6: "6",
+    ESTRANGEIRA_MERCADO_INTERNO_SEM_SIMILAR_7: "7",
+    NACIONAL_CONTEUDO_IMPORTACAO_ACIMA_70_8: "8",
+  };
+  return mapa[origem];
+}
+
 // Monta indicador_inscricao_estadual_destinatario + inscricao_estadual_destinatario
 // — extraído como função pura (sem fetch, sem I/O) pra ser testável direto,
 // mesmo padrão de mapearItemNfePayload. A IE só é incluída quando o
@@ -246,7 +275,10 @@ function completarUrlArquivo(caminho: string | undefined, ambiente: AmbienteFocu
 // icms_base_calculo + icms_aliquota + icms_valor; CSOSN (Simples Nacional)
 // usa só icms_situacao_tributaria. icms_valor é derivado
 // (base_calculo × aliquota/100), nunca configurado diretamente — não existe
-// campo "padrão" pra ele nos Dados fiscais.
+// campo "padrão" pra ele nos Dados fiscais. icms_origem vem de
+// item.origemMercadoria (achado N6) via mapearOrigemMercadoria, não mais
+// fixo — item sem origem configurada cai em "0" (nacional), mesmo
+// comportamento de sempre.
 export function mapearItemNfePayload(item: ItemNfe): Record<string, unknown> {
   const temIcmsRegimeNormal =
     item.icmsAliquota !== undefined &&
@@ -270,7 +302,7 @@ export function mapearItemNfePayload(item: ItemNfe): Record<string, unknown> {
     codigo_ncm: item.ncm,
     quantidade_tributavel: String(item.quantidade),
     valor_bruto: item.valorBruto.toFixed(2),
-    icms_origem: "0",
+    icms_origem: mapearOrigemMercadoria(item.origemMercadoria),
     icms_situacao_tributaria: item.icmsSituacaoTributaria,
     ...(temIcmsRegimeNormal
       ? {

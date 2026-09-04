@@ -250,6 +250,7 @@ export default async function ConfiguracaoItemPage({
             <NcmForm
               itemCatalogoId={itemGrafica.itemCatalogoId}
               ncmAtual={itemGrafica.itemCatalogo.ncm ?? ""}
+              origemMercadoriaAtual={itemGrafica.itemCatalogo.origemMercadoria}
             />
             <ConfiguracaoProdutoForm
               itemGraficaId={itemGrafica.id}

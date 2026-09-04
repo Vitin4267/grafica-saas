@@ -10,6 +10,7 @@ import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { parseJsonArray } from "@/lib/form-json";
 import { resolverItemParaNcm } from "@/lib/catalogo-ncm";
+import { ORIGEM_MERCADORIA_VALORES, ROTULO_ORIGEM_MERCADORIA } from "@/lib/nota-fiscal-tabelas";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { formatoMoeda } from "@/lib/moeda";
 import { D } from "@/lib/pricing/decimal";
@@ -635,6 +636,16 @@ export async function salvarModeloProduto(
   return { ok: true, mensagem: "Configuração salva com sucesso!" };
 }
 
+// Valores/rótulos de OrigemMercadoria vêm de src/lib/nota-fiscal-tabelas.ts
+// (compartilhados com NcmForm.tsx, um Client Component — uma constante não
+// pode ser exportada de um arquivo "use server" como este).
+const origemMercadoriaSchema = z.enum(ORIGEM_MERCADORIA_VALORES);
+
+// Salva NCM + origem da mercadoria (achado N6) juntos — mesmo card
+// "Classificação fiscal", mesmo item de catálogo, mesma validação de
+// pertencer ao tenant (resolverItemParaNcm, nome mantido apesar do escopo
+// maior pra não quebrar a regressão de IDOR já testada nele — ver
+// catalogo-ncm.test.ts).
 export async function salvarNcm(
   _estadoAnterior: SalvarConfigResult | null,
   formData: FormData
@@ -653,27 +664,43 @@ export async function salvarNcm(
       ok: false,
       mensagem:
         resolvido.motivo === "item_mestre"
-          ? "Este item é do catálogo compartilhado e não pode ter o NCM editado por aqui."
+          ? "Este item é do catálogo compartilhado e não pode ter a classificação fiscal editada por aqui."
           : "Item não encontrado.",
     };
   }
 
   const ncm = String(formData.get("ncm") ?? "").trim();
 
-  // Lido ANTES do update pro log de auditoria — NCM errado é nota fiscal
-  // rejeitada pela SEFAZ, e saber quem trocou e de qual valor pro qual é o
-  // que resolve a investigação depois.
+  const origemParsed = origemMercadoriaSchema.safeParse(formData.get("origemMercadoria"));
+  if (!origemParsed.success) {
+    return { ok: false, mensagem: "Origem da mercadoria inválida." };
+  }
+  const origemMercadoria = origemParsed.data;
+
+  // Lido ANTES do update pro log de auditoria — NCM/origem errados são nota
+  // fiscal rejeitada pela SEFAZ, e saber quem trocou e de qual valor pro
+  // qual é o que resolve a investigação depois.
   const anterior = await prisma.itemCatalogo.findUnique({
     where: { id: itemCatalogoId },
-    select: { nome: true, ncm: true },
+    select: { nome: true, ncm: true, origemMercadoria: true },
   });
 
   await prisma.itemCatalogo.update({
     where: { id: itemCatalogoId },
-    data: { ncm: ncm || null },
+    data: { ncm: ncm || null, origemMercadoria },
   });
 
+  const antesTextos: string[] = [];
+  const depoisTextos: string[] = [];
   if (anterior && (anterior.ncm ?? "") !== ncm) {
+    antesTextos.push(`NCM: ${anterior.ncm ?? "sem NCM"}`);
+    depoisTextos.push(`NCM: ${ncm || "sem NCM"}`);
+  }
+  if (anterior && anterior.origemMercadoria !== origemMercadoria) {
+    antesTextos.push(`Origem: ${ROTULO_ORIGEM_MERCADORIA[anterior.origemMercadoria]}`);
+    depoisTextos.push(`Origem: ${ROTULO_ORIGEM_MERCADORIA[origemMercadoria]}`);
+  }
+  if (anterior && antesTextos.length > 0) {
     await registrarAuditoria({
       graficaId: usuario.graficaId,
       usuarioId: usuario.id,
@@ -681,15 +708,15 @@ export async function salvarNcm(
       acao: "catalogo.salvar_ncm",
       entidade: "ItemCatalogo",
       entidadeId: itemCatalogoId,
-      descricao: `NCM de "${anterior.nome}" alterado`,
-      valorAnterior: anterior.ncm ?? "sem NCM",
-      valorNovo: ncm || "sem NCM",
+      descricao: `Classificação fiscal de "${anterior.nome}" alterada`,
+      valorAnterior: antesTextos.join(", "),
+      valorNovo: depoisTextos.join(", "),
     });
   }
 
   revalidatePath(`/catalogo/${resolvido.itemGraficaId}`);
   revalidatePath("/catalogo");
-  return { ok: true, mensagem: "NCM salvo com sucesso!" };
+  return { ok: true, mensagem: "Classificação fiscal salva com sucesso!" };
 }
 
 export type SalvarQuantidadePorEmbalagemResult = SalvarConfigResult;

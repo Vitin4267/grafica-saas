@@ -13,6 +13,7 @@ import { parseJsonArray } from "@/lib/form-json";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { formatoMoeda } from "@/lib/moeda";
 import { calcularDeltaAjusteInventario } from "@/lib/estoque-manual";
+import { ORIGEM_MERCADORIA_VALORES } from "@/lib/nota-fiscal-tabelas";
 
 const formatoQuantidade = new Intl.NumberFormat("pt-BR");
 
@@ -78,6 +79,14 @@ const novoItemCatalogoSchema = z
       .max(20)
       .optional()
       .transform((v) => (v ? v : undefined)),
+    // Achado N6 da auditoria de abrangência — só relevante quando
+    // tipo=PRODUTO (mesmo gate de ncm acima, ver CatalogoForm.tsx). Ausente
+    // (item MATERIA_PRIMA/SERVICO, cujo form nem manda este campo) cai no
+    // @default(NACIONAL_0) do schema — mesmo comportamento de sempre.
+    origemMercadoria: z
+      .union([z.enum(ORIGEM_MERCADORIA_VALORES), z.literal("")])
+      .optional()
+      .transform((v) => (v ? v : undefined)),
   })
   .refine((dados) => dados.unidade !== "OUTRO" || Boolean(dados.unidadeOutro), {
     message: 'Descreva a unidade quando escolher "Outro".',
@@ -118,13 +127,14 @@ export async function criarItemCatalogo(
     unidade: formData.get("unidade") ?? undefined,
     unidadeOutro: formData.get("unidadeOutro") ?? undefined,
     ncm: formData.get("ncm") ?? undefined,
+    origemMercadoria: formData.get("origemMercadoria") ?? undefined,
   });
 
   if (!resultado.success) {
     return { ok: false, mensagem: resultado.error.issues[0].message };
   }
 
-  const { tipo, nome, categoria, descricao, unidade, unidadeOutro, ncm } = resultado.data;
+  const { tipo, nome, categoria, descricao, unidade, unidadeOutro, ncm, origemMercadoria } = resultado.data;
 
   // Bloqueia duplicar tanto um item já existente no mestre global quanto um item
   // privado que essa mesma gráfica já tenha criado antes. Esse findFirst é só um
@@ -162,6 +172,10 @@ export async function criarItemCatalogo(
         unidade,
         unidadeOutro: unidadeOutroFinal,
         ncm,
+        // Ausente (item MATERIA_PRIMA/SERVICO, ou PRODUTO cujo <Select> não
+        // veio no FormData por algum motivo) cai no @default(NACIONAL_0) do
+        // schema em vez de sobrescrever com undefined explícito.
+        ...(origemMercadoria ? { origemMercadoria } : {}),
       },
     });
   } catch (erro) {

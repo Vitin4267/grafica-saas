@@ -15,6 +15,7 @@ import { dataEhPassado, limitesDiaBrasilia, dataParaInputValue } from "@/lib/dat
 import { resolverOrigemPublica } from "@/lib/url-publica";
 import { listarMaquinasSelecionaveis, sugerirMaquinaPedido } from "@/lib/apontamento-etapa";
 import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
+import { fornecedorProntoParaNfe } from "@/lib/nota-fiscal";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -88,7 +89,16 @@ function mapearTerceirizacoes(
     situacao: string;
     fornecedorId: string | null;
     fornecedorNome: string | null;
-    fornecedor: { nome: string } | null;
+    fornecedor: {
+      nome: string;
+      documento: string | null;
+      enderecoLogradouro: string | null;
+      enderecoNumero: string | null;
+      enderecoBairro: string | null;
+      enderecoMunicipio: string | null;
+      enderecoUf: string | null;
+      enderecoCep: string | null;
+    } | null;
     enviadoEm: Date | null;
     previsaoRetorno: Date | null;
     retornadoEm: Date | null;
@@ -97,6 +107,14 @@ function mapearTerceirizacoes(
     notaRemessa: string | null;
     notaRetorno: string | null;
     observacao: string | null;
+    // Achado R3 — resultado estruturado da emissão da NF-e de remessa (ver
+    // EtapaTerceirizada.remessaNfe* no schema).
+    remessaNfeStatus: string | null;
+    remessaNfeNumero: string | null;
+    remessaNfeChaveAcesso: string | null;
+    remessaNfeXmlUrl: string | null;
+    remessaNfeDanfeUrl: string | null;
+    remessaNfeMensagemErro: string | null;
   }[],
   podeVerCustos: boolean
 ): TerceirizacaoResumo[] {
@@ -113,6 +131,17 @@ function mapearTerceirizacoes(
     notaRemessa: etapa.notaRemessa,
     notaRetorno: etapa.notaRetorno,
     observacao: etapa.observacao,
+    fornecedorProntoParaNfe: fornecedorProntoParaNfe(etapa.fornecedor),
+    remessaNfe: etapa.remessaNfeStatus
+      ? {
+          status: etapa.remessaNfeStatus,
+          numero: etapa.remessaNfeNumero,
+          chaveAcesso: etapa.remessaNfeChaveAcesso,
+          xmlUrl: etapa.remessaNfeXmlUrl,
+          danfeUrl: etapa.remessaNfeDanfeUrl,
+          mensagemErro: etapa.remessaNfeMensagemErro,
+        }
+      : null,
   }));
 }
 
@@ -161,7 +190,7 @@ export default async function ProducaoPage({
   await verificarEDispararAlertasAtraso(usuario.graficaId, usuario.grafica.nome);
   const origem = await resolverOrigemPublica();
 
-  const [todosPedidos, clientes, responsaveisEstagio, maquinasSelecionaveis, fornecedoresAtivos, etapas] = await Promise.all([
+  const [todosPedidos, clientes, responsaveisEstagio, maquinasSelecionaveis, fornecedoresAtivos, etapas, dadosFiscaisGrafica] = await Promise.all([
     prisma.pedido.findMany({
       where: {
         graficaId: usuario.graficaId,
@@ -186,7 +215,23 @@ export default async function ProducaoPage({
         // as terceirizações deste pedido (não só a ativa, ver
         // TerceirizacaoPedidoSecao.tsx), mais recente primeiro.
         etapasTerceirizadas: {
-          include: { fornecedor: { select: { nome: true } } },
+          include: {
+            // Achado R3 — documento/endereço, necessários pra
+            // fornecedorProntoParaNfe (gate do botão "Emitir NF-e de
+            // remessa").
+            fornecedor: {
+              select: {
+                nome: true,
+                documento: true,
+                enderecoLogradouro: true,
+                enderecoNumero: true,
+                enderecoBairro: true,
+                enderecoMunicipio: true,
+                enderecoUf: true,
+                enderecoCep: true,
+              },
+            },
+          },
           orderBy: { createdAt: "desc" },
         },
       },
@@ -225,7 +270,16 @@ export default async function ProducaoPage({
     // client components que hoje importavam SEQUENCIA_STATUS_PEDIDO/
     // ROTULOS_STATUS_PEDIDO diretamente.
     resolverEtapasGrafica(usuario.graficaId),
+    // Achado R3 — só o token, grafica-level, pra decidir se mostra o botão
+    // "Emitir NF-e de remessa" em TerceirizacaoPedidoSecao (gate coarse; a
+    // checagem fina, inclusive por filial, roda dentro da Server Action —
+    // ver terceirizacao-nfe-actions.ts).
+    prisma.dadosFiscaisGrafica.findUnique({
+      where: { graficaId: usuario.graficaId },
+      select: { focusNfeToken: true },
+    }),
   ]);
+  const focusNfeConfigurado = Boolean(dadosFiscaisGrafica?.focusNfeToken);
 
   const responsaveisPorEtapa: Partial<Record<StatusPedido, string[]>> = {};
   for (const r of responsaveisEstagio) {
@@ -388,6 +442,7 @@ export default async function ProducaoPage({
                 }
                 terceirizacoes={mapearTerceirizacoes(pedido.etapasTerceirizadas, podeVerCustos)}
                 fornecedores={fornecedoresAtivos}
+                focusNfeConfigurado={focusNfeConfigurado}
               />
             </div>
           );

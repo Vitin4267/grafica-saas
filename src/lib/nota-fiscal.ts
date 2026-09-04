@@ -162,6 +162,76 @@ export function resolverCfop(input: {
   return input.ufEmitente === input.ufDestinatario ? input.cfopPadrao : input.cfopPadraoInterestadual;
 }
 
+// Achado R3 da auditoria de abrangência (Parte 2/Produção, rodada 20,
+// 2026-09-03, resíduo do achado E1/Parte 2) — CFOP de industrialização por
+// encomenda, usado pela NF-e de remessa (5901/6901) que a gráfica emite pro
+// fornecedor terceirizado. RETORNO (5902/6902) só existe aqui pra manter a
+// função simétrica/testável — fiscalmente essa saída pertence ao
+// ESTABELECIMENTO TERCEIRIZADO (quem devolve a mercadoria industrializada),
+// nunca à gráfica (que só a RECEBE de volta, entrada 1902/2902 do lado
+// dela) — por isso só REMESSA tem um botão de emissão real no sistema (ver
+// emitirNfeRemessaTerceirizacao em src/app/producao/terceirizacao-nfe-actions.ts).
+// Diferente de resolverCfop (venda, cfopPadrao configurável por gráfica),
+// estes 4 códigos são FIXOS pela tabela CFOP oficial — não fazem sentido
+// como "padrão" configurável.
+export type TipoOperacaoTerceirizacao = "REMESSA" | "RETORNO";
+
+const CFOP_TERCEIRIZACAO: Record<TipoOperacaoTerceirizacao, { mesmaUf: string; ufDiferente: string }> = {
+  REMESSA: { mesmaUf: "5901", ufDiferente: "6901" },
+  RETORNO: { mesmaUf: "5902", ufDiferente: "6902" },
+};
+
+export const NATUREZA_OPERACAO_TERCEIRIZACAO: Record<TipoOperacaoTerceirizacao, string> = {
+  REMESSA: "Remessa para industrialização por encomenda",
+  RETORNO: "Retorno de industrialização por encomenda",
+};
+
+// UF ausente de qualquer lado cai no código de MESMA UF — mesmo critério de
+// "sem regressão pra dado incompleto" de resolverCfop, aplicado aqui à
+// opção mais comum (fornecedor terceirizado costuma ser da mesma região da
+// gráfica).
+export function resolverCfopTerceirizacao(input: {
+  ufEmitente: string | null;
+  ufFornecedor: string | null;
+  tipo: TipoOperacaoTerceirizacao;
+}): string {
+  const codigos = CFOP_TERCEIRIZACAO[input.tipo];
+  if (!input.ufEmitente || !input.ufFornecedor) return codigos.mesmaUf;
+  return input.ufEmitente === input.ufFornecedor ? codigos.mesmaUf : codigos.ufDiferente;
+}
+
+// Checagem do que falta no CADASTRO DO FORNECEDOR antes de conseguir emitir
+// a NF-e de remessa de terceirização pra ele — mesmo espírito de
+// verificarProntidaoFiscal, mas focado só no destinatário (os dados
+// FISCAIS DA GRÁFICA continuam checados por verificarProntidaoFiscal/
+// resolverDadosFiscais, reaproveitados como estão). Fornecedor sem
+// documento/endereço completos não pode ser destinatário de uma NF-e real —
+// a terceirização em si nunca é bloqueada por isso (o cadastro
+// documento/endereço é 100% opcional em Fornecedor), só o botão de emissão
+// automática.
+export type FornecedorParaChecagemNfe = {
+  documento: string | null;
+  enderecoLogradouro: string | null;
+  enderecoNumero: string | null;
+  enderecoBairro: string | null;
+  enderecoMunicipio: string | null;
+  enderecoUf: string | null;
+  enderecoCep: string | null;
+};
+
+export function fornecedorProntoParaNfe(fornecedor: FornecedorParaChecagemNfe | null): boolean {
+  if (!fornecedor) return false;
+  return Boolean(
+    fornecedor.documento &&
+      fornecedor.enderecoLogradouro &&
+      fornecedor.enderecoNumero &&
+      fornecedor.enderecoBairro &&
+      fornecedor.enderecoMunicipio &&
+      fornecedor.enderecoUf &&
+      fornecedor.enderecoCep
+  );
+}
+
 // Mapeia TipoFrete (enum interno, ver schema.prisma) pro código modFrete
 // que a Focus NFe/SEFAZ espera no campo modalidade_frete — achado B1 da
 // auditoria de abrangência: o payload builder em focus-nfe.ts mandava "9"

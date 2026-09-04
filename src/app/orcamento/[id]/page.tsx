@@ -514,7 +514,14 @@ export default async function OrcamentoDetalhePage({
                     etiqueta: etiquetaParaCampos(item.etiqueta),
                     papelId: item.precificacaoEtiqueta?.papelId ?? "",
                     quantidadeCores: item.precificacaoEtiqueta?.quantidadeCores.toString() ?? "",
-                    custoFaca: item.precificacaoEtiqueta?.custoFaca?.toString() ?? "",
+                    // Achado N10 — precificacaoEtiqueta.custoFaca é a fonte de
+                    // verdade pra M2 com clichê (comportamento de sempre);
+                    // item.custoFaca (coluna direta, hoje só OFFSET) é o
+                    // fallback pra todo o resto.
+                    custoFaca:
+                      item.precificacaoEtiqueta?.custoFaca?.toString() ??
+                      item.custoFaca?.toString() ??
+                      "",
                     custoFrete: item.precificacaoEtiqueta?.custoFrete?.toString() ?? "",
                   }}
                 />

@@ -1,0 +1,30 @@
+-- Migração escrita à mão (ver instrução no schema — NÃO rodar
+-- `prisma migrate dev`/`migrate reset` neste projeto, o banco de dev tem
+-- dados reais de cliente).
+--
+-- Achado N10 da auditoria de abrangência
+-- (pesquisa-abrangencia-modulos.md): `custoFaca` era aceito, validado e
+-- descartado sem erro em itens OFFSET — DadosItemOrcamento.custoFaca
+-- (entrada do formulário) alimentava ContextoPrecificacao.custoFaca no
+-- motor de preço, mas o branch OFFSET de precificar() era o único dos 8
+-- que não repassava esse valor pra comporPreco. Além do bug de cálculo
+-- (corrigido em src/lib/pricing/precificar.ts, sem precisar de
+-- migration), faltava onde PERSISTIR esse R$ livre pra qualquer item que
+-- não seja M2 com clichê de etiqueta (aquele caso já tem sua própria
+-- coluna em "orcamento_item_precificacao_etiquetas".custoFaca) — sem
+-- coluna própria, reabrir um item OFFSET pra editar mostraria o campo
+-- sempre vazio, mesmo com um valor já aplicado no preço.
+--
+-- Adiciona:
+-- - coluna "custoFaca" em "orcamento_itens" (Decimal opcional, mesma
+--   precisão de "custoAquisicaoUnitario" na mesma tabela) — hoje só
+--   gravada por itens OFFSET, sem gate de banco que impeça outro modelo
+--   avançado usar no futuro.
+--
+-- Migração 100% aditiva: nenhuma tabela/coluna/enum existente muda de
+-- nome/tipo/obrigatoriedade, nenhum dado é reescrito. Todo item de
+-- orçamento já existente fica com "custoFaca" em NULL (comportamento de
+-- hoje 100% preservado).
+
+-- AlterTable
+ALTER TABLE "orcamento_itens" ADD COLUMN     "custoFaca" DECIMAL(12,4);

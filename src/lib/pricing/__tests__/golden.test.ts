@@ -375,3 +375,57 @@ describe("golden #7 — camiseta serigrafia Q=200/2 telas: setup fixo + variáve
     expect(resultado.detalhes.material.toNumber()).toBeCloseTo(265, 6);
   });
 });
+
+// Achado N10 da auditoria de abrangência — OFFSET era o único dos 8 branches
+// de precificar() que não repassava contexto.custoFaca pra comporPreco: o
+// valor era lido do formulário, validado (calcularItemOrcamento), gravado em
+// ContextoPrecificacao.custoFaca, mas descartado sem erro aqui — o preço
+// final de um item OFFSET nunca refletia a faca de corte-e-vinco informada.
+describe("golden #8 — caixa offset com faca de corte-e-vinco (achado N10)", () => {
+  // quantidade=1 de propósito: isola o teste de qualquer ruído de
+  // arredondamento por unidade (precoUnitario = precoFinal / 1, sem divisão
+  // fracionária) — só sobra o arredondamento pro incremento comercial.
+  function precificarCaixaOffset(custoFaca?: number) {
+    const contexto: ContextoPrecificacao = {
+      itemGraficaId: "caixa-offset",
+      modeloCalculo: "OFFSET",
+      viraFolha: false,
+      parametros: PARAMS,
+      parametrosPrensa: PARAMS_PRENSA,
+      offset: {
+        folhas: [{ id: "folha-66x96", nome: "Fechada 66x96", larguraFolha: 0.66, alturaFolha: 0.96 }],
+        gramaturaGm2: 300,
+        precoPorKg: 8.5,
+        viraFolha: false,
+      },
+      custoFaca,
+    };
+
+    const pedido: PedidoPrecificacao = {
+      tipo: "OFFSET",
+      pedido: { larguraM: 0.09, alturaM: 0.05, quantidade: 1, corFrente: 4, corVerso: 4 },
+      acabamentos: [],
+    };
+
+    return precificar(pedido, contexto);
+  }
+
+  it("custoFaca informado entra no preço final (antes deste fix era aceito, validado e descartado sem erro)", () => {
+    const semFaca = precificarCaixaOffset(undefined);
+    const comFaca = precificarCaixaOffset(900);
+
+    expect(semFaca.detalhes.faca.toNumber()).toBe(0);
+    expect(comFaca.detalhes.faca.toNumber()).toBe(900);
+
+    // custoFaca soma no custoDireto ANTES de overhead/margem/encargos (ver
+    // comporPreco), então a diferença no preço final é MAIOR que os R$900
+    // brutos: 900 × (1 + overheadPercent) / (1 − somaEncargos) =
+    // 900 × 1,15 / 0,74 = 1398,648... arredondado pra cima no incremento de
+    // 0,10 do tenant — janela generosa pra absorver o arredondamento
+    // independente dos dois cálculos (com/sem faca).
+    const diferenca = comFaca.precoFinal.minus(semFaca.precoFinal).toNumber();
+    expect(diferenca).toBeGreaterThan(1398.5);
+    expect(diferenca).toBeLessThan(1398.75);
+    expect(comFaca.precoFinal.toNumber()).toBeGreaterThan(semFaca.precoFinal.toNumber());
+  });
+});
