@@ -104,6 +104,7 @@ export function EditarOrcamentoForm({
     numeroCoresFlexo: string;
     numeroCliques: string;
     numeroSetups: string;
+    prazoEstimadoDias: string;
     numeroPontos: string;
     tempoEstimadoMin: string;
     metrosCorte: string;
@@ -553,6 +554,21 @@ export function EditarOrcamentoForm({
             hint="Só necessário se um dos acabamentos acima cobra por hora (ex: instalação, criação de arte)."
           />
         )}
+
+        <Input
+          label={
+            <>
+              Prazo estimado de entrega (dias)
+              <CampoAjuda texto="Número de dias estimado para entregar este item específico. O vendedor pode colocar prazos diferentes para cada item no mesmo orçamento (ex: camiseta em 2 dias, brinde em 10 dias), e o cabeçalho do orçamento mostra automaticamente o prazo mais longo. Deixe em branco se não tiver informação." />
+            </>
+          }
+          name="prazoEstimadoDias"
+          type="number"
+          min={1}
+          defaultValue={valoresIniciais.prazoEstimadoDias}
+          placeholder="opcional"
+          hint="Prazo específico deste item — o cabeçalho reflete o máximo automaticamente."
+        />
 
         {usaClicheEtiqueta && (
           <div className="flex flex-col gap-4 rounded-xl border border-slate-300 p-4 dark:border-slate-700">

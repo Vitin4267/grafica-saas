@@ -25,6 +25,7 @@ import {
 } from "@/lib/data";
 import { somarDiasUteis } from "@/lib/dias-uteis";
 import { saldoCreditoCliente } from "@/lib/credito-cliente";
+import { calcularPrazoEfetivoDias } from "@/lib/orcamento-prazo";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/Badge";
@@ -224,20 +225,29 @@ export default async function OrcamentoDetalhePage({
     }
   }
 
+  // Achado B4 — prazo por item complementa o do cabeçalho: o prazo EFETIVO
+  // (usado pra sugestão abaixo e exibido ao cliente) é o maior entre o valor
+  // do cabeçalho e o maior valor entre os itens preenchidos, nunca menor que
+  // o que já foi digitado manualmente (evita sub-prometer).
+  const prazoEfetivoDias = calcularPrazoEfetivoDias(
+    orcamento.prazoEntregaEstimadoDias,
+    orcamento.itens
+  );
+
   // Sugestão de prazo de entrega (achado A2 da Parte 6 — auditoria de
   // abrangência, 2026-08-27): calcula a partir de hoje + o número de dias
-  // que o cliente já viu no PDF/link público (Orcamento.prazoEntregaEstimadoDias),
-  // respeitando dias úteis/feriados da gráfica — só PRÉ-PREENCHE o campo em
-  // OrcamentoAcoes, o vendedor continua livre pra editar (ver
-  // atualizarStatusOrcamento em ./actions.ts, que grava exatamente o que
-  // vier do form, sem recalcular nada). Só compensa calcular quando o
-  // orçamento ainda está pra ser aprovado.
+  // que o cliente já viu no PDF/link público (Orcamento.prazoEntregaEstimadoDias,
+  // ou o efetivo por item — achado B4), respeitando dias úteis/feriados da
+  // gráfica — só PRÉ-PREENCHE o campo em OrcamentoAcoes, o vendedor continua
+  // livre pra editar (ver atualizarStatusOrcamento em ./actions.ts, que grava
+  // exatamente o que vier do form, sem recalcular nada). Só compensa
+  // calcular quando o orçamento ainda está pra ser aprovado.
   const prazoEntregaSugerido =
-    orcamento.status === "ENVIADO" && orcamento.prazoEntregaEstimadoDias
+    orcamento.status === "ENVIADO" && prazoEfetivoDias
       ? dataParaInputValue(
           await somarDiasUteis(
             dataInputParaUTC(hojeBrasiliaInputValue()),
-            orcamento.prazoEntregaEstimadoDias,
+            prazoEfetivoDias,
             usuario.graficaId
           )
         )
@@ -518,6 +528,7 @@ export default async function OrcamentoDetalhePage({
                     numeroCoresFlexo: item.numeroCoresFlexo?.toString() ?? "",
                     numeroCliques: item.numeroCliques?.toString() ?? "",
                     numeroSetups: item.numeroSetups?.toString() ?? "",
+                    prazoEstimadoDias: item.prazoEstimadoDias?.toString() ?? "",
                     numeroPontos: item.numeroPontos?.toString() ?? "",
                     tempoEstimadoMin: item.tempoEstimadoMin?.toString() ?? "",
                     metrosCorte: item.metrosCorte?.toString() ?? "",

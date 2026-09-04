@@ -88,6 +88,10 @@ export type CamposItemOrcamento = {
   numeroCliques: string;
   // Só SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE (compartilham este campo).
   numeroSetups: string;
+  // Achado B4 — prazo estimado de entrega EM DIAS, específico deste item
+  // (complementa Orcamento.prazoEntregaEstimadoDias único no cabeçalho). Quando
+  // preenchido, o cabeçalho reflete automaticamente o MÁXIMO entre os itens.
+  prazoEstimadoDias: string;
   // Só BORDADO (achado A4) — nº de pontos da arte deste pedido, driver de
   // custo POR PEDIDO (diferente de numeroSetups acima, fixo na máquina).
   numeroPontos: string;
@@ -154,6 +158,7 @@ export function camposIniciais(
     numeroCoresFlexo: "4",
     numeroCliques: "",
     numeroSetups: "1",
+    prazoEstimadoDias: "",
     numeroPontos: "",
     tempoEstimadoMin: "",
     metrosCorte: "",
@@ -279,6 +284,7 @@ export function SeletorItemOrcamento({
       numeroCoresFlexo: "4",
       numeroCliques: "",
       numeroSetups: "1",
+      prazoEstimadoDias: "",
       numeroPontos: "",
       tempoEstimadoMin: "",
       metrosCorte: "",
@@ -586,6 +592,21 @@ export function SeletorItemOrcamento({
         onChange={set("cores")}
         placeholder="ex: 4x0, 4x4"
         hint="Deixe em branco se não se aplica."
+      />
+
+      <Input
+        label={
+          <>
+            Prazo estimado de entrega (dias)
+            <CampoAjuda texto="Número de dias estimado para entregar este item específico. O vendedor pode colocar prazos diferentes para cada item no mesmo orçamento (ex: camiseta em 2 dias, brinde em 10 dias), e o cabeçalho do orçamento mostra automaticamente o prazo mais longo. Deixe em branco se não tiver informação." />
+          </>
+        }
+        type="number"
+        min={1}
+        value={valores.prazoEstimadoDias}
+        onChange={set("prazoEstimadoDias")}
+        placeholder="opcional"
+        hint="Prazo específico deste item — o cabeçalho reflete o máximo automaticamente."
       />
 
       <Textarea

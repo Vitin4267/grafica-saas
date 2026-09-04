@@ -12,6 +12,7 @@ import { OpcoesPublicasTabs, type OpcaoPublica } from "./OpcoesPublicasTabs";
 import { EtiquetaResumo, type EtiquetaResumoDados } from "@/app/orcamento/[id]/EtiquetaResumo";
 import { converterDeCm, ROTULO_UNIDADE_DIMENSAO } from "@/lib/unidade-dimensao";
 import { ROTULO_TIPO_CHAVE_PIX } from "@/lib/tipos-grafica";
+import { calcularPrazoEfetivoDias } from "@/lib/orcamento-prazo";
 
 const ROTULO_TIPO_PEDIDO: Record<string, string> = {
   MODELO_NOVO: "Modelo novo",
@@ -69,6 +70,10 @@ export default async function OrcamentoPublicoPage({
   // Achado A2 da Parte 6 (auditoria de abrangência, 2026-08-27) — decide se
   // "Prazo estimado" (abaixo) fala em "dias úteis" ou "dias corridos".
   const prazoEmDiasUteis = orcamento.grafica.parametros?.prazoEmDiasUteis ?? true;
+  // Achado B4 — prazo por item complementa o do cabeçalho: o cliente vê o
+  // maior entre o valor do cabeçalho e o maior valor entre os itens
+  // preenchidos, nunca menor que o que a gráfica já digitou manualmente.
+  const prazoEfetivoDias = calcularPrazoEfetivoDias(orcamento.prazoEntregaEstimadoDias, orcamento.itens);
   // Achado F6 da Parte 7 (auditoria de abrangência, 2026-08-31) — "Como
   // pagar" só faz sentido depois que o orçamento foi APROVADO (antes disso
   // não existe cobrança ainda) e só quando a gráfica cadastrou pelo menos um
@@ -143,7 +148,7 @@ export default async function OrcamentoPublicoPage({
           orcamento.frete ||
           orcamento.transportadora ||
           orcamento.localEntrega ||
-          orcamento.prazoEntregaEstimadoDias) && (
+          prazoEfetivoDias) && (
           <Card className="mb-6 p-5">
             <p className="mb-3 text-sm font-medium text-slate-500">Dados do pedido</p>
             <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
@@ -191,11 +196,11 @@ export default async function OrcamentoPublicoPage({
                   <dd className="font-medium text-slate-800 dark:text-slate-100">{orcamento.localEntrega}</dd>
                 </div>
               )}
-              {orcamento.prazoEntregaEstimadoDias && (
+              {prazoEfetivoDias && (
                 <div>
                   <dt className="text-slate-500">Prazo estimado</dt>
                   <dd className="font-medium text-slate-800 dark:text-slate-100">
-                    {orcamento.prazoEntregaEstimadoDias} {prazoEmDiasUteis ? "dias úteis" : "dias corridos"} após
+                    {prazoEfetivoDias} {prazoEmDiasUteis ? "dias úteis" : "dias corridos"} após
                     aprovação
                   </dd>
                 </div>

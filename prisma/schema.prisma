@@ -4099,6 +4099,15 @@ model OrcamentoItem {
   // SUBLIMACAO/ESTAMPAGEM_QUENTE only, os 3 compartilham este mesmo campo
   // (mesma razão de compartilharem calcularSetupPorPeca).
   numeroSetups                 Int?
+  // Achado B4 da auditoria de abrangência — prazo estimado de entrega EM
+  // DIAS, específico deste item (complementa Orcamento.prazoEntregaEstimadoDias,
+  // que é único no cabeçalho). Quando preenchido, o cabeçalho exibe
+  // automaticamente o MÁXIMO entre os itens com este campo preenchido, sem
+  // exigir que o usuário reescreva nada — se nenhum item tiver o campo
+  // preenchido, o comportamento é 100% idêntico a antes (só o campo do
+  // cabeçalho, manual). Nullable — todo item criado antes desta feature não
+  // tem prazo estimado (valor null é válido).
+  prazoEstimadoDias            Int?
   // Nº de pontos da arte de bordado — modeloCalculo=BORDADO only (achado A4).
   // Driver de custo POR PEDIDO (diferente de numeroSetups acima, que é fixo
   // na máquina): a mesma máquina, na mesma camiseta, custa 5× diferente

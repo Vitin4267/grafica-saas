@@ -65,6 +65,7 @@ export function AdicionarItemForm({
         <input type="hidden" name="numeroCoresFlexo" value={campos.numeroCoresFlexo} />
         <input type="hidden" name="numeroCliques" value={campos.numeroCliques} />
         <input type="hidden" name="numeroSetups" value={campos.numeroSetups} />
+        <input type="hidden" name="prazoEstimadoDias" value={campos.prazoEstimadoDias} />
         <input type="hidden" name="numeroPontos" value={campos.numeroPontos} />
         <input type="hidden" name="tempoEstimadoMin" value={campos.tempoEstimadoMin} />
         <input type="hidden" name="metrosCorte" value={campos.metrosCorte} />

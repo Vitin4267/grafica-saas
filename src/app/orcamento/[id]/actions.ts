@@ -646,6 +646,9 @@ export async function editarOrcamento(
   // Acabamento cobrado por hora (ex: instalação, criação de arte) — não é
   // model-gated, independente do modeloCalculo do item.
   const horasEstimadas = formData.get("horasEstimadas") ? Number(formData.get("horasEstimadas")) : null;
+  // Achado B4 — prazo estimado de entrega EM DIAS, específico deste item
+  // (complementa Orcamento.prazoEntregaEstimadoDias único no cabeçalho).
+  const prazoEstimadoDias = formData.get("prazoEstimadoDias") ? Number(formData.get("prazoEstimadoDias")) : null;
   // Motor de clichê de etiqueta (só M2 com ConfiguracaoClicheEtiqueta) — ver
   // src/lib/orcamento-precificacao.ts.
   const papelId = String(formData.get("papelId") || "").trim() || null;
@@ -792,6 +795,7 @@ export async function editarOrcamento(
             numeroCoresFlexo: resultado.numeroCoresFlexo,
             numeroCliques: resultado.numeroCliques,
             numeroSetups: resultado.numeroSetups,
+            prazoEstimadoDias: prazoEstimadoDias,
             numeroPontos: resultado.numeroPontos,
             tempoEstimadoMin: resultado.tempoEstimadoMin,
             metrosCorte: resultado.metrosCorte,
@@ -1618,6 +1622,9 @@ export async function adicionarItemOrcamento(
   // Acabamento cobrado por hora (ex: instalação, criação de arte) — não é
   // model-gated, independente do modeloCalculo do item.
   const horasEstimadas = formData.get("horasEstimadas") ? Number(formData.get("horasEstimadas")) : null;
+  // Achado B4 — prazo estimado de entrega EM DIAS, específico deste item
+  // (complementa Orcamento.prazoEntregaEstimadoDias único no cabeçalho).
+  const prazoEstimadoDias = formData.get("prazoEstimadoDias") ? Number(formData.get("prazoEstimadoDias")) : null;
   // Motor de clichê de etiqueta (só M2 com ConfiguracaoClicheEtiqueta) — ver
   // src/lib/orcamento-precificacao.ts.
   const papelId = String(formData.get("papelId") || "").trim() || null;
@@ -1747,6 +1754,7 @@ export async function adicionarItemOrcamento(
             numeroCoresFlexo: resultado.numeroCoresFlexo,
             numeroCliques: resultado.numeroCliques,
             numeroSetups: resultado.numeroSetups,
+            prazoEstimadoDias: prazoEstimadoDias,
             numeroPontos: resultado.numeroPontos,
             tempoEstimadoMin: resultado.tempoEstimadoMin,
             metrosCorte: resultado.metrosCorte,
@@ -2403,6 +2411,7 @@ export async function duplicarOrcamento(
     numeroCoresFlexo: number | null;
     numeroCliques: number | null;
     numeroSetups: number | null;
+    prazoEstimadoDias: number | null;
     numeroPontos: number | null;
     tempoEstimadoMin: number | null;
     metrosCorte: number | null;
@@ -2557,6 +2566,7 @@ export async function duplicarOrcamento(
       numeroCoresFlexo: resultado.numeroCoresFlexo,
       numeroCliques: resultado.numeroCliques,
       numeroSetups: resultado.numeroSetups,
+      prazoEstimadoDias: itemOriginal.prazoEstimadoDias,
       numeroPontos: resultado.numeroPontos,
       tempoEstimadoMin: resultado.tempoEstimadoMin,
       metrosCorte: resultado.metrosCorte,
@@ -2616,6 +2626,7 @@ export async function duplicarOrcamento(
           numeroCoresFlexo: item.numeroCoresFlexo,
           numeroCliques: item.numeroCliques,
           numeroSetups: item.numeroSetups,
+          prazoEstimadoDias: item.prazoEstimadoDias,
           numeroPontos: item.numeroPontos,
           tempoEstimadoMin: item.tempoEstimadoMin,
           metrosCorte: item.metrosCorte,
