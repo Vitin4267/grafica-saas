@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { Card } from "@/components/ui/Card";
@@ -20,8 +21,10 @@ import {
 // primeiro explorar o catálogo/prensas de exemplo antes de gerar o orçamento.
 export function DadosExemploPanel({
   dadosExemploCarregados,
+  segmentoNull = false,
 }: {
   dadosExemploCarregados: boolean;
+  segmentoNull?: boolean;
 }) {
   const [stateCarregar, actionCarregar, pendingCarregar] = useActionState(
     carregarDadosExemploAction,
@@ -61,6 +64,31 @@ export function DadosExemploPanel({
           </p>
         </div>
       </div>
+
+      {segmentoNull && (
+        <Alert variant="info">
+          <div className="flex items-start gap-2">
+            <div className="flex-1">
+              <p className="font-medium">
+                Configure o perfil de negócio da sua gráfica pra receber exemplos mais parecidos com
+                seu negócio.
+              </p>
+              <p className="mt-1 text-sm opacity-90">
+                Você pode gerar exemplos mesmo sem preencher agora — eles virão com padrão Offset
+                comercial. Mas é melhor configurar antes se sua gráfica trabalha com estamparia ou
+                comunicação visual.
+              </p>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link href="/configuracoes/identidade">
+              <Button variant="outline">
+                Ir para Perfil de negócio
+              </Button>
+            </Link>
+          </div>
+        </Alert>
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
         <form action={actionGerar}>

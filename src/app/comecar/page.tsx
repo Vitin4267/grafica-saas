@@ -36,7 +36,7 @@ export default async function ComecarPage({
   await exigirAssinaturaAtiva(usuario);
   // Independentes entre si — mesma lógica de "não faça em cascata" adotada no
   // resto da navegação (ver commit "Reduz cascata de queries na navegação").
-  const [status, dadosExemploCarregados, vendedores] = await Promise.all([
+  const [status, dadosExemploCarregados, vendedores, grafica] = await Promise.all([
     obterStatusOnboarding(usuario.graficaId),
     existemDadosExemplo(usuario.graficaId),
     // Achado A8 — mesma lista de src/app/clientes/page.tsx.
@@ -44,6 +44,12 @@ export default async function ComecarPage({
       where: { graficaId: usuario.graficaId, desativadoEm: null },
       orderBy: { nome: "asc" },
       select: { id: true, nome: true },
+    }),
+    // Achado E3 — verificar segmento pra avisar se falta configurar antes de
+    // gerar exemplos.
+    prisma.grafica.findUnique({
+      where: { id: usuario.graficaId },
+      select: { segmento: true },
     }),
   ]);
   const { tour } = await searchParams;
@@ -88,7 +94,10 @@ export default async function ComecarPage({
         </div>
 
         <div className="mb-6">
-          <DadosExemploPanel dadosExemploCarregados={dadosExemploCarregados} />
+          <DadosExemploPanel
+            dadosExemploCarregados={dadosExemploCarregados}
+            segmentoNull={grafica?.segmento === null}
+          />
         </div>
 
         <div className="flex flex-col gap-6">
