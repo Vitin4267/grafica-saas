@@ -66,6 +66,7 @@ const modeloCalculoSchema = z.enum([
   "REVENDA",
   "BORDADO",
   "TEMPO_MAQUINA",
+  "DTF",
 ]);
 // Sem OUTRO de propósito: unidadeContagem não tem campo "outro" livre (só
 // ItemCatalogo.unidade tem), então OUTRO aqui só mostraria o rótulo genérico
@@ -197,6 +198,7 @@ export async function salvarModeloProduto(
     REVENDA: "Revenda / terceirização",
     BORDADO: "Bordado",
     TEMPO_MAQUINA: "Tempo de máquina (corte a laser, router, plotter)",
+    DTF: "DTF (transfer têxtil)",
   };
   const modeloAntes = ROTULO_MODELO[itemGrafica.modeloCalculo as typeof modeloCalculo] ?? itemGrafica.modeloCalculo;
 
@@ -275,6 +277,70 @@ export async function salvarModeloProduto(
         descricao: "Modelo de cálculo do item atualizado para M²",
         valorAnterior: `Modelo: ${modeloAntes}, custo impressão/m²: ${formatarPreco(itemGrafica.custoImpressaoM2)}, área mínima: ${formatarQuantidade(itemGrafica.areaMinimaFaturavel)}`,
         valorNovo: `Modelo: ${ROTULO_MODELO.M2}, custo impressão/m²: ${formatarPreco(custoImpressaoM2)}, área mínima: ${formatarQuantidade(areaMinimaFaturavel)}, ${bobinasResult.data.length} bobina${bobinasResult.data.length > 1 ? "s" : ""}`,
+      });
+    } else if (modeloCalculo === "DTF") {
+      // Achado A5 da auditoria de abrangência — DTF reaproveita o MESMO
+      // motor/config de M2 (bobina de filme, custo de impressão por m²,
+      // área mínima faturável), acrescido de custoSubstratoPorPeca (a
+      // camiseta) e custoPrensagemPorPeca (a prensa térmica) — os únicos 2
+      // campos realmente novos deste achado (ver calcularM2/m2.ts).
+      const bobinasResult = parseJsonArray(formData.get("bobinasJson"), bobinaSchema);
+      if (!bobinasResult.ok) {
+        return { ok: false, mensagem: bobinasResult.mensagem };
+      }
+      if (bobinasResult.data.length === 0) {
+        return {
+          ok: false,
+          mensagem: "Adicione ao menos uma bobina (do filme DTF) para habilitar o cálculo DTF.",
+        };
+      }
+
+      const custoImpressaoM2 = Number(formData.get("custoImpressaoM2") || 0);
+      const areaMinimaFaturavel = Number(formData.get("areaMinimaFaturavel") || 0);
+      const custoSubstratoPorPeca = Number(formData.get("custoSubstratoPorPeca") || 0);
+      const custoPrensagemPorPeca = Number(formData.get("custoPrensagemPorPeca") || 0);
+      if (!Number.isFinite(custoImpressaoM2) || custoImpressaoM2 < 0) {
+        return { ok: false, mensagem: "Custo de impressão por m² inválido." };
+      }
+      if (!Number.isFinite(areaMinimaFaturavel) || areaMinimaFaturavel < 0) {
+        return { ok: false, mensagem: "Área mínima faturável inválida." };
+      }
+      if (!Number.isFinite(custoSubstratoPorPeca) || custoSubstratoPorPeca < 0) {
+        return { ok: false, mensagem: "Custo do substrato (camiseta) por peça inválido." };
+      }
+      if (!Number.isFinite(custoPrensagemPorPeca) || custoPrensagemPorPeca < 0) {
+        return { ok: false, mensagem: "Custo de prensagem por peça inválido." };
+      }
+
+      await prisma.$transaction([
+        prisma.itemGrafica.update({
+          where: { id: itemGraficaId },
+          data: {
+            modeloCalculo: "DTF",
+            custoImpressaoM2,
+            areaMinimaFaturavel,
+            custoSubstratoPorPeca,
+            custoPrensagemPorPeca,
+            unidadeContagem: unidadeContagemFinal,
+            fatorConversao: fatorConversaoFinal,
+          },
+        }),
+        prisma.bobinaMaterial.deleteMany({ where: { itemGraficaId } }),
+        prisma.bobinaMaterial.createMany({
+          data: bobinasResult.data.map((b) => ({ itemGraficaId, ...b })),
+        }),
+      ]);
+
+      await registrarAuditoria({
+        graficaId: usuario.graficaId,
+        usuarioId: usuario.id,
+        usuarioNome: usuario.nome,
+        acao: "catalogo.salvar_modelo_calculo",
+        entidade: "ItemGrafica",
+        entidadeId: itemGraficaId,
+        descricao: "Modelo de cálculo do item atualizado para DTF",
+        valorAnterior: `Modelo: ${modeloAntes}, custo impressão/m²: ${formatarPreco(itemGrafica.custoImpressaoM2)}, substrato/peça: ${formatarPreco(itemGrafica.custoSubstratoPorPeca)}, prensagem/peça: ${formatarPreco(itemGrafica.custoPrensagemPorPeca)}`,
+        valorNovo: `Modelo: ${ROTULO_MODELO.DTF}, custo impressão/m²: ${formatarPreco(custoImpressaoM2)}, substrato/peça: ${formatarPreco(custoSubstratoPorPeca)}, prensagem/peça: ${formatarPreco(custoPrensagemPorPeca)}, ${bobinasResult.data.length} bobina${bobinasResult.data.length > 1 ? "s" : ""}`,
       });
     } else if (modeloCalculo === "OFFSET") {
       const formatosResult = parseJsonArray(

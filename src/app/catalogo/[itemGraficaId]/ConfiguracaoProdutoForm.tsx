@@ -24,7 +24,8 @@ type ModeloCalculo =
   | "PERSONALIZACAO"
   | "REVENDA"
   | "BORDADO"
-  | "TEMPO_MAQUINA";
+  | "TEMPO_MAQUINA"
+  | "DTF";
 
 // Mesmo conjunto de unidadeContagemSchema em actions.ts — sem OUTRO (sem
 // campo de texto livre pra essa, ficaria só "outro" na exibição de preço).
@@ -213,6 +214,8 @@ export function ConfiguracaoProdutoForm({
   viraFolha: viraFolhaInicial,
   custoImpressaoM2: custoImpressaoM2Inicial,
   areaMinimaFaturavel: areaMinimaFaturavelInicial,
+  custoSubstratoPorPeca: custoSubstratoPorPecaInicial,
+  custoPrensagemPorPeca: custoPrensagemPorPecaInicial,
   gramaturaGm2: gramaturaGm2Inicial,
   papelId: papelIdInicial,
   papeis,
@@ -244,6 +247,11 @@ export function ConfiguracaoProdutoForm({
   viraFolha: boolean;
   custoImpressaoM2: string;
   areaMinimaFaturavel: string;
+  // Achado A5 — só relevantes/exibidos quando modeloCalculo=DTF (camiseta/
+  // substrato que recebe o transfer e a prensa térmica), ver bloco DTF
+  // abaixo.
+  custoSubstratoPorPeca: string;
+  custoPrensagemPorPeca: string;
   gramaturaGm2: string;
   papelId: string;
   papeis: { id: string; nome: string; gramaturas: number[] }[];
@@ -355,7 +363,10 @@ export function ConfiguracaoProdutoForm({
   const gramaturasDoPapel = papeis.find((p) => p.id === papelId)?.gramaturas ?? [];
 
   const temBobinasOrfas =
-    modeloCalculo !== "M2" && modeloCalculo !== "FLEXOGRAFIA" && bobinas.length > 0;
+    modeloCalculo !== "M2" &&
+    modeloCalculo !== "FLEXOGRAFIA" &&
+    modeloCalculo !== "DTF" &&
+    bobinas.length > 0;
   const temFormatosOrfaos = modeloCalculo !== "OFFSET" && formatos.length > 0;
 
   return (
@@ -395,6 +406,7 @@ export function ConfiguracaoProdutoForm({
         >
           <option value="SIMPLES">Simples (preço direto)</option>
           <option value="M2">M2 — grande formato em bobina</option>
+          <option value="DTF">DTF — transfer têxtil (filme em bobina)</option>
           <option value="OFFSET">Offset — impressão em folha</option>
           <option value="FLEXOGRAFIA">Flexografia — impressão em bobina</option>
           <option value="DIGITAL">Digital — impressão pequeno formato</option>
@@ -460,16 +472,28 @@ export function ConfiguracaoProdutoForm({
           />
         </div>
 
-        {modeloCalculo === "M2" && (
+        {(modeloCalculo === "M2" || modeloCalculo === "DTF") && (
           <div className="flex flex-col gap-4 border-t border-slate-100 pt-4 dark:border-slate-800">
             {temBobinasOrfas === false && bobinas.length === 0 && (
               <Alert variant="error">
-                Adicione ao menos uma bobina para habilitar o cálculo M2.
+                {modeloCalculo === "DTF"
+                  ? "Adicione ao menos uma bobina (do filme DTF) para habilitar o cálculo DTF."
+                  : "Adicione ao menos uma bobina para habilitar o cálculo M2."}
               </Alert>
+            )}
+            {modeloCalculo === "DTF" && (
+              <p className="text-xs text-slate-500">
+                DTF usa o mesmo motor de nesting em bobina do M2 (múltiplas artes
+                &quot;gangadas&quot; no mesmo metro de filme) — sem tela/matriz por arte.
+                Informe abaixo o custo do filme (bobina), o custo de impressão por m²
+                e os dois custos por peça do processo têxtil.
+              </p>
             )}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Input
-                label="Custo de impressão por m²"
+                label={
+                  modeloCalculo === "DTF" ? "Custo de impressão (tinta) por m²" : "Custo de impressão por m²"
+                }
                 name="custoImpressaoM2"
                 type="number"
                 step="0.0001"
@@ -490,6 +514,31 @@ export function ConfiguracaoProdutoForm({
                   hint="Piso por PEÇA: peça menor que essa área é cobrada como se tivesse essa área (ex: mínimo de 1m² por adesivo recortado). Independente do pedido mínimo em R$ de Configurações, que é um piso do orçamento inteiro."
                 />
               </div>
+            </div>
+            {/* Achado A5 — os dois campos novos do DTF: custo por PEÇA (não
+                por m²) do substrato e da prensagem. Mantidos no DOM mesmo
+                quando o modelo não é DTF (só ocultos via CSS), mesmo padrão
+                de mostrarAvancadoM2 acima, pra não perder o valor no submit
+                se a gráfica for e voltar entre modelos antes de salvar. */}
+            <div className={modeloCalculo === "DTF" ? "grid grid-cols-1 gap-4 sm:grid-cols-2" : "hidden"}>
+              <Input
+                label="Custo do substrato por peça (camiseta em branco)"
+                name="custoSubstratoPorPeca"
+                type="number"
+                step="0.0001"
+                min="0"
+                defaultValue={custoSubstratoPorPecaInicial}
+                hint="A peça (camiseta, boné, etc.) que recebe o transfer — custo fixo por unidade, somado ao custo do filme."
+              />
+              <Input
+                label="Custo de prensagem por peça"
+                name="custoPrensagemPorPeca"
+                type="number"
+                step="0.0001"
+                min="0"
+                defaultValue={custoPrensagemPorPecaInicial}
+                hint="O custo da prensa térmica (energia, tempo, mão de obra) por peça aplicada."
+              />
             </div>
             {!mostrarAvancadoM2 && (
               <button

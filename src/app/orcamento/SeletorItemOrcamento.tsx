@@ -39,7 +39,8 @@ export type ItemVenda = {
     | "PERSONALIZACAO"
     | "REVENDA"
     | "BORDADO"
-    | "TEMPO_MAQUINA";
+    | "TEMPO_MAQUINA"
+    | "DTF";
   // ConfiguracaoClicheEtiqueta presente pra este produto — só produtos M2
   // marcados assim mostram o seletor de papel/cores/faca/frete abaixo.
   usaClicheEtiqueta: boolean;
@@ -219,6 +220,10 @@ export function SeletorItemOrcamento({
   // SEMPRE motor avançado (mesma razão de usaModeloRevenda).
   const usaModeloBordado = itemSelecionado?.modeloCalculo === "BORDADO";
   const usaModeloTempoMaquina = itemSelecionado?.modeloCalculo === "TEMPO_MAQUINA";
+  // DTF (achado A5) — mesmo calcularM2 compartilhado de usaModeloM2 acima
+  // (nesting em bobina de filme), sem os campos de etiqueta/clichê
+  // específicos do M2 (usaClicheEtiqueta abaixo continua M2-only).
+  const usaModeloDTF = itemSelecionado?.modeloCalculo === "DTF";
   const usaMotorAvancado =
     usaModeloM2 ||
     usaModeloOffset ||
@@ -227,11 +232,14 @@ export function SeletorItemOrcamento({
     usaModeloSetupPorPeca ||
     usaModeloRevenda ||
     usaModeloBordado ||
-    usaModeloTempoMaquina;
+    usaModeloTempoMaquina ||
+    usaModeloDTF;
   // Os 3 de setup-por-peça não precisam de largura/altura pro custo em si
   // (sem nesting) — M2/OFFSET/FLEXOGRAFIA/DIGITAL (achado N4: agora faz
-  // imposição igual ao Offset) exigem dimensão aqui.
-  const exigeDimensao = usaModeloM2 || usaModeloOffset || usaModeloFlexografia || usaModeloDigital;
+  // imposição igual ao Offset) exigem dimensão aqui. DTF (achado A5) exige
+  // dimensão pela mesma razão de M2 — o custo é nesting em bobina.
+  const exigeDimensao =
+    usaModeloM2 || usaModeloOffset || usaModeloFlexografia || usaModeloDigital || usaModeloDTF;
   const usaClicheEtiqueta = usaModeloM2 && itemSelecionado?.usaClicheEtiqueta === true;
   // Achado N1 — pra um produto SIMPLES sem a flag simplesCobraPorArea,
   // preencher largura/altura não muda mais o preço (sempre por peça), então

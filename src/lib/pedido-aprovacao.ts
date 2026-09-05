@@ -186,6 +186,7 @@ function componentesCustoBreakdown(
     | "REVENDA"
     | "BORDADO"
     | "TEMPO_MAQUINA"
+    | "DTF"
 ): ComponenteCusto[] | null {
   if (!breakdown || typeof breakdown !== "object" || Array.isArray(breakdown)) return null;
   const raiz = breakdown as Record<string, unknown>;
@@ -207,6 +208,34 @@ function componentesCustoBreakdown(
       const componentes: ComponenteCusto[] = [];
       if (custoMaterial.gt(0)) componentes.push({ chave: "material", valor: custoMaterial });
       if (custoImpressao.gt(0)) componentes.push({ chave: "impressao", valor: custoImpressao });
+      return componentes;
+    }
+    return materialTotal.gt(0) ? [{ chave: "material", valor: materialTotal }] : [];
+  }
+
+  // DTF (achado A5) — mesmo calcularM2 compartilhado de M2 acima, com dois
+  // extras: custoSubstrato (a camiseta, um MATERIAL físico consumido — junta
+  // com custoMaterial/o filme no bucket "material") e custoPrensagem (a
+  // prensa térmica, custo de PROCESSO — junta com custoImpressao/a tinta no
+  // bucket "impressao"). Sem os dois na metricas (produto DTF configurado
+  // sem eles, ou breakdown de um M2 antigo por engano), caem em 0 e não
+  // mudam o resultado — mesmo fallback de custoMaterial/custoImpressao
+  // ausentes logo abaixo.
+  if (modeloCalculo === "DTF") {
+    const metricasRaw = raiz.metricas;
+    const metricas =
+      metricasRaw && typeof metricasRaw === "object" ? (metricasRaw as Record<string, unknown>) : null;
+    const custoMaterial = metricas ? lerDecimalDeJson(metricas.custoMaterial) : null;
+    const custoImpressao = metricas ? lerDecimalDeJson(metricas.custoImpressao) : null;
+    const custoSubstrato = (metricas ? lerDecimalDeJson(metricas.custoSubstrato) : null) ?? paraDecimal(0);
+    const custoPrensagem = (metricas ? lerDecimalDeJson(metricas.custoPrensagem) : null) ?? paraDecimal(0);
+
+    if (custoMaterial && custoImpressao) {
+      const componentes: ComponenteCusto[] = [];
+      const material = custoMaterial.plus(custoSubstrato);
+      const impressao = custoImpressao.plus(custoPrensagem);
+      if (material.gt(0)) componentes.push({ chave: "material", valor: material });
+      if (impressao.gt(0)) componentes.push({ chave: "impressao", valor: impressao });
       return componentes;
     }
     return materialTotal.gt(0) ? [{ chave: "material", valor: materialTotal }] : [];

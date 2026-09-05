@@ -60,7 +60,8 @@ import type { ModeloCalculo, UnidadeMedida } from "@/generated/prisma/enums";
 //     breakdown.metricas.pesoTotalPedidoKg — nunca recalculado aqui a partir
 //     de folhas × gramatura, pra não duplicar uma conversão que o motor já
 //     fez e arriscar divergir dela).
-//   - M2: METRO_QUADRADO (breakdown.metricas.areaFaturavel).
+//   - M2 (e DTF, achado A5 — mesmo calcularM2 compartilhado): METRO_QUADRADO
+//     (breakdown.metricas.areaFaturavel).
 //   - FLEXOGRAFIA: METRO_LINEAR (breakdown.metricas.metragemLinearM — metros
 //     lineares da bobina ESCOLHIDA pelo motor; não multiplicamos pela largura
 //     da bobina pra virar m², porque a unidade de estoque aqui é
@@ -106,7 +107,7 @@ export function resolverQuantidadeSubstratoMotor(
     (item.modeloCalculo === "OFFSET" &&
       item.papelIdProduto !== null &&
       ficha.materiaPrimaId === item.papelIdProduto) ||
-    (item.modeloCalculo === "M2" &&
+    ((item.modeloCalculo === "M2" || item.modeloCalculo === "DTF") &&
       item.papelIdOrcamentoEtiqueta !== null &&
       ficha.materiaPrimaId === item.papelIdOrcamentoEtiqueta);
 
@@ -121,7 +122,10 @@ export function resolverQuantidadeSubstratoMotor(
     if (ficha.unidadeEstoque === "KG") return lerNumeroNaoNegativo(m.pesoTotalPedidoKg);
     return null;
   }
-  if (item.modeloCalculo === "M2") {
+  // DTF (achado A5) reaproveita o MESMO calcularM2 do M2 — o breakdown tem a
+  // mesma métrica areaFaturavel (área de filme consumida da bobina), então
+  // recebe o mesmo tratamento aqui.
+  if (item.modeloCalculo === "M2" || item.modeloCalculo === "DTF") {
     if (ficha.unidadeEstoque === "METRO_QUADRADO") return lerNumeroNaoNegativo(m.areaFaturavel);
     return null;
   }

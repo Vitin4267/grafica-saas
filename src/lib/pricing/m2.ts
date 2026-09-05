@@ -30,6 +30,13 @@ export type ResultadoM2 = {
   numPaineis?: number;
   custoEmenda: Dec;
   avisos: string[];
+  // Achado A5 — custo de substrato (camiseta/peça em branco) e de prensagem
+  // térmica, os dois Q × valor por peça (ContextoM2.custoSubstratoPorPeca/
+  // custoPrensagemPorPeca), já somados em custoBase. 0 quando o produto não
+  // configurou esses campos (M2 puro) — mesma semântica de custoEmenda
+  // acima.
+  custoSubstrato: Dec;
+  custoPrensagem: Dec;
 };
 
 type Candidato = {
@@ -214,7 +221,21 @@ export function calcularM2(
 
   const custoImpressaoM2 = paraDecimal(contexto.custoImpressaoM2);
   const custoImpressao = paraDecimal(Q).times(areaImpressaoPorPeca).times(custoImpressaoM2);
-  const custoBase = escolhido.custoMaterial.plus(custoImpressao).plus(custoEmenda);
+
+  // Achado A5 (DTF) — custo por PEÇA do substrato (camiseta) e da prensagem
+  // térmica, os dois Q × valor por peça, na mesma base de quantidade que o
+  // resto do motor já usa. `?? 0` cobre tanto "produto M2 puro, campo nunca
+  // configurado" quanto "DTF sem um dos dois preenchido" — sem lançar erro,
+  // mesmo espírito de custoM2Material/custoImpressaoM2 acima (0 é um custo
+  // válido, só significa "não configurado").
+  const custoSubstrato = paraDecimal(Q).times(contexto.custoSubstratoPorPeca ?? 0);
+  const custoPrensagem = paraDecimal(Q).times(contexto.custoPrensagemPorPeca ?? 0);
+
+  const custoBase = escolhido.custoMaterial
+    .plus(custoImpressao)
+    .plus(custoEmenda)
+    .plus(custoSubstrato)
+    .plus(custoPrensagem);
 
   // Métrica de EXIBIÇÃO/auditoria — área NOMINAL do pedido (w×h, sem margem
   // de segurança) vs. o mesmo piso, só pra mostrar ao usuário "isso está
@@ -246,5 +267,7 @@ export function calcularM2(
     numPaineis,
     custoEmenda,
     avisos,
+    custoSubstrato,
+    custoPrensagem,
   };
 }

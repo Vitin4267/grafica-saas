@@ -64,7 +64,13 @@ export type PedidoPrecificacao =
   // Bordado (achado A4) e tempo de máquina (achado A6) — sem nesting, mesma
   // família do DIGITAL/setup-por-peça/REVENDA acima.
   | { tipo: "BORDADO"; pedido: PedidoBordado; acabamentos: ConfigAcabamento[] }
-  | { tipo: "TEMPO_MAQUINA"; pedido: PedidoTempoMaquina; acabamentos: ConfigAcabamento[] };
+  | { tipo: "TEMPO_MAQUINA"; pedido: PedidoTempoMaquina; acabamentos: ConfigAcabamento[] }
+  // DTF (achado A5) — mesmo PedidoM2/calcularM2 de "M2" acima, discriminante
+  // literal próprio pelo mesmo motivo dos 4 de setup-por-peça (narrowing
+  // correto, e ecoa 1:1 o ModeloCalculo do produto). Único caso em que dois
+  // membros desta união chamam a MESMA função de cálculo (calcularM2) — ver
+  // o `||` no branch abaixo.
+  | { tipo: "DTF"; pedido: PedidoM2; acabamentos: ConfigAcabamento[] };
 
 export type ContextoPrecificacao = {
   itemGraficaId: string;
@@ -146,11 +152,11 @@ export function precificar(
   pedido: PedidoPrecificacao,
   contexto: ContextoPrecificacao
 ): ResultadoPrecificacao {
-  if (pedido.tipo === "M2") {
+  if (pedido.tipo === "M2" || pedido.tipo === "DTF") {
     if (!contexto.m2) {
       throw new ErroPrecificacao(
         "MATERIAL_SEM_BOBINA",
-        "Contexto M2 não fornecido para um item com modeloCalculo=M2."
+        `Contexto M2 não fornecido para um item com modeloCalculo=${pedido.tipo}.`
       );
     }
 
@@ -213,6 +219,11 @@ export function precificar(
         numPaineis: resultado.numPaineis ?? null,
         custoEmenda: resultado.custoEmenda.toNumber(),
         avisos: resultado.avisos,
+        // Achado A5 (DTF) — 0 pra M2 puro (comportamento de sempre), > 0 só
+        // quando o produto configurou custoSubstratoPorPeca/
+        // custoPrensagemPorPeca (ver ContextoM2 em tipos.ts).
+        custoSubstrato: resultado.custoSubstrato.toNumber(),
+        custoPrensagem: resultado.custoPrensagem.toNumber(),
       },
     };
   }

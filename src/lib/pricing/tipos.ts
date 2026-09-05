@@ -12,7 +12,8 @@ export type ModeloCalculo =
   | "PERSONALIZACAO"
   | "REVENDA"
   | "BORDADO"
-  | "TEMPO_MAQUINA";
+  | "TEMPO_MAQUINA"
+  | "DTF";
 export type BaseCobranca =
   | "UNIDADE"
   | "M2"
@@ -56,6 +57,16 @@ export type ContextoM2 = {
   // bobina). Presente = peça maior que toda bobina cadastrada vira painéis
   // emendados em vez de erro (ver calcularM2 em m2.ts).
   configuracaoEmenda?: { custoPorMetroLinear: number; sobreposicaoM: number };
+  // Achado A5 — só preenchidos (>0) quando o produto é DTF
+  // (ItemGrafica.custoSubstratoPorPeca/custoPrensagemPorPeca); ausentes ou 0
+  // pra M2 puro (nenhum produto M2 existente tinha esses campos, ver
+  // migration). custoSubstratoPorPeca = camiseta/substrato que recebe o
+  // transfer; custoPrensagemPorPeca = a prensa térmica — os dois somados
+  // (× Q) ao custoBase do calcularM2 compartilhado, mesmo padrão de
+  // ContextoDigital/ContextoSetupPorPeca.custoSubstratoPorPeca (Q × valor
+  // por peça).
+  custoSubstratoPorPeca?: number;
+  custoPrensagemPorPeca?: number;
 };
 
 // ---------- Cenário 2 (offset / folha) ----------

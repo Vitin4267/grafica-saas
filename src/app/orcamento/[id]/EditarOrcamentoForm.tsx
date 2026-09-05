@@ -72,7 +72,8 @@ export function EditarOrcamentoForm({
     | "PERSONALIZACAO"
     | "REVENDA"
     | "BORDADO"
-    | "TEMPO_MAQUINA";
+    | "TEMPO_MAQUINA"
+    | "DTF";
   // ConfiguracaoClicheEtiqueta presente pro produto deste item — só então
   // mostra o seletor de papel/cores/faca/frete.
   usaClicheEtiqueta: boolean;
@@ -150,17 +151,21 @@ export function EditarOrcamentoForm({
     modeloCalculo === "PERSONALIZACAO" ||
     modeloCalculo === "REVENDA" ||
     modeloCalculo === "BORDADO" ||
-    modeloCalculo === "TEMPO_MAQUINA";
+    modeloCalculo === "TEMPO_MAQUINA" ||
+    // DTF (achado A5) — mesmo motor avançado de M2 (calcularM2
+    // compartilhado).
+    modeloCalculo === "DTF";
   // Diferente de usaMotorAvancado: M2/OFFSET/FLEXOGRAFIA/DIGITAL (achado N4:
   // agora faz imposição igual ao Offset) EXIGEM largura/altura pro cálculo em
   // si (nesting) — os 3 de setup-por-peça, Revenda, Bordado e Tempo de
   // máquina têm a dimensão opcional (ver design "dimensões opcionais" do
-  // plano).
+  // plano). DTF (achado A5) exige dimensão pela mesma razão de M2.
   const exigeDimensao =
     modeloCalculo === "M2" ||
     modeloCalculo === "OFFSET" ||
     modeloCalculo === "FLEXOGRAFIA" ||
-    modeloCalculo === "DIGITAL";
+    modeloCalculo === "DIGITAL" ||
+    modeloCalculo === "DTF";
   const usaModeloDigital = modeloCalculo === "DIGITAL";
   // Achado B7 — mesmo agrupamento de SeletorItemOrcamento.tsx (os 5
   // compartilham a mesma checkbox "material fornecido pelo cliente").

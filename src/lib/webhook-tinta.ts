@@ -25,7 +25,8 @@ export type JobParaAnaliseTinta = {
     | "PERSONALIZACAO"
     | "REVENDA"
     | "BORDADO"
-    | "TEMPO_MAQUINA";
+    | "TEMPO_MAQUINA"
+    | "DTF";
   quantidade: number;
   larguraCm: number | null;
   alturaCm: number | null;

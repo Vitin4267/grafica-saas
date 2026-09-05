@@ -63,7 +63,8 @@ export type PrecificarItemResult =
         | "PERSONALIZACAO"
         | "REVENDA"
         | "BORDADO"
-        | "TEMPO_MAQUINA";
+        | "TEMPO_MAQUINA"
+        | "DTF";
     }
   | { ok: false; mensagem: string };
 
@@ -356,7 +357,8 @@ export async function criarOrcamento(
       | "PERSONALIZACAO"
       | "REVENDA"
       | "BORDADO"
-      | "TEMPO_MAQUINA";
+      | "TEMPO_MAQUINA"
+      | "DTF";
     corFrente: number | null;
     corVerso: number | null;
     numeroCoresFlexo: number | null;

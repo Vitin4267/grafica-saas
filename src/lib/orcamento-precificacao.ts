@@ -16,7 +16,8 @@ type ModeloCalculoPrecificavel =
   | "PERSONALIZACAO"
   | "REVENDA"
   | "BORDADO"
-  | "TEMPO_MAQUINA";
+  | "TEMPO_MAQUINA"
+  | "DTF";
 
 // Os 4 modelos de "setup por peça" — SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE/
 // PERSONALIZACAO (achado A3 da auditoria de abrangência: tampografia,
@@ -621,6 +622,19 @@ export async function calcularItemOrcamento(
           metrosCorte: dados.metrosCorte ?? undefined,
           larguraM: larguraMOpcional,
           alturaM: alturaMOpcional,
+        },
+        acabamentos,
+      };
+    } else if (itemGrafica.modeloCalculo === "DTF") {
+      // Achado A5 — mesmo PedidoM2 do branch M2 abaixo (DTF reaproveita o
+      // mesmo motor calcularM2, ver carregarContextoPrecificacao); só o
+      // discriminante de tipo muda, pra ecoar 1:1 o modeloCalculo do produto.
+      pedido = {
+        tipo: "DTF",
+        pedido: {
+          larguraM: larguraCm! / 100,
+          alturaM: alturaCm! / 100,
+          quantidade,
         },
         acabamentos,
       };

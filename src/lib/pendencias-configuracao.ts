@@ -32,14 +32,16 @@ export type PendenciaConfiguracao =
 export async function listarPendenciasConfiguracao(
   graficaId: string
 ): Promise<PendenciaConfiguracao[]> {
-  // Produto M2 ativo sem nenhuma bobina cadastrada — o motor de preço nem
-  // roda pra ele (ver src/lib/pricing/carregar.ts, MATERIAL_SEM_BOBINA), mas
-  // isso só aparece pro vendedor na hora de montar um orçamento. Pega antes.
+  // Produto M2 (ou DTF, achado A5 — reaproveita o MESMO motor calcularM2 e a
+  // mesma exigência de bobina, ver src/lib/pricing/carregar.ts) ativo sem
+  // nenhuma bobina cadastrada — o motor de preço nem roda pra ele
+  // (MATERIAL_SEM_BOBINA), mas isso só aparece pro vendedor na hora de
+  // montar um orçamento. Pega antes.
   const itensSemBobina = await prisma.itemGrafica.findMany({
     where: {
       graficaId,
       ativo: true,
-      modeloCalculo: "M2",
+      modeloCalculo: { in: ["M2", "DTF"] },
       bobinas: { none: {} },
     },
     include: { itemCatalogo: true },

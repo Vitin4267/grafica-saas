@@ -260,6 +260,8 @@ export default async function ConfiguracaoItemPage({
               viraFolha={itemGrafica.viraFolha}
               custoImpressaoM2={itemGrafica.custoImpressaoM2?.toString() ?? ""}
               areaMinimaFaturavel={itemGrafica.areaMinimaFaturavel?.toString() ?? ""}
+              custoSubstratoPorPeca={itemGrafica.custoSubstratoPorPeca?.toString() ?? ""}
+              custoPrensagemPorPeca={itemGrafica.custoPrensagemPorPeca?.toString() ?? ""}
               gramaturaGm2={itemGrafica.gramaturaGm2?.toString() ?? ""}
               papelId={itemGrafica.papelId ?? ""}
               papeis={materiasPrimas.map((m) => ({

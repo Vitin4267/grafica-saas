@@ -218,7 +218,12 @@ export async function carregarContextoPrecificacao(
     parametros,
   };
 
-  if (item.modeloCalculo === "M2") {
+  // Achado A5 — DTF reaproveita o MESMO branch/motor de M2 (calcularM2),
+  // ver comentário do enum ModeloCalculo.DTF no schema. custoM2Material
+  // continua vindo de item.precoCompra pros dois (é o custo do filme por m²
+  // no caso do DTF, mesma semântica de "matéria-prima em bobina" que já
+  // tinha pro M2).
+  if (item.modeloCalculo === "M2" || item.modeloCalculo === "DTF") {
     let custoM2Material = Number(item.precoCompra ?? 0);
 
     if (item.configuracaoClicheEtiqueta) {
@@ -270,6 +275,13 @@ export async function carregarContextoPrecificacao(
             sobreposicaoM: Number(item.configuracaoEmenda.sobreposicaoM),
           }
         : undefined,
+      // Achado A5 — sempre lidos do item (não gated por modeloCalculo===DTF
+      // aqui dentro): todo ItemGrafica M2 existente tem essas duas colunas
+      // NULL (migration aditiva), então `?? 0` preserva 100% o comportamento
+      // de M2 puro sem precisar de branch extra. Só um produto DTF (ou um M2
+      // configurado manualmente com esses campos) chega com valor > 0.
+      custoSubstratoPorPeca: Number(item.custoSubstratoPorPeca ?? 0),
+      custoPrensagemPorPeca: Number(item.custoPrensagemPorPeca ?? 0),
     };
   } else if (item.modeloCalculo === "OFFSET") {
     if (!item.prensa) {

@@ -90,6 +90,19 @@ enum ModeloCalculo {
   // de DIGITAL/setup-por-peça/REVENDA acima.
   BORDADO
   TEMPO_MAQUINA
+  // Achado A5 da Parte 1 da auditoria de abrangência
+  // (pesquisa-abrangencia-modulos.md, 2026-09-02): DTF (Direct to Film —
+  // transfer têxtil) existia só como SERVICO no catálogo mestre, sem
+  // ModeloCalculo próprio — a gráfica caía em SUBLIMACAO (setup-por-peça),
+  // que erra por construção: DTF não tem tela/matriz por arte (setup tende
+  // a zero) e o custo real é POR METRO LINEAR DE FILME, com múltiplas artes
+  // "gangadas" no mesmo metro — a forma de custo é a do M2 (nesting em
+  // bobina), não a de setup-por-peça. DTF aponta pro MESMO calcularM2 que M2
+  // usa (mesmo precedente dos 4 rótulos de setup-por-peça que compartilham
+  // calcularSetupPorPeca acima), com dois extras: custoSubstratoPorPeca (a
+  // camiseta/substrato que recebe o transfer) e custoPrensagemPorPeca (a
+  // prensa térmica) — ver os dois campos em ItemGrafica abaixo.
+  DTF
 }
 
 // Como um acabamento (SERVICO) é cobrado — spec §3. FOLHA_IMPRESSA é o caso mais sutil:
@@ -341,9 +354,21 @@ model ItemGrafica {
   // próxima). onDelete=Restrict: não deixa excluir um papel ainda em uso.
   papelId String?
 
-  // Só relevante quando tipo=PRODUTO e modeloCalculo=M2.
+  // Só relevante quando tipo=PRODUTO e modeloCalculo=M2 (ou DTF, que
+  // reaproveita o mesmo motor calcularM2 — achado A5).
   custoImpressaoM2    Decimal? @db.Decimal(12, 4)
   areaMinimaFaturavel Decimal? @db.Decimal(8, 4)
+
+  // Achado A5 da auditoria de abrangência — só relevante quando
+  // modeloCalculo=DTF: custo por PEÇA da camiseta/substrato que recebe o
+  // transfer e custo por PEÇA da prensagem térmica (máquina). Somados
+  // (× quantidade) ao custoBase do calcularM2 compartilhado — ver
+  // ContextoM2.custoSubstratoPorPeca/custoPrensagemPorPeca em
+  // src/lib/pricing/tipos.ts. NULL (e portanto 0 no cálculo, ver
+  // src/lib/pricing/carregar.ts) pra todo produto M2 existente — nenhuma
+  // regressão pra quem já usa M2 puro.
+  custoSubstratoPorPeca Decimal? @db.Decimal(12, 4)
+  custoPrensagemPorPeca Decimal? @db.Decimal(12, 4)
 
   // Em qual CategoriaCusto a baixa automática desta matéria-prima cai (ver
   // fase-custo-real.md §1.5, §3.2) — só relevante quando tipo=MATERIA_PRIMA.
