@@ -36,6 +36,11 @@ export type PedidoKanban = {
   // ENVIADO pra este pedido, mesmo indicador de PedidoLinha.tsx. null quando
   // não há nenhuma terceirização ativa.
   chipTerceirizacao: ReactNode;
+  // Achado C2 da auditoria de abrangência (Parte 2/Produção, 2026-09-01) —
+  // "Parado — <motivo>" quando existe uma ParadaPedido ATIVA pra este
+  // pedido, mesmo indicador de PedidoLinha.tsx. null quando não há nenhuma
+  // parada ativa.
+  chipParada: ReactNode;
   // null quando o usuário não tem CUSTOS.podeVer — mesma regra de
   // producao/page.tsx (nunca manda o valor real pro client nesse caso).
   valorTotal: number | null;
@@ -395,6 +400,7 @@ function KanbanCardConteudo({
       <p className="text-xs text-slate-500">{pedido.itensResumo}</p>
       {pedido.chipAtraso}
       {pedido.chipTerceirizacao}
+      {pedido.chipParada}
       {podeVerCustos && pedido.valorTotal !== null && (
         <p className="text-xs text-slate-600 dark:text-slate-300">
           {formatoMoeda.format(pedido.valorTotal)}

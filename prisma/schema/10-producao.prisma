@@ -72,6 +72,10 @@ model ApontamentoEtapa {
   equipamento         Equipamento?         @relation(fields: [equipamentoId], references: [id], onDelete: SetNull)
   impressoraDigital   ImpressoraDigital?   @relation(fields: [impressoraDigitalId], references: [id], onDelete: SetNull)
   maquinaSetupPorPeca MaquinaSetupPorPeca? @relation(fields: [maquinaSetupPorPecaId], references: [id], onDelete: SetNull)
+  // Achado C2 da auditoria de abrangência (Parte 2/Produção) — lado inverso
+  // de ParadaPedido.apontamentoEtapaId (opcional: nem toda parada aponta pra
+  // um apontamento específico, ver comentário lá).
+  paradas             ParadaPedido[]
 
   @@index([graficaId])
   @@index([pedidoId])
@@ -230,9 +234,107 @@ model Pedido {
   // pedido enviadas pra terceirização (laminação, UV, acabamento de livro
   // etc.), ver model EtapaTerceirizada.
   etapasTerceirizadas EtapaTerceirizada[]
+  // Achado C2 da auditoria de abrangência (Parte 2/Produção) — intervalos em
+  // que este pedido ficou PARADO (aguardando material, aprovação do
+  // cliente, etc.), ver model ParadaPedido.
+  paradas             ParadaPedido[]
 
   @@index([graficaId])
   @@map("pedidos")
+}
+
+// Achado C2 da auditoria de abrangência (Parte 2/Produção,
+// pesquisa-abrangencia-modulos.md, 2026-09-01): um job travado esperando
+// papel chegar, ou esperando o cliente responder uma dúvida, era
+// indistinguível de um job sendo produzido de verdade — ambos apareciam
+// simplesmente como o StatusPedido atual (ex: PRODUCAO), o que envenena
+// qualquer métrica de lead time e faz o alerta de atraso
+// (Pedido.alertaAtrasoEnviadoEm/alertaPrazoUltimoLimiarDias) culpar a
+// produção por uma espera que não é dela. RegistroManutencao cobre "a
+// MÁQUINA parou"; nada cobria "o PEDIDO parou" (por um motivo que pode nem
+// envolver máquina nenhuma, ex: aguardando o cliente responder).
+enum MotivoParada {
+  AGUARDANDO_MATERIAL
+  AGUARDANDO_APROVACAO_CLIENTE
+  AGUARDANDO_ARTE_CLIENTE
+  MAQUINA_PARADA
+  AGUARDANDO_TERCEIRO
+  FALTA_OPERADOR
+  OUTRO
+}
+
+// Um intervalo em que um Pedido ficou parado — nasce em iniciadaEm, fecha em
+// finalizadaEm (null = ainda ATIVA/em andamento agora). Deliberadamente NÃO
+// muda StatusPedido nem interfere na FSM de produção (achado B1/B2): o
+// pedido continua "oficialmente" no mesmo status enquanto parado, só ganha
+// este registro paralelo — um pedido em PRODUCAO parado por falta de
+// material continua um ApontamentoEtapa aberto em PRODUCAO, e GANHA também
+// uma ParadaPedido aberta ao mesmo tempo.
+//
+// Regra "no máximo 1 parada ATIVA por pedido" (enunciado do achado): impo-
+// sta em DOIS níveis — a Server Action (iniciarParadaPedido, ver
+// src/app/producao/parada-actions.ts) checa antes de criar, e o banco
+// garante de verdade com um índice único PARCIAL escrito à mão na migration
+// (`CREATE UNIQUE INDEX ... ON "paradas_pedido" ("pedidoId") WHERE
+// "finalizadaEm" IS NULL` — Prisma declarativo não tem sintaxe pra WHERE em
+// @@unique/@@index, então este índice existe no banco mas não tem
+// representação aqui embaixo; qualquer migration futura escrita à mão
+// precisa preservá-lo).
+model ParadaPedido {
+  id        String @id @default(cuid())
+  graficaId String
+  pedidoId  String
+
+  // Etapa (ApontamentoEtapa) ABERTA no momento em que a parada começou —
+  // resolvida automaticamente pela action (não escolhida pelo usuário no
+  // formulário), opcional porque pedidos criados antes do achado B1/B2 (sem
+  // backfill retroativo) podem não ter nenhum apontamento aberto. SetNull:
+  // apagar o histórico de apontamento (hoje sem fluxo de exclusão) nunca
+  // apaga o registro da parada, só perde essa referência cruzada.
+  apontamentoEtapaId String?
+
+  motivo      MotivoParada
+  // Texto livre só usado quando motivo=OUTRO — mesmo padrão de
+  // origemOutro em SolicitacaoCompra/Grafica.segmentoOutro.
+  motivoOutro String?
+
+  // Achado C2 (proposta original): AGUARDANDO_MATERIAL pode apontar pra a
+  // SolicitacaoCompra que o pedido está esperando — "esse pedido está
+  // parado por causa dessa compra" é a resposta que o dono da gráfica mais
+  // quer. Opcional mesmo quando motivo=AGUARDANDO_MATERIAL (a gráfica pode
+  // não ter formalizado a compra no sistema ainda) e sem restrição de
+  // motivo em nível de banco/aplicação — nada impede vincular uma compra a
+  // qualquer motivo, a UI só oferece o campo quando motivo=AGUARDANDO_MATERIAL
+  // por ser o caso de uso natural. SetNull: cancelar/apagar a solicitação
+  // nunca apaga o histórico da parada.
+  solicitacaoCompraId String?
+
+  iniciadaEm   DateTime  @default(now())
+  finalizadaEm DateTime?
+
+  // Observação livre — motivo detalhado, ou nota de quando/como a parada foi
+  // resolvida (preenchível tanto ao iniciar quanto ao finalizar).
+  observacao String?
+
+  criadoPorId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica           Grafica            @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  pedido            Pedido             @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  apontamentoEtapa  ApontamentoEtapa?  @relation(fields: [apontamentoEtapaId], references: [id], onDelete: SetNull)
+  solicitacaoCompra SolicitacaoCompra? @relation(fields: [solicitacaoCompraId], references: [id], onDelete: SetNull)
+
+  @@index([graficaId])
+  @@index([pedidoId])
+  @@index([apontamentoEtapaId])
+  @@index([solicitacaoCompraId])
+  // Acelera "existe parada ativa pra este pedido?" (a garantia de
+  // exclusividade em si é o índice único parcial da migration, ver
+  // comentário grande acima do model).
+  @@index([pedidoId, finalizadaEm])
+  @@map("paradas_pedido")
 }
 
 // Achado A1 da auditoria de abrangência (Parte 2/Produção, pesquisa-

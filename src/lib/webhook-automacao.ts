@@ -34,6 +34,20 @@ export type EventoAutomacao =
       prazoEntrega: string;
       diasAtraso: number;
       orcamentoId: string;
+      // Achado C2 da auditoria de abrangência (Parte 2/Produção,
+      // 2026-09-01) — decisão de escopo: em vez de alterar o CÁLCULO do
+      // atraso (mexer em diasAtraso/prazoEntrega descontando tempo parado
+      // exigiria decidir regras de negócio novas — ex: parada conta contra
+      // o prazo se for culpa da gráfica mas não se for do cliente — fora do
+      // escopo desta rodada, ver relatório da tarefa), só ANOTA o payload:
+      // quanto tempo (em dias, arredondado) este pedido já ficou parado no
+      // total (soma de todas as ParadaPedido, ativas contam até agora) e se
+      // há uma parada ativa neste exato momento. Quem consome o webhook (a
+      // automação n8n da própria gráfica) decide o que fazer com isso — ex:
+      // não cobrar o cliente por um atraso que é espera de material dele
+      // mesmo.
+      diasParado: number;
+      pausadoAtualmente: boolean;
     }
   | {
       // Achado E1 da auditoria de abrangência (Parte 2/Produção,

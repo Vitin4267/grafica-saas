@@ -81,6 +81,16 @@ export function calcularLimiarAplicavel(diasParaPrazo: number, limiares: number[
 // 3<=0 é falso, o limiar 0 dispara normalmente. E uma vez ultimoLimiarJaEnviado
 // chega a 0, o filtro da query abaixo já exclui o pedido de toda run futura
 // — 0 é terminal, nunca reenvia mesmo que o atraso aumente.
+// Achado C2 da auditoria de abrangência (Parte 2/Produção, 2026-09-01) —
+// decisão de escopo: este cron (diferente do webhook em
+// src/lib/alerta-atraso.ts) NÃO foi tocado pelo achado C2. Anotar
+// diasParado/pausadoAtualmente aqui exigiria refazer toda a cascata de
+// limiares (calcularLimiarAplicavel) considerando tempo parado, e decidir
+// regra de negócio nova (a parada desconta do prazo? só se não for culpa da
+// gráfica?) — deliberadamente fora do escopo desta rodada. O registro da
+// parada em si (ParadaPedido) já resolve o achado; a integração completa
+// com ESTE alerta específico fica pra uma rodada futura, se o dono do
+// produto decidir que vale a pena.
 export async function enviarAlertasPrazoEmail(
   origemPublica: string
 ): Promise<{ processados: number }> {

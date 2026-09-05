@@ -16,6 +16,8 @@ import { resolverOrigemPublica } from "@/lib/url-publica";
 import { listarMaquinasSelecionaveis, sugerirMaquinaPedido } from "@/lib/apontamento-etapa";
 import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
 import { fornecedorProntoParaNfe } from "@/lib/nota-fiscal";
+import { rotuloMotivoParada } from "@/lib/parada-pedido-status";
+import { ROTULOS_STATUS_SOLICITACAO_COMPRA } from "@/lib/compras-status";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -24,10 +26,11 @@ import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { PrinterIcon, LayersIcon } from "@/components/icons";
 import type { TerceirizacaoResumo } from "./TerceirizacaoPedidoSecao";
+import type { ParadaResumo, SolicitacaoCompraOpcao } from "./ParadaPedidoSecao";
 import { PedidoLinha } from "./PedidoLinha";
 import { ProducaoVisualizacao } from "./ProducaoVisualizacao";
 import type { PedidoKanban } from "./KanbanBoard";
-import type { StatusPedido } from "@/generated/prisma/enums";
+import type { StatusPedido, MotivoParada } from "@/generated/prisma/enums";
 import type { AvisoPreflight } from "@/lib/preflight";
 
 const REGEX_DATA = /^\d{4}-\d{2}-\d{2}$/;
@@ -75,6 +78,51 @@ function chipTerceirizacao(etapas: { situacao: string; previsaoRetorno: Date | n
         : " — sem previsão"}
     </span>
   );
+}
+
+// Achado C2 da auditoria de abrangência (Parte 2/Produção, 2026-09-01) —
+// indicador "Parado — <motivo>" quando existe uma ParadaPedido ATIVA
+// (finalizadaEm null) pra este pedido, mesma ideia de chipAtraso/
+// chipTerceirizacao acima, usado tanto na lista (PedidoLinha) quanto no
+// Kanban.
+function chipParada(paradas: { motivo: MotivoParada; motivoOutro: string | null; finalizadaEm: Date | null }[]) {
+  const ativa = paradas.find((p) => p.finalizadaEm === null);
+  if (!ativa) return null;
+
+  return (
+    <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+      Parado — {rotuloMotivoParada(ativa.motivo, ativa.motivoOutro)}
+    </span>
+  );
+}
+
+// Formato que ParadaPedidoSecao.tsx espera — resolve o rótulo da compra
+// vinculada (join com ItemGrafica/ItemCatalogo) e converte Date pro ISO que
+// cruza a fronteira server→client.
+function mapearParadas(
+  paradas: {
+    id: string;
+    motivo: MotivoParada;
+    motivoOutro: string | null;
+    solicitacaoCompraId: string | null;
+    solicitacaoCompra: { itemGrafica: { itemCatalogo: { nome: string } } } | null;
+    iniciadaEm: Date;
+    finalizadaEm: Date | null;
+    observacao: string | null;
+  }[]
+): ParadaResumo[] {
+  return paradas.map((parada) => ({
+    id: parada.id,
+    motivo: parada.motivo as ParadaResumo["motivo"],
+    motivoOutro: parada.motivoOutro,
+    solicitacaoCompraId: parada.solicitacaoCompraId,
+    solicitacaoCompraLabel: parada.solicitacaoCompra
+      ? parada.solicitacaoCompra.itemGrafica.itemCatalogo.nome
+      : null,
+    iniciadaEm: parada.iniciadaEm.toISOString(),
+    finalizadaEm: parada.finalizadaEm ? parada.finalizadaEm.toISOString() : null,
+    observacao: parada.observacao,
+  }));
 }
 
 // Formato que TerceirizacaoPedidoSecao.tsx espera — resolve o nome de
@@ -190,7 +238,7 @@ export default async function ProducaoPage({
   await verificarEDispararAlertasAtraso(usuario.graficaId, usuario.grafica.nome);
   const origem = await resolverOrigemPublica();
 
-  const [todosPedidos, clientes, responsaveisEstagio, maquinasSelecionaveis, fornecedoresAtivos, etapas, dadosFiscaisGrafica] = await Promise.all([
+  const [todosPedidos, clientes, responsaveisEstagio, maquinasSelecionaveis, fornecedoresAtivos, solicitacoesCompraAtivas, etapas, dadosFiscaisGrafica] = await Promise.all([
     prisma.pedido.findMany({
       where: {
         graficaId: usuario.graficaId,
@@ -234,6 +282,18 @@ export default async function ProducaoPage({
           },
           orderBy: { createdAt: "desc" },
         },
+        // Achado C2 da auditoria de abrangência (Parte 2/Produção) — todas
+        // as paradas deste pedido (não só a ativa, ver ParadaPedidoSecao.tsx),
+        // mais recente primeiro; join com a compra vinculada (quando houver)
+        // pra resolver o rótulo sem N+1.
+        paradas: {
+          include: {
+            solicitacaoCompra: {
+              select: { itemGrafica: { select: { itemCatalogo: { select: { nome: true } } } } },
+            },
+          },
+          orderBy: { iniciadaEm: "desc" },
+        },
       },
       orderBy: { createdAt: "asc" },
     }),
@@ -264,6 +324,21 @@ export default async function ProducaoPage({
       select: { id: true, nome: true },
       orderBy: { nome: "asc" },
     }),
+    // Achado C2 — mesmo espírito de fornecedoresAtivos acima: buscada UMA
+    // VEZ (grafica-wide, não por pedido) pra alimentar o select "vincular a
+    // uma compra" do formulário de nova parada em ParadaPedidoSecao.tsx.
+    // Só as ainda NÃO recebidas/canceladas — uma compra já concluída não é
+    // mais "o que o pedido está esperando".
+    prisma.solicitacaoCompra.findMany({
+      where: { graficaId: usuario.graficaId, status: { notIn: ["RECEBIDO", "CONFERIDO", "CANCELADO"] } },
+      select: {
+        id: true,
+        status: true,
+        quantidade: true,
+        itemGrafica: { select: { itemCatalogo: { select: { nome: true } } } },
+      },
+      orderBy: { solicitadoEm: "desc" },
+    }),
     // Achado A1 (Fase 1) — sequência/rótulos DESTA gráfica (liga/desliga e
     // renomeia etapa, ver EtapaGrafica) — resolvida uma única vez aqui,
     // repassada pra PedidoLinha (lista) e KanbanBoard (quadro), os dois
@@ -280,6 +355,14 @@ export default async function ProducaoPage({
     }),
   ]);
   const focusNfeConfigurado = Boolean(dadosFiscaisGrafica?.focusNfeToken);
+
+  // Achado C2 — rótulo pronto ("Papel Couché 150g (Aprovado)") pro select de
+  // ParadaPedidoSecao.tsx, resolvido aqui (não no client) porque exige o
+  // join com ItemGrafica/ItemCatalogo já trazido acima.
+  const solicitacoesCompraOpcoes: SolicitacaoCompraOpcao[] = solicitacoesCompraAtivas.map((s) => ({
+    id: s.id,
+    label: `${s.itemGrafica.itemCatalogo.nome} — ${Number(s.quantidade)} (${ROTULOS_STATUS_SOLICITACAO_COMPRA[s.status]})`,
+  }));
 
   const responsaveisPorEtapa: Partial<Record<StatusPedido, string[]>> = {};
   for (const r of responsaveisEstagio) {
@@ -345,6 +428,7 @@ export default async function ProducaoPage({
     status: pedido.status,
     chipAtraso: chipAtraso(pedido.prazoEntrega, pedido.status),
     chipTerceirizacao: chipTerceirizacao(pedido.etapasTerceirizadas),
+    chipParada: chipParada(pedido.paradas),
     valorTotal: podeVerCustos ? Number(pedido.orcamento.total) : null,
     lucro: podeVerCustos ? lucroDoPedidoListado(pedido) : null,
     souResponsavelDesteStatus: etapasResponsavel.has(pedido.status),
@@ -404,6 +488,7 @@ export default async function ProducaoPage({
                 souResponsavelDesteStatus={etapasResponsavel.has(pedido.status)}
                 chipAtraso={chipAtraso(pedido.prazoEntrega, pedido.status)}
                 chipTerceirizacao={chipTerceirizacao(pedido.etapasTerceirizadas)}
+                chipParada={chipParada(pedido.paradas)}
                 arteUrl={pedido.arteUrl}
                 arteAprovadaEm={pedido.arteAprovadaEm}
                 arteRespondidaPor={pedido.arteRespondidaPor}
@@ -443,6 +528,8 @@ export default async function ProducaoPage({
                 terceirizacoes={mapearTerceirizacoes(pedido.etapasTerceirizadas, podeVerCustos)}
                 fornecedores={fornecedoresAtivos}
                 focusNfeConfigurado={focusNfeConfigurado}
+                paradas={mapearParadas(pedido.paradas)}
+                solicitacoesCompra={solicitacoesCompraOpcoes}
               />
             </div>
           );

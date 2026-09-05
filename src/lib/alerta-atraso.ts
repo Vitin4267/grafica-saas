@@ -31,7 +31,15 @@ export async function verificarEDispararAlertasAtraso(
       prazoEntrega: { lt: hojeUTC },
       alertaAtrasoEnviadoEm: null,
     },
-    include: { orcamento: { include: { cliente: true } } },
+    include: {
+      orcamento: { include: { cliente: true } },
+      // Achado C2 da auditoria de abrangência (Parte 2/Produção,
+      // 2026-09-01) — só pra anotar diasParado/pausadoAtualmente no payload
+      // abaixo (ver comentário grande em EventoAutomacao["pedido_atrasado"]
+      // em src/lib/webhook-automacao.ts sobre a decisão de escopo: NÃO
+      // altera diasAtraso/prazoEntrega, só informa a mais).
+      paradas: { select: { iniciadaEm: true, finalizadaEm: true } },
+    },
   });
 
   for (const pedido of pedidosAtrasados) {
@@ -53,6 +61,16 @@ export async function verificarEDispararAlertasAtraso(
     });
     if (cas.count === 0) continue;
 
+    // Achado C2 — soma o tempo de TODAS as paradas deste pedido (fechadas:
+    // finalizadaEm-iniciadaEm; a ativa, se houver: agora-iniciadaEm) — só
+    // informativo, ver comentário grande em EventoAutomacao["pedido_atrasado"].
+    const msParado = pedido.paradas.reduce((soma, parada) => {
+      const fim = parada.finalizadaEm ? parada.finalizadaEm.getTime() : Date.now();
+      return soma + Math.max(0, fim - parada.iniciadaEm.getTime());
+    }, 0);
+    const diasParado = Math.round(msParado / MS_POR_DIA);
+    const pausadoAtualmente = pedido.paradas.some((p) => p.finalizadaEm === null);
+
     // after() em vez de void: garante que a instância serverless continua
     // viva até o webhook terminar, mesmo depois da resposta (render da
     // página /producao) já ter sido enviada ao cliente.
@@ -66,6 +84,8 @@ export async function verificarEDispararAlertasAtraso(
         prazoEntrega: prazoEntrega.toISOString().slice(0, 10),
         diasAtraso: Math.floor((hojeUTC.getTime() - prazoEntrega.getTime()) / MS_POR_DIA),
         orcamentoId: pedido.orcamentoId,
+        diasParado,
+        pausadoAtualmente,
       })
     );
   }

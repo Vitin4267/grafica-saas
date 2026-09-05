@@ -26,6 +26,11 @@ import {
   type TerceirizacaoResumo,
   type FornecedorOpcao,
 } from "./TerceirizacaoPedidoSecao";
+import {
+  ParadaPedidoSecao,
+  type ParadaResumo,
+  type SolicitacaoCompraOpcao,
+} from "./ParadaPedidoSecao";
 import type { MaquinaOpcaoUI } from "./SeletorMaquina";
 import { cancelarPedido, avancarPedido } from "./actions";
 
@@ -56,6 +61,7 @@ export function PedidoLinha({
   responsaveisEtapa,
   chipAtraso,
   chipTerceirizacao,
+  chipParada,
   arteUrl,
   arteAprovadaEm,
   arteComentarioCliente,
@@ -69,6 +75,8 @@ export function PedidoLinha({
   terceirizacoes,
   fornecedores,
   focusNfeConfigurado,
+  paradas,
+  solicitacoesCompra,
   maquinas = [],
   sugestaoMaquinaValor = "",
   sequencia,
@@ -102,6 +110,11 @@ export function PedidoLinha({
   // ENVIADO pra este pedido (ver chipTerceirizacao em producao/page.tsx).
   // null quando não há nenhuma terceirização ativa.
   chipTerceirizacao: ReactNode;
+  // Achado C2 da auditoria de abrangência (Parte 2/Produção, 2026-09-01) —
+  // "Parado — <motivo>" quando existe uma ParadaPedido ATIVA pra este
+  // pedido (ver chipParada em producao/page.tsx). null quando não há
+  // nenhuma parada ativa.
+  chipParada: ReactNode;
   arteUrl: string | null;
   arteAprovadaEm: Date | null;
   arteComentarioCliente: string | null;
@@ -137,6 +150,12 @@ export function PedidoLinha({
   // filial) roda dentro da própria Server Action, ver
   // terceirizacao-nfe-actions.ts.
   focusNfeConfigurado: boolean;
+  // Achado C2 — paradas registradas pra este pedido (todas, não só a ativa —
+  // ver ParadaPedidoSecao.tsx) e as opções de SolicitacaoCompra ATIVAS da
+  // gráfica (grafica-wide, buscadas uma vez em producao/page.tsx) pra
+  // popular o select "vincular a uma compra" do formulário.
+  paradas: ParadaResumo[];
+  solicitacoesCompra: SolicitacaoCompraOpcao[];
   // Achado B2 — máquinas ATIVAS da gráfica (grafica-wide, buscada uma vez em
   // producao/page.tsx) e a sugestão pré-calculada a partir da máquina que os
   // ITENS deste pedido usaram na precificação (ver sugerirMaquinaPedido em
@@ -249,6 +268,7 @@ export function PedidoLinha({
         <div className="flex items-center gap-3">
           {chipAtraso}
           {chipTerceirizacao}
+          {chipParada}
           <StatusBadge status={status} tipo="pedido" rotulo={rotulos[status as StatusPedido]} />
           {baixaEstoqueAoAvancar
             ? podeEditar && (
@@ -344,6 +364,22 @@ export function PedidoLinha({
           fornecedores={fornecedores}
           podeEditar={podeEditar}
           focusNfeConfigurado={focusNfeConfigurado}
+        />
+      )}
+
+      {/* Parada (achado C2) — mesma disponibilidade de Terceirização acima
+          (qualquer status não-cancelado, sem gate de pré-produção). A
+          action já rejeita ABRIR parada nova num pedido ENTREGUE/CANCELADO
+          (ver iniciarParadaPedido) — a seção continua visível mesmo em
+          ENTREGUE só pra permitir ver o histórico e finalizar uma parada
+          que, por algum motivo, ficou aberta (esquecida) até o pedido
+          avançar pro status terminal. */}
+      {status !== "CANCELADO" && (
+        <ParadaPedidoSecao
+          pedidoId={pedidoId}
+          paradas={paradas}
+          solicitacoesCompra={solicitacoesCompra}
+          podeEditar={podeEditar}
         />
       )}
 

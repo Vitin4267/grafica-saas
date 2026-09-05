@@ -134,6 +134,9 @@ model Grafica {
   // Achado E1 da auditoria de abrangência (Parte 2/Produção) — ver model
   // EtapaTerceirizada.
   etapasTerceirizadas   EtapaTerceirizada[]
+  // Achado C2 da auditoria de abrangência (Parte 2/Produção) — ver model
+  // ParadaPedido.
+  paradasPedido         ParadaPedido[]
   contasPrepagas        ContaPrepaga[]
   contasReceber         ContaReceber[]
   condicoesPagamento    CondicaoPagamento[]

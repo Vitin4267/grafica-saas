@@ -261,6 +261,10 @@ model SolicitacaoCompra {
   // COMPRA gerado ao confirmar RECEBIDO quando pedidoId está preenchido
   // (achado A3 da auditoria de abrangência).
   custoPedidoGerado    CustoPedido?
+  // Achado C2 da auditoria de abrangência (Parte 2/Produção) — lado inverso
+  // de ParadaPedido.solicitacaoCompraId: paradas (motivo AGUARDANDO_MATERIAL)
+  // que apontam pra esta compra como a causa do pedido estar travado.
+  paradasPedido        ParadaPedido[]
 
   @@index([graficaId, status])
   @@index([itemGraficaId])
