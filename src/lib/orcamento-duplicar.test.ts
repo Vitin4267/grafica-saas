@@ -28,6 +28,12 @@ describe("montarDadosItemParaRecalculo", () => {
       quantidade: 100,
       larguraCm: 10.5,
       alturaCm: null,
+      // Achado A11 — nunca informado nesta chamada (item de origem sem
+      // larguraPlanificadaCm/alturaPlanificadaCm no fixture acima) ->
+      // montarDadosItemParaRecalculo devolve null pros dois (ver `!=` em
+      // src/lib/orcamento-duplicar.ts).
+      larguraPlanificadaCm: null,
+      alturaPlanificadaCm: null,
       corFrente: 4,
       corVerso: 0,
       numeroCoresFlexo: null,
@@ -47,6 +53,37 @@ describe("montarDadosItemParaRecalculo", () => {
       gramaturaGm2: null,
       margemLucroOverride: null,
     });
+  });
+
+  // Achado A11 — "pedir de novo" precisa recalcular o nesting do item
+  // duplicado com a MESMA dimensão planificada do original (senão o
+  // orçamento novo voltaria a usar só largura/altura fechadas, reabrindo o
+  // bug de custo errado do achado).
+  it("converte larguraPlanificadaCm/alturaPlanificadaCm de Decimal/string pra number", () => {
+    const dados = montarDadosItemParaRecalculo({
+      quantidade: 100,
+      larguraCm: "9",
+      alturaCm: "5",
+      larguraPlanificadaCm: "55.5",
+      alturaPlanificadaCm: "45.5",
+      corFrente: 4,
+      corVerso: 0,
+      numeroCoresFlexo: null,
+      numeroCliques: null,
+      numeroSetups: null,
+      numeroPontos: null,
+      tempoEstimadoMin: null,
+      metrosCorte: null,
+      horasEstimadas: null,
+      custoAquisicaoUnitario: null,
+      custoFaca: null,
+      materialFornecidoPeloCliente: false,
+      acabamentos: [],
+      precificacaoEtiqueta: null,
+    }, null);
+
+    expect(dados.larguraPlanificadaCm).toBe(55.5);
+    expect(dados.alturaPlanificadaCm).toBe(45.5);
   });
 
   it("repassa margemLucroOverride recebido (propriedade do cliente do orçamento NOVO, não do item)", () => {

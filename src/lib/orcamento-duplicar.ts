@@ -17,6 +17,14 @@ export type ItemOrigemParaRecalculo = {
   quantidade: number;
   larguraCm: Decimalish | null;
   alturaCm: Decimalish | null;
+  // Achado A11 — dimensão do desenvolvimento da faca (planificação),
+  // recalculada junto no motor de nesting (ver montarDadosItemParaRecalculo
+  // abaixo), diferente de profundidadeCm/espessuraMm (fora do escopo desta
+  // função, copiados direto pelo chamador sem recalcular nada). Opcional só
+  // pra não quebrar os fixtures de teste que montam este objeto à mão
+  // (orcamento-duplicar.test.ts) — ausente equivale a null.
+  larguraPlanificadaCm?: Decimalish | null;
+  alturaPlanificadaCm?: Decimalish | null;
   corFrente: number | null;
   corVerso: number | null;
   numeroCoresFlexo: number | null;
@@ -63,6 +71,10 @@ export function montarDadosItemParaRecalculo(
     quantidade: item.quantidade,
     larguraCm: item.larguraCm !== null ? Number(item.larguraCm) : null,
     alturaCm: item.alturaCm !== null ? Number(item.alturaCm) : null,
+    larguraPlanificadaCm:
+      item.larguraPlanificadaCm != null ? Number(item.larguraPlanificadaCm) : null,
+    alturaPlanificadaCm:
+      item.alturaPlanificadaCm != null ? Number(item.alturaPlanificadaCm) : null,
     corFrente: item.corFrente,
     corVerso: item.corVerso,
     numeroCoresFlexo: item.numeroCoresFlexo,

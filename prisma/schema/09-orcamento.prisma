@@ -433,18 +433,32 @@ model OrcamentoOpcao {
 }
 
 model OrcamentoItem {
-  id              String          @id @default(cuid())
-  orcamentoId     String
+  id                   String          @id @default(cuid())
+  orcamentoId          String
   // null = pertence à opção-base do orçamento (Orcamento.itens/total de
   // sempre, "Opção A" na UI) — comportamento de todo item já existente,
   // sem migração nenhuma. Preenchido = pertence a uma OrcamentoOpcao
   // alternativa (ver comentário do model acima); orcamentoId continua
   // apontando pro orçamento-pai nos dois casos, nunca só opcaoId.
-  opcaoId         String?
-  itemGraficaId   String
-  quantidade      Int
-  larguraCm       Decimal?        @db.Decimal(8, 2)
-  alturaCm        Decimal?        @db.Decimal(8, 2)
+  opcaoId              String?
+  itemGraficaId        String
+  quantidade           Int
+  larguraCm            Decimal?        @db.Decimal(8, 2)
+  alturaCm             Decimal?        @db.Decimal(8, 2)
+  // Achado A11 da auditoria de abrangência (Parte 1/Embalagem) — dimensão do
+  // DESENVOLVIMENTO DA FACA (a planificação da embalagem aberta), não do
+  // produto acabado fechado. Numa caixa de 20×15×10cm, o que ocupa a folha de
+  // papelão é algo como ~55×45cm (planificado), não os 20×15 do produto
+  // fechado — sem separar os dois, o nesting/aproveitamento de folha calcula
+  // errado por 2-3×. Opcionais: quando presentes, o motor avançado
+  // (M2/OFFSET/FLEXOGRAFIA/DIGITAL — os que fazem nesting/imposição) usa
+  // ESTAS dimensões pra montar o pedido de nesting; quando ausentes, cai no
+  // comportamento de sempre (larguraCm/alturaCm do produto fechado) — zero
+  // regressão pra quem nunca preencher. Ver calcularItemOrcamento em
+  // src/lib/orcamento-precificacao.ts. Mesma unidade canônica de
+  // largura/altura (cm) — segue unidadeDimensao abaixo pra entrada/exibição.
+  larguraPlanificadaCm Decimal?        @db.Decimal(8, 2)
+  alturaPlanificadaCm  Decimal?        @db.Decimal(8, 2)
   // Terceira dimensão (caixa/embalagem, acrílico, livro) e espessura de chapa
   // (corte a laser/router) do ITEM VENDIDO — distinto da espessura do lado da
   // matéria-prima. Ambos opcionais e ignorados por 100% dos motores de preço
@@ -452,8 +466,8 @@ model OrcamentoItem {
   // profundidadeCm segue a MESMA unidade canônica de largura/altura (cm).
   // espessuraMm é em MILÍMETRO (chapa é vendida em mm no Brasil) — não
   // confundir com a unidade de largura/altura/profundidade, que é cm.
-  profundidadeCm  Decimal?        @db.Decimal(8, 2)
-  espessuraMm     Decimal?        @db.Decimal(8, 2)
+  profundidadeCm       Decimal?        @db.Decimal(8, 2)
+  espessuraMm          Decimal?        @db.Decimal(8, 2)
   // Unidade em que o usuário efetivamente DIGITOU largura/altura deste item
   // (mm/cm/m — ver src/lib/unidade-dimensao.ts) — congelada no momento da
   // criação do item, nunca lida dinamicamente de Grafica.unidadePadraoDimensao
@@ -461,9 +475,9 @@ model OrcamentoItem {
   // larguraCm/alturaCm acima continuam SEMPRE em centímetros; isto é só a
   // unidade de ENTRADA/EXIBIÇÃO. Default CM preserva o comportamento de toda
   // linha existente (nunca teve outra unidade).
-  unidadeDimensao UnidadeDimensao @default(CM)
-  cores           String? // ex: "4x0", "4x4" — snapshot legível, sempre preenchido
-  acabamento      String? // texto livre, modo SIMPLES apenas
+  unidadeDimensao      UnidadeDimensao @default(CM)
+  cores                String? // ex: "4x0", "4x4" — snapshot legível, sempre preenchido
+  acabamento           String? // texto livre, modo SIMPLES apenas
 
   // precoUnitario/precoTotal continuam sendo o VALOR VENDIDO (deliberado —
   // PDF, link público, pagamentos e relatórios já leem estes campos). O

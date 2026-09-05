@@ -259,6 +259,11 @@ export async function duplicarOrcamento(
     quantidade: number;
     larguraCm: Prisma.Decimal | null;
     alturaCm: Prisma.Decimal | null;
+    // Achado A11 — copiados direto do item original E passados pro motor de
+    // nesting via montarDadosItemParaRecalculo abaixo (diferente de
+    // profundidadeCm/espessuraMm logo abaixo, que nunca entram no motor).
+    larguraPlanificadaCm: Prisma.Decimal | null;
+    alturaPlanificadaCm: Prisma.Decimal | null;
     // Achado F7 — copiados direto do item original (mesmo padrão de
     // larguraCm/alturaCm acima), nunca passam por montarDadosItemParaRecalculo
     // nem calcularItemOrcamento — motor de preço nunca viu esses campos.
@@ -342,6 +347,8 @@ export async function duplicarOrcamento(
       quantidade: itemOriginal.quantidade,
       larguraCm: itemOriginal.larguraCm,
       alturaCm: itemOriginal.alturaCm,
+      larguraPlanificadaCm: itemOriginal.larguraPlanificadaCm,
+      alturaPlanificadaCm: itemOriginal.alturaPlanificadaCm,
       corFrente: itemOriginal.corFrente,
       corVerso: itemOriginal.corVerso,
       numeroCoresFlexo: itemOriginal.numeroCoresFlexo,
@@ -430,6 +437,8 @@ export async function duplicarOrcamento(
       quantidade: itemOriginal.quantidade,
       larguraCm: itemOriginal.larguraCm,
       alturaCm: itemOriginal.alturaCm,
+      larguraPlanificadaCm: itemOriginal.larguraPlanificadaCm,
+      alturaPlanificadaCm: itemOriginal.alturaPlanificadaCm,
       profundidadeCm: itemOriginal.profundidadeCm,
       espessuraMm: itemOriginal.espessuraMm,
       unidadeDimensao: itemOriginal.unidadeDimensao,
@@ -498,6 +507,8 @@ export async function duplicarOrcamento(
           quantidade: item.quantidade,
           larguraCm: item.larguraCm,
           alturaCm: item.alturaCm,
+          larguraPlanificadaCm: item.larguraPlanificadaCm,
+          alturaPlanificadaCm: item.alturaPlanificadaCm,
           profundidadeCm: item.profundidadeCm,
           espessuraMm: item.espessuraMm,
           unidadeDimensao: item.unidadeDimensao,

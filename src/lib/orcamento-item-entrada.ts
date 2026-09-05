@@ -142,6 +142,17 @@ export const itemEntradaSchema = z.object({
   // chama, antes de qualquer validação/cálculo.
   largura: z.number().positive().nullable(),
   altura: z.number().positive().nullable(),
+  // Achado A11 (auditoria de abrangência, Parte 1/Embalagem) — dimensão do
+  // DESENVOLVIMENTO DA FACA (planificação da embalagem aberta), não do
+  // produto acabado fechado. Mesma unidade `unidadeDimensao` abaixo que
+  // largura/altura, convertida pra cm na fronteira igual às duas. Opcional
+  // (nullable E `.optional()`, diferente de largura/altura acima) — chave
+  // ausente do JSON e chave presente com null são tratados igual (fixtures
+  // de teste anteriores ao achado A11 nem mandam esta chave); quando
+  // ausente/null, o motor de nesting (calcularItemOrcamento) cai em
+  // largura/altura normais (comportamento de sempre).
+  larguraPlanificada: z.number().positive().nullable().optional(),
+  alturaPlanificada: z.number().positive().nullable().optional(),
   // Achado F7 (auditoria de abrangência, Parte 7) — terceira dimensão do
   // item VENDIDO (caixa/embalagem, acrílico, livro). Mesma unidade
   // `unidadeDimensao` abaixo que largura/altura, convertida pra cm na

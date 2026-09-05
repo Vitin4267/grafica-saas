@@ -63,6 +63,20 @@ export type DadosItemOrcamento = {
   quantidade: number;
   larguraCm: number | null;
   alturaCm: number | null;
+  // Achado A11 da auditoria de abrangência — dimensão do DESENVOLVIMENTO DA
+  // FACA (planificação da embalagem aberta), não do produto acabado fechado.
+  // Só usadas pelos modelos que fazem nesting/imposição (M2/DTF/OFFSET/
+  // FLEXOGRAFIA/DIGITAL) — quando presentes, SUBSTITUEM larguraCm/alturaCm
+  // acima na montagem do pedido de nesting; ausentes = comportamento de
+  // sempre (usa larguraCm/alturaCm do produto fechado). Nunca entram em
+  // nenhum outro cálculo (SIMPLES, setup-por-peça, REVENDA, BORDADO,
+  // TEMPO_MAQUINA) — só a geometria de aproveitamento de folha. Opcional
+  // (em vez de obrigatório), mesmo padrão de
+  // ItemGraficaParaPrecificacao.simplesCobraPorArea acima — só pra não
+  // quebrar os fixtures de teste que montam este objeto à mão sem tocar o
+  // banco (orcamento-precificacao.test.ts); ausente equivale a null.
+  larguraPlanificadaCm?: number | null;
+  alturaPlanificadaCm?: number | null;
   corFrente: number | null;
   corVerso: number | null;
   // Só usado pelo motor avançado (M2/OFFSET) — SIMPLES continua com o campo de
@@ -218,6 +232,32 @@ export async function calcularItemOrcamento(
     (alturaCm !== null && (!Number.isFinite(alturaCm) || alturaCm <= 0))
   ) {
     return { ok: false, mensagem: "Largura e altura precisam ser maiores que zero." };
+  }
+
+  // Achado A11 — mesma guarda de largura/altura acima, pra dimensão
+  // planificada (desenvolvimento da faca). editarOrcamento/
+  // adicionarItemOrcamento leem este campo direto do form (sem zod), então a
+  // guarda mora aqui, ponto único por onde todo item passa.
+  const larguraPlanificadaCm = dados.larguraPlanificadaCm ?? null;
+  const alturaPlanificadaCm = dados.alturaPlanificadaCm ?? null;
+  if (
+    (larguraPlanificadaCm !== null &&
+      (!Number.isFinite(larguraPlanificadaCm) || larguraPlanificadaCm <= 0)) ||
+    (alturaPlanificadaCm !== null &&
+      (!Number.isFinite(alturaPlanificadaCm) || alturaPlanificadaCm <= 0))
+  ) {
+    return {
+      ok: false,
+      mensagem: "Largura e altura planificadas precisam ser maiores que zero.",
+    };
+  }
+  // As duas vêm juntas ou nenhuma — largura planificada sem altura (ou
+  // vice-versa) não dá pra montar a geometria de nesting.
+  if ((larguraPlanificadaCm !== null) !== (alturaPlanificadaCm !== null)) {
+    return {
+      ok: false,
+      mensagem: "Informe largura e altura planificadas juntas, ou deixe as duas em branco.",
+    };
   }
 
   // Guardas do motor de clichê de etiqueta / faca / frete — mesma razão das
@@ -511,13 +551,24 @@ export async function calcularItemOrcamento(
     const larguraMOpcional = larguraCm !== null ? larguraCm / 100 : undefined;
     const alturaMOpcional = alturaCm !== null ? alturaCm / 100 : undefined;
 
+    // Achado A11 — os modelos com nesting/imposição (OFFSET/FLEXOGRAFIA/
+    // DIGITAL/DTF/M2, únicos que chegam a este ponto do código usando
+    // larguraCm!/alturaCm! puros) preferem a dimensão PLANIFICADA (o
+    // desenvolvimento da faca, a peça aberta que de fato ocupa a folha)
+    // quando o item informou — cai em larguraCm/alturaCm do produto acabado
+    // fechado quando não. A guarda de dimensão obrigatória acima já garantiu
+    // larguraCm/alturaCm não-nulos pra estes modelos, e a guarda logo acima
+    // já garantiu que planificada vem com as duas ou nenhuma.
+    const larguraNestingCm = larguraPlanificadaCm ?? larguraCm!;
+    const alturaNestingCm = alturaPlanificadaCm ?? alturaCm!;
+
     let pedido: PedidoPrecificacao;
     if (itemGrafica.modeloCalculo === "OFFSET") {
       pedido = {
         tipo: "OFFSET",
         pedido: {
-          larguraM: larguraCm! / 100,
-          alturaM: alturaCm! / 100,
+          larguraM: larguraNestingCm / 100,
+          alturaM: alturaNestingCm / 100,
           quantidade,
           corFrente: corFrente!,
           corVerso: corVerso!,
@@ -528,8 +579,8 @@ export async function calcularItemOrcamento(
       pedido = {
         tipo: "FLEXOGRAFIA",
         pedido: {
-          larguraM: larguraCm! / 100,
-          alturaM: alturaCm! / 100,
+          larguraM: larguraNestingCm / 100,
+          alturaM: alturaNestingCm / 100,
           quantidade,
           numeroCores: dados.numeroCoresFlexo!,
         },
@@ -543,8 +594,8 @@ export async function calcularItemOrcamento(
         pedido: {
           quantidade,
           numeroCliques: dados.numeroCliques ?? undefined,
-          larguraM: larguraCm! / 100,
-          alturaM: alturaCm! / 100,
+          larguraM: larguraNestingCm / 100,
+          alturaM: alturaNestingCm / 100,
         },
         acabamentos,
       };
@@ -632,8 +683,8 @@ export async function calcularItemOrcamento(
       pedido = {
         tipo: "DTF",
         pedido: {
-          larguraM: larguraCm! / 100,
-          alturaM: alturaCm! / 100,
+          larguraM: larguraNestingCm / 100,
+          alturaM: alturaNestingCm / 100,
           quantidade,
         },
         acabamentos,
@@ -642,8 +693,8 @@ export async function calcularItemOrcamento(
       pedido = {
         tipo: "M2",
         pedido: {
-          larguraM: larguraCm! / 100,
-          alturaM: alturaCm! / 100,
+          larguraM: larguraNestingCm / 100,
+          alturaM: alturaNestingCm / 100,
           quantidade,
         },
         acabamentos,

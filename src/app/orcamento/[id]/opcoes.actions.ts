@@ -95,6 +95,11 @@ export async function adicionarOpcaoOrcamento(
     quantidade: number;
     larguraCm: number | null;
     alturaCm: number | null;
+    // Achado A11 — mesmo padrão de criarOrcamento; ao contrário de
+    // profundidadeCm abaixo, ESTA passa por calcularItemOrcamento (motor de
+    // nesting).
+    larguraPlanificadaCm: number | null;
+    alturaPlanificadaCm: number | null;
     // Achado F7 — mesmo padrão de criarOrcamento (src/app/orcamento/actions.ts):
     // nunca vão pro motor de preço, só gravados direto no create.
     profundidadeCm: number | null;
@@ -170,6 +175,16 @@ export async function adicionarOpcaoOrcamento(
       entrada.largura !== null ? converterParaCm(entrada.largura, entrada.unidadeDimensao) : null;
     const alturaCm =
       entrada.altura !== null ? converterParaCm(entrada.altura, entrada.unidadeDimensao) : null;
+    // Achado A11 — mesma conversão de largura/altura acima, pra dimensão
+    // planificada (opcional, entra no motor de nesting abaixo).
+    const larguraPlanificadaCm =
+      entrada.larguraPlanificada != null
+        ? converterParaCm(entrada.larguraPlanificada, entrada.unidadeDimensao)
+        : null;
+    const alturaPlanificadaCm =
+      entrada.alturaPlanificada != null
+        ? converterParaCm(entrada.alturaPlanificada, entrada.unidadeDimensao)
+        : null;
     // Achado F7 — mesma conversão de largura/altura pra profundidade;
     // espessuraMm já chega em mm. Nenhum dos dois entra no motor de preço.
     const profundidadeCm =
@@ -182,6 +197,8 @@ export async function adicionarOpcaoOrcamento(
       quantidade: entrada.quantidade,
       larguraCm,
       alturaCm,
+      larguraPlanificadaCm,
+      alturaPlanificadaCm,
       corFrente: entrada.corFrente,
       corVerso: entrada.corVerso,
       numeroCoresFlexo: entrada.numeroCoresFlexo,
@@ -211,6 +228,8 @@ export async function adicionarOpcaoOrcamento(
       quantidade: entrada.quantidade,
       larguraCm,
       alturaCm,
+      larguraPlanificadaCm,
+      alturaPlanificadaCm,
       profundidadeCm,
       espessuraMm,
       unidadeDimensao: entrada.unidadeDimensao,
@@ -273,6 +292,8 @@ export async function adicionarOpcaoOrcamento(
           quantidade: item.quantidade,
           larguraCm: item.larguraCm,
           alturaCm: item.alturaCm,
+          larguraPlanificadaCm: item.larguraPlanificadaCm,
+          alturaPlanificadaCm: item.alturaPlanificadaCm,
           profundidadeCm: item.profundidadeCm,
           espessuraMm: item.espessuraMm,
           unidadeDimensao: item.unidadeDimensao,

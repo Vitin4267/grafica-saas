@@ -88,6 +88,12 @@ export function EditarOrcamentoForm({
     quantidade: number;
     larguraCm: string;
     alturaCm: string;
+    // Achado A11 — dimensão do desenvolvimento da faca (planificação da
+    // embalagem aberta), mesma unidade `unidadeDimensao` de larguraCm/
+    // alturaCm acima. Só relevante pra modelos com nesting (M2/OFFSET/
+    // FLEXOGRAFIA/DIGITAL — ver exigeDimensao abaixo).
+    larguraPlanificadaCm: string;
+    alturaPlanificadaCm: string;
     // Achado F7 — terceira dimensão/espessura do item VENDIDO. Sempre
     // visíveis (não gateadas por mostraDimensao) — uma caixa pode ser vendida
     // como SIMPLES também.
@@ -207,6 +213,13 @@ export function EditarOrcamentoForm({
   const [altura, setAltura] = useState(() =>
     paraExibicao(valoresIniciais.alturaCm, unidadeDimensao)
   );
+  // Achado A11 — mesma conversão de largura/altura acima.
+  const [larguraPlanificada, setLarguraPlanificada] = useState(() =>
+    paraExibicao(valoresIniciais.larguraPlanificadaCm, unidadeDimensao)
+  );
+  const [alturaPlanificada, setAlturaPlanificada] = useState(() =>
+    paraExibicao(valoresIniciais.alturaPlanificadaCm, unidadeDimensao)
+  );
   // Achado F7 — profundidade segue a mesma conversão de unidade de largura/
   // altura acima; espessuraMm é sempre em mm, sem conversão (chapa é vendida
   // em mm no Brasil).
@@ -295,6 +308,58 @@ export function EditarOrcamentoForm({
             <input type="hidden" name="larguraCm" value={paraCm(largura, unidadeDimensao)} />
             <input type="hidden" name="alturaCm" value={paraCm(altura, unidadeDimensao)} />
           </div>
+        )}
+
+        {/* Achado A11 — dimensão do desenvolvimento da faca (embalagem/
+            cartonagem), só pra modelos com nesting/imposição (mesmo grupo de
+            exigeDimensao). Fica num grupo fechado por padrão porque a
+            maioria dos itens (banner, cartão, etiqueta comum) não precisa
+            dela — só embalagem, onde a peça fechada é bem menor que o que
+            ocupa a folha. */}
+        {exigeDimensao && (
+          <details className="group rounded-xl border border-slate-300 dark:border-slate-700">
+            <summary className="flex cursor-pointer list-none items-center px-4 py-2.5 text-sm font-medium text-slate-700 marker:content-none dark:text-slate-200">
+              Dimensão planificada (embalagem/cartonagem)
+            </summary>
+            <div className="grid grid-cols-1 gap-4 border-t border-slate-100 px-4 py-4 dark:border-slate-800 sm:grid-cols-2">
+              <Input
+                label={
+                  <>
+                    {`Largura planificada (${ROTULO_UNIDADE_DIMENSAO[unidadeDimensao]})`}
+                    <CampoAjuda texto="Só pra embalagem/cartonagem: a largura da peça ABERTA (o desenvolvimento da faca), não a da caixa fechada. Ex: uma caixa de 20×15cm pode planificar pra ~55×45cm — é isso que ocupa a folha de papelão. Deixe em branco pra usar a largura acima no cálculo de aproveitamento de folha." />
+                  </>
+                }
+                type="number"
+                step={passoInputDimensao(unidadeDimensao)}
+                placeholder="opcional — só embalagem"
+                value={larguraPlanificada}
+                onChange={(e) => setLarguraPlanificada(e.target.value)}
+              />
+              <Input
+                label={
+                  <>
+                    {`Altura planificada (${ROTULO_UNIDADE_DIMENSAO[unidadeDimensao]})`}
+                    <CampoAjuda texto="Mesma ideia da largura planificada ao lado: a altura da peça ABERTA. Preencha as duas juntas ou nenhuma." />
+                  </>
+                }
+                type="number"
+                step={passoInputDimensao(unidadeDimensao)}
+                placeholder="opcional — só embalagem"
+                value={alturaPlanificada}
+                onChange={(e) => setAlturaPlanificada(e.target.value)}
+              />
+              <input
+                type="hidden"
+                name="larguraPlanificadaCm"
+                value={paraCm(larguraPlanificada, unidadeDimensao)}
+              />
+              <input
+                type="hidden"
+                name="alturaPlanificadaCm"
+                value={paraCm(alturaPlanificada, unidadeDimensao)}
+              />
+            </div>
+          </details>
         )}
 
         {/* Campo escondido de profundidade (F7) — o input visível ficou no

@@ -342,6 +342,16 @@ export async function editarOrcamento(
   const quantidade = Number(formData.get("quantidade"));
   const larguraCm = formData.get("larguraCm") ? Number(formData.get("larguraCm")) : null;
   const alturaCm = formData.get("alturaCm") ? Number(formData.get("alturaCm")) : null;
+  // Achado A11 — mesmo padrão de larguraCm/alturaCm acima:
+  // EditarOrcamentoForm.tsx já converte pra cm no client antes de mandar
+  // (campo hidden). Ao contrário de profundidadeCm/espessuraMm abaixo, ESTA
+  // passa por calcularItemOrcamento (motor de nesting), logo abaixo.
+  const larguraPlanificadaCm = formData.get("larguraPlanificadaCm")
+    ? Number(formData.get("larguraPlanificadaCm"))
+    : null;
+  const alturaPlanificadaCm = formData.get("alturaPlanificadaCm")
+    ? Number(formData.get("alturaPlanificadaCm"))
+    : null;
   // Achado F7 — mesmo padrão de larguraCm/alturaCm acima: EditarOrcamentoForm.tsx
   // já converte pra cm/mm no client antes de mandar (campo hidden). Nunca
   // passa por calcularItemOrcamento (motor de preço) — só gravado direto no
@@ -451,6 +461,8 @@ export async function editarOrcamento(
     quantidade,
     larguraCm,
     alturaCm,
+    larguraPlanificadaCm,
+    alturaPlanificadaCm,
     corFrente,
     corVerso,
     numeroCoresFlexo,
@@ -514,6 +526,8 @@ export async function editarOrcamento(
             quantidade,
             larguraCm,
             alturaCm,
+            larguraPlanificadaCm,
+            alturaPlanificadaCm,
             profundidadeCm,
             espessuraMm,
             cores: cores || null,
@@ -744,6 +758,16 @@ export async function adicionarItemOrcamento(
   // antes de calcularItemOrcamento.
   const larguraBruta = formData.get("largura") ? Number(formData.get("largura")) : null;
   const alturaBruta = formData.get("altura") ? Number(formData.get("altura")) : null;
+  // Achado A11 — mesma convenção de largura/altura acima: dimensão do
+  // desenvolvimento da faca (planificação), DIGITADA na unidade abaixo
+  // (convertida pra cm mais abaixo), opcional. Ao contrário de
+  // profundidade/espessura abaixo, ESTA entra no motor de nesting.
+  const larguraPlanificadaBruta = formData.get("larguraPlanificada")
+    ? Number(formData.get("larguraPlanificada"))
+    : null;
+  const alturaPlanificadaBruta = formData.get("alturaPlanificada")
+    ? Number(formData.get("alturaPlanificada"))
+    : null;
   // Achado F7 — mesma convenção de largura/altura acima: profundidade
   // DIGITADA na unidade abaixo (convertida pra cm mais abaixo), espessura
   // SEMPRE em mm (nunca passa pela conversão de unidade).
@@ -821,6 +845,12 @@ export async function adicionarItemOrcamento(
   const unidadeDimensao = unidadeParsed.data;
   const larguraCm = larguraBruta !== null ? converterParaCm(larguraBruta, unidadeDimensao) : null;
   const alturaCm = alturaBruta !== null ? converterParaCm(alturaBruta, unidadeDimensao) : null;
+  // Achado A11 — mesma conversão de largura/altura acima pra dimensão
+  // planificada.
+  const larguraPlanificadaCm =
+    larguraPlanificadaBruta !== null ? converterParaCm(larguraPlanificadaBruta, unidadeDimensao) : null;
+  const alturaPlanificadaCm =
+    alturaPlanificadaBruta !== null ? converterParaCm(alturaPlanificadaBruta, unidadeDimensao) : null;
   // Achado F7 — mesma conversão de largura/altura acima pra profundidade;
   // espessuraMm já chega em mm. Nenhum dos dois vai pro motor de preço.
   const profundidadeCm =
@@ -857,6 +887,8 @@ export async function adicionarItemOrcamento(
     quantidade,
     larguraCm,
     alturaCm,
+    larguraPlanificadaCm,
+    alturaPlanificadaCm,
     corFrente,
     corVerso,
     numeroCoresFlexo,
@@ -901,6 +933,8 @@ export async function adicionarItemOrcamento(
             quantidade,
             larguraCm,
             alturaCm,
+            larguraPlanificadaCm,
+            alturaPlanificadaCm,
             profundidadeCm,
             espessuraMm,
             unidadeDimensao,

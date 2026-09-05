@@ -73,6 +73,14 @@ export type CamposItemOrcamento = {
   // src/app/orcamento/actions.ts e src/app/orcamento/[id]/actions.ts).
   largura: string;
   altura: string;
+  // Achado A11 — dimensão do DESENVOLVIMENTO DA FACA (a planificação da
+  // embalagem aberta), não do produto acabado fechado. Mesma unidade
+  // `unidadeDimensao` abaixo que largura/altura. Só relevante pra produtos
+  // com nesting/imposição (M2/OFFSET/FLEXOGRAFIA/DIGITAL — ver
+  // exigeDimensao abaixo); opcional mesmo nesses — em branco, o motor cai em
+  // largura/altura normais.
+  larguraPlanificada: string;
+  alturaPlanificada: string;
   // Achado F7 — terceira dimensão (caixa/embalagem, acrílico, livro) do item
   // VENDIDO. Mesma unidade `unidadeDimensao` abaixo que largura/altura,
   // SEMPRE visível (não condicionada a categoria/modeloCalculo do produto —
@@ -157,6 +165,8 @@ export function camposIniciais(
     quantidade: "100",
     largura: "",
     altura: "",
+    larguraPlanificada: "",
+    alturaPlanificada: "",
     profundidade: "",
     espessuraMm: "",
     unidadeDimensao: unidadePadrao,
@@ -289,6 +299,8 @@ export function SeletorItemOrcamento({
       quantidade: valores.quantidade,
       largura: "",
       altura: "",
+      larguraPlanificada: "",
+      alturaPlanificada: "",
       profundidade: "",
       espessuraMm: "",
       // Mantém a unidade que o usuário já tinha escolhido nesta sessão do
@@ -335,6 +347,9 @@ export function SeletorItemOrcamento({
       unidadeDimensao: novaUnidade,
       largura: converter(valores.largura),
       altura: converter(valores.altura),
+      // Achado A11 — mesma conversão de largura/altura acima.
+      larguraPlanificada: converter(valores.larguraPlanificada),
+      alturaPlanificada: converter(valores.alturaPlanificada),
       // profundidade segue a mesma unidadeDimensao de largura/altura —
       // espessuraMm fica de fora de propósito (sempre mm, nunca converte).
       profundidade: converter(valores.profundidade),
@@ -712,6 +727,42 @@ export function SeletorItemOrcamento({
           Mais opções
         </summary>
         <div className="grid grid-cols-1 gap-4 border-t border-slate-100 px-4 py-4 dark:border-slate-800 sm:grid-cols-2">
+          {/* Achado A11 — dimensão do desenvolvimento da faca (embalagem/
+              cartonagem), só relevante pra modelos com nesting/imposição
+              (mesmo grupo de exigeDimensao). Fica dentro de "Mais opções"
+              porque a maioria dos itens (banner, cartão, etiqueta comum) não
+              precisa dela — só embalagem, onde a peça fechada é bem menor
+              que o que ocupa a folha. */}
+          {exigeDimensao && (
+            <>
+              <Input
+                label={
+                  <>
+                    {`Largura planificada (${rotuloUnidade})`}
+                    <CampoAjuda texto="Só pra embalagem/cartonagem: a largura da peça ABERTA (o desenvolvimento da faca), não a da caixa fechada. Ex: uma caixa de 20×15cm pode planificar pra ~55×45cm — é isso que ocupa a folha de papelão. Deixe em branco pra usar a largura acima no cálculo de aproveitamento de folha." />
+                  </>
+                }
+                type="number"
+                step={passoDimensao}
+                value={valores.larguraPlanificada}
+                onChange={set("larguraPlanificada")}
+                placeholder="opcional — só embalagem"
+              />
+              <Input
+                label={
+                  <>
+                    {`Altura planificada (${rotuloUnidade})`}
+                    <CampoAjuda texto="Mesma ideia da largura planificada ao lado: a altura da peça ABERTA. Preencha as duas juntas ou nenhuma." />
+                  </>
+                }
+                type="number"
+                step={passoDimensao}
+                value={valores.alturaPlanificada}
+                onChange={set("alturaPlanificada")}
+                placeholder="opcional — só embalagem"
+              />
+            </>
+          )}
           <Input
             label={`Profundidade (${rotuloUnidade})`}
             type="number"

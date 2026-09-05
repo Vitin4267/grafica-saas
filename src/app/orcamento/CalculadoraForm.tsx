@@ -137,6 +137,12 @@ type ItemCarrinho = {
   // aqui só existe pra reexibir a medida do jeito que foi digitada.
   largura: number | null;
   altura: number | null;
+  // Achado A11 — dimensão do desenvolvimento da faca (planificação), na
+  // mesma unidade `unidadeDimensao` abaixo. Ao contrário de
+  // profundidade/espessuraMm logo abaixo, ESTA passa pro motor de preço
+  // (precificarItem) — usada pelo nesting quando presente.
+  larguraPlanificada: number | null;
+  alturaPlanificada: number | null;
   // Achado F7 — nunca passam pro motor de preço (precificarItem), só
   // gravados direto no envio final.
   profundidade: number | null;
@@ -297,6 +303,10 @@ export function CalculadoraForm({
     // converte pra cm no servidor (nunca confia no que vier do cliente).
     const largura = campos.largura ? Number(campos.largura) : null;
     const altura = campos.altura ? Number(campos.altura) : null;
+    // Achado A11 — vai pro motor de preço (precificarItem abaixo), usada
+    // pelo nesting quando presente (ver CamposItemOrcamento.larguraPlanificada).
+    const larguraPlanificada = campos.larguraPlanificada ? Number(campos.larguraPlanificada) : null;
+    const alturaPlanificada = campos.alturaPlanificada ? Number(campos.alturaPlanificada) : null;
     // Achado F7 — nunca vai pro motor de preço (precificarItem abaixo não
     // recebe estes campos), só entra no carrinho pra gravação direta.
     const profundidade = campos.profundidade ? Number(campos.profundidade) : null;
@@ -335,6 +345,8 @@ export function CalculadoraForm({
       quantidade,
       largura,
       altura,
+      larguraPlanificada,
+      alturaPlanificada,
       unidadeDimensao: campos.unidadeDimensao,
       corFrente,
       corVerso,
@@ -371,6 +383,8 @@ export function CalculadoraForm({
         quantidade,
         largura,
         altura,
+        larguraPlanificada,
+        alturaPlanificada,
         profundidade,
         espessuraMm,
         unidadeDimensao: campos.unidadeDimensao,
@@ -410,6 +424,8 @@ export function CalculadoraForm({
       quantidade: i.quantidade,
       largura: i.largura,
       altura: i.altura,
+      larguraPlanificada: i.larguraPlanificada,
+      alturaPlanificada: i.alturaPlanificada,
       profundidade: i.profundidade,
       espessuraMm: i.espessuraMm,
       unidadeDimensao: i.unidadeDimensao,

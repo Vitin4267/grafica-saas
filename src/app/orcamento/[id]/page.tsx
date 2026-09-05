@@ -549,6 +549,8 @@ export default async function OrcamentoDetalhePage({
                     quantidade: item.quantidade,
                     larguraCm: item.larguraCm?.toString() ?? "",
                     alturaCm: item.alturaCm?.toString() ?? "",
+                    larguraPlanificadaCm: item.larguraPlanificadaCm?.toString() ?? "",
+                    alturaPlanificadaCm: item.alturaPlanificadaCm?.toString() ?? "",
                     profundidadeCm: item.profundidadeCm?.toString() ?? "",
                     espessuraMm: item.espessuraMm?.toString() ?? "",
                     cores: item.cores ?? "",

@@ -74,6 +74,12 @@ type ItemCarrinho = {
   quantidade: number;
   largura: number | null;
   altura: number | null;
+  // Achado A11 — dimensão do desenvolvimento da faca (planificação), na
+  // mesma unidade `unidadeDimensao` abaixo. Ao contrário de
+  // profundidade/espessuraMm logo abaixo, ESTA passa por precificarItem
+  // (motor de preço) — usada pelo nesting quando presente.
+  larguraPlanificada: number | null;
+  alturaPlanificada: number | null;
   // Achado F7 — nunca passam por precificarItem (motor de preço), só
   // gravados direto no envio final.
   profundidade: number | null;
@@ -158,6 +164,10 @@ export function AdicionarOpcaoForm({
 
     const largura = campos.largura ? Number(campos.largura) : null;
     const altura = campos.altura ? Number(campos.altura) : null;
+    // Achado A11 — vai pro motor de preço (precificarItem abaixo), usada
+    // pelo nesting quando presente.
+    const larguraPlanificada = campos.larguraPlanificada ? Number(campos.larguraPlanificada) : null;
+    const alturaPlanificada = campos.alturaPlanificada ? Number(campos.alturaPlanificada) : null;
     // Achado F7 — nunca vai pro motor de preço (precificarItem abaixo não
     // recebe estes campos), só entra no carrinho pra gravação direta.
     const profundidade = campos.profundidade ? Number(campos.profundidade) : null;
@@ -191,6 +201,8 @@ export function AdicionarOpcaoForm({
       quantidade,
       largura,
       altura,
+      larguraPlanificada,
+      alturaPlanificada,
       unidadeDimensao: campos.unidadeDimensao,
       corFrente,
       corVerso,
@@ -226,6 +238,8 @@ export function AdicionarOpcaoForm({
         quantidade,
         largura,
         altura,
+        larguraPlanificada,
+        alturaPlanificada,
         profundidade,
         espessuraMm,
         unidadeDimensao: campos.unidadeDimensao,
@@ -264,6 +278,8 @@ export function AdicionarOpcaoForm({
       quantidade: i.quantidade,
       largura: i.largura,
       altura: i.altura,
+      larguraPlanificada: i.larguraPlanificada,
+      alturaPlanificada: i.alturaPlanificada,
       profundidade: i.profundidade,
       espessuraMm: i.espessuraMm,
       unidadeDimensao: i.unidadeDimensao,

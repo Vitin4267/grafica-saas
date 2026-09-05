@@ -233,6 +233,102 @@ describe("calcularItemOrcamento — modelo SIMPLES (achados da auditoria de 2026
     expect(resultado.ok).toBe(false);
   });
 
+  // Achado A11 — guarda universal de dimensão planificada (desenvolvimento
+  // da faca): mesmo raciocínio das guardas de largura/altura normais acima,
+  // roda antes do branch SIMPLES/M2/OFFSET, então ITEM_SIMPLES serve igual
+  // pra exercitar.
+  it("rejeita largura planificada sem altura planificada (as duas vêm juntas ou nenhuma)", async () => {
+    const resultado = await calcularItemOrcamento(ITEM_SIMPLES, "grafica-1", {
+      quantidade: 1,
+      larguraCm: null,
+      alturaCm: null,
+      larguraPlanificadaCm: 55,
+      alturaPlanificadaCm: null,
+      corFrente: null,
+      corVerso: null,
+      acabamentoIds: [],
+      papelId: null,
+      gramaturaGm2: null,
+      quantidadeCores: null,
+      custoFaca: null,
+      custoFrete: null,
+      numeroCoresFlexo: null,
+      numeroCliques: null,
+      numeroSetups: null,
+      numeroPontos: null,
+      tempoEstimadoMin: null,
+      metrosCorte: null,
+      horasEstimadas: null,
+      custoAquisicaoUnitario: null,
+      materialFornecidoPeloCliente: false,
+      margemLucroOverride: null,
+    });
+    expect(resultado.ok).toBe(false);
+  });
+
+  it("rejeita altura planificada negativa", async () => {
+    const resultado = await calcularItemOrcamento(ITEM_SIMPLES, "grafica-1", {
+      quantidade: 1,
+      larguraCm: null,
+      alturaCm: null,
+      larguraPlanificadaCm: 55,
+      alturaPlanificadaCm: -45,
+      corFrente: null,
+      corVerso: null,
+      acabamentoIds: [],
+      papelId: null,
+      gramaturaGm2: null,
+      quantidadeCores: null,
+      custoFaca: null,
+      custoFrete: null,
+      numeroCoresFlexo: null,
+      numeroCliques: null,
+      numeroSetups: null,
+      numeroPontos: null,
+      tempoEstimadoMin: null,
+      metrosCorte: null,
+      horasEstimadas: null,
+      custoAquisicaoUnitario: null,
+      materialFornecidoPeloCliente: false,
+      margemLucroOverride: null,
+    });
+    expect(resultado.ok).toBe(false);
+  });
+
+  it("aceita dimensão planificada omitida — SIMPLES nem usa o campo, comportamento de sempre", async () => {
+    const resultado = await calcularItemOrcamento(ITEM_SIMPLES, "grafica-1", {
+      quantidade: 3,
+      larguraCm: null,
+      alturaCm: null,
+      corFrente: null,
+      corVerso: null,
+      acabamentoIds: [],
+      papelId: null,
+      gramaturaGm2: null,
+      quantidadeCores: null,
+      custoFaca: null,
+      custoFrete: null,
+      numeroCoresFlexo: null,
+      numeroCliques: null,
+      numeroSetups: null,
+      numeroPontos: null,
+      tempoEstimadoMin: null,
+      metrosCorte: null,
+      horasEstimadas: null,
+      custoAquisicaoUnitario: null,
+      materialFornecidoPeloCliente: false,
+      margemLucroOverride: null,
+      // larguraPlanificadaCm/alturaPlanificadaCm nem informados — campo é
+      // opcional no tipo (ver comentário em DadosItemOrcamento) justamente
+      // pra este fixture continuar compilando sem tocar em todo teste
+      // existente deste arquivo.
+    });
+    expect(resultado.ok).toBe(true);
+    if (resultado.ok) {
+      expect(resultado.precoTotal).toBe("30");
+    }
+  });
+
   // Guardas do motor de clichê de etiqueta / faca / frete — mesmo raciocínio
   // das guardas de quantidade/largura acima: editarOrcamento/
   // adicionarItemOrcamento leem esses campos direto do FormData, sem zod.

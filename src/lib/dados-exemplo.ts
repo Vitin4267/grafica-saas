@@ -68,6 +68,8 @@ const DADOS_ITEM_VAZIO: DadosItemOrcamento = {
   quantidade: 1,
   larguraCm: null,
   alturaCm: null,
+  larguraPlanificadaCm: null,
+  alturaPlanificadaCm: null,
   corFrente: null,
   corVerso: null,
   acabamentoIds: [],

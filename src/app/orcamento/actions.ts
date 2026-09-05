@@ -81,6 +81,11 @@ export async function precificarItem(input: {
   // centímetro. Convertido logo abaixo, antes de chamar o motor de preço.
   largura: number | null;
   altura: number | null;
+  // Achado A11 — dimensão do desenvolvimento da faca (planificação da
+  // embalagem aberta), na mesma unidade `unidadeDimensao` abaixo. Convertida
+  // pra cm logo abaixo, mesmo tratamento de largura/altura.
+  larguraPlanificada: number | null;
+  alturaPlanificada: number | null;
   unidadeDimensao: string;
   corFrente: number | null;
   corVerso: number | null;
@@ -123,6 +128,15 @@ export async function precificarItem(input: {
   const larguraCm =
     input.largura !== null ? converterParaCm(input.largura, unidadeParsed.data) : null;
   const alturaCm = input.altura !== null ? converterParaCm(input.altura, unidadeParsed.data) : null;
+  // Achado A11 — mesma conversão de largura/altura acima.
+  const larguraPlanificadaCm =
+    input.larguraPlanificada !== null
+      ? converterParaCm(input.larguraPlanificada, unidadeParsed.data)
+      : null;
+  const alturaPlanificadaCm =
+    input.alturaPlanificada !== null
+      ? converterParaCm(input.alturaPlanificada, unidadeParsed.data)
+      : null;
 
   // NÃO filtra por precoVenda aqui: um item existir mas estar sem preço é um
   // estado válido do catálogo (produto cadastrado, preço ainda não definido).
@@ -151,6 +165,8 @@ export async function precificarItem(input: {
     quantidade: input.quantidade,
     larguraCm,
     alturaCm,
+    larguraPlanificadaCm,
+    alturaPlanificadaCm,
     corFrente: input.corFrente,
     corVerso: input.corVerso,
     numeroCoresFlexo: input.numeroCoresFlexo,
@@ -334,6 +350,11 @@ export async function criarOrcamento(
     quantidade: number;
     larguraCm: number | null;
     alturaCm: number | null;
+    // Achado A11 — dimensão do desenvolvimento da faca (planificação),
+    // opcional; passa por calcularItemOrcamento (motor de nesting), ao
+    // contrário de profundidadeCm/espessuraMm abaixo.
+    larguraPlanificadaCm: number | null;
+    alturaPlanificadaCm: number | null;
     // Achado F7 — nunca passam por calcularItemOrcamento (motor de preço),
     // só gravados direto no OrcamentoItem — ver comentário em
     // itemEntradaSchema (src/lib/orcamento-item-entrada.ts).
@@ -424,6 +445,17 @@ export async function criarOrcamento(
       entrada.largura !== null ? converterParaCm(entrada.largura, entrada.unidadeDimensao) : null;
     const alturaCm =
       entrada.altura !== null ? converterParaCm(entrada.altura, entrada.unidadeDimensao) : null;
+    // Achado A11 — mesma conversão de largura/altura acima, pra dimensão
+    // planificada (opcional). Ao contrário de profundidadeCm abaixo, ESTA
+    // passa por calcularItemOrcamento (motor de nesting), logo abaixo.
+    const larguraPlanificadaCm =
+      entrada.larguraPlanificada != null
+        ? converterParaCm(entrada.larguraPlanificada, entrada.unidadeDimensao)
+        : null;
+    const alturaPlanificadaCm =
+      entrada.alturaPlanificada != null
+        ? converterParaCm(entrada.alturaPlanificada, entrada.unidadeDimensao)
+        : null;
     // Achado F7 — profundidadeCm segue a mesma conversão de largura/altura;
     // espessuraMm já chega em mm (nunca passa por converterParaCm). Nenhum
     // dos dois vai pro motor de preço abaixo (calcularItemOrcamento nem
@@ -438,6 +470,8 @@ export async function criarOrcamento(
       quantidade: entrada.quantidade,
       larguraCm,
       alturaCm,
+      larguraPlanificadaCm,
+      alturaPlanificadaCm,
       corFrente: entrada.corFrente,
       corVerso: entrada.corVerso,
       numeroCoresFlexo: entrada.numeroCoresFlexo,
@@ -467,6 +501,8 @@ export async function criarOrcamento(
       quantidade: entrada.quantidade,
       larguraCm,
       alturaCm,
+      larguraPlanificadaCm,
+      alturaPlanificadaCm,
       profundidadeCm,
       espessuraMm,
       unidadeDimensao: entrada.unidadeDimensao,
@@ -524,6 +560,8 @@ export async function criarOrcamento(
           quantidade: item.quantidade,
           larguraCm: item.larguraCm,
           alturaCm: item.alturaCm,
+          larguraPlanificadaCm: item.larguraPlanificadaCm,
+          alturaPlanificadaCm: item.alturaPlanificadaCm,
           profundidadeCm: item.profundidadeCm,
           espessuraMm: item.espessuraMm,
           unidadeDimensao: item.unidadeDimensao,

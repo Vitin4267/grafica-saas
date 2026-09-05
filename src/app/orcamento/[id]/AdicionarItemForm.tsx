@@ -56,6 +56,10 @@ export function AdicionarItemForm({
         <input type="hidden" name="quantidade" value={campos.quantidade} />
         <input type="hidden" name="largura" value={campos.largura} />
         <input type="hidden" name="altura" value={campos.altura} />
+        {/* Achado A11 — dimensão planificada (desenvolvimento da faca), só
+            embalagem/cartonagem. */}
+        <input type="hidden" name="larguraPlanificada" value={campos.larguraPlanificada} />
+        <input type="hidden" name="alturaPlanificada" value={campos.alturaPlanificada} />
         {/* Achado F7 — profundidade/espessura do item vendido. */}
         <input type="hidden" name="profundidade" value={campos.profundidade} />
         <input type="hidden" name="espessuraMm" value={campos.espessuraMm} />
