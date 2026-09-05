@@ -52,6 +52,40 @@ async function resolverCategoriaDespesa(
   return { ok: true, categoria: categoriaCusto.nome, categoriaCustoId: categoriaCusto.id };
 }
 
+// Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04) — confere
+// que o filialId enviado (opcional) pertence à gráfica, mesmo cuidado de
+// isolamento de tenant que resolverCategoriaDespesa acima já faz. undefined
+// = "sem filial específica", mesmo comportamento de hoje.
+async function resolverFilialDespesa(
+  graficaId: string,
+  filialId: string | undefined
+): Promise<{ ok: true; filialId: string | null } | { ok: false; mensagem: string }> {
+  if (!filialId) {
+    return { ok: true, filialId: null };
+  }
+  const filial = await prisma.filial.findFirst({ where: { id: filialId, graficaId } });
+  if (!filial) {
+    return { ok: false, mensagem: "Filial não encontrada." };
+  }
+  return { ok: true, filialId: filial.id };
+}
+
+// Achado A15 — mesma validação, agora pra contaFinanceiraId (usado só em
+// marcarComoPaga, ver comentário lá).
+async function resolverContaFinanceiraDespesa(
+  graficaId: string,
+  contaFinanceiraId: string | undefined
+): Promise<{ ok: true; contaFinanceiraId: string | null } | { ok: false; mensagem: string }> {
+  if (!contaFinanceiraId) {
+    return { ok: true, contaFinanceiraId: null };
+  }
+  const conta = await prisma.contaFinanceira.findFirst({ where: { id: contaFinanceiraId, graficaId } });
+  if (!conta) {
+    return { ok: false, mensagem: "Conta financeira não encontrada." };
+  }
+  return { ok: true, contaFinanceiraId: conta.id };
+}
+
 export async function criarDespesa(
   _estadoAnterior: DespesaResult | null,
   formData: FormData
@@ -71,6 +105,7 @@ export async function criarDespesa(
     vencimento: formData.get("vencimento"),
     periodicidade: formData.get("periodicidade") ?? undefined,
     recorrenciaAteEm: formData.get("recorrenciaAteEm") ?? undefined,
+    filialId: formData.get("filialId") ?? undefined,
   });
   if (!parsed.success) {
     return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Dados inválidos." };
@@ -79,6 +114,10 @@ export async function criarDespesa(
   const dadosCategoria = await resolverCategoriaDespesa(usuario.graficaId, parsed.data);
   if (!dadosCategoria.ok) {
     return { ok: false, mensagem: dadosCategoria.mensagem };
+  }
+  const dadosFilial = await resolverFilialDespesa(usuario.graficaId, parsed.data.filialId);
+  if (!dadosFilial.ok) {
+    return { ok: false, mensagem: dadosFilial.mensagem };
   }
 
   const recorrente = formData.get("recorrente") === "on";
@@ -103,6 +142,7 @@ export async function criarDespesa(
         periodicidade: parsed.data.periodicidade,
         recorrenciaAteEm: parsed.data.recorrenciaAteEm ?? null,
         valorVariavel,
+        filialId: dadosFilial.filialId,
       },
     });
     if (!recorrente) return criada;
@@ -160,6 +200,7 @@ export async function editarDespesa(
     vencimento: formData.get("vencimento"),
     periodicidade: formData.get("periodicidade") ?? undefined,
     recorrenciaAteEm: formData.get("recorrenciaAteEm") ?? undefined,
+    filialId: formData.get("filialId") ?? undefined,
   });
   if (!parsed.success) {
     return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Dados inválidos." };
@@ -168,6 +209,10 @@ export async function editarDespesa(
   const dadosCategoria = await resolverCategoriaDespesa(usuario.graficaId, parsed.data);
   if (!dadosCategoria.ok) {
     return { ok: false, mensagem: dadosCategoria.mensagem };
+  }
+  const dadosFilial = await resolverFilialDespesa(usuario.graficaId, parsed.data.filialId);
+  if (!dadosFilial.ok) {
+    return { ok: false, mensagem: dadosFilial.mensagem };
   }
 
   const recorrente = formData.get("recorrente") === "on";
@@ -185,6 +230,7 @@ export async function editarDespesa(
       periodicidade: parsed.data.periodicidade,
       recorrenciaAteEm: parsed.data.recorrenciaAteEm ?? null,
       valorVariavel,
+      filialId: dadosFilial.filialId,
       // Liga recorrência numa despesa que ainda não tinha série: essa
       // ocorrência vira o início. Já tinha série (recorrente antes ou
       // desligando agora): mantém o serieRecorrenciaId como estava — ver
@@ -284,11 +330,17 @@ export async function marcarComoPaga(
     formaPagamento: formData.get("formaPagamento"),
     formaPagamentoDetalhe: formData.get("formaPagamentoDetalhe") ?? undefined,
     valor: formData.get("valor") ?? undefined,
+    contaFinanceiraId: formData.get("contaFinanceiraId") ?? undefined,
   });
   if (!parsed.success) {
     return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   }
   const { despesaId, formaPagamento, formaPagamentoDetalhe } = parsed.data;
+
+  const dadosConta = await resolverContaFinanceiraDespesa(usuario.graficaId, parsed.data.contaFinanceiraId);
+  if (!dadosConta.ok) {
+    return { ok: false, mensagem: dadosConta.mensagem };
+  }
 
   const despesa = await prisma.despesa.findFirst({
     where: { id: despesaId, graficaId: usuario.graficaId },
@@ -321,8 +373,19 @@ export async function marcarComoPaga(
       const cas = await tx.despesa.updateMany({
         where: { id: despesaId, status: statusLido },
         data: fecha
-          ? { status: "PAGA", pagoEm: agora, formaPagamento, formaPagamentoDetalhe: formaDetalheFinal }
-          : { status: "PARCIAL", formaPagamento, formaPagamentoDetalhe: formaDetalheFinal },
+          ? {
+              status: "PAGA",
+              pagoEm: agora,
+              formaPagamento,
+              formaPagamentoDetalhe: formaDetalheFinal,
+              contaFinanceiraId: dadosConta.contaFinanceiraId,
+            }
+          : {
+              status: "PARCIAL",
+              formaPagamento,
+              formaPagamentoDetalhe: formaDetalheFinal,
+              contaFinanceiraId: dadosConta.contaFinanceiraId,
+            },
       });
       if (cas.count === 0) throw new ErroDespesaJaPaga();
 
@@ -395,7 +458,13 @@ export async function marcarComoPendente(
     prisma.pagamentoDespesa.deleteMany({ where: { despesaId } }),
     prisma.despesa.update({
       where: { id: despesaId },
-      data: { status: "PENDENTE", pagoEm: null, formaPagamento: null, formaPagamentoDetalhe: null },
+      data: {
+        status: "PENDENTE",
+        pagoEm: null,
+        formaPagamento: null,
+        formaPagamentoDetalhe: null,
+        contaFinanceiraId: null,
+      },
     }),
   ]);
 

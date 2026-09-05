@@ -37,12 +37,18 @@ type ValoresDespesa = {
   periodicidade: string;
   recorrenciaAteEm: string | null;
   valorVariavel: boolean;
+  // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04).
+  filialId: string | null;
 };
 
 export function DespesaForm({
   despesaId,
   valoresIniciais,
   categoriasCusto,
+  filiais = [],
+  contasFinanceiras = [],
+  contaFinanceiraNome,
+  filialNome,
   status,
   saldo,
   pagoEm,
@@ -54,6 +60,11 @@ export function DespesaForm({
   despesaId: string;
   valoresIniciais: ValoresDespesa;
   categoriasCusto: { id: string; nome: string }[];
+  // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04).
+  filiais?: { id: string; nome: string }[];
+  contasFinanceiras?: { id: string; nome: string }[];
+  contaFinanceiraNome: string | null;
+  filialNome: string | null;
   status: "PENDENTE" | "PARCIAL" | "PAGA";
   // Saldo em aberto — sempre calculado (achado A8 da Parte 4), nunca
   // armazenado. Igual ao valor cheio pra despesa PENDENTE.
@@ -84,6 +95,7 @@ export function DespesaForm({
           {Number(valoresIniciais.valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
         </p>
         <p className="text-slate-500">Vencimento: {valoresIniciais.vencimento}</p>
+        {filialNome && <p className="text-slate-500">Filial: {filialNome}</p>}
         <p className="text-slate-500">
           Status:{" "}
           {status === "PAGA"
@@ -95,6 +107,7 @@ export function DespesaForm({
             ? ` · 🔁 ${ROTULO_PERIODICIDADE[valoresIniciais.periodicidade as keyof typeof ROTULO_PERIODICIDADE] ?? "Recorrente"}`
             : ""}
         </p>
+        {contaFinanceiraNome && <p className="text-slate-500">Conta financeira: {contaFinanceiraNome}</p>}
         <p className="mt-2 text-xs text-slate-400">Você tem acesso só de visualização a esta tela.</p>
       </Card>
     );
@@ -171,6 +184,21 @@ export function DespesaForm({
                 className="flex-1"
               />
             )}
+            {contasFinanceiras.length > 0 && (
+              <Select
+                label="Conta financeira (opcional)"
+                name="contaFinanceiraId"
+                defaultValue=""
+                className="flex-1"
+              >
+                <option value="">Sem conta específica</option>
+                {contasFinanceiras.map((conta) => (
+                  <option key={conta.id} value={conta.id}>
+                    {conta.nome}
+                  </option>
+                ))}
+              </Select>
+            )}
             <Button type="submit" loading={marcandoPaga}>
               {marcandoPaga ? "Salvando..." : "Registrar pagamento"}
             </Button>
@@ -213,6 +241,21 @@ export function DespesaForm({
               required
               className="col-span-2"
             />
+            {filiais.length > 0 && (
+              <Select
+                label="Filial (opcional)"
+                name="filialId"
+                defaultValue={valoresIniciais.filialId ?? ""}
+                className="col-span-2"
+              >
+                <option value="">Sem filial específica</option>
+                {filiais.map((filial) => (
+                  <option key={filial.id} value={filial.id}>
+                    {filial.nome}
+                  </option>
+                ))}
+              </Select>
+            )}
           </div>
         </Card>
 

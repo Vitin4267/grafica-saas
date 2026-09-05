@@ -33,6 +33,9 @@ type Pagamento = {
   formaDetalhe: string | null;
   observacao: string | null;
   createdAt: string;
+  // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04) — ONDE o
+  // dinheiro entrou, opcional (complementa `forma`, que já diz COMO).
+  contaFinanceiraNome?: string | null;
 };
 
 function LinhaPagamento({ pagamento }: { pagamento: Pagamento }) {
@@ -55,6 +58,7 @@ function LinhaPagamento({ pagamento }: { pagamento: Pagamento }) {
           </p>
           <p className="text-xs text-slate-500">
             {new Date(pagamento.createdAt).toLocaleDateString("pt-BR")}
+            {pagamento.contaFinanceiraNome && ` · ${pagamento.contaFinanceiraNome}`}
             {pagamento.observacao && ` · ${pagamento.observacao}`}
           </p>
           {state && !state.ok && (
@@ -90,11 +94,14 @@ export function PagamentosCard({
   total,
   pagamentos,
   podeRegistrar,
+  contasFinanceiras = [],
 }: {
   orcamentoId: string;
   total: number;
   pagamentos: Pagamento[];
   podeRegistrar: boolean;
+  // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04).
+  contasFinanceiras?: { id: string; nome: string }[];
 }) {
   const [state, formAction, isPending] = useActionState(registrarPagamento, null);
   const [formaEscolhida, setFormaEscolhida] = useState("PIX");
@@ -173,6 +180,16 @@ export function PagamentosCard({
                 placeholder="ex: cheque pré-datado"
                 className="sm:col-span-3"
               />
+            )}
+            {contasFinanceiras.length > 0 && (
+              <Select label="Conta financeira (opcional)" name="contaFinanceiraId" defaultValue="">
+                <option value="">Sem conta específica</option>
+                {contasFinanceiras.map((conta) => (
+                  <option key={conta.id} value={conta.id}>
+                    {conta.nome}
+                  </option>
+                ))}
+              </Select>
             )}
           </div>
           {state && !state.ok && <Alert variant="error">{state.mensagem}</Alert>}

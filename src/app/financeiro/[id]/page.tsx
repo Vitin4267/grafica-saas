@@ -30,6 +30,10 @@ export default async function DespesaDetalhePage({
 
   const despesa = await prisma.despesa.findFirst({
     where: { id, graficaId: usuario.graficaId },
+    include: {
+      filial: { select: { nome: true } },
+      contaFinanceira: { select: { nome: true } },
+    },
   });
 
   if (!despesa) {
@@ -51,6 +55,27 @@ export default async function DespesaDetalhePage({
       OR: [{ ativa: true }, ...(despesa.categoriaCustoId ? [{ id: despesa.categoriaCustoId }] : [])],
     },
     orderBy: { ordem: "asc" },
+    select: { id: true, nome: true },
+  });
+
+  // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04) — mesmo
+  // cuidado de categoriasCusto acima: inclui a filial/conta já vinculada
+  // mesmo se tiver sido desativada depois, senão o <select> perderia a
+  // opção selecionada e trocaria o vínculo sem o usuário pedir.
+  const filiais = await prisma.filial.findMany({
+    where: {
+      graficaId: usuario.graficaId,
+      OR: [{ ativa: true }, ...(despesa.filialId ? [{ id: despesa.filialId }] : [])],
+    },
+    orderBy: { nome: "asc" },
+    select: { id: true, nome: true },
+  });
+  const contasFinanceiras = await prisma.contaFinanceira.findMany({
+    where: {
+      graficaId: usuario.graficaId,
+      OR: [{ ativa: true }, ...(despesa.contaFinanceiraId ? [{ id: despesa.contaFinanceiraId }] : [])],
+    },
+    orderBy: { nome: "asc" },
     select: { id: true, nome: true },
   });
 
@@ -91,8 +116,13 @@ export default async function DespesaDetalhePage({
             periodicidade: despesa.periodicidade,
             recorrenciaAteEm: despesa.recorrenciaAteEm ? dataParaInputValue(despesa.recorrenciaAteEm) : null,
             valorVariavel: despesa.valorVariavel,
+            filialId: despesa.filialId,
           }}
           categoriasCusto={categoriasCusto}
+          filiais={filiais}
+          contasFinanceiras={contasFinanceiras}
+          contaFinanceiraNome={despesa.contaFinanceira?.nome ?? null}
+          filialNome={despesa.filial?.nome ?? null}
           status={despesa.status}
           saldo={saldo}
           pagoEm={despesa.pagoEm ? dataParaInputValue(despesa.pagoEm) : null}

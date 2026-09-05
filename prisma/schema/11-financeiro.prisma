@@ -7,6 +7,55 @@ enum FormaPagamento {
   OUTRO
 }
 
+enum TipoContaFinanceira {
+  CONTA_CORRENTE
+  CAIXA
+  POUPANCA
+  CARTEIRA_DIGITAL
+  OUTRO
+}
+
+// Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04): cadastro
+// de referência de "onde o dinheiro está" — conta bancária, caixa físico,
+// poupança, carteira digital (ex: Mercado Pago, PicPay) — pra uma gráfica
+// com mais de uma conta/caixa poder marcar cada Pagamento/Despesa recebido
+// ou pago com o destino/origem do dinheiro, complementando FormaPagamento
+// (que já diz COMO — dinheiro, pix, cartão — mas nunca ONDE).
+//
+// ESCOPO DESTA RODADA — deliberadamente pequeno (texto literal da proposta
+// da auditoria: "não muta cálculo de saldo existente"): isto é só cadastro +
+// vínculo opcional em Pagamento.contaFinanceiraId/Despesa.contaFinanceiraId.
+// saldoInicial/saldoInicialEm existem só como o ponto de partida informado
+// pela gráfica (ex: "esta conta já tinha R$ 2.000 quando cadastrei") — NADA
+// no sistema soma Pagamento/Despesa vinculados a esta conta pra apurar um
+// saldo atual; isso fica pra uma rodada futura (exigiria decidir fuso de
+// corte, tratar exclusão/edição retroativa de pagamento, etc. — despesa
+// maior que o cadastro simples que esta rodada entrega). Uma tela que queira
+// "saldo atual" precisa somar na hora — não há cache/coluna pra isso aqui.
+model ContaFinanceira {
+  id             String              @id @default(cuid())
+  graficaId      String
+  nome           String
+  tipo           TipoContaFinanceira
+  saldoInicial   Decimal             @default(0) @db.Decimal(12, 2)
+  // Data-pura (mesmo padrão de Despesa.vencimento/ContaReceber.vencimento —
+  // meia-noite UTC, exibida sempre com timeZone: "UTC"). Opcional: null
+  // quando a gráfica não quis informar quando o saldo inicial foi apurado
+  // (o valor em si ainda é usado como referência, só sem data associada).
+  saldoInicialEm DateTime?           @db.Date
+  ativa          Boolean             @default(true)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  grafica    Grafica     @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  pagamentos Pagamento[]
+  despesas   Despesa[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("contas_financeiras")
+}
+
 // Registro de pagamento (entrada, parcela, quitação) de um orçamento aprovado. Saldo
 // devedor é sempre calculado (total - soma dos pagamentos), nunca armazenado — evita
 // dessincronia. Só criado com o orçamento em APROVADO (ver registrarPagamento).
@@ -21,7 +70,18 @@ model Pagamento {
   observacao   String?
   createdAt    DateTime       @default(now())
 
-  orcamento Orcamento @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+  // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04) — ONDE
+  // (qual conta bancária/caixa) o dinheiro entrou, complementar a `forma`
+  // (COMO). Opcional: null = "sem conta especificada" (comportamento de
+  // hoje, preservado 100%). SetNull: desativar/apagar uma ContaFinanceira
+  // nunca pode travar ou apagar um pagamento já registrado — só perde o
+  // vínculo. Escopo desta rodada é só cadastro + vínculo informativo: NENHUM
+  // saldo por conta é calculado a partir daqui (ver comentário no model
+  // ContaFinanceira abaixo).
+  contaFinanceiraId String?
+
+  orcamento       Orcamento        @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+  contaFinanceira ContaFinanceira? @relation(fields: [contaFinanceiraId], references: [id], onDelete: SetNull)
 
   // Presente quando este pagamento foi gerado a partir de "marcar conta a
   // receber como recebida" (ver marcarComoRecebido em
@@ -50,6 +110,7 @@ model Pagamento {
   baixasContaReceber BaixaContaReceber[]
 
   @@index([orcamentoId])
+  @@index([contaFinanceiraId])
   @@map("pagamentos")
 }
 
@@ -134,12 +195,26 @@ model Despesa {
   // anterior, como sempre foi.
   valorVariavel      Boolean              @default(false)
 
-  grafica        Grafica         @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04) — mesmo
+  // par de campos que Pagamento.contaFinanceiraId: ONDE o dinheiro saiu.
+  // Opcional, SetNull, nunca calcula saldo agregado (ver ContaFinanceira
+  // abaixo).
+  contaFinanceiraId String?
+  // Achado A15 — Orcamento.filialId já existia (lado da receita); esta
+  // coluna é o par do lado da despesa, mesmo padrão opcional/SetNull, pra
+  // permitir calcular resultado por filial no futuro (não construído nesta
+  // rodada — só o campo e o vínculo). null = despesa não atribuída a
+  // nenhuma filial específica (comportamento de hoje, preservado 100%).
+  filialId          String?
+
+  grafica         Grafica          @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   // SetNull, não Restrict: uma categoria de custo nunca é apagada de
   // verdade (só desativada, ativa=false), mas se algum dia for, a despesa
   // não pode ficar travada por causa disso — só perde o vínculo estruturado,
   // o texto livre em `categoria` continua intacto.
-  categoriaCusto CategoriaCusto? @relation(fields: [categoriaCustoId], references: [id], onDelete: SetNull)
+  categoriaCusto  CategoriaCusto?  @relation(fields: [categoriaCustoId], references: [id], onDelete: SetNull)
+  contaFinanceira ContaFinanceira? @relation(fields: [contaFinanceiraId], references: [id], onDelete: SetNull)
+  filial          Filial?          @relation(fields: [filialId], references: [id], onDelete: SetNull)
 
   // Presente quando esta despesa foi gerada a partir de "marcar comissão
   // como paga" (ver marcarComissaoPaga em src/app/financeiro/comissoes/actions.ts)
@@ -169,6 +244,8 @@ model Despesa {
   @@index([graficaId])
   @@index([graficaId, status, vencimento])
   @@index([graficaId, serieRecorrenciaId])
+  @@index([contaFinanceiraId])
+  @@index([filialId])
   @@map("despesas")
 }
 

@@ -11,8 +11,10 @@ import { criarDespesa } from "./actions";
 
 export function NovaDespesaForm({
   categoriasCusto,
+  filiais = [],
 }: {
   categoriasCusto: { id: string; nome: string }[];
+  filiais?: { id: string; nome: string }[];
 }) {
   const [state, formAction, isPending] = useActionState(criarDespesa, null);
   const [recorrente, setRecorrente] = useState(false);
@@ -31,6 +33,16 @@ export function NovaDespesaForm({
         <CampoCategoriaDespesa categorias={categoriasCusto} />
         <Input label="Valor (R$)" name="valor" type="number" step="0.01" min="0.01" required />
         <Input label="Vencimento" name="vencimento" type="date" required className="sm:col-span-2" />
+        {filiais.length > 0 && (
+          <Select label="Filial (opcional)" name="filialId" defaultValue="" className="sm:col-span-2">
+            <option value="">Sem filial específica</option>
+            {filiais.map((filial) => (
+              <option key={filial.id} value={filial.id}>
+                {filial.nome}
+              </option>
+            ))}
+          </Select>
+        )}
       </div>
       <label className="flex items-start gap-2 text-sm">
         <input

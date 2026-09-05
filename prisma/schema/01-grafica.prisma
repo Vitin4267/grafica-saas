@@ -161,6 +161,9 @@ model Grafica {
   // Achado D2 da Parte 7 da auditoria de abrangência — ver model
   // PrestadorServico.
   prestadoresServico    PrestadorServico[]
+  // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04) — ver
+  // model ContaFinanceira.
+  contasFinanceiras     ContaFinanceira[]
 
   @@map("graficas")
 }
@@ -373,6 +376,11 @@ model Filial {
   grafica      Grafica             @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   orcamentos   Orcamento[]
   dadosFiscais DadosFiscaisFilial?
+  // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04) —
+  // vínculo opcional de despesa a filial, mesmo padrão de Orcamento.filialId
+  // (que já existia). Ver comentário em Despesa.filialId no schema
+  // 11-financeiro.prisma.
+  despesas     Despesa[]
 
   @@unique([graficaId, nome])
   @@index([graficaId])

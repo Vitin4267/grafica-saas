@@ -124,7 +124,10 @@ export default async function OrcamentoDetalhePage({
             itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
           },
         },
-        pagamentos: { orderBy: { createdAt: "desc" } },
+        pagamentos: {
+          orderBy: { createdAt: "desc" },
+          include: { contaFinanceira: { select: { nome: true } } },
+        },
         contasReceber: { orderBy: { vencimento: "asc" } },
       },
     }),
@@ -215,6 +218,16 @@ export default async function OrcamentoDetalhePage({
   // acima: gráfica sem nenhuma cadastrada -> lista vazia -> select não
   // aparece, digitação livre em `transportadora` continua idêntica a hoje.
   const transportadoras = await prisma.transportadora.findMany({
+    where: { graficaId: usuario.graficaId, ativa: true },
+    orderBy: { nome: "asc" },
+    select: { id: true, nome: true },
+  });
+
+  // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04) — só
+  // alimenta o <select> opcional de conta financeira em PagamentosCard;
+  // some da tela pra gráfica que nunca cadastrou nenhuma (mesmo padrão de
+  // transportadoras acima).
+  const contasFinanceiras = await prisma.contaFinanceira.findMany({
     where: { graficaId: usuario.graficaId, ativa: true },
     orderBy: { nome: "asc" },
     select: { id: true, nome: true },
@@ -811,8 +824,10 @@ export default async function OrcamentoDetalhePage({
             formaDetalhe: p.formaDetalhe,
             observacao: p.observacao,
             createdAt: p.createdAt.toISOString(),
+            contaFinanceiraNome: p.contaFinanceira?.nome ?? null,
           }))}
           podeRegistrar={orcamento.status === "APROVADO"}
+          contasFinanceiras={contasFinanceiras}
         />
 
         {orcamento.status === "APROVADO" && (

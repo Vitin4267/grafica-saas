@@ -62,11 +62,25 @@ export default async function FinanceiroPage() {
   const despesas = await prisma.despesa.findMany({
     where: { graficaId: usuario.graficaId },
     orderBy: [{ status: "asc" }, { vencimento: "asc" }],
+    include: {
+      filial: { select: { nome: true } },
+      contaFinanceira: { select: { nome: true } },
+    },
   });
 
   const categoriasCusto = await prisma.categoriaCusto.findMany({
     where: { graficaId: usuario.graficaId, ativa: true },
     orderBy: { ordem: "asc" },
+    select: { id: true, nome: true },
+  });
+
+  // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04) — só
+  // alimenta o <select> de filial no form de nova despesa; some da tela
+  // inteira pra gráfica que nunca cadastrou filial (mesmo padrão de
+  // CalculadoraForm.tsx no orçamento).
+  const filiais = await prisma.filial.findMany({
+    where: { graficaId: usuario.graficaId, ativa: true },
+    orderBy: { nome: "asc" },
     select: { id: true, nome: true },
   });
 
@@ -160,7 +174,9 @@ export default async function FinanceiroPage() {
                   <p className="mt-0.5 text-xs text-slate-500">
                     {despesa.recorrente ? `🔁 ${ROTULO_PERIODICIDADE[despesa.periodicidade]} · ` : ""}
                     {despesa.categoria ? `${despesa.categoria} · ` : ""}
+                    {despesa.filial ? `${despesa.filial.nome} · ` : ""}
                     Vence em {formatoData.format(despesa.vencimento)}
+                    {despesa.contaFinanceira ? ` · ${despesa.contaFinanceira.nome}` : ""}
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-1.5">
@@ -184,7 +200,7 @@ export default async function FinanceiroPage() {
             <h2 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">
               Nova despesa
             </h2>
-            <NovaDespesaForm categoriasCusto={categoriasCusto} />
+            <NovaDespesaForm categoriasCusto={categoriasCusto} filiais={filiais} />
           </Card>
         )}
       </main>

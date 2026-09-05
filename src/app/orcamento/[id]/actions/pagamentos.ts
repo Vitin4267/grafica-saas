@@ -113,6 +113,11 @@ export async function registrarPagamento(
   const valor = Number(formData.get("valor"));
   const formaParsed = formaPagamentoSchema.safeParse(formData.get("forma"));
   const observacao = String(formData.get("observacao") || "").trim().slice(0, 500) || null;
+  // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04) — ONDE o
+  // dinheiro entrou, opcional (complementa `forma`, que já diz COMO). String
+  // vazia (gráfica sem conta cadastrada, campo nem aparece no form) vira
+  // null — comportamento de hoje, preservado 100%.
+  const contaFinanceiraIdBruto = String(formData.get("contaFinanceiraId") || "").trim();
   // Só guarda o detalhe quando a forma é OUTRO — nunca deixa texto órfão de
   // uma forma antiga sobrar se o usuário escolher outra forma (mesma
   // disciplina de src/app/financeiro/actions.ts pro formaPagamentoDetalhe
@@ -142,6 +147,19 @@ export async function registrarPagamento(
     };
   }
 
+  // Achado A15 da Parte 4 — confere que a conta financeira pertence à
+  // gráfica, mesmo cuidado de isolamento de tenant do resto deste arquivo.
+  let contaFinanceiraId: string | null = null;
+  if (contaFinanceiraIdBruto) {
+    const contaFinanceira = await prisma.contaFinanceira.findFirst({
+      where: { id: contaFinanceiraIdBruto, graficaId: usuario.graficaId },
+    });
+    if (!contaFinanceira) {
+      return { ok: false, mensagem: "Conta financeira não encontrada." };
+    }
+    contaFinanceiraId = contaFinanceira.id;
+  }
+
   // Reconciliação automática com Conta a Receber (2026-08-16, pedido do
   // usuário): se o valor bate EXATO com uma parcela PENDENTE deste mesmo
   // orçamento, marca ela como recebida também — sem isso, a fatura ficava
@@ -158,7 +176,7 @@ export async function registrarPagamento(
   // preservado 100% (ver bloco de saldo remanescente logo abaixo, achado A8).
   const { pagamento, contaReceberVinculada } = await prisma.$transaction(async (tx) => {
     const pagamentoCriado = await tx.pagamento.create({
-      data: { orcamentoId, valor, forma: formaParsed.data, formaDetalhe, observacao },
+      data: { orcamentoId, valor, forma: formaParsed.data, formaDetalhe, observacao, contaFinanceiraId },
     });
 
     const candidata = await tx.contaReceber.findFirst({

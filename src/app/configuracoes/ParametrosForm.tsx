@@ -840,7 +840,7 @@ export function ParametrosForm({
 
       <GrupoParametros
         titulo="Cadastros auxiliares"
-        resumo="Filiais, máquinas, categorias de custo, feriados, fornecedores, prestadores de serviço, transportadoras, ferramentais, alçadas e etapas de produção."
+        resumo="Filiais, máquinas, categorias de custo, feriados, fornecedores, prestadores de serviço, transportadoras, contas financeiras, ferramentais, alçadas e etapas de produção."
       >
         <Card className="flex items-center justify-between gap-4 p-6">
           <div>
@@ -960,6 +960,26 @@ export function ParametrosForm({
           <Link href="/configuracoes/transportadoras">
             <Button type="button" variant="outline">
               Gerenciar transportadoras
+            </Button>
+          </Link>
+        </Card>
+
+        {/* Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04) —
+            cadastro de "onde o dinheiro está" pra vincular em Pagamento/
+            Despesa; ver model ContaFinanceira no schema. */}
+        <Card className="flex items-center justify-between gap-4 p-6">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+              Contas financeiras
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Contas bancárias, caixa físico ou carteira digital — pra marcar
+              onde cada pagamento recebido ou despesa paga entrou/saiu.
+            </p>
+          </div>
+          <Link href="/configuracoes/contas-financeiras">
+            <Button type="button" variant="outline">
+              Gerenciar contas
             </Button>
           </Link>
         </Card>

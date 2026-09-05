@@ -49,6 +49,17 @@ export const despesaSchema = z.object({
     .optional()
     .or(z.literal(""))
     .transform((v) => (v ? dataInputParaUTC(v) : undefined)),
+  // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04) — par de
+  // Orcamento.filialId (que já existia do lado da receita), mesmo padrão
+  // "string vazia = sem filial específica" que Orcamento.actions.ts já usa.
+  // A action confere que o id pertence à gráfica antes de gravar; aqui só a
+  // forma do dado.
+  filialId: z
+    .string()
+    .trim()
+    .max(50)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
 });
 
 // Schema separado de propósito: status/pagoEm nunca aparecem no form
@@ -78,4 +89,15 @@ export const marcarComoPagaSchema = z.object({
     .refine((v) => v === undefined || (Number.isFinite(v) && v > 0), {
       message: "Informe um valor maior que zero.",
     }),
+  // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04) — ONDE o
+  // dinheiro saiu, opcional. A action confere que o id pertence à gráfica
+  // antes de gravar; aqui só a forma do dado. Preenchido na BAIXA (aqui),
+  // não na criação da despesa — mesma lógica de formaPagamento acima: a
+  // despesa só "sai de uma conta" quando é efetivamente paga.
+  contaFinanceiraId: z
+    .string()
+    .trim()
+    .max(50)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
 });
