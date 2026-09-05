@@ -200,6 +200,111 @@ describe("verificarProntidaoFiscal", () => {
     });
     expect(resultado).toEqual({ pronto: true, pendencias: [] });
   });
+
+  // Achado F2 da auditoria de abrangência (Parte 7, 2026-09-05) — modelo=NFSE
+  // troca as checagens de ICMS/NCM (irrelevantes pra serviço) pelas de dados
+  // municipais/código de serviço da lista LC 116/2003.
+  describe("modelo NFSE", () => {
+    it("omitir `modelo` continua checando como NFE (default), comportamento de sempre preservado", () => {
+      const resultado = verificarProntidaoFiscal({
+        dadosFiscais: dadosFiscaisCompletos,
+        cliente: clienteCompleto,
+        itens: [{ nome: "Cartão de Visita", ncm: "49111090" }],
+      });
+      expect(resultado).toEqual({ pronto: true, pendencias: [] });
+    });
+
+    it("NFSE sem inscrição municipal/código IBGE/alíquota de ISS: bloqueia com pendência específica, não pede NCM", () => {
+      const resultado = verificarProntidaoFiscal({
+        modelo: "NFSE",
+        dadosFiscais: dadosFiscaisCompletos, // sem os 3 campos municipais nem NCM no item
+        cliente: clienteCompleto,
+        itens: [{ nome: "Diagramação personalizada", ncm: null, tipo: "SERVICO", itemListaServicoLc116: "13.05" }],
+      });
+      expect(resultado.pronto).toBe(false);
+      const pendencia = resultado.pendencias.find((p) => p.startsWith("NFS-e exige a configuração de"));
+      expect(pendencia).toBeDefined();
+      expect(pendencia).toContain("inscrição municipal");
+      expect(pendencia).toContain("código IBGE do município");
+      expect(pendencia).toContain("alíquota de ISS");
+      // NCM nunca é pendência de NFS-e, mesmo item sem NCM configurado.
+      expect(resultado.pendencias.some((p) => p.startsWith("NCM não configurado"))).toBe(false);
+    });
+
+    it("NFSE com dados municipais completos e item SERVICO com LC116: pronto=true", () => {
+      const resultado = verificarProntidaoFiscal({
+        modelo: "NFSE",
+        dadosFiscais: {
+          ...dadosFiscaisCompletos,
+          inscricaoMunicipal: "12345",
+          codigoMunicipioIbge: "4106902",
+          aliquotaIssPercent: new Prisma.Decimal(5),
+        },
+        cliente: clienteCompleto,
+        itens: [
+          {
+            nome: "Composição gráfica personalizada",
+            ncm: null,
+            tipo: "SERVICO",
+            itemListaServicoLc116: "13.05",
+            codigoServicoMunicipal: "0107",
+          },
+        ],
+      });
+      expect(resultado).toEqual({ pronto: true, pendencias: [] });
+    });
+
+    it("NFSE com item tipo=SERVICO sem itemListaServicoLc116: pendência lista o item pelo nome", () => {
+      const resultado = verificarProntidaoFiscal({
+        modelo: "NFSE",
+        dadosFiscais: {
+          ...dadosFiscaisCompletos,
+          inscricaoMunicipal: "12345",
+          codigoMunicipioIbge: "4106902",
+          aliquotaIssPercent: new Prisma.Decimal(5),
+        },
+        cliente: clienteCompleto,
+        itens: [{ nome: "Serviço sem código", ncm: null, tipo: "SERVICO" }],
+      });
+      expect(resultado.pronto).toBe(false);
+      expect(resultado.pendencias).toContain(
+        "Item da lista de serviços (LC 116/2003) não configurado para: Serviço sem código."
+      );
+    });
+
+    it("NFSE com item tipo=PRODUTO na mesma venda mista: nunca exige código de serviço desse item", () => {
+      const resultado = verificarProntidaoFiscal({
+        modelo: "NFSE",
+        dadosFiscais: {
+          ...dadosFiscaisCompletos,
+          inscricaoMunicipal: "12345",
+          codigoMunicipioIbge: "4106902",
+          aliquotaIssPercent: new Prisma.Decimal(5),
+        },
+        cliente: clienteCompleto,
+        itens: [
+          { nome: "Brinde revendido", ncm: "12345678", tipo: "PRODUTO" },
+          { nome: "Composição gráfica", ncm: null, tipo: "SERVICO", itemListaServicoLc116: "13.05" },
+        ],
+      });
+      expect(resultado).toEqual({ pronto: true, pendencias: [] });
+    });
+
+    it("NFSE nunca dispara a pendência de contribuinte de ICMS sem IE (irrelevante pra ISS)", () => {
+      const resultado = verificarProntidaoFiscal({
+        modelo: "NFSE",
+        dadosFiscais: {
+          ...dadosFiscaisCompletos,
+          inscricaoMunicipal: "12345",
+          codigoMunicipioIbge: "4106902",
+          aliquotaIssPercent: new Prisma.Decimal(5),
+        },
+        cliente: { ...clienteCompleto, indicadorInscricaoEstadual: "CONTRIBUINTE", inscricaoEstadual: null },
+        itens: [{ nome: "Composição gráfica", ncm: null, tipo: "SERVICO", itemListaServicoLc116: "13.05" }],
+      });
+      expect(resultado).toEqual({ pronto: true, pendencias: [] });
+    });
+  });
 });
 
 describe("resolverCfop", () => {

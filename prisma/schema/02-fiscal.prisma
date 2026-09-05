@@ -41,6 +41,18 @@ model DadosFiscaisGrafica {
   icmsModalidadeBaseCalculoPadrao   String? // tabela 0-3
   pisCofinsSituacaoTributariaPadrao String? // PIS e COFINS compartilham a mesma tabela de código
 
+  // Achado F2 da auditoria de abrangência (Parte 7, 2026-09-05): dados do
+  // EMITENTE pra NFS-e (nota de serviço municipal) — sistema hoje só emite
+  // NF-e modelo 55 (mercadoria/ICMS). Cliente.inscricaoMunicipal já existia
+  // reservado (dado do TOMADOR); estes 3 são o espelho do lado do emitente.
+  // Todos opcionais, sem validação bloqueante — só cadastro nesta rodada,
+  // emissão de NFS-e propriamente dita (chamada à Focus NFe/prefeitura,
+  // mapeamento de payload) fica pra fase 2. null = gráfica que só vende
+  // mercadoria, comportamento 100% inalterado.
+  inscricaoMunicipal  String?
+  codigoMunicipioIbge String? // código IBGE de 7 dígitos do município do emitente — varia por prefeitura, sem padrão nacional único (ABRASF é o mais comum, mas não universal)
+  aliquotaIssPercent  Decimal? @db.Decimal(5, 2) // % — ex: 5.00 (ISS varia 2% a 5% por município, LC 116/2003)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -94,6 +106,12 @@ model DadosFiscaisFilial {
   icmsModalidadeBaseCalculoPadrao   String?
   pisCofinsSituacaoTributariaPadrao String?
 
+  // Achado F2 da auditoria de abrangência — espelha DadosFiscaisGrafica
+  // campo a campo, ver comentário lá.
+  inscricaoMunicipal  String?
+  codigoMunicipioIbge String?
+  aliquotaIssPercent  Decimal? @db.Decimal(5, 2)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -117,28 +135,55 @@ enum StatusNotaFiscal {
   ERRO
 }
 
+// Achado F2 da auditoria de abrangência (Parte 7, 2026-09-05): até aqui
+// NotaFiscal era implicitamente sempre NF-e modelo 55 (mercadoria/ICMS).
+// NFSE = nota de serviço municipal (composição gráfica personalizada,
+// comunicação visual, impressão sobre material do cliente — Súmula
+// 156/STJ, LC 116/2003). NFCE (cupom fiscal eletrônico, venda de balcão
+// pra consumidor final) incluído pra fechar os 3 documentos fiscais reais
+// de uma gráfica, mas SEM nenhum uso ainda no sistema (só o valor do enum
+// existe) — não confundir com escopo construído. Emissão de NFS-e/NFC-e em
+// si (chamada à Focus NFe/prefeitura, mapeamento de payload) fica pra fase
+// 2; esta rodada é só cadastro/modelagem.
+enum ModeloDocumentoFiscal {
+  NFE
+  NFSE
+  NFCE
+}
+
 // Uma nota fiscal emitida (ou em processamento) pra um orçamento aprovado.
-// 1:1 com Orcamento — mesmo padrão de Pedido. `referencia` é a chave que
-// mandamos pra Focus NFe pra identificar essa emissão (idempotência do lado
-// deles); `chaveAcesso` só existe depois de AUTORIZADA.
+// Até o achado F2, 1:1 com Orcamento (mesmo padrão de Pedido) — `orcamentoId`
+// sozinho era @unique. Agora N:1 (ver Orcamento.notaFiscal NotaFiscal[]):
+// um MESMO orçamento pode ter uma NFE (mercadoria) e uma NFSE (serviço) numa
+// venda mista (ex: outdoor com material do cliente + revenda de brinde no
+// mesmo pedido) — @@unique([orcamentoId, modelo]) permite no máximo UMA nota
+// por MODELO por orçamento (continua impedindo duas NF-e pro mesmo
+// orçamento), estritamente menos restritivo que o @unique simples de antes.
+// `referencia` continua @unique GLOBAL (chave que mandamos pra Focus NFe pra
+// idempotência) — hoje sempre igual a orcamentoId; um futuro emissor de
+// NFS-e/NFC-e pro MESMO orçamento precisa de uma referencia distinta (ex:
+// "${orcamentoId}-NFSE"), já que não dá pra repetir orcamentoId puro numa
+// segunda linha. `chaveAcesso` só existe depois de AUTORIZADA.
 model NotaFiscal {
-  id           String           @id @default(cuid())
+  id           String                @id @default(cuid())
   graficaId    String
-  orcamentoId  String           @unique
-  referencia   String           @unique
-  status       StatusNotaFiscal @default(PROCESSANDO)
+  orcamentoId  String
+  modelo       ModeloDocumentoFiscal @default(NFE)
+  referencia   String                @unique
+  status       StatusNotaFiscal      @default(PROCESSANDO)
   numero       String?
   serie        String?
   chaveAcesso  String?
   xmlUrl       String?
   danfeUrl     String?
   mensagemErro String?
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
 
   grafica   Grafica   @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   orcamento Orcamento @relation(fields: [orcamentoId], references: [id])
 
+  @@unique([orcamentoId, modelo])
   @@index([graficaId])
   @@map("notas_fiscais")
 }

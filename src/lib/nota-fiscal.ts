@@ -2,7 +2,12 @@ import "server-only";
 
 import { prisma } from "@/lib/prisma";
 import type { DadosFiscaisGrafica, Prisma } from "@/generated/prisma/client";
-import type { IndicadorInscricaoEstadual, RegimeTributario, TipoFrete } from "@/generated/prisma/enums";
+import type {
+  IndicadorInscricaoEstadual,
+  ModeloDocumentoFiscal,
+  RegimeTributario,
+  TipoFrete,
+} from "@/generated/prisma/enums";
 
 // Dados fiscais "resolvidos" pra um orçamento/filial — DadosFiscaisFilial
 // espelha DadosFiscaisGrafica campo a campo (só troca graficaId por
@@ -47,6 +52,13 @@ export type DadosFiscaisParaChecagem = {
   icmsAliquotaPadrao: Prisma.Decimal | null;
   icmsModalidadeBaseCalculoPadrao: string | null;
   pisCofinsSituacaoTributariaPadrao: string | null;
+  // Achado F2 da auditoria de abrangência — dados do emitente exigidos só
+  // pra checagem de NFSE (ver `modelo` no parâmetro de
+  // verificarProntidaoFiscal abaixo). Opcionais no tipo: todo call site que
+  // não passa `modelo: "NFSE"` (o caso de sempre, NF-e) nunca precisa deles.
+  inscricaoMunicipal?: string | null;
+  codigoMunicipioIbge?: string | null;
+  aliquotaIssPercent?: Prisma.Decimal | null;
 } | null;
 
 export type ClienteParaChecagem = {
@@ -64,7 +76,19 @@ export type ClienteParaChecagem = {
   inscricaoEstadual?: string | null;
 };
 
-export type ItemParaChecagem = { nome: string; ncm: string | null };
+export type ItemParaChecagem = {
+  nome: string;
+  ncm: string | null;
+  // Achado F2 da auditoria de abrangência — só usados na checagem de NFSE
+  // (ver `modelo` abaixo); item.tipo determina se o item PRECISA desses
+  // dois campos (só quando tipo=SERVICO — item PRODUTO/MATERIA_PRIMA nunca
+  // gera pendência de código de serviço, mesmo em orçamento de NFSE misto).
+  // Ausentes (undefined) em todo call site de NF-e (o caso de sempre) —
+  // sem efeito nenhum ali, checagem de NFSE é opt-in por `modelo`.
+  tipo?: "PRODUTO" | "MATERIA_PRIMA" | "SERVICO";
+  itemListaServicoLc116?: string | null;
+  codigoServicoMunicipal?: string | null;
+};
 
 export type ChecagemFiscal = { pronto: boolean; pendencias: string[] };
 
@@ -87,11 +111,21 @@ function enderecoCompleto(e: {
 }
 
 export function verificarProntidaoFiscal(input: {
+  // Achado F2 da auditoria de abrangência (Parte 7, 2026-09-05) — qual
+  // documento fiscal está sendo checado. Default NFE preserva 100% do
+  // comportamento de sempre (todo call site existente não passa `modelo` e
+  // continua vendo exatamente as mesmas pendências de antes). NFSE troca as
+  // checagens de ICMS/NCM (irrelevantes pra serviço) pelas de dados
+  // municipais/código de serviço — ver ramos abaixo. NFCE não tem checagem
+  // própria ainda (nenhum emissor de NFC-e existe hoje, só o valor do enum),
+  // cai no mesmo ramo de NFE.
+  modelo?: ModeloDocumentoFiscal;
   dadosFiscais: DadosFiscaisParaChecagem;
   cliente: ClienteParaChecagem;
   itens: ItemParaChecagem[];
 }): ChecagemFiscal {
   const pendencias: string[] = [];
+  const modelo = input.modelo ?? "NFE";
 
   if (!input.dadosFiscais?.focusNfeToken) {
     pendencias.push("Token da Focus NFe não configurado (Configurações → Dados fiscais).");
@@ -102,42 +136,76 @@ export function verificarProntidaoFiscal(input: {
   if (!input.dadosFiscais || !enderecoCompleto(input.dadosFiscais)) {
     pendencias.push("Endereço da gráfica incompleto (Configurações → Dados fiscais).");
   }
-  // Fora do Simples Nacional a nota usa CST-ICMS (não CSOSN) e precisa de
-  // alíquota/base/modalidade de cálculo — sem isso a Focus NFe/SEFAZ rejeita
-  // com HTTP 422. Bloqueado aqui, ANTES de bater na API, com mensagem clara
-  // do que falta configurar.
-  if (input.dadosFiscais && input.dadosFiscais.regimeTributario !== "SIMPLES_NACIONAL") {
-    const faltando: string[] = [];
-    if (!input.dadosFiscais.cstIcmsPadrao) faltando.push("CST-ICMS padrão");
-    if (input.dadosFiscais.icmsAliquotaPadrao == null) faltando.push("alíquota de ICMS padrão");
-    if (!input.dadosFiscais.icmsModalidadeBaseCalculoPadrao) {
-      faltando.push("modalidade de base de cálculo do ICMS padrão");
-    }
-    if (!input.dadosFiscais.pisCofinsSituacaoTributariaPadrao) {
-      faltando.push("situação tributária de PIS/COFINS padrão");
-    }
-    if (faltando.length > 0) {
+
+  if (modelo === "NFSE") {
+    // Achado F2 — dados do emitente exigidos especificamente pra NFS-e
+    // (nota de serviço municipal): inscrição municipal, código IBGE do
+    // município e alíquota de ISS. Nenhum dos 3 é checado pra NFE (ramo
+    // abaixo), mesmo espírito de "cada modelo tem sua própria pendência".
+    const faltandoMunicipal: string[] = [];
+    if (!input.dadosFiscais?.inscricaoMunicipal) faltandoMunicipal.push("inscrição municipal");
+    if (!input.dadosFiscais?.codigoMunicipioIbge) faltandoMunicipal.push("código IBGE do município");
+    if (input.dadosFiscais?.aliquotaIssPercent == null) faltandoMunicipal.push("alíquota de ISS");
+    if (faltandoMunicipal.length > 0) {
       pendencias.push(
-        `Regime tributário fora do Simples Nacional exige a configuração de: ${faltando.join(", ")} (Configurações → Dados fiscais).`
+        `NFS-e exige a configuração de: ${faltandoMunicipal.join(", ")} (Configurações → Dados fiscais).`
       );
     }
+  } else {
+    // Fora do Simples Nacional a nota usa CST-ICMS (não CSOSN) e precisa de
+    // alíquota/base/modalidade de cálculo — sem isso a Focus NFe/SEFAZ rejeita
+    // com HTTP 422. Bloqueado aqui, ANTES de bater na API, com mensagem clara
+    // do que falta configurar.
+    if (input.dadosFiscais && input.dadosFiscais.regimeTributario !== "SIMPLES_NACIONAL") {
+      const faltando: string[] = [];
+      if (!input.dadosFiscais.cstIcmsPadrao) faltando.push("CST-ICMS padrão");
+      if (input.dadosFiscais.icmsAliquotaPadrao == null) faltando.push("alíquota de ICMS padrão");
+      if (!input.dadosFiscais.icmsModalidadeBaseCalculoPadrao) {
+        faltando.push("modalidade de base de cálculo do ICMS padrão");
+      }
+      if (!input.dadosFiscais.pisCofinsSituacaoTributariaPadrao) {
+        faltando.push("situação tributária de PIS/COFINS padrão");
+      }
+      if (faltando.length > 0) {
+        pendencias.push(
+          `Regime tributário fora do Simples Nacional exige a configuração de: ${faltando.join(", ")} (Configurações → Dados fiscais).`
+        );
+      }
+    }
   }
+
   if (!input.cliente.documento) {
     pendencias.push("Cliente sem CPF/CNPJ cadastrado.");
   }
   if (!enderecoCompleto(input.cliente)) {
     pendencias.push("Endereço do cliente incompleto.");
   }
-  const semNcm = input.itens.filter((i) => !i.ncm);
-  if (semNcm.length > 0) {
-    pendencias.push(`NCM não configurado para: ${semNcm.map((i) => i.nome).join(", ")}.`);
-  }
-  // Achado A1 da auditoria de abrangência — sem isso a Focus NFe/SEFAZ
-  // rejeita com a rejeição 728 ("NF-e sem informação da IE do destinatário").
-  // Bloqueado aqui, ANTES de bater na API, mesmo princípio das pendências
-  // acima.
-  if (input.cliente.indicadorInscricaoEstadual === "CONTRIBUINTE" && !input.cliente.inscricaoEstadual) {
-    pendencias.push("Cliente marcado como contribuinte de ICMS sem Inscrição Estadual cadastrada.");
+
+  if (modelo === "NFSE") {
+    // Achado F2 — código de serviço exigido só pra item tipo=SERVICO (um
+    // PRODUTO/MATERIA_PRIMA na mesma venda mista não precisa disso, mesmo
+    // princípio do NCM abaixo ser só sobre item de mercadoria). item.tipo
+    // ausente (call site que não carregou o tipo) nunca gera pendência —
+    // defesa em profundidade, igual dado ausente em outras checagens deste
+    // arquivo.
+    const semCodigoServico = input.itens.filter((i) => i.tipo === "SERVICO" && !i.itemListaServicoLc116);
+    if (semCodigoServico.length > 0) {
+      pendencias.push(
+        `Item da lista de serviços (LC 116/2003) não configurado para: ${semCodigoServico.map((i) => i.nome).join(", ")}.`
+      );
+    }
+  } else {
+    const semNcm = input.itens.filter((i) => !i.ncm);
+    if (semNcm.length > 0) {
+      pendencias.push(`NCM não configurado para: ${semNcm.map((i) => i.nome).join(", ")}.`);
+    }
+    // Achado A1 da auditoria de abrangência — sem isso a Focus NFe/SEFAZ
+    // rejeita com a rejeição 728 ("NF-e sem informação da IE do destinatário").
+    // Bloqueado aqui, ANTES de bater na API, mesmo princípio das pendências
+    // acima. Só se aplica a NFE/ICMS — NFS-e não tem indicador de IE.
+    if (input.cliente.indicadorInscricaoEstadual === "CONTRIBUINTE" && !input.cliente.inscricaoEstadual) {
+      pendencias.push("Cliente marcado como contribuinte de ICMS sem Inscrição Estadual cadastrada.");
+    }
   }
 
   return { pronto: pendencias.length === 0, pendencias };

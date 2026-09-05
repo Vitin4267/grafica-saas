@@ -334,8 +334,15 @@ export default async function OrcamentoDetalhePage({
     ? (await resolverEtapasGrafica(usuario.graficaId)).rotulos[orcamento.pedido.status]
     : null;
 
+  // Achado F2 da auditoria de abrangência (Parte 7, 2026-09-05) —
+  // Orcamento.notaFiscal virou lista (1 nota por MODELO por orçamento, não
+  // mais 1:1) pra permitir NFE+NFSE na mesma venda mista. O NotaFiscalCard
+  // só existe pra NF-e nesta rodada (emissão de NFS-e é fase 2, fora de
+  // escopo) — filtra explicitamente a nota modelo=NFE.
+  const notaFiscalNfe = orcamento.notaFiscal.find((n) => n.modelo === "NFE") ?? null;
+
   let checagemFiscal: { pronto: boolean; pendencias: string[] } | null = null;
-  if (orcamento.status === "APROVADO" && !orcamento.notaFiscal) {
+  if (orcamento.status === "APROVADO" && !notaFiscalNfe) {
     const dadosFiscais = await resolverDadosFiscais(orcamento.filialId, usuario.graficaId);
     checagemFiscal = verificarProntidaoFiscal({
       dadosFiscais,
@@ -909,7 +916,7 @@ export default async function OrcamentoDetalhePage({
         {orcamento.status === "APROVADO" && (
           <NotaFiscalCard
             orcamentoId={orcamento.id}
-            notaFiscal={orcamento.notaFiscal}
+            notaFiscal={notaFiscalNfe}
             pendencias={checagemFiscal?.pendencias ?? []}
           />
         )}

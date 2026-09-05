@@ -282,7 +282,14 @@ model Orcamento {
   itens                    OrcamentoItem[]
   opcoes                   OrcamentoOpcao[]
   pedido                   Pedido?
-  notaFiscal               NotaFiscal?
+  // Achado F2 da auditoria de abrangência (Parte 7, 2026-09-05): virou lista
+  // (era NotaFiscal? 1:1) quando NotaFiscal.orcamentoId deixou de ser
+  // @unique sozinho — ver comentário completo no model NotaFiscal
+  // (02-fiscal.prisma). Hoje sempre no máximo 1 elemento na prática (só NFE
+  // é emitida), mas o TIPO já reflete que pode ter 1 por modelo (NFE +
+  // NFSE) numa venda mista. Todo consumidor (`page.tsx`, `actions/nfe.ts`)
+  // filtra por `modelo: "NFE"` antes de tratar como singular.
+  notaFiscal               NotaFiscal[]
   comissao                 Comissao?
   duplicadoDe              Orcamento?         @relation("DuplicacaoOrcamento", fields: [duplicadoDeId], references: [id], onDelete: SetNull)
   duplicados               Orcamento[]        @relation("DuplicacaoOrcamento")

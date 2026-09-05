@@ -186,7 +186,20 @@ model ItemCatalogo {
   // de sempre (icms_origem "0" fixo) pra todo item existente e todo item
   // novo até a gráfica configurar diferente. Ver enum OrigemMercadoria acima.
   origemMercadoria OrigemMercadoria @default(NACIONAL_0)
-  createdAt        DateTime         @default(now())
+
+  // Achado F2 da auditoria de abrangência (Parte 7, 2026-09-05): dados de
+  // NFS-e (nota de SERVIÇO municipal) — Súmula 156/STJ + LC 116/2003 item
+  // 13.05 (composição gráfica) e 24.01 (sinalização visual) tratam
+  // personalização/estamparia/impressão sobre material do cliente como
+  // industrialização/serviço, não mercadoria. Só fazem sentido quando
+  // tipo=SERVICO; nunca validados como obrigatórios (sem CHECK no banco,
+  // mesmo padrão do resto do arquivo) — esta rodada é só CADASTRO, a
+  // emissão de NFS-e em si (chamada à Focus NFe, mapeamento de payload)
+  // fica pra fase 2. null = serviço ainda não configurado pra NFS-e
+  // (comportamento de hoje, sistema só emite NF-e modelo 55).
+  itemListaServicoLc116  String? // item da lista de serviços da LC 116/2003 (ex: "13.05", "24.01") — só relevante quando tipo=SERVICO
+  codigoServicoMunicipal String? // código de serviço do MUNICÍPIO do emitente (tabela varia por prefeitura, sem padrão nacional único) — só relevante quando tipo=SERVICO
+  createdAt              DateTime @default(now())
 
   grafica      Grafica?      @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   itensGrafica ItemGrafica[]

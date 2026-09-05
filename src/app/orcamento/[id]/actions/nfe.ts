@@ -193,16 +193,22 @@ export async function emitirNotaFiscal(
   if (orcamento.status !== "APROVADO") {
     return { ok: false, mensagem: "Só é possível emitir nota fiscal de um orçamento aprovado." };
   }
-  if (orcamento.notaFiscal && orcamento.notaFiscal.status !== "REJEITADA") {
+  // Achado F2 da auditoria de abrangência (Parte 7, 2026-09-05) —
+  // Orcamento.notaFiscal virou lista (1 nota por MODELO por orçamento, não
+  // mais 1:1). Esta Server Action só emite NF-e (emissão de NFS-e é fase 2,
+  // fora de escopo) — filtra explicitamente pela nota modelo=NFE, ignorando
+  // qualquer NFS-e que já exista pro mesmo orçamento numa venda mista.
+  const notaFiscalNfeExistente = orcamento.notaFiscal.find((n) => n.modelo === "NFE") ?? null;
+  if (notaFiscalNfeExistente && notaFiscalNfeExistente.status !== "REJEITADA") {
     return { ok: false, mensagem: "Este orçamento já tem uma nota fiscal emitida." };
   }
-  if (orcamento.notaFiscal) {
+  if (notaFiscalNfeExistente) {
     // Nota anterior foi rejeitada (dados inválidos) ou denegada (bloqueio
     // fiscal do destinatário na SEFAZ) — nos dois casos a Focus NFe nunca
     // autorizou a nota, então não sobrou nada fiscal pra preservar aqui.
     // `referencia` é UNIQUE e sempre igual a orcamentoId (ver criação
     // abaixo), então a nota antiga precisa sair antes de tentarmos de novo.
-    await prisma.notaFiscal.delete({ where: { id: orcamento.notaFiscal.id } });
+    await prisma.notaFiscal.delete({ where: { id: notaFiscalNfeExistente.id } });
   }
 
   const dadosFiscais = await resolverDadosFiscais(orcamento.filialId, usuario.graficaId);
@@ -301,6 +307,10 @@ export async function emitirNotaFiscal(
         data: {
           graficaId: usuario.graficaId,
           orcamentoId,
+          // Achado F2 da auditoria de abrangência — explícito mesmo já
+          // sendo o @default(NFE) do schema: esta Server Action só emite
+          // NF-e (emissão de NFS-e é fase 2, fora de escopo desta rodada).
+          modelo: "NFE",
           referencia: orcamentoId,
           status: statusNota,
           numero: resposta.numero,
@@ -347,7 +357,12 @@ export async function atualizarStatusNotaFiscal(
   const orcamentoId = String(formData.get("orcamentoId"));
 
   const notaFiscal = await prisma.notaFiscal.findFirst({
-    where: { orcamentoId, graficaId: usuario.graficaId },
+    // Achado F2 da auditoria de abrangência — orcamentoId sozinho não é mais
+    // único (pode ter 1 NFE + 1 NFSE pro mesmo orçamento numa venda mista).
+    // Esta Server Action (chamada pelo botão "Atualizar status" do
+    // NotaFiscalCard, que só existe pra NF-e nesta rodada) filtra
+    // explicitamente modelo=NFE.
+    where: { orcamentoId, graficaId: usuario.graficaId, modelo: "NFE" },
     include: {
       orcamento: { select: { filialId: true, clienteId: true, condicaoPagamentoId: true, total: true } },
     },
