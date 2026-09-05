@@ -66,7 +66,7 @@ export default async function EtapasProducaoPage() {
           <p className="mt-1 text-slate-500">
             O caminho que todo pedido percorre em Produção, do jeito que a
             sua gráfica realmente trabalha. Desligue uma etapa que você não
-            usa (ex: Clichê/Faca numa gráfica só-digital) e renomeie
+            usa (ex: Pré-impressão numa gráfica só-digital) e renomeie
             qualquer etapa com o nome do seu processo (ex: &quot;Queima de
             tela&quot;, &quot;Instalação&quot;) — o pedido continua avançando
             normalmente, só pula as etapas desligadas.

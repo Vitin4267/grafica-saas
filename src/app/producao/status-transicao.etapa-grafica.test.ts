@@ -347,7 +347,7 @@ describe("resolverEtapasGrafica (achado A1, Fase 1)", () => {
 
 describe("avancarStatusPedido usando a sequência/rótulos resolvidos por gráfica (achado A1)", () => {
   it(
-    "(a) regressão zero: gráfica sem NENHUMA EtapaGrafica avança ARTE→Clichê/Faca normalmente, com rótulo padrão",
+    "(a) regressão zero: gráfica sem NENHUMA EtapaGrafica avança ARTE→Pré-impressão normalmente, com rótulo padrão",
     async () => {
       const f = await criarFixtureSimples("ARTE");
       const resultado = await avancarStatusPedido(pedidoParaAvanco(f, "ARTE"), "[]");
@@ -356,7 +356,11 @@ describe("avancarStatusPedido usando a sequência/rótulos resolvidos por gráfi
       if (!resultado.ok) throw new Error("unreachable");
       expect(resultado.statusAnterior).toBe("ARTE");
       expect(resultado.proximoStatus).toBe("CLICHE_FACA");
-      expect(resultado.mensagem).toBe("Avançado para Clichê/Faca.");
+      // Achado A2 — rótulo default de CLICHE_FACA mudou de "Clichê/Faca"
+      // pra "Pré-impressão" (ver ROTULOS_STATUS_PEDIDO em
+      // src/lib/producao-estagios.ts). O valor do enum StatusPedido
+      // continua CLICHE_FACA (ver asserção abaixo).
+      expect(resultado.mensagem).toBe("Avançado para Pré-impressão.");
 
       const pedido = await prisma.pedido.findUniqueOrThrow({ where: { id: f.pedidoId } });
       expect(pedido.status).toBe("CLICHE_FACA");

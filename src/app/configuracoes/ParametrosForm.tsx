@@ -1027,7 +1027,7 @@ export function ParametrosForm({
               Etapas de produção
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Desligue etapas que sua gráfica não usa (ex: Clichê/Faca numa
+              Desligue etapas que sua gráfica não usa (ex: Pré-impressão numa
               gráfica só-digital) e renomeie as que usa com o nome do seu
               processo (ex: &quot;Queima de tela&quot;, &quot;Instalação&quot;).
             </p>

@@ -35,7 +35,16 @@ export type ItemPdfOrdemProducao = {
 export type DadosPdfOrdemProducao = {
   graficaNome: string;
   pedidoNumero: string; // id curto, ex: "a1b2c3d4"
-  status: string;
+  // Achado A2 da auditoria de abrangência (Parte 2, seção A) — já vem
+  // RESOLVIDO por gráfica (ver resolverEtapasGrafica em
+  // src/lib/etapa-grafica.ts, chamado no caller — src/app/producao/
+  // [pedidoId]/ordem-producao/route.tsx). Antes deste achado, este campo
+  // guardava o StatusPedido cru e era re-traduzido aqui dentro por um mapa
+  // ROTULO_STATUS fixo — o rótulo customizado da gráfica (ex: "Pré-
+  // impressão", "Queima de tela") nunca chegava no PDF de chão de fábrica.
+  // Não redigite outro mapa de tradução: quem monta DadosPdfOrdemProducao é
+  // responsável por já entregar o texto final aqui.
+  statusRotulo: string;
   clienteNome: string;
   criadoEm: Date;
   prazoEntrega: Date | null;
@@ -49,18 +58,6 @@ export type DadosPdfOrdemProducao = {
   // 0 = sem tolerância.
   toleranciaTiragemPercent: number;
   itens: ItemPdfOrdemProducao[];
-};
-
-const ROTULO_STATUS: Record<string, string> = {
-  ARTE: "Arte",
-  CLICHE_FACA: "Clichê/Faca",
-  PRODUCAO: "Produção",
-  ACABAMENTO: "Acabamento",
-  CONFERENCIA: "Conferência",
-  EMBALAGEM: "Embalagem",
-  EXPEDICAO: "Expedição",
-  ENTREGUE: "Entregue",
-  CANCELADO: "Cancelado",
 };
 
 // Laranja — deliberadamente diferente do teal do PDF de orçamento, pra quem
@@ -192,7 +189,7 @@ export function OrdemProducaoDocumento({ dados }: { dados: DadosPdfOrdemProducao
             <Text style={estilos.graficaNome}>{dados.graficaNome}</Text>
             <Text style={estilos.numeroPedido}>Pedido #{dados.pedidoNumero}</Text>
           </View>
-          <Text style={estilos.statusBadge}>{ROTULO_STATUS[dados.status] ?? dados.status}</Text>
+          <Text style={estilos.statusBadge}>{dados.statusRotulo}</Text>
         </View>
 
         <View style={estilos.dadosBox}>

@@ -94,10 +94,10 @@ const SECOES: Secao[] = [
         <div>
           <h3>As etapas</h3>
           <ul>
-            <li><strong>Arte → Clichê/Faca → Produção → Acabamento → Conferência → Embalagem → Expedição → Entregue</strong> (mais o status Cancelado, à parte).</li>
+            <li><strong>Arte → Pré-impressão → Produção → Acabamento → Conferência → Embalagem → Expedição → Entregue</strong> (mais o status Cancelado, à parte). Em Configurações dá pra desligar etapas que sua gráfica não usa e renomear qualquer uma com o nome do seu processo.</li>
             <li>Dá pra ver em lista ou em <strong>Kanban</strong> — no Kanban, arraste o cartão do pedido de uma coluna pra outra pra avançar a etapa.</li>
             <li>Não dá pra sair de Arte sem antes aprovar a arte que foi enviada no orçamento.</li>
-            <li>Na virada de Clichê/Faca pra Produção, o sistema pede pra escolher qual máquina vai rodar o pedido.</li>
+            <li>Na virada de Pré-impressão pra Produção, o sistema pede pra escolher qual máquina vai rodar o pedido.</li>
           </ul>
         </div>
         <div>

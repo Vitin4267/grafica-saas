@@ -17,10 +17,10 @@ import type { StatusPedido } from "@/generated/prisma/enums";
 // do contexto de uma gráfica).
 
 // FSM linear completa (visão de produto 2026-08-21, ver StatusPedido em
-// prisma/schema.prisma): Arte → Clichê/Faca → Produção → Acabamento →
-// Conferência → Embalagem → Expedição → Entregue. CANCELADO é terminal,
-// alcançável de qualquer estágio antes de ENTREGUE, e por isso não entra
-// nesta sequência (que é só o caminho "feliz" linear).
+// prisma/schema.prisma): Arte → Pré-impressão (CLICHE_FACA) → Produção →
+// Acabamento → Conferência → Embalagem → Expedição → Entregue. CANCELADO é
+// terminal, alcançável de qualquer estágio antes de ENTREGUE, e por isso
+// não entra nesta sequência (que é só o caminho "feliz" linear).
 export const SEQUENCIA_STATUS_PEDIDO: StatusPedido[] = [
   "ARTE",
   "CLICHE_FACA",
@@ -32,9 +32,18 @@ export const SEQUENCIA_STATUS_PEDIDO: StatusPedido[] = [
   "ENTREGUE",
 ];
 
+// Achado A2 da auditoria de abrangência (Parte 2, seção A) — CLICHE_FACA
+// tinha "Clichê/Faca" como rótulo default, um nome que só faz sentido pra
+// flexografia/corte-e-vinco (matriz física). Offset usa chapa (CTP),
+// serigrafia usa tela, rotogravura usa cilindro, digital não usa nada — a
+// taxonomia consensual do setor é "pré-impressão", termo neutro que cobre
+// qualquer um desses. O valor do enum continua CLICHE_FACA (sem migração de
+// dado); só o texto default de exibição mudou. Uma gráfica que já
+// customizou este rótulo em EtapaGrafica não é afetada (resolverEtapasGrafica
+// só cai aqui quando rotuloCustom é null).
 export const ROTULOS_STATUS_PEDIDO: Record<StatusPedido, string> = {
   ARTE: "Arte",
-  CLICHE_FACA: "Clichê/Faca",
+  CLICHE_FACA: "Pré-impressão",
   PRODUCAO: "Produção",
   ACABAMENTO: "Acabamento",
   CONFERENCIA: "Conferência",

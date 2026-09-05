@@ -5,6 +5,7 @@ import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeVerModulo } from "@/lib/auth/permissoes";
+import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
 import { OrdemProducaoDocumento } from "@/lib/pdf/OrdemProducaoDocumento";
 import { mapearDadosOrdemProducao, nomeArquivoOrdemProducao } from "@/lib/pdf/mapear-dados-ordem-producao";
 
@@ -72,8 +73,17 @@ export async function GET(
     notFound();
   }
 
+  // Achado A2 da auditoria de abrangência (Parte 2, seção A) — rótulo do
+  // estágio RESOLVIDO por gráfica (ex: CLICHE_FACA vira "Pré-impressão" por
+  // padrão, ou o nome que a gráfica customizou em EtapaGrafica), não o nome
+  // genérico do sistema. Mesma fonte que /producao, /p/[token] e /q/[token]
+  // já usam.
+  const etapas = await resolverEtapasGrafica(usuario.graficaId);
+
   const buffer = await renderToBuffer(
-    <OrdemProducaoDocumento dados={mapearDadosOrdemProducao(pedido)} />
+    <OrdemProducaoDocumento
+      dados={mapearDadosOrdemProducao(pedido, etapas.rotulos[pedido.status])}
+    />
   );
   const nomeArquivo = nomeArquivoOrdemProducao(pedido.orcamento.cliente.nome, pedido.id);
 

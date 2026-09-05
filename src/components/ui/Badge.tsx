@@ -27,9 +27,13 @@ const CORES_PEDIDO: Record<string, string> = {
   CANCELADO: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
 };
 
+// Achado A2 da auditoria de abrangência (Parte 2, seção A) — mesmo texto
+// default de ROTULOS_STATUS_PEDIDO em src/lib/producao-estagios.ts (não
+// importado aqui de propósito: este componente lida com 5 tipos de status
+// diferentes por texto genérico, ver comentário do prop `rotulo` abaixo).
 const ROTULOS_PEDIDO: Record<string, string> = {
   ARTE: "Arte",
-  CLICHE_FACA: "Clichê/Faca",
+  CLICHE_FACA: "Pré-impressão",
   PRODUCAO: "Produção",
   ACABAMENTO: "Acabamento",
   CONFERENCIA: "Conferência",

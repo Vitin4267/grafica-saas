@@ -30,7 +30,6 @@ type FichaTecnicaParaPdf = {
 // nunca uma previsão diferente.
 export type PedidoParaOrdemProducao = {
   id: string;
-  status: string;
   createdAt: Date;
   prazoEntrega: Date | null;
   orcamento: {
@@ -117,11 +116,20 @@ function mapearFichaTecnica(
   }));
 }
 
-export function mapearDadosOrdemProducao(pedido: PedidoParaOrdemProducao): DadosPdfOrdemProducao {
+// Achado A2 da auditoria de abrangência (Parte 2, seção A) — `rotuloStatus`
+// é o rótulo JÁ RESOLVIDO por gráfica (ver resolverEtapasGrafica em
+// src/lib/etapa-grafica.ts) — quem chama (route.tsx) resolve uma vez e
+// passa aqui pronto. Este mapper não re-traduz status→texto sozinho: antes
+// desta correção, o texto era recalculado dentro de OrdemProducaoDocumento
+// por um mapa fixo, e ignorava qualquer rótulo customizado da gráfica.
+export function mapearDadosOrdemProducao(
+  pedido: PedidoParaOrdemProducao,
+  rotuloStatus: string
+): DadosPdfOrdemProducao {
   return {
     graficaNome: pedido.orcamento.grafica.nome,
     pedidoNumero: pedido.id.slice(0, 8),
-    status: pedido.status,
+    statusRotulo: rotuloStatus,
     clienteNome: pedido.orcamento.cliente.nome,
     criadoEm: pedido.createdAt,
     prazoEntrega: pedido.prazoEntrega,
