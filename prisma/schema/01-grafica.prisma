@@ -146,6 +146,9 @@ model Grafica {
   // ver model ContratoFornecimento.
   contratosFornecimento ContratoFornecimento[]
   entregas              Entrega[]
+  // Achado F3 da auditoria de abrangência (Parte 7/Documento e transação) —
+  // ver model Transportadora (09-orcamento.prisma).
+  transportadoras       Transportadora[]
   filaGangRun           FilaGangRun[]
   gruposGangRun         GrupoGangRun[]
   feriados              FeriadoGrafica[]

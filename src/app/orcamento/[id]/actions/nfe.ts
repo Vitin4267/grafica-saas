@@ -251,6 +251,10 @@ export async function emitirNotaFiscal(
           cep: orcamento.cliente.enderecoCep!,
         },
         frete: orcamento.frete,
+        // Achado F3 da auditoria de abrangência — valor do frete corrigido
+        // (antes era "0" fixo, ver resolverValorFrete em src/lib/focus-nfe.ts).
+        // null (frete não preenchido) preserva o comportamento de sempre.
+        valorFrete: orcamento.valorFrete ? Number(orcamento.valorFrete) : null,
         itens: orcamento.itens.map((item, indice) => {
           const valorBruto = Number(item.precoTotal);
           return {

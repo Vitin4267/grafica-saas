@@ -95,6 +95,13 @@ export type EmitirNfeInput = {
   // orçamento) cai em "9" via resolverModalidadeFrete, o mesmo
   // comportamento de sempre.
   frete?: TipoFrete | null;
+  // Valor do frete em R$ (Orcamento.valorFrete) — achado F3 da auditoria de
+  // abrangência: até aqui o payload builder mandava "0" fixo pra TODO
+  // orçamento, mesmo quando um valor de frete estava preenchido. null/
+  // ausente (frete não preenchido, o caso de sempre até esta feature) cai
+  // em "0" via resolverValorFrete — mesmo comportamento de sempre, zero
+  // regressão.
+  valorFrete?: number | null;
 };
 
 export type RespostaFocusNfe = {
@@ -219,6 +226,20 @@ export function montarCamposIeDestinatario(
 // física) cai em `nome`, comportamento de sempre.
 export function resolverNomeDestinatario(destinatario: { nome: string; razaoSocial?: string | null }): string {
   return destinatario.razaoSocial || destinatario.nome;
+}
+
+// Resolve o valor_frete do payload — achado F3 da auditoria de abrangência:
+// extraído como função pura (sem fetch, sem I/O) pra ser testável direto,
+// mesmo padrão de resolverModalidadeFrete (src/lib/nota-fiscal.ts). null/
+// undefined/negativo (frete não preenchido no orçamento, ou dado inválido)
+// cai em "0" — mesmo comportamento fixo de sempre que o payload builder já
+// tinha ANTES desta feature existir, zero regressão pra quem nunca usou
+// Orcamento.valorFrete.
+export function resolverValorFrete(valorFrete: number | null | undefined): string {
+  if (typeof valorFrete !== "number" || !Number.isFinite(valorFrete) || valorFrete < 0) {
+    return "0";
+  }
+  return valorFrete.toFixed(2);
 }
 
 function montarEnderecoPayload(prefixo: string, endereco: EnderecoFocusNfe) {
@@ -371,10 +392,24 @@ export async function emitirNfe(
       input.destinatario.inscricaoEstadual
     ),
 
-    valor_frete: "0",
+    valor_frete: resolverValorFrete(input.valorFrete ?? null),
     valor_seguro: "0",
     valor_total: input.valorTotal.toFixed(2),
     valor_produtos: input.valorTotal.toFixed(2),
+
+    // LIMITAÇÃO CONHECIDA (achado F3 da auditoria de abrangência): o grupo
+    // de dados da transportadora (nome_transportador/cnpj_transportador/
+    // placa_veiculo/quantidade_volumes/especie_volumes/peso_bruto etc — tag
+    // <transp> da NF-e 4.0) NÃO é mandado aqui, mesmo quando o orçamento tem
+    // Orcamento.transportadoraId preenchido. Motivo: os nomes de campo exatos
+    // exigidos pela Focus NFe pra esse grupo não foram confirmados contra a
+    // doc oficial nesta rodada (mesmo cuidado que já levou outros mapeamentos
+    // deste arquivo — ex: mapearItemNfePayload — a citar a doc consultada);
+    // mandar campo errado arrisca rejeição silenciosa ou nome de campo
+    // ignorado pela API. Só valor_frete foi corrigido. Se um dia isso for
+    // implementado, os dados já existem em Orcamento.transportadoraId
+    // (Transportadora.nome/documento/rntrc) — falta só confirmar o payload
+    // exato em doc.focusnfe.com.br/reference/emitir_nfe e mapear aqui.
 
     items: input.itens.map((item) => mapearItemNfePayload(item)),
   };

@@ -26,6 +26,49 @@ enum TipoFrete {
   SEM_FRETE // modFrete 9 — sem ocorrência de transporte (ex: retirada no balcão)
 }
 
+// Achado F3 da auditoria de abrangência (Parte 7/Documento e transação,
+// pesquisa-abrangencia-modulos.md): existia a MODALIDADE de frete
+// (Orcamento.frete, enum TipoFrete acima) mas não o VALOR, e a
+// transportadora era só texto livre (Orcamento.transportadora) sem
+// CNPJ/RNTRC — a nota fiscal saía sempre com valor_frete "0" fixo e sem
+// grupo de transportadora. Este model dá cadastro formal, mesmo formato
+// enxuto de Fornecedor (08-compras.prisma): "quem vai levar", sem workflow
+// de cotação de frete. RNTRC (Registro Nacional de Transportadores
+// Rodoviários de Cargas) é específico de transportadora — sem equivalente
+// em Fornecedor, por isso não reaproveitamos aquele model.
+//
+// DECISÃO DE DESIGN (onde morar no schema multi-arquivo): 08-compras.prisma
+// (junto de Fornecedor, mesma estrutura de cadastro) OU aqui, junto de quem
+// de fato usa este cadastro (Orcamento.transportadoraId/valorFrete,
+// TipoFrete acima). Escolhido 09-orcamento.prisma: Transportadora não
+// participa de nenhum fluxo de COMPRA (SolicitacaoCompra/
+// ContratoFornecimento/CotacaoFornecedor, todos sobre matéria-prima) — é
+// puramente logística de ENTREGA, mesmo raciocínio de domínio que já
+// separa Fornecedor (compras) de Cliente (vendas) apesar do formato de
+// cadastro ser quase idêntico. Entrega.transportadoraId (10-producao.prisma)
+// referencia este model só pelo id — Prisma multi-file compila todos os
+// arquivos num datamodel único, relação entre arquivos funciona normalmente.
+model Transportadora {
+  id        String   @id @default(cuid())
+  graficaId String
+  nome      String
+  documento String? // CNPJ (14) ou CPF (11) — mesmo critério de Fornecedor.documento
+  telefone  String?
+  email     String?
+  rntrc     String? // Registro Nacional de Transportadores Rodoviários de Cargas
+  ativa     Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica    Grafica     @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamentos Orcamento[]
+  entregas   Entrega[]
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@map("transportadoras")
+}
+
 model Orcamento {
   id               String          @id @default(cuid())
   graficaId        String
@@ -105,6 +148,25 @@ model Orcamento {
   condicaoPagamentoId      String?
   frete                    TipoFrete?
   transportadora           String?
+  // Achado F3 da auditoria de abrangência (Parte 7/Documento e transação) —
+  // quando o vendedor escolhe uma Transportadora cadastrada (em vez de
+  // digitar `transportadora` à mão), este id fica salvo aqui. FK opcional
+  // que CONVIVE com o texto livre acima (mesmo precedente de
+  // contatoClienteId/contatoNome, achado A4, e enderecoEntregaId/
+  // localEntrega, achado A5): escolher uma transportadora pré-preenche o
+  // texto livre, mas o texto livre continua sendo o que aparece no
+  // PDF/link público/NF-e — nunca lido daqui pro PDF/nota, só pré-preenche
+  // (ver comentário de EditarDadosGeraisOrcamentoForm.tsx). SetNull:
+  // transportadora excluída (nunca acontece de verdade, é soft-delete via
+  // Transportadora.ativa) não pode travar nada, só perde o vínculo.
+  transportadoraId         String?
+  // Valor do frete em R$, opcional — null preserva 100% o comportamento de
+  // hoje (a NF-e manda valor_frete "0" fixo, ver src/lib/focus-nfe.ts).
+  // Deliberadamente NÃO entra na base de comissão (BaseComissao.LUCRO/
+  // VALOR, ver ParametrosGrafica.comissaoVendedorBase e
+  // src/lib/comissao.ts): frete não é lucro nem faturamento do produto em
+  // si, mesmo espírito de excluir imposto/taxa financeira da comissão.
+  valorFrete               Decimal?             @db.Decimal(12, 2)
   localEntrega             String?
   // Achado A5 da Parte 5 da auditoria de abrangência (2026-08-28) — quando o
   // vendedor escolhe um EnderecoCliente cadastrado (normalmente tipo
@@ -207,20 +269,23 @@ model Orcamento {
   // src/lib/orcamento-opcoes.ts), mesmo princípio de Comissao.baseCalculo.
   opcaoEscolhidaNome String?
 
-  grafica           Grafica            @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  cliente           Cliente            @relation(fields: [clienteId], references: [id])
-  usuario           Usuario            @relation(fields: [usuarioId], references: [id])
-  filial            Filial?            @relation(fields: [filialId], references: [id], onDelete: SetNull)
-  contatoCliente    ContatoCliente?    @relation(fields: [contatoClienteId], references: [id], onDelete: SetNull)
-  condicaoPagamento CondicaoPagamento? @relation(fields: [condicaoPagamentoId], references: [id], onDelete: SetNull)
-  enderecoEntrega   EnderecoCliente?   @relation(fields: [enderecoEntregaId], references: [id], onDelete: SetNull)
-  itens             OrcamentoItem[]
-  opcoes            OrcamentoOpcao[]
-  pedido            Pedido?
-  notaFiscal        NotaFiscal?
-  comissao          Comissao?
-  duplicadoDe       Orcamento?         @relation("DuplicacaoOrcamento", fields: [duplicadoDeId], references: [id], onDelete: SetNull)
-  duplicados        Orcamento[]        @relation("DuplicacaoOrcamento")
+  grafica                  Grafica            @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  cliente                  Cliente            @relation(fields: [clienteId], references: [id])
+  usuario                  Usuario            @relation(fields: [usuarioId], references: [id])
+  filial                   Filial?            @relation(fields: [filialId], references: [id], onDelete: SetNull)
+  contatoCliente           ContatoCliente?    @relation(fields: [contatoClienteId], references: [id], onDelete: SetNull)
+  condicaoPagamento        CondicaoPagamento? @relation(fields: [condicaoPagamentoId], references: [id], onDelete: SetNull)
+  enderecoEntrega          EnderecoCliente?   @relation(fields: [enderecoEntregaId], references: [id], onDelete: SetNull)
+  // Nome do campo de relação diferente do scalar `transportadora` (texto
+  // livre) acima — Prisma não permite os dois com o mesmo nome.
+  transportadoraCadastrada Transportadora?    @relation(fields: [transportadoraId], references: [id], onDelete: SetNull)
+  itens                    OrcamentoItem[]
+  opcoes                   OrcamentoOpcao[]
+  pedido                   Pedido?
+  notaFiscal               NotaFiscal?
+  comissao                 Comissao?
+  duplicadoDe              Orcamento?         @relation("DuplicacaoOrcamento", fields: [duplicadoDeId], references: [id], onDelete: SetNull)
+  duplicados               Orcamento[]        @relation("DuplicacaoOrcamento")
 
   pagamentos                  Pagamento[]
   contasReceber               ContaReceber[]
@@ -232,6 +297,7 @@ model Orcamento {
   @@index([contatoClienteId])
   @@index([condicaoPagamentoId])
   @@index([enderecoEntregaId])
+  @@index([transportadoraId])
   // Query da lista de "orçamentos parados" (ver /orcamento/parados) —
   // filtra por graficaId+status=ENVIADO e ordena por enviadoEm.
   @@index([graficaId, status, enviadoEm])
@@ -522,7 +588,7 @@ model OrcamentoItem {
   tinta                OrcamentoItemTinta?
   precificacaoEtiqueta OrcamentoItemPrecificacaoEtiqueta?
   precificacaoDigital  OrcamentoItemPrecificacaoDigital? // achado N4 — papel escolhido neste orçamento pro motor Digital
-  precificacaoOffset   OrcamentoItemPrecificacaoOffset?  // achado N8 — papel/gramatura escolhidos neste orçamento pro motor Offset
+  precificacaoOffset   OrcamentoItemPrecificacaoOffset? // achado N8 — papel/gramatura escolhidos neste orçamento pro motor Offset
   filaGangRun          FilaGangRun?
 
   @@index([orcamentoId])

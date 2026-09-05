@@ -209,6 +209,17 @@ export default async function OrcamentoDetalhePage({
     select: { id: true, nome: true, email: true, funcao: true, funcaoOutro: true },
   });
 
+  // Achado F3 da auditoria de abrangência (Parte 7/Documento e transação) —
+  // transportadoras ATIVAS da gráfica, pra popular o <select> opcional em
+  // EditarDadosGeraisOrcamentoForm.tsx. Mesmo princípio de contatosCliente
+  // acima: gráfica sem nenhuma cadastrada -> lista vazia -> select não
+  // aparece, digitação livre em `transportadora` continua idêntica a hoje.
+  const transportadoras = await prisma.transportadora.findMany({
+    where: { graficaId: usuario.graficaId, ativa: true },
+    orderBy: { nome: "asc" },
+    select: { id: true, nome: true },
+  });
+
   // Achado A13 da auditoria de abrangência — saldo de CreditoCliente do
   // cliente deste orçamento, só pra oferecer o campo "usar crédito" em
   // OrcamentoAcoes quando ainda faz sentido (orçamento pra ser aprovado e
@@ -480,12 +491,15 @@ export default async function OrcamentoDetalhePage({
               condicoesPagamento: orcamento.condicoesPagamento,
               frete: orcamento.frete,
               transportadora: orcamento.transportadora,
+              transportadoraId: orcamento.transportadoraId,
+              valorFrete: orcamento.valorFrete?.toString() ?? null,
               localEntrega: orcamento.localEntrega,
               notaEmpenho: orcamento.notaEmpenho,
               processoLicitatorio: orcamento.processoLicitatorio,
               observacoes: orcamento.observacoes,
             }}
             contatosCliente={contatosCliente}
+            transportadoras={transportadoras}
           />
         </Card>
 

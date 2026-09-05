@@ -7,6 +7,7 @@ import {
   mapearOrigemMercadoria,
   montarCamposIeDestinatario,
   resolverNomeDestinatario,
+  resolverValorFrete,
   type ItemNfe,
 } from "./focus-nfe";
 import type { IndicadorInscricaoEstadual, OrigemMercadoria } from "@/generated/prisma/enums";
@@ -290,5 +291,39 @@ describe("resolverNomeDestinatario", () => {
 
   it("razaoSocial string vazia: cai em nome (nunca manda destinatário vazio)", () => {
     expect(resolverNomeDestinatario({ nome: "João da Silva", razaoSocial: "" })).toBe("João da Silva");
+  });
+});
+
+// Achado F3 da auditoria de abrangência (Parte 7/Documento e transação,
+// 2026-09-04): o payload builder mandava valor_frete "0" LITERAL pra TODO
+// orçamento, ignorando Orcamento.valorFrete (que nem existia). Regressão
+// zero: orçamento sem valor de frete preenchido continua caindo em "0".
+describe("resolverValorFrete", () => {
+  it("null (frete não preenchido no orçamento) cai em '0' — comportamento de sempre", () => {
+    expect(resolverValorFrete(null)).toBe("0");
+  });
+
+  it("undefined (campo nem passado) cai em '0'", () => {
+    expect(resolverValorFrete(undefined)).toBe("0");
+  });
+
+  it("valor preenchido é formatado com 2 casas decimais", () => {
+    expect(resolverValorFrete(45)).toBe("45.00");
+  });
+
+  it("valor com fração é arredondado pra 2 casas decimais", () => {
+    expect(resolverValorFrete(12.345)).toBe("12.35");
+  });
+
+  it("zero explícito continua '0.00' (diferente de null/undefined, mas equivalente numericamente)", () => {
+    expect(resolverValorFrete(0)).toBe("0.00");
+  });
+
+  it("valor negativo (dado inválido, nunca deveria acontecer) cai em '0' defensivamente", () => {
+    expect(resolverValorFrete(-10)).toBe("0");
+  });
+
+  it("NaN cai em '0' defensivamente", () => {
+    expect(resolverValorFrete(NaN)).toBe("0");
   });
 });

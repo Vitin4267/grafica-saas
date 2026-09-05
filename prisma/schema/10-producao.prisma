@@ -426,13 +426,30 @@ model Entrega {
   // preenchido antes de mandar pra PROBLEMA (ver EntregaPedidoSecao.tsx).
   observacoes String?
 
+  // Achado F3 da auditoria de abrangência (Parte 7/Documento e transação) —
+  // dados de transporte físico, todos opcionais (schema-only nesta rodada,
+  // sem UI própria ainda em EntregaPedidoSecao.tsx — ver
+  // pesquisa-abrangencia-modulos.md). transportadoraId é um vínculo
+  // INFORMATIVO separado de Orcamento.transportadoraId (a mesma
+  // transportadora pode ser escolhida nos dois lugares, mas nada aqui é
+  // copiado automaticamente de lá) — SetNull, mesmo raciocínio de
+  // Orcamento.transportadoraId. especieVolume é texto livre de propósito
+  // (ex: "caixa", "rolo", "pallet") — sem repertório fechado validado ainda,
+  // mesmo princípio de Entrega.motorista acima (config prematura).
+  transportadoraId String?
+  volumes          Int?
+  pesoBrutoKg      Decimal? @db.Decimal(10, 3)
+  especieVolume    String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  pedido  Pedido  @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  grafica        Grafica         @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  pedido         Pedido          @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  transportadora Transportadora? @relation(fields: [transportadoraId], references: [id], onDelete: SetNull)
 
   @@index([graficaId])
+  @@index([transportadoraId])
   @@map("entregas")
 }
 

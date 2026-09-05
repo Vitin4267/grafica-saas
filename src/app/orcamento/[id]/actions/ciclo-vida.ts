@@ -482,6 +482,14 @@ export async function duplicarOrcamento(
       condicoesPagamento: original.condicoesPagamento,
       frete: original.frete,
       transportadora: original.transportadora,
+      // transportadoraId/valorFrete (achado F3) NÃO são copiados de
+      // propósito — mesmo critério que já deixa contatoClienteId/
+      // enderecoEntregaId de fora desta duplicação (só embaixo, no fetch
+      // de `original`, ver a query acima): valorFrete é um valor NEGOCIADO
+      // daquele pedido específico, não deveria "vazar" silenciosamente pra
+      // um pedido novo que ainda nem foi cotado de novo. `transportadora`
+      // (texto livre) continua copiado normalmente — é só um snapshot
+      // descritivo, sem valor financeiro associado.
       localEntrega: original.localEntrega,
       itens: {
         create: itensParaCriar.map((item) => ({

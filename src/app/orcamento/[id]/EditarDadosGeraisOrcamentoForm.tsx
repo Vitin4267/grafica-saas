@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { editarDadosGeraisOrcamento } from "./actions";
 import { ROTULO_FUNCAO_CONTATO_CLIENTE } from "@/lib/contatos-cliente";
+import { formatoMoeda } from "@/lib/moeda";
 
 const OPCOES_TIPO_PEDIDO: [string, string][] = [
   ["MODELO_NOVO", "Modelo novo"],
@@ -39,6 +40,14 @@ type DadosGerais = {
   condicoesPagamento: string | null;
   frete: string | null;
   transportadora: string | null;
+  // Achado F3 da auditoria de abrangência — id da Transportadora escolhida
+  // no <select> abaixo, quando houver. Convive com `transportadora` acima
+  // (snapshot em texto, o que de fato é usado hoje) — ver comentário
+  // completo no schema. valorFrete é string pra caber direto no
+  // defaultValue de um <input type="number">, mesmo padrão do resto do
+  // form (todos os campos chegam como string|null).
+  transportadoraId: string | null;
+  valorFrete: string | null;
   localEntrega: string | null;
   // Achado A12 da Parte 5 da auditoria de abrangência — campos opcionais
   // pra cliente órgão público.
@@ -55,6 +64,15 @@ type ContatoClienteOpcao = {
   funcaoOutro: string | null;
 };
 
+// Achado F3 da auditoria de abrangência — transportadoras ATIVAS da
+// gráfica, pra popular o <select> opcional de transportadora. Mesmo padrão
+// de ContatoClienteOpcao acima (lista vazia -> select não aparece,
+// digitação livre continua idêntica a hoje).
+type TransportadoraOpcao = {
+  id: string;
+  nome: string;
+};
+
 // Bloco de campos gerais do pedido — editável a qualquer status do
 // orçamento (ver comentário em editarDadosGeraisOrcamento, actions.ts): não
 // mexe em total nem no que o cliente já viu. Mesmo padrão de
@@ -64,6 +82,7 @@ export function EditarDadosGeraisOrcamentoForm({
   orcamentoId,
   dados,
   contatosCliente,
+  transportadoras,
 }: {
   orcamentoId: string;
   dados: DadosGerais;
@@ -71,6 +90,11 @@ export function EditarDadosGeraisOrcamentoForm({
   // quem nunca cadastrou contato nenhum, e nesse caso o <select> nem aparece
   // (digitação livre continua idêntica a hoje).
   contatosCliente: ContatoClienteOpcao[];
+  // Achado F3 da auditoria de abrangência — transportadoras ATIVAS da
+  // gráfica (ver page.tsx). Vazio pra quem nunca cadastrou nenhuma, e nesse
+  // caso o <select> nem aparece (digitação livre em `transportadora`
+  // continua idêntica a hoje).
+  transportadoras: TransportadoraOpcao[];
 }) {
   const [state, formAction, isPending] = useActionState(editarDadosGeraisOrcamento, null);
   const [editando, setEditando] = useState(false);
@@ -81,6 +105,12 @@ export function EditarDadosGeraisOrcamentoForm({
   const [contatoNome, setContatoNome] = useState(dados.contatoNome ?? "");
   const [contatoEmail, setContatoEmail] = useState(dados.contatoEmail ?? "");
   const [contatoClienteId, setContatoClienteId] = useState(dados.contatoClienteId ?? "");
+  // Achado F3 da auditoria de abrangência — mesmo padrão de
+  // contatoNome/contatoClienteId acima: escolher no <select> pré-preenche o
+  // texto livre `transportadora`, que continua editável/o que de fato é
+  // usado hoje.
+  const [transportadora, setTransportadora] = useState(dados.transportadora ?? "");
+  const [transportadoraId, setTransportadoraId] = useState(dados.transportadoraId ?? "");
 
   function aoEscolherContato(id: string) {
     setContatoClienteId(id);
@@ -88,6 +118,14 @@ export function EditarDadosGeraisOrcamentoForm({
     if (contato) {
       setContatoNome(contato.nome);
       setContatoEmail(contato.email ?? "");
+    }
+  }
+
+  function aoEscolherTransportadora(id: string) {
+    setTransportadoraId(id);
+    const transportadoraEscolhida = transportadoras.find((t) => t.id === id);
+    if (transportadoraEscolhida) {
+      setTransportadora(transportadoraEscolhida.nome);
     }
   }
 
@@ -107,6 +145,9 @@ export function EditarDadosGeraisOrcamentoForm({
     dados.condicoesPagamento ? (["Condições de pagamento", dados.condicoesPagamento] as [string, string]) : null,
     dados.frete ? (["Frete", ROTULO_FRETE[dados.frete] ?? dados.frete] as [string, string]) : null,
     dados.transportadora ? (["Transportadora", dados.transportadora] as [string, string]) : null,
+    dados.valorFrete
+      ? (["Valor do frete", formatoMoeda.format(Number(dados.valorFrete))] as [string, string])
+      : null,
     dados.localEntrega ? (["Local de entrega", dados.localEntrega] as [string, string]) : null,
     dados.notaEmpenho ? (["Nota de empenho", dados.notaEmpenho] as [string, string]) : null,
     dados.processoLicitatorio ? (["Processo licitatório", dados.processoLicitatorio] as [string, string]) : null,
@@ -200,7 +241,38 @@ export function EditarDadosGeraisOrcamentoForm({
             </option>
           ))}
         </Select>
-        <Input label="Transportadora" name="transportadora" defaultValue={dados.transportadora ?? ""} />
+        {transportadoras.length > 0 && (
+          <Select
+            label="Transportadora cadastrada"
+            name="transportadoraId"
+            value={transportadoraId}
+            onChange={(e) => aoEscolherTransportadora(e.target.value)}
+            hint="Escolher preenche o campo abaixo — que continua editável"
+          >
+            <option value="">digitar manualmente</option>
+            {transportadoras.map((transportadoraOpcao) => (
+              <option key={transportadoraOpcao.id} value={transportadoraOpcao.id}>
+                {transportadoraOpcao.nome}
+              </option>
+            ))}
+          </Select>
+        )}
+        <Input
+          label="Transportadora"
+          name="transportadora"
+          value={transportadora}
+          onChange={(e) => setTransportadora(e.target.value)}
+        />
+        <Input
+          label="Valor do frete (opcional)"
+          name="valorFrete"
+          type="number"
+          step="0.01"
+          min="0"
+          defaultValue={dados.valorFrete ?? ""}
+          placeholder="ex: 45.00"
+          hint="Não entra na base de comissão do vendedor"
+        />
         <Input label="Local de entrega" name="localEntrega" defaultValue={dados.localEntrega ?? ""} />
         <Input label="Nota de empenho" name="notaEmpenho" defaultValue={dados.notaEmpenho ?? ""} />
         <Input label="Processo licitatório" name="processoLicitatorio" defaultValue={dados.processoLicitatorio ?? ""} />

@@ -215,6 +215,39 @@ export async function editarDadosGeraisOrcamento(
     enderecoEntregaId = enderecoCliente.id;
   }
 
+  // Achado F3 da auditoria de abrangência — mesmo princípio de
+  // contatoClienteId/enderecoEntregaId acima: transportadoraId nunca é lido
+  // do form sem verificar que a transportadora pertence à MESMA gráfica
+  // (nunca confia no id cru vindo do <select>). "" = digitação manual, sem
+  // transportadora escolhida (`transportadora` texto livre continua
+  // funcionando exatamente como hoje).
+  const transportadoraIdBruto = String(formData.get("transportadoraId") ?? "").trim();
+  let transportadoraId: string | null = null;
+  if (transportadoraIdBruto) {
+    const transportadora = await prisma.transportadora.findFirst({
+      where: { id: transportadoraIdBruto, graficaId: usuario.graficaId },
+      select: { id: true },
+    });
+    if (!transportadora) {
+      return { ok: false, mensagem: "Transportadora selecionada inválida." };
+    }
+    transportadoraId = transportadora.id;
+  }
+
+  // Achado F3 da auditoria de abrangência — valor do frete em R$, opcional.
+  // "" = sem valor informado (null, mesmo comportamento de hoje: a NF-e
+  // manda valor_frete "0" fixo). Formato inválido é ignorado silenciosamente
+  // (cai em null) em vez de bloquear o resto do formulário — mesmo espírito
+  // permissivo do resto desta action (campos gerais, nunca trava o salvar).
+  const valorFreteBruto = String(formData.get("valorFrete") ?? "").trim();
+  let valorFrete: number | null = null;
+  if (valorFreteBruto) {
+    const parsed = Number(valorFreteBruto);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      valorFrete = parsed;
+    }
+  }
+
   const campoTexto = (nome: string, max: number) =>
     String(formData.get(nome) || "").trim().slice(0, max) || null;
 
@@ -229,6 +262,8 @@ export async function editarDadosGeraisOrcamento(
       condicoesPagamento: campoTexto("condicoesPagamento", 200),
       frete: freteParsed?.success ? freteParsed.data : null,
       transportadora: campoTexto("transportadora", 120),
+      transportadoraId,
+      valorFrete,
       localEntrega: campoTexto("localEntrega", 500),
       enderecoEntregaId,
       notaEmpenho: campoTexto("notaEmpenho", 100),
