@@ -161,10 +161,10 @@ export default async function MeuNegocioPage() {
           <StatTile
             label="Saldo real do mês"
             value={formatoMoeda.format(visaoGeral.saldoReal)}
-            caption="Faturamento aprovado menos despesas já pagas"
+            caption="Pagamentos recebidos menos despesas já pagas (regime de caixa dos dois lados)"
             tone={visaoGeral.saldoReal >= 0 ? "positive" : "neutral"}
             icon={<TrendingUpIcon className="h-4 w-4" />}
-            href="/financeiro"
+            href="/financeiro/dre"
           />
           <StatTile
             label="Despesas a pagar este mês"

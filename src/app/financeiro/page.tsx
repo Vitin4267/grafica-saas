@@ -138,6 +138,9 @@ export default async function FinanceiroPage() {
             </Button>
           </form>
           <div className="flex flex-col gap-1 text-sm sm:items-end">
+            <Link href="/financeiro/dre" className="font-medium text-teal-700 hover:underline dark:text-teal-400">
+              Ver DRE →
+            </Link>
             <Link href="/financeiro/comissoes" className="font-medium text-teal-700 hover:underline dark:text-teal-400">
               Ver comissões →
             </Link>

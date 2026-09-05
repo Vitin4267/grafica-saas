@@ -16,6 +16,12 @@ const MENSAGEM_SEM_PERMISSAO = "Você não tem permissão pra editar configuraç
 const MENSAGEM_NOME_VAZIO = "Informe um nome para a categoria.";
 const MENSAGEM_NOME_DUPLICADO = "Já existe uma categoria com esse nome.";
 
+// Achado A2 da Parte 4 da auditoria de abrangência (2026-09-05) — valores
+// válidos do enum NaturezaCusto (schema), replicados aqui pra validar o
+// valor bruto vindo do <select> sem precisar importar o client gerado só
+// pra isso.
+const NATUREZAS_VALIDAS = new Set(["VARIAVEL", "FIXO", "SEMIVARIAVEL"]);
+
 // Cria uma nova categoria de custo pra gráfica, sempre no fim da ordem
 // atual — a gráfica pode reordenar depois (ver reordenarCategoriasCusto).
 export async function criarCategoriaCusto(
@@ -38,10 +44,24 @@ export async function criarCategoriaCusto(
     where: { graficaId: usuario.graficaId },
   });
 
+  // Achado A2 da Parte 4 (2026-09-05) — opcional na criação: sem seleção,
+  // cai no @default(VARIAVEL) do schema (mesmo comportamento de toda
+  // categoria criada antes deste campo existir). A gráfica pode ajustar
+  // depois na tela de detalhe (renomearCategoriaCusto).
+  const naturezaBrutaCriacao = String(formData.get("natureza") ?? "");
+  const naturezaCriacao = NATUREZAS_VALIDAS.has(naturezaBrutaCriacao)
+    ? (naturezaBrutaCriacao as "VARIAVEL" | "FIXO" | "SEMIVARIAVEL")
+    : undefined;
+
   let novaCategoria: { id: string };
   try {
     novaCategoria = await prisma.categoriaCusto.create({
-      data: { graficaId: usuario.graficaId, nome, ordem: totalAtual },
+      data: {
+        graficaId: usuario.graficaId,
+        nome,
+        ordem: totalAtual,
+        ...(naturezaCriacao ? { natureza: naturezaCriacao } : {}),
+      },
     });
   } catch (erro) {
     if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2002") {
@@ -64,7 +84,9 @@ export async function criarCategoriaCusto(
   redirect(`/configuracoes/categorias-custo/${novaCategoria.id}`);
 }
 
-// Renomeia uma categoria já existente — nunca mexe em `ativa`/`ordem`, ver
+// Renomeia uma categoria já existente e (achado A2 da Parte 4 da auditoria
+// de abrangência, 2026-09-05) atualiza sua natureza (fixo/variável/
+// semivariável) — nunca mexe em `ativa`/`ordem`, ver
 // alternarAtivaCategoriaCusto/reordenarCategoriasCusto pra isso.
 export async function renomearCategoriaCusto(
   _estadoAnterior: SalvarCategoriaCustoResult | null,
@@ -90,10 +112,16 @@ export async function renomearCategoriaCusto(
     return { ok: false, mensagem: MENSAGEM_NOME_VAZIO };
   }
 
+  const naturezaBruta = String(formData.get("natureza") ?? "");
+  if (!NATUREZAS_VALIDAS.has(naturezaBruta)) {
+    return { ok: false, mensagem: "Selecione uma natureza de custo válida." };
+  }
+  const natureza = naturezaBruta as "VARIAVEL" | "FIXO" | "SEMIVARIAVEL";
+
   try {
     await prisma.categoriaCusto.update({
       where: { id: categoriaId },
-      data: { nome },
+      data: { nome, natureza },
     });
   } catch (erro) {
     if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2002") {
@@ -102,7 +130,7 @@ export async function renomearCategoriaCusto(
     throw erro;
   }
 
-  if (categoria.nome !== nome) {
+  if (categoria.nome !== nome || categoria.natureza !== natureza) {
     await registrarAuditoria({
       graficaId: usuario.graficaId,
       usuarioId: usuario.id,
@@ -111,14 +139,14 @@ export async function renomearCategoriaCusto(
       entidade: "CategoriaCusto",
       entidadeId: categoriaId,
       descricao: `Categoria de custo renomeada`,
-      valorAnterior: `Nome: ${categoria.nome}`,
-      valorNovo: `Nome: ${nome}`,
+      valorAnterior: `Nome: ${categoria.nome}; Natureza: ${categoria.natureza}`,
+      valorNovo: `Nome: ${nome}; Natureza: ${natureza}`,
     });
   }
 
   revalidatePath(`/configuracoes/categorias-custo/${categoriaId}`);
   revalidatePath("/configuracoes/categorias-custo");
-  return { ok: true, mensagem: "Categoria renomeada com sucesso!" };
+  return { ok: true, mensagem: "Categoria salva com sucesso!" };
 }
 
 // Alterna ativa/inativa — é o equivalente de "remover" desta tela. NUNCA um

@@ -505,6 +505,19 @@ model Comissao {
   @@map("comissoes")
 }
 
+// Achado A2 da Parte 4 da auditoria de abrangência (2026-09-05) — SÓ o
+// pré-requisito barato dessa proposta (classificação de natureza), NÃO o
+// resto (ParametrosGrafica.overheadModo, que mudaria o cálculo de overhead
+// dentro de comporPreco — fora de escopo desta rodada). Sem esta
+// classificação não dava pra calcular custo fixo total, margem de
+// contribuição nem ponto de equilíbrio — pré-requisito direto do DRE
+// (achado A3, ver src/lib/dre.ts).
+enum NaturezaCusto {
+  VARIAVEL
+  FIXO
+  SEMIVARIAVEL
+}
+
 // Categoria de custo configurável por gráfica, usada pra lançar custos reais
 // de produção num pedido específico (papel, ferramental/faca, laminação,
 // clichê, impressão, frete, mão de obra, retrabalho etc — inspirado na
@@ -514,12 +527,20 @@ model Comissao {
 // com um conjunto padrão sugerido na primeira vez que a gráfica abre a tela
 // (ver bootstrapCategoriasCustoPadrao), nunca um enum travado.
 model CategoriaCusto {
-  id        String   @id @default(cuid())
+  id        String        @id @default(cuid())
   graficaId String
   nome      String
-  ordem     Int      @default(0)
-  ativa     Boolean  @default(true)
-  createdAt DateTime @default(now())
+  ordem     Int           @default(0)
+  ativa     Boolean       @default(true)
+  // Achado A2 da Parte 4 da auditoria de abrangência (2026-09-05) —
+  // classificação de natureza (fixo/variável/semivariável), puramente
+  // descritiva: NADA no motor de precificação (comporPreco) lê este campo
+  // hoje, só o DRE (src/lib/dre.ts). @default(VARIAVEL) preserva 100% o
+  // comportamento de toda categoria já cadastrada (nenhuma muda de
+  // classificação até a gráfica editar explicitamente) — mesma disciplina
+  // de periodicidade em Despesa (ver achado A14, acima).
+  natureza  NaturezaCusto @default(VARIAVEL)
+  createdAt DateTime      @default(now())
 
   grafica         Grafica               @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   custos          CustoPedido[]

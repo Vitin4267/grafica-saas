@@ -16,6 +16,14 @@ import { ArrowLeftIcon } from "@/components/icons";
 import { NovaCategoriaCustoForm } from "./NovaCategoriaCustoForm";
 import { CategoriaCustoOrdemBotoes } from "./CategoriaCustoOrdemBotoes";
 
+// Achado A2 da Parte 4 da auditoria de abrangência (2026-09-05) — rótulo
+// amigável do enum NaturezaCusto pra exibição na lista.
+const ROTULO_NATUREZA: Record<"VARIAVEL" | "FIXO" | "SEMIVARIAVEL", string> = {
+  VARIAVEL: "Variável",
+  FIXO: "Fixo",
+  SEMIVARIAVEL: "Semivariável",
+};
+
 export default async function CategoriasCustoPage() {
   const usuario = await exigirUsuarioAutenticado();
   await exigirEmailVerificado(usuario);
@@ -105,15 +113,20 @@ export default async function CategoriasCustoPage() {
                     <p className="font-medium text-slate-900 dark:text-white">
                       {categoria.nome}
                     </p>
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                        categoria.ativa
-                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
-                          : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
-                      }`}
-                    >
-                      {categoria.ativa ? "Ativa" : "Inativa"}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                        {ROTULO_NATUREZA[categoria.natureza]}
+                      </span>
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                          categoria.ativa
+                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+                            : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                        }`}
+                      >
+                        {categoria.ativa ? "Ativa" : "Inativa"}
+                      </span>
+                    </div>
                   </Card>
                 </Link>
               </div>

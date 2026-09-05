@@ -85,6 +85,19 @@ export type VisaoGeralNegocio = {
   // perguntas diferentes — não dá pra resumir numa métrica só. saldoReal é
   // caixa de verdade (o que entrou menos o que de fato saiu), não inclui o
   // que ainda está pendente.
+  //
+  // CORRIGIDO (achado A3 da Parte 4 da auditoria de abrangência,
+  // 2026-09-05): até aqui este campo somava faturamentoTotal (Orcamento
+  // aprovado por data de CRIAÇÃO — regime de COMPETÊNCIA) menos despesas
+  // pagas (regime de CAIXA) — um orçamento de R$80 mil aprovado hoje e
+  // parcelado em 90 dias entrava 100% no "caixa de verdade" deste mês,
+  // mesmo sem 1 centavo ter sido recebido ainda. Agora os dois lados da
+  // subtração são CAIXA: Pagamento.createdAt (dinheiro que de fato entrou —
+  // inclui tanto Pagamento lançado manualmente quanto o espelhado por
+  // marcarComoRecebido em contas-receber/actions.ts, ver comentário em
+  // Pagamento.contaReceber no schema) menos Despesa paga (já era caixa).
+  // Ver também o DRE completo (src/lib/dre.ts, /financeiro/dre) pra quem
+  // quiser o regime de competência lado a lado, EXPLICITAMENTE rotulado.
   despesasPendentesMes: { total: number; quantidade: number };
   despesasPagasMes: { total: number };
   saldoReal: number;
@@ -133,6 +146,7 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
     orcamentosDoMes,
     despesasPendentesAgregado,
     despesasPagasAgregado,
+    pagamentosRecebidosAgregado,
     orcamentosParaSerie,
     orcamentosAprovadosParaTempoResposta,
     etapas,
@@ -195,6 +209,18 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
     }),
     prisma.despesa.aggregate({
       where: { graficaId, status: "PAGA", pagoEm: { gte: inicioDoMesReal } },
+      _sum: { valor: true },
+    }),
+    // Achado A3 da Parte 4 da auditoria de abrangência (2026-09-05) — lado
+    // da RECEITA de saldoReal corrigido pra regime de CAIXA (dinheiro que
+    // efetivamente entrou), simétrico ao lado da despesa acima. Filtra por
+    // orcamento.graficaId (Pagamento não tem graficaId direto no schema).
+    // Sem exclusão de pedido cancelado de propósito: dinheiro já recebido
+    // continua tendo entrado fisicamente no caixa mesmo que o pedido seja
+    // cancelado depois (a exclusão em faturamentoAgregado é sobre RECEITA
+    // reconhecida por competência, uma pergunta diferente — ver achado N2).
+    prisma.pagamento.aggregate({
+      where: { orcamento: { graficaId }, createdAt: { gte: inicioDoMesReal } },
       _sum: { valor: true },
     }),
     prisma.orcamento.findMany({
@@ -289,6 +315,9 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
 
   const faturamentoTotal = Number(faturamentoAgregado._sum.total ?? 0);
   const despesasPagasTotal = Number(despesasPagasAgregado._sum.valor ?? 0);
+  // Achado A3 — ver comentário em saldoReal (VisaoGeralNegocio) e na query
+  // de pagamentosRecebidosAgregado acima.
+  const pagamentosRecebidosTotal = Number(pagamentosRecebidosAgregado._sum.valor ?? 0);
 
   return {
     faturamentoMes: {
@@ -312,7 +341,7 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
       quantidade: despesasPendentesAgregado._count,
     },
     despesasPagasMes: { total: despesasPagasTotal },
-    saldoReal: faturamentoTotal - despesasPagasTotal,
+    saldoReal: pagamentosRecebidosTotal - despesasPagasTotal,
     serieFaturamentoSemanal: bucketarFaturamentoPorSemana(
       orcamentosParaSerie,
       inicioSerieFaturamento

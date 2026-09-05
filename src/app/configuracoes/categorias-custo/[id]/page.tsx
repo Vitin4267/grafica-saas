@@ -64,6 +64,7 @@ export default async function CategoriaCustoDetalhePage({
         <CategoriaCustoForm
           categoriaId={categoria.id}
           nome={categoria.nome}
+          natureza={categoria.natureza}
           ativa={categoria.ativa}
         />
       </main>
