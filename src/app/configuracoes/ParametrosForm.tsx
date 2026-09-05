@@ -840,7 +840,7 @@ export function ParametrosForm({
 
       <GrupoParametros
         titulo="Cadastros auxiliares"
-        resumo="Filiais, máquinas, categorias de custo, feriados, fornecedores, ferramentais, alçadas e etapas de produção."
+        resumo="Filiais, máquinas, categorias de custo, feriados, fornecedores, prestadores de serviço, ferramentais, alçadas e etapas de produção."
       >
         <Card className="flex items-center justify-between gap-4 p-6">
           <div>
@@ -925,6 +925,24 @@ export function ParametrosForm({
           <Link href="/configuracoes/fornecedores">
             <Button type="button" variant="outline">
               Gerenciar fornecedores
+            </Button>
+          </Link>
+        </Card>
+
+        <Card className="flex items-center justify-between gap-4 p-6">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+              Prestadores de serviço
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Acabamento terceirizado, logística/despachante e freelancer de
+              design — diferente de Fornecedor, que é só pra compra de
+              material.
+            </p>
+          </div>
+          <Link href="/configuracoes/prestadores-servico">
+            <Button type="button" variant="outline">
+              Gerenciar prestadores
             </Button>
           </Link>
         </Card>

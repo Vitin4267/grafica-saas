@@ -152,6 +152,9 @@ model Grafica {
   // Achado A1 da auditoria de abrangência (Parte 2/Produção), Fase 1 — ver
   // model EtapaGrafica.
   etapasGrafica         EtapaGrafica[]
+  // Achado D2 da Parte 7 da auditoria de abrangência — ver model
+  // PrestadorServico.
+  prestadoresServico    PrestadorServico[]
 
   @@map("graficas")
 }

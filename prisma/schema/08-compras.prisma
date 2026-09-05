@@ -47,6 +47,64 @@ model Fornecedor {
   @@map("fornecedores")
 }
 
+// Achado D2 da auditoria de abrangência (Parte 7, "D. Equipe e prestadores
+// externos", 2026-09-04): Fornecedor (acima) é só pra compra de MATERIAL —
+// vira MovimentacaoEstoque/SolicitacaoCompra, sempre ligado a um ItemGrafica.
+// Acabamento terceirizado (laminação, encadernação feita por terceiro),
+// logística/despachante avulso e freelancer de design são SERVIÇO recorrente,
+// não têm ItemGrafica nenhum pra se ligar, e hoje viram Despesa genérica sem
+// nenhuma estrutura — nada registra QUEM prestou o serviço, só "paguei uma
+// despesa de tal categoria". Este model é o cadastro de referência desse
+// prestador, mesmo padrão simples e pequeno de Fornecedor (nome + contato +
+// documento), mas pro lado de SERVIÇO em vez de insumo.
+//
+// Mora neste arquivo (08-compras.prisma), junto de Fornecedor, por
+// proximidade conceitual ("de quem eu comprei/contratei isto") mesmo estando
+// fora do fluxo de compra de matéria-prima (SolicitacaoCompra/
+// MovimentacaoEstoque) — nenhum dos dois models compartilha tabela ou FK.
+//
+// Escopo desta rodada é DELIBERADAMENTE só o cadastro: nenhum fluxo de
+// custo/produção/despesa passa a exigir ou ler PrestadorServico — nenhuma
+// outra tabela (incluindo Despesa) tem FK pra cá ainda. Vínculo com Despesa
+// (pra parar de virar despesa genérica sem estrutura) fica pra uma rodada
+// futura, quando fizer sentido tocar a tabela "despesas" de novo — alterar
+// um model tão usado exigiria a migration já aplicada antes de rodar
+// qualquer teste que cria Despesa (create() sem select devolve todas as
+// colunas via RETURNING, e quebraria em massa enquanto a coluna nova não
+// existir no banco de dev), então foi deixado de fora por ora.
+enum TipoPrestadorServico {
+  ACABAMENTO // laminação, encadernação, verniz UV etc. feito por terceiro
+  LOGISTICA // despachante, motoboy/transportadora avulsa (fora de Entrega/Lalamove já existentes)
+  DESIGN // freelancer de arte-finalização, ilustração etc.
+  OUTRO
+}
+
+model PrestadorServico {
+  id        String               @id @default(cuid())
+  graficaId String
+  nome      String
+  tipo      TipoPrestadorServico
+  // Só usado quando tipo=OUTRO — mesmo padrão de Ferramental.tipoOutro/
+  // Grafica.segmentoOutro no resto do schema.
+  tipoOutro String?
+
+  documento String? // CNPJ (14) ou CPF (11) — texto livre, sem validação de dígito verificador (mesmo padrão de Fornecedor.documento)
+  telefone  String?
+  email     String?
+
+  observacoes String?
+  ativo       Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+
+  @@unique([graficaId, nome])
+  @@index([graficaId])
+  @@index([graficaId, tipo])
+  @@map("prestadores_servico")
+}
+
 // Fluxo estruturado de compra de matéria-prima: SOLICITADO→COTANDO→APROVADO→
 // COMPRADO→RECEBIDO→CONFERIDO, com CANCELADO alcançável a partir de qualquer
 // estado antes de RECEBIDO (ver TRANSICOES_VALIDAS em
