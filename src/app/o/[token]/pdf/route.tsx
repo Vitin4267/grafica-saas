@@ -37,6 +37,7 @@ export async function GET(
           itemGrafica: { include: { itemCatalogo: true } },
           etiqueta: { include: { hotStampings: true } },
           acabamentos: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
+          faixasQuantidade: { orderBy: { quantidade: "asc" } }, // achado B5
         },
       },
     },

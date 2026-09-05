@@ -22,6 +22,10 @@ export type ItemOpcaoPublica = {
   cores: string | null;
   acabamento: string | null;
   etiqueta: EtiquetaResumoDados | null;
+  // Achado B5 da auditoria de abrangência (Parte 1) — tiragens alternativas
+  // deste item; na prática só a opção-base tem linhas (ver comentário do
+  // include em o/[token]/page.tsx).
+  faixasQuantidade: { id: string; quantidade: number; precoUnitario: string; precoTotal: string }[];
 };
 
 export type OpcaoPublica = {
@@ -113,6 +117,22 @@ export function OpcoesPublicasTabs({
             </div>
             {item.etiqueta && mostrarEspecificacoesTecnicas && (
               <EtiquetaResumo etiqueta={item.etiqueta} />
+            )}
+            {item.faixasQuantidade.length > 0 && (
+              <div className="rounded-xl bg-slate-50 p-3 text-xs dark:bg-slate-900/50">
+                <p className="mb-1 font-medium text-slate-500">Outras quantidades</p>
+                <div className="flex flex-col gap-0.5">
+                  {item.faixasQuantidade.map((faixa) => (
+                    <div key={faixa.id} className="flex justify-between gap-4">
+                      <span>{faixa.quantidade.toLocaleString("pt-BR")} un.</span>
+                      <span>
+                        {formatoMoeda.format(Number(faixa.precoUnitario))} / un. —{" "}
+                        {formatoMoeda.format(Number(faixa.precoTotal))}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         ))}

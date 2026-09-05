@@ -24,6 +24,11 @@ export type ItemPdfOrcamento = {
   conversoesPreco: string[];
   etiquetaLinhas: [string, string][];
   hotStampingLinhas: string[];
+  // Achado B5 da auditoria de abrangência (Parte 1) — tiragens alternativas
+  // deste item ("1.000/3.000/5.000 unidades"), tabela comparativa exibida
+  // logo abaixo da linha do item. Vazio pra todo item sem faixa cadastrada
+  // (o caso de sempre) — nunca soma no total do orçamento.
+  faixasQuantidade: { quantidade: string; precoUnitario: string; precoTotal: string }[];
 };
 
 export type DadosPdfPedido = {
@@ -217,6 +222,21 @@ const estilos = StyleSheet.create({
   },
   etiquetaTitulo: { fontSize: 7, fontWeight: "bold", color: "#94a3b8", marginBottom: 2 },
   etiquetaLinha: { fontSize: 7, color: "#64748b" },
+  // Achado B5 — tabela comparativa de tiragens alternativas do item, mesmo
+  // nível visual de etiquetaBox acima.
+  faixasBox: {
+    marginTop: 4,
+    padding: 6,
+    borderRadius: 3,
+    backgroundColor: "#f8fafc",
+  },
+  faixasTitulo: { fontSize: 7, fontWeight: "bold", color: "#94a3b8", marginBottom: 2 },
+  faixasLinha: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    fontSize: 7,
+    color: "#64748b",
+  },
   totalBox: {
     marginTop: 16,
     flexDirection: "row",
@@ -385,6 +405,19 @@ export function OrcamentoDocumento({ dados }: { dados: DadosPdfOrcamento }) {
                         <Text key={i} style={estilos.etiquetaLinha}>
                           {linha}
                         </Text>
+                      ))}
+                    </View>
+                  )}
+                  {item.faixasQuantidade.length > 0 && (
+                    <View style={estilos.faixasBox}>
+                      <Text style={estilos.faixasTitulo}>OUTRAS QUANTIDADES</Text>
+                      {item.faixasQuantidade.map((faixa, i) => (
+                        <View key={i} style={estilos.faixasLinha}>
+                          <Text>{faixa.quantidade} un.</Text>
+                          <Text>
+                            {faixa.precoUnitario} / un. — {faixa.precoTotal}
+                          </Text>
+                        </View>
                       ))}
                     </View>
                   )}

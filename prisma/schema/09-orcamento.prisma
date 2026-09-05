@@ -590,11 +590,81 @@ model OrcamentoItem {
   precificacaoDigital  OrcamentoItemPrecificacaoDigital? // achado N4 — papel escolhido neste orçamento pro motor Digital
   precificacaoOffset   OrcamentoItemPrecificacaoOffset? // achado N8 — papel/gramatura escolhidos neste orçamento pro motor Offset
   filaGangRun          FilaGangRun?
+  // Achado B5 da auditoria de abrangência (Parte 1) — tiragens alternativas
+  // do MESMO item ("1.000/3.000/5.000 unidades"), ver comentário completo no
+  // model OrcamentoItemFaixaQuantidade abaixo.
+  faixasQuantidade     OrcamentoItemFaixaQuantidade[]
 
   @@index([orcamentoId])
   @@index([opcaoId])
   @@index([ferramentalId])
   @@map("orcamento_itens")
+}
+
+// Achado B5 da auditoria de abrangência (Parte 1) — o orçamento gráfico
+// brasileiro clássico apresenta 3 tiragens lado a lado ("1.000 / 3.000 /
+// 5.000 unidades — R$X / R$Y / R$Z"). Feature PARALELA a OrcamentoOpcao (não
+// a substitui, não mexe na estrutura dela): OrcamentoOpcao varia o CONJUNTO
+// INTEIRO de itens de uma proposta ("Pacote Econômico" vs. "Pacote Premium"),
+// criado de uma vez só como um carrinho, com teto de MAX_OPCOES_ALTERNATIVAS
+// (2) e sem edição incremental depois de criado (schema:2170, comentário
+// original). Este model varia só a QUANTIDADE de UM item — adicionar/remover
+// uma linha de faixa a qualquer momento em RASCUNHO, sem recriar o conjunto
+// inteiro de itens do orçamento.
+//
+// Cada faixa é recalculada pelo MESMO motor de precificação
+// (calcularItemOrcamento, ver src/lib/orcamento-precificacao.ts) usado pro
+// item principal, só trocando `quantidade` — a diluição de setup/clichê/
+// chapa entre mais peças acontece sozinha porque o motor já dilui certo pra
+// qualquer quantidade; nenhuma lógica de cálculo é duplicada aqui, só o
+// snapshot do resultado (mesmo padrão de OrcamentoItem.breakdown).
+// precoUnitario/precoTotal são o preço VENDIDO desta faixa (mesma semântica
+// de OrcamentoItem.precoUnitario/precoTotal) — nunca entram em
+// Orcamento.total (são só uma TABELA COMPARATIVA mostrada ao cliente, não
+// itens de verdade do orçamento).
+//
+// PROMOÇÃO NA APROVAÇÃO (decisão de design, ver auditoria-codigo, achado B5):
+// diferente de OrcamentoOpcao — que tem resolverOpcoesNaAprovacao, um
+// "torneio" entre CONJUNTOS de itens cujo vencedor já chega DECIDIDO no
+// formData da aprovação (opcaoId, escolhido pelo cliente no link público ou
+// pelo vendedor no painel) ANTES de comissão/exposição de crédito/previsão de
+// custo serem calculadas — replicar esse mecanismo por FAIXA exigiria o
+// mesmo tipo de decisão explícita chegando na aprovação, mas a aprovação
+// pelo link público (responderOrcamentoPublico, src/app/o/[token]/actions.ts)
+// já É a decisão final do cliente, sem um passo intermediário de "marcar a
+// tiragem" que a preceda. Automatizar a promoção arriscaria a mesma
+// transação de aprovação (já complexa: CAS + comissão + crédito + previsão
+// de custo + gang run) por um ganho que, na prática, a maioria das gráficas
+// já resolve numa ligação/e-mail antes de fechar o pedido.
+//
+// LIMITAÇÃO CONHECIDA E DELIBERADA: a promoção é MANUAL. Depois de o cliente
+// decidir a tiragem (por telefone, e-mail, ou anotado em
+// Orcamento.observacoes), o vendedor edita a quantidade do OrcamentoItem
+// (editarOrcamento, já reaproveita o mesmo calcularItemOrcamento) pra
+// refletir a faixa escolhida, ANTES de aprovar — igual a qualquer mudança de
+// quantidade de sempre. Nenhuma linha deste model participa da
+// aprovação/Pedido: ela é só a tabela de comparação exibida em RASCUNHO/
+// ENVIADO (tela autenticada, PDF e link público), nunca lida por
+// resolverOpcoesNaAprovacao nem por qualquer código de dentro da transação
+// de aprovação.
+model OrcamentoItemFaixaQuantidade {
+  id              String   @id @default(cuid())
+  orcamentoItemId String
+  quantidade      Int
+  precoUnitario   Decimal  @db.Decimal(12, 2)
+  precoTotal      Decimal  @db.Decimal(12, 2)
+  // Snapshot da árvore de custo auditável desta faixa — mesmo padrão/formato
+  // de OrcamentoItem.breakdown (resultado de calcularItemOrcamento
+  // serializado), null pra item SIMPLES (motor não gera breakdown).
+  breakdown       Json?
+  ordem           Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  orcamentoItem OrcamentoItem @relation(fields: [orcamentoItemId], references: [id], onDelete: Cascade)
+
+  @@index([orcamentoItemId])
+  @@map("orcamento_item_faixas_quantidade")
 }
 
 // Detalhe descritivo/de produção de etiqueta (rótulo adesivo) — só relevante

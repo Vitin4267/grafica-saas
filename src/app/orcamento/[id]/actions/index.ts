@@ -11,6 +11,7 @@
 // - ciclo-vida.ts: cancelar, duplicar, link público, validade
 // - pagamentos.ts: registrar/excluir pagamento
 // - nfe.ts: emissão e status de nota fiscal
+// - faixas.ts: CRUD da tabela de tiragens alternativas por item (achado B5)
 // - helpers.ts: funções compartilhadas entre os arquivos acima (não é
 //   "use server" — não são Server Actions por si só, só helpers de servidor)
 
@@ -21,3 +22,4 @@ export * from "./itens";
 export * from "./ciclo-vida";
 export * from "./pagamentos";
 export * from "./nfe";
+export * from "./faixas";

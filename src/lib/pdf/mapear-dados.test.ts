@@ -61,6 +61,7 @@ function orcamentoBase(
           fatorConversao: null,
         },
         etiqueta: null,
+        faixasQuantidade: [],
         ...itemOverrides,
       },
     ],

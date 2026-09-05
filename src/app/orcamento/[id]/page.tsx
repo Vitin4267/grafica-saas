@@ -44,6 +44,8 @@ import { OpcoesOrcamento } from "./OpcoesOrcamento";
 import { MAX_OPCOES_ALTERNATIVAS } from "@/lib/orcamento-opcoes";
 import { EditarOrcamentoForm } from "./EditarOrcamentoForm";
 import { DescontoItemForm } from "./DescontoItemForm";
+import { FaixasQuantidadeForm } from "./FaixasQuantidadeForm";
+import { MAX_FAIXAS_QUANTIDADE } from "@/lib/orcamento-faixas-quantidade";
 import { AdicionarItemForm } from "./AdicionarItemForm";
 import { TrocarClienteForm } from "./TrocarClienteForm";
 import { CompartilharOrcamento } from "./CompartilharOrcamento";
@@ -116,6 +118,7 @@ export default async function OrcamentoDetalhePage({
             precificacaoEtiqueta: true,
             precificacaoDigital: true, // achado N4
             precificacaoOffset: true, // achado N8
+            faixasQuantidade: { orderBy: { quantidade: "asc" } }, // achado B5
           },
         },
         opcoes: {
@@ -602,6 +605,16 @@ export default async function OrcamentoDetalhePage({
                       : null
                   }
                 />
+                <FaixasQuantidadeForm
+                  orcamentoItemId={item.id}
+                  maxFaixas={MAX_FAIXAS_QUANTIDADE}
+                  faixas={item.faixasQuantidade.map((faixa) => ({
+                    id: faixa.id,
+                    quantidade: faixa.quantidade,
+                    precoUnitario: faixa.precoUnitario.toString(),
+                    precoTotal: faixa.precoTotal.toString(),
+                  }))}
+                />
                 {margensPorItemId?.get(item.id) && (
                   <Card className="mb-4 -mt-2 p-5">
                     <p className="mb-2 text-sm font-medium text-slate-500">
@@ -713,6 +726,22 @@ export default async function OrcamentoDetalhePage({
                   </Alert>
                 )}
                 {item.etiqueta && <EtiquetaResumo etiqueta={item.etiqueta} />}
+                {item.faixasQuantidade.length > 0 && (
+                  <div className="rounded-xl bg-slate-50 p-3 text-xs dark:bg-slate-900/50">
+                    <p className="mb-1 font-medium text-slate-500">Faixas de quantidade</p>
+                    <div className="flex flex-col gap-0.5">
+                      {item.faixasQuantidade.map((faixa) => (
+                        <div key={faixa.id} className="flex justify-between gap-4">
+                          <span>{faixa.quantidade.toLocaleString("pt-BR")} un.</span>
+                          <span>
+                            {formatoMoeda.format(Number(faixa.precoUnitario))} / un. —{" "}
+                            {formatoMoeda.format(Number(faixa.precoTotal))}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {orcamento.status !== "REJEITADO" && (
                   <AnaliseTintaCard
                     orcamentoItemId={item.id}

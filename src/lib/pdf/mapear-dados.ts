@@ -151,6 +151,14 @@ export type OrcamentoParaPdf = {
         cor: string | null;
       }[];
     } | null;
+    // Achado B5 da auditoria de abrangência (Parte 1) — tiragens alternativas
+    // deste item ("1.000/3.000/5.000 unidades"). Vazio pra todo item sem
+    // faixa cadastrada (o caso de sempre).
+    faixasQuantidade: {
+      quantidade: number;
+      precoUnitario: Prisma.Decimal;
+      precoTotal: Prisma.Decimal;
+    }[];
   }[];
 };
 
@@ -241,6 +249,14 @@ export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
             return `Hot/cold stamping (${ROTULO_LADO[h.lado] ?? h.lado}): ${partes.join(" · ")}`;
           })
         : [],
+      // Achado B5 — já formatado (mesmo padrão de precoUnitario/precoTotal
+      // acima); ordenado por quantidade crescente pela própria query
+      // (ver `orderBy: { quantidade: "asc" }` nos includes de item.faixasQuantidade).
+      faixasQuantidade: item.faixasQuantidade.map((faixa) => ({
+        quantidade: faixa.quantidade.toLocaleString("pt-BR"),
+        precoUnitario: formatoMoeda.format(Number(faixa.precoUnitario)),
+        precoTotal: formatoMoeda.format(Number(faixa.precoTotal)),
+      })),
     })),
   };
 }

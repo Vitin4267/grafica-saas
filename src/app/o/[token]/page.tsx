@@ -43,6 +43,7 @@ export default async function OrcamentoPublicoPage({
         include: {
           itemGrafica: { include: { itemCatalogo: true } },
           etiqueta: { include: { hotStampings: true } },
+          faixasQuantidade: { orderBy: { quantidade: "asc" } }, // achado B5
         },
       },
       opcoes: {
@@ -52,6 +53,13 @@ export default async function OrcamentoPublicoPage({
             include: {
               itemGrafica: { include: { itemCatalogo: true } },
               etiqueta: { include: { hotStampings: true } },
+              // Achado B5 — faixa é sempre criada num item da opção-base (ver
+              // opcaoId: null nas actions de faixas.ts, mesma restrição de
+              // editarOrcamento/adicionarItemOrcamento); incluído aqui só pra
+              // manter o mesmo shape de `orcamento.itens` acima e o helper
+              // mapearItensParaOpcaoPublica funcionar pros dois — na prática
+              // sempre um array vazio pra item de opção alternativa.
+              faixasQuantidade: { orderBy: { quantidade: "asc" } },
             },
           },
         },
@@ -106,6 +114,16 @@ export default async function OrcamentoPublicoPage({
       cores: item.cores,
       acabamento: item.acabamento,
       etiqueta: item.etiqueta as EtiquetaResumoDados | null,
+      // Achado B5 — tiragens alternativas deste item ("1.000/3.000/5.000
+      // unidades"); na prática só a opção-base tem linhas aqui (ver
+      // comentário do include em opcoes acima), mas o mapeamento é o mesmo
+      // pros dois casos.
+      faixasQuantidade: item.faixasQuantidade.map((faixa) => ({
+        id: faixa.id,
+        quantidade: faixa.quantidade,
+        precoUnitario: faixa.precoUnitario.toString(),
+        precoTotal: faixa.precoTotal.toString(),
+      })),
     }));
   }
 
@@ -242,6 +260,22 @@ export default async function OrcamentoPublicoPage({
                 </div>
                 {item.etiqueta && mostrarEspecificacoesTecnicas && (
                   <EtiquetaResumo etiqueta={item.etiqueta} />
+                )}
+                {item.faixasQuantidade.length > 0 && (
+                  <div className="rounded-xl bg-slate-50 p-3 text-xs dark:bg-slate-900/50">
+                    <p className="mb-1 font-medium text-slate-500">Outras quantidades</p>
+                    <div className="flex flex-col gap-0.5">
+                      {item.faixasQuantidade.map((faixa) => (
+                        <div key={faixa.id} className="flex justify-between gap-4">
+                          <span>{faixa.quantidade.toLocaleString("pt-BR")} un.</span>
+                          <span>
+                            {formatoMoeda.format(Number(faixa.precoUnitario))} / un. —{" "}
+                            {formatoMoeda.format(Number(faixa.precoTotal))}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
             ))}
