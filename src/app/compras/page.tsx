@@ -43,7 +43,7 @@ export default async function ComprasPage() {
   }
   const podeEditar = await podeEditarModulo(usuario, "COMPRAS");
 
-  const [solicitacoes, previsaoEstoque, contratosProximosDoLimite] = await Promise.all([
+  const [solicitacoes, previsaoEstoque, contratosProximosDoLimite, parametros] = await Promise.all([
     prisma.solicitacaoCompra.findMany({
       where: { graficaId: usuario.graficaId },
       include: {
@@ -57,19 +57,39 @@ export default async function ComprasPage() {
     // Achado A9 da auditoria de abrangência (Parte 3/Compras) — contratos de
     // fornecimento com vigência ou quantidade contratada perto do fim.
     listarContratosProximosDoLimite(usuario.graficaId),
+    // Achado A8 da auditoria de abrangência (Parte 3/Compras) —
+    // diasAlertaCompraPadrao é o limiar (antes 30 fixo no código) do sinal
+    // GENÉRICO "vai acabar em breve", separado do ponto de pedido real
+    // (que já vem calculado dentro de previsaoEstoque, com lead time por
+    // item). Consulta separada leve, mesmo padrão de diasAlertaOrcamentoParado
+    // em src/app/orcamento/page.tsx.
+    prisma.parametrosGrafica.findUnique({
+      where: { graficaId: usuario.graficaId },
+      select: { diasAlertaCompraPadrao: true },
+    }),
   ]);
+  const diasAlertaCompraPadrao = parametros?.diasAlertaCompraPadrao ?? 30;
 
   // Sugestões de compra a partir do alerta de estoque que já existe (ver
   // calcularPrevisaoEstoque) — reduz fricção de criar a solicitação, não
   // cria nada sozinho. `id` da previsão é itemGraficaId OU varianteId
   // (mesma convenção usada lá dentro), o que bate exatamente com a chave
   // usada abaixo pra saber se já existe uma solicitação ativa pra esse alvo.
+  //
+  // 3 sinais complementares (achado A8): (1) abaixoDoMinimo — reativo, já
+  // no/abaixo do estoque de segurança cadastrado; (2) abaixoDoPontoDePedido
+  // — preditivo REAL, a fórmula clássica (estoque de segurança + consumo
+  // médio diário × lead time do item/gráfica); (3) diasRestantes dentro do
+  // limiar genérico configurável (antes 30 fixo) — heads-up mesmo quando o
+  // lead time do item ainda não foi calibrado.
   const idsComSolicitacaoAtiva = new Set(
     solicitacoes.filter((s) => !STATUS_TERMINAIS.has(s.status)).map((s) => s.varianteId ?? s.itemGraficaId)
   );
   const sugestoes = previsaoEstoque.filter(
     (item) =>
-      (item.abaixoDoMinimo || (item.diasRestantes !== null && item.diasRestantes <= 30)) &&
+      (item.abaixoDoMinimo ||
+        item.abaixoDoPontoDePedido ||
+        (item.diasRestantes !== null && item.diasRestantes <= diasAlertaCompraPadrao)) &&
       !idsComSolicitacaoAtiva.has(item.id)
   );
 
@@ -158,6 +178,8 @@ export default async function ComprasPage() {
                       : "Abaixo do estoque mínimo"}
                     {" · "}
                     {formatoQuantidade.format(item.estoqueAtual)} {item.unidade} em estoque
+                    {item.pontoDePedido !== null &&
+                      ` · ponto de pedido ${formatoQuantidade.format(item.pontoDePedido)} ${item.unidade} (lead time ${item.leadTimeDias}d)`}
                   </p>
                 </div>
                 {podeEditar && (

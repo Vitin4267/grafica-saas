@@ -242,6 +242,19 @@ model ItemGrafica {
   // nunca barrado. null = sem lote/múltiplo configurado, sem aviso.
   loteMinimoCompra           Decimal?       @db.Decimal(12, 4)
   multiploCompra             Decimal?       @db.Decimal(12, 4)
+  // Achado A8 da auditoria de abrangência (Parte 3/Compras) — quantos dias
+  // esta matéria-prima especificamente leva pra chegar depois de comprada
+  // (ex: papel importado = 45, papel nacional de giro rápido = 3), usado na
+  // fórmula de ponto de pedido (ver calcularPrevisaoEstoque em
+  // src/lib/previsao-estoque-db.ts): estoque de segurança (estoqueMinimo) +
+  // consumo médio diário × lead time. Escolhido em vez de
+  // Fornecedor.prazoEntregaMedioDias porque a sugestão de compra roda ANTES
+  // de qualquer fornecedor ser escolhido — SolicitacaoCompra.fornecedorId só
+  // costuma ser preenchido a partir de APROVADO (ver comentário no schema
+  // logo abaixo, model SolicitacaoCompra), e ItemGrafica não tem fornecedor
+  // preferencial cadastrado hoje. null = usa
+  // ParametrosGrafica.leadTimePadraoDias (fallback por tenant).
+  leadTimeDias               Int?
   // Quanto desse material é perdido por CALIBRAGEM toda vez que uma produção
   // entra em impressão (FILA→IMPRESSAO) — fixo, não escala com a quantidade
   // do pedido (1 unidade ou 1000 = mesma perda). Diferente de

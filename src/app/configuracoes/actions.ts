@@ -372,6 +372,36 @@ export async function salvarParametros(
     };
   }
 
+  // Achado A8 da auditoria de abrangência (Parte 3/Compras) — mesmo cuidado
+  // de presença dos blocos acima (campo ausente/"" não pode virar 0
+  // silenciosamente). diasAlertaCompraPadrao substitui o 30 hardcoded que
+  // existia em src/app/compras/page.tsx; leadTimePadraoDias alimenta a
+  // fórmula real de ponto de pedido em calcularPontoDePedido (ver
+  // src/lib/previsao-estoque.ts).
+  const diasAlertaCompraPadraoBruto = formData.get("diasAlertaCompraPadrao");
+  if (typeof diasAlertaCompraPadraoBruto !== "string" || diasAlertaCompraPadraoBruto.trim() === "") {
+    return { ok: false, mensagem: 'Preencha o campo "Dias para sugerir compra".' };
+  }
+  const diasAlertaCompraPadrao = Number(diasAlertaCompraPadraoBruto);
+  if (!Number.isInteger(diasAlertaCompraPadrao) || diasAlertaCompraPadrao <= 0) {
+    return {
+      ok: false,
+      mensagem: 'Dias para sugerir compra precisa ser um número inteiro maior que zero.',
+    };
+  }
+
+  const leadTimePadraoDiasBruto = formData.get("leadTimePadraoDias");
+  if (typeof leadTimePadraoDiasBruto !== "string" || leadTimePadraoDiasBruto.trim() === "") {
+    return { ok: false, mensagem: 'Preencha o campo "Lead time padrão de compra".' };
+  }
+  const leadTimePadraoDias = Number(leadTimePadraoDiasBruto);
+  if (!Number.isInteger(leadTimePadraoDias) || leadTimePadraoDias <= 0) {
+    return {
+      ok: false,
+      mensagem: 'Lead time padrão de compra precisa ser um número inteiro maior que zero.',
+    };
+  }
+
   // Achado N13 da auditoria de abrangência — faixa de gramatura aceita pelo
   // validador do offset (ver validarPedidoOffset em src/lib/pricing/validar.ts).
   // Mesmo cuidado de presença dos blocos acima (campo ausente/"" não pode
@@ -451,6 +481,8 @@ export async function salvarParametros(
       toleranciaTiragemPadraoPercent: percentuaisInteiros.toleranciaTiragemPadraoPercent,
       toleranciaTiragemPercent: percentuaisInteiros.toleranciaTiragemPercent,
       diasPrecoInsumoDesatualizado,
+      diasAlertaCompraPadrao,
+      leadTimePadraoDias,
       prazoEmDiasUteis,
       diasFuncionamento,
       gramaturaMinGm2,
@@ -596,6 +628,17 @@ export async function salvarParametros(
   if (diasPrecoInsumoDesatualizadoAntes !== diasPrecoInsumoDesatualizado) {
     antesTextos.push(`Dias para avisar preço de insumo desatualizado: ${diasPrecoInsumoDesatualizadoAntes}`);
     depoisTextos.push(`Dias para avisar preço de insumo desatualizado: ${diasPrecoInsumoDesatualizado}`);
+  }
+
+  const diasAlertaCompraPadraoAntes = parametrosAntes?.diasAlertaCompraPadrao ?? 30;
+  if (diasAlertaCompraPadraoAntes !== diasAlertaCompraPadrao) {
+    antesTextos.push(`Dias para sugerir compra: ${diasAlertaCompraPadraoAntes}`);
+    depoisTextos.push(`Dias para sugerir compra: ${diasAlertaCompraPadrao}`);
+  }
+  const leadTimePadraoDiasAntes = parametrosAntes?.leadTimePadraoDias ?? 7;
+  if (leadTimePadraoDiasAntes !== leadTimePadraoDias) {
+    antesTextos.push(`Lead time padrão de compra: ${leadTimePadraoDiasAntes} dia(s)`);
+    depoisTextos.push(`Lead time padrão de compra: ${leadTimePadraoDias} dia(s)`);
   }
 
   const gramaturaMinGm2Antes = parametrosAntes ? Number(parametrosAntes.gramaturaMinGm2) : 30;

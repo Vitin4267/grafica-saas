@@ -22,6 +22,25 @@ export type PrevisaoCalculada = {
   dataPrevistaEsgotamento: Date | null;
 };
 
+// Achado A8 da auditoria de abrangência (Parte 3/Compras,
+// pesquisa-abrangencia-modulos.md) — fórmula consolidada de ponto de
+// pedido: estoque de segurança + (consumo médio diário × lead time).
+// `estoqueMinimo` cadastrado faz o papel de estoque de segurança (é
+// exatamente o "nunca quero chegar abaixo disso" que o usuário já digita
+// hoje no Catálogo, ver ItemGrafica.estoqueMinimo) — 0 quando não
+// cadastrado, nunca null, pra não subestimar o ponto de pedido. Só
+// calculável quando há consumoMedioDiario (histórico suficiente, ver
+// MINIMO_MOVIMENTACOES acima) — sem isso não existe "consumo médio" pra
+// multiplicar, e null aqui significa "sem dado", não "zero".
+export function calcularPontoDePedido(
+  estoqueMinimo: number | null,
+  consumoMedioDiario: number | null,
+  leadTimeDias: number
+): number | null {
+  if (consumoMedioDiario === null) return null;
+  return (estoqueMinimo ?? 0) + consumoMedioDiario * leadTimeDias;
+}
+
 // `movimentacoes` já deve vir filtrada só pelas saídas dentro da janela.
 export function calcularPrevisaoItem(
   estoqueAtual: number,
@@ -63,6 +82,14 @@ export type PrevisaoMateriaPrima = PrevisaoCalculada & {
   // ItemGrafica.quantidadePorEmbalagem no schema). null quando não
   // cadastrado ou quando esta linha é uma variante.
   quantidadePorEmbalagem: number | null;
+  // Achado A8 da auditoria de abrangência (Parte 3/Compras) — lead time
+  // efetivo usado neste cálculo (ItemGrafica.leadTimeDias, com fallback pro
+  // ParametrosGrafica.leadTimePadraoDias da gráfica) e o ponto de pedido
+  // resultante da fórmula em calcularPontoDePedido. pontoDePedido é null
+  // quando não há consumoMedioDiario (sem histórico suficiente).
+  leadTimeDias: number;
+  pontoDePedido: number | null;
+  abaixoDoPontoDePedido: boolean;
 };
 
 // Previsão disponível vem primeiro, ordenada por urgência; abaixo do mínimo

@@ -1,6 +1,12 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { JANELA_DIAS, calcularPrevisaoItem, ordenarPorUrgencia, type PrevisaoMateriaPrima } from "@/lib/previsao-estoque";
+import {
+  JANELA_DIAS,
+  calcularPrevisaoItem,
+  calcularPontoDePedido,
+  ordenarPorUrgencia,
+  type PrevisaoMateriaPrima,
+} from "@/lib/previsao-estoque";
 
 // Roda sob demanda (não é cron) — mesma filosofia da geração de despesa
 // recorrente: refeito a cada carregamento de página, sem depender de
@@ -10,33 +16,45 @@ export async function calcularPrevisaoEstoque(graficaId: string): Promise<Previs
   desde.setDate(desde.getDate() - JANELA_DIAS);
   const agora = new Date();
 
-  const materiasPrimas = await prisma.itemGrafica.findMany({
-    where: {
-      graficaId,
-      ativo: true,
-      itemCatalogo: { tipo: "MATERIA_PRIMA" },
-      OR: [
-        { estoqueAtual: { not: null } },
-        { variantes: { some: { ativo: true, estoqueAtual: { not: null } } } },
-      ],
-    },
-    include: {
-      itemCatalogo: true,
-      movimentacoes: {
-        where: { tipo: "SAIDA_PRODUCAO", createdAt: { gte: desde } },
-        orderBy: { createdAt: "asc" },
+  const [materiasPrimas, parametros] = await Promise.all([
+    prisma.itemGrafica.findMany({
+      where: {
+        graficaId,
+        ativo: true,
+        itemCatalogo: { tipo: "MATERIA_PRIMA" },
+        OR: [
+          { estoqueAtual: { not: null } },
+          { variantes: { some: { ativo: true, estoqueAtual: { not: null } } } },
+        ],
       },
-      variantes: {
-        where: { ativo: true },
-        include: {
-          movimentacoes: {
-            where: { tipo: "SAIDA_PRODUCAO", createdAt: { gte: desde } },
-            orderBy: { createdAt: "asc" },
+      include: {
+        itemCatalogo: true,
+        movimentacoes: {
+          where: { tipo: "SAIDA_PRODUCAO", createdAt: { gte: desde } },
+          orderBy: { createdAt: "asc" },
+        },
+        variantes: {
+          where: { ativo: true },
+          include: {
+            movimentacoes: {
+              where: { tipo: "SAIDA_PRODUCAO", createdAt: { gte: desde } },
+              orderBy: { createdAt: "asc" },
+            },
           },
         },
       },
-    },
-  });
+    }),
+    // Achado A8 da auditoria de abrangência (Parte 3/Compras) — lead time
+    // padrão da gráfica, usado quando o item não tem um lead time próprio
+    // cadastrado (ver ItemGrafica.leadTimeDias). Select leve, mesmo padrão
+    // de outras leituras pontuais de ParametrosGrafica (ex: meu-negocio.ts).
+    prisma.parametrosGrafica.findUnique({
+      where: { graficaId },
+      select: { leadTimePadraoDias: true },
+    }),
+  ]);
+
+  const leadTimePadrao = parametros?.leadTimePadraoDias ?? 7;
 
   const montarPrevisao = (
     id: string,
@@ -46,6 +64,7 @@ export async function calcularPrevisaoEstoque(graficaId: string): Promise<Previs
     estoqueAtualBruto: number,
     estoqueMinimoBruto: number | null,
     movimentacoes: { quantidade: unknown; createdAt: Date }[],
+    leadTimeDias: number,
     quantidadePorEmbalagem: number | null = null
   ): PrevisaoMateriaPrima => {
     const previsao = calcularPrevisaoItem(
@@ -53,6 +72,7 @@ export async function calcularPrevisaoEstoque(graficaId: string): Promise<Previs
       movimentacoes.map((m) => ({ quantidade: Number(m.quantidade), createdAt: m.createdAt })),
       agora
     );
+    const pontoDePedido = calcularPontoDePedido(estoqueMinimoBruto, previsao.consumoMedioDiario, leadTimeDias);
     return {
       id,
       nome,
@@ -62,6 +82,9 @@ export async function calcularPrevisaoEstoque(graficaId: string): Promise<Previs
       estoqueMinimo: estoqueMinimoBruto,
       abaixoDoMinimo: estoqueMinimoBruto !== null && estoqueAtualBruto <= estoqueMinimoBruto,
       quantidadePorEmbalagem,
+      leadTimeDias,
+      pontoDePedido,
+      abaixoDoPontoDePedido: pontoDePedido !== null && estoqueAtualBruto <= pontoDePedido,
       ...previsao,
     };
   };
@@ -69,6 +92,11 @@ export async function calcularPrevisaoEstoque(graficaId: string): Promise<Previs
   const itens: PrevisaoMateriaPrima[] = [];
 
   for (const item of materiasPrimas) {
+    // ItemGrafica.leadTimeDias é do "pai" (matéria-prima), nunca da
+    // variante — mesmo lote/fornecedor de origem, então todas as variantes
+    // de um item (ex: espessuras de chapa) herdam o mesmo lead time.
+    const leadTimeDias = item.leadTimeDias ?? leadTimePadrao;
+
     // Matéria-prima com variantes (ex: espessura de chapa): cada variante é
     // um saldo de estoque próprio, então vira uma linha de previsão própria
     // — o saldo do ItemGrafica "pai" fica sem uso quando há variantes.
@@ -83,7 +111,8 @@ export async function calcularPrevisaoEstoque(graficaId: string): Promise<Previs
             item.itemCatalogo.unidade ?? "",
             Number(variante.estoqueAtual),
             variante.estoqueMinimo !== null ? Number(variante.estoqueMinimo) : null,
-            variante.movimentacoes
+            variante.movimentacoes,
+            leadTimeDias
           )
         );
       }
@@ -100,6 +129,7 @@ export async function calcularPrevisaoEstoque(graficaId: string): Promise<Previs
         Number(item.estoqueAtual),
         item.estoqueMinimo !== null ? Number(item.estoqueMinimo) : null,
         item.movimentacoes,
+        leadTimeDias,
         item.quantidadePorEmbalagem !== null ? Number(item.quantidadePorEmbalagem) : null
       )
     );

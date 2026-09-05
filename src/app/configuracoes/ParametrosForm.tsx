@@ -89,6 +89,8 @@ export function ParametrosForm({
   toleranciaTiragemPadraoPercent,
   toleranciaTiragemPercent,
   diasPrecoInsumoDesatualizado,
+  diasAlertaCompraPadrao,
+  leadTimePadraoDias,
   prazoEmDiasUteis,
   diasFuncionamento,
 }: {
@@ -116,6 +118,8 @@ export function ParametrosForm({
   toleranciaTiragemPadraoPercent: number;
   toleranciaTiragemPercent: number;
   diasPrecoInsumoDesatualizado: number;
+  diasAlertaCompraPadrao: number;
+  leadTimePadraoDias: number;
   prazoEmDiasUteis: boolean;
   diasFuncionamento: number;
 }) {
@@ -664,6 +668,49 @@ export function ParametrosForm({
             defaultValue={diasPrecoInsumoDesatualizado}
             className="max-w-xs"
           />
+        </Card>
+
+        <Card className="flex flex-col gap-4 p-6">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+              Sugestão de compra e ponto de pedido
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Em{" "}
+              <Link href="/compras" className="underline">
+                Compras
+              </Link>
+              , sugerimos repor uma matéria-prima quando ela está abaixo do
+              estoque mínimo cadastrado, quando a previsão de consumo
+              ultrapassa o ponto de pedido real (estoque de segurança +
+              consumo médio diário × lead time) ou quando faltam poucos dias
+              pra acabar. Cadastre um lead time específico por matéria-prima
+              no Catálogo quando ele for muito diferente do padrão da
+              gráfica (ex: papel importado).
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-4">
+            <Input
+              label="Avisar quando faltar até quantos dias"
+              name="diasAlertaCompraPadrao"
+              type="number"
+              step="1"
+              min="1"
+              defaultValue={diasAlertaCompraPadrao}
+              hint="Sinal genérico, independente do lead time calculado"
+              className="max-w-xs"
+            />
+            <Input
+              label="Lead time padrão de compra (dias)"
+              name="leadTimePadraoDias"
+              type="number"
+              step="1"
+              min="1"
+              defaultValue={leadTimePadraoDias}
+              hint="Usado quando o item não tem lead time próprio"
+              className="max-w-xs"
+            />
+          </div>
         </Card>
       </GrupoParametros>
 

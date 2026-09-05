@@ -225,6 +225,24 @@ model ParametrosGrafica {
   descontoMaxSemAprovacao       Decimal @default(100) @db.Decimal(5, 2) // % — 100 = sem trava (comportamento de hoje)
   diasPrecoInsumoDesatualizado  Int     @default(90)
 
+  // Achado A8 da auditoria de abrangência (Parte 3/Compras,
+  // pesquisa-abrangencia-modulos.md) — a sugestão de compra em /compras
+  // (ver calcularPrevisaoEstoque em src/lib/previsao-estoque-db.ts) tinha um
+  // limiar de "dias restantes" fixo em 30 no código, igual pra qualquer
+  // gráfica. diasAlertaCompraPadrao é esse limiar agora configurável — sinal
+  // GENÉRICO de "vai acabar em breve", independente do ponto de pedido real
+  // calculado com leadTimePadraoDias/ItemGrafica.leadTimeDias abaixo (os
+  // dois sinais se complementam, ver montarPrevisao). leadTimePadraoDias é
+  // quantos dias a gráfica leva, em média, pra receber uma compra de
+  // matéria-prima quando o item não tem um lead time próprio cadastrado
+  // (ver ItemGrafica.leadTimeDias no schema) — usado na fórmula clássica de
+  // ponto de pedido: estoque de segurança + (consumo médio diário × lead
+  // time). Defaults 30/7 preservam essencialmente o comportamento de hoje
+  // (30 = limiar antigo hardcoded; 7 é uma estimativa conservadora comum de
+  // reposição nacional) pra quem já usa o sistema sem configurar nada.
+  diasAlertaCompraPadrao Int @default(30)
+  leadTimePadraoDias     Int @default(7)
+
   // Achado N13 da auditoria de abrangência — faixa de gramatura aceita pelo
   // validador do offset (ver validarPedidoOffset em src/lib/pricing/validar.ts).
   // Antes era uma constante fixa 30-500 g/m² no código: travava com erro

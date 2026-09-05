@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { calcularPrevisaoItem, ordenarPorUrgencia, type PrevisaoMateriaPrima } from "./previsao-estoque";
+import {
+  calcularPrevisaoItem,
+  calcularPontoDePedido,
+  ordenarPorUrgencia,
+  type PrevisaoMateriaPrima,
+} from "./previsao-estoque";
 
 const AGORA = new Date("2026-07-11T00:00:00Z");
 
@@ -42,6 +47,34 @@ describe("calcularPrevisaoItem", () => {
   });
 });
 
+describe("calcularPontoDePedido (achado A8)", () => {
+  it("null quando não há consumoMedioDiario (sem histórico suficiente)", () => {
+    expect(calcularPontoDePedido(50, null, 7)).toBeNull();
+  });
+
+  it("estoque de segurança + consumo médio diário × lead time", () => {
+    // consumo 2/dia × lead time 7 dias = 14, + 50 de segurança = 64
+    expect(calcularPontoDePedido(50, 2, 7)).toBe(64);
+  });
+
+  it("trata estoqueMinimo não cadastrado (null) como segurança zero", () => {
+    // consumo 3/dia × lead time 10 dias = 30, sem estoque de segurança
+    expect(calcularPontoDePedido(null, 3, 10)).toBe(30);
+  });
+
+  it("lead time maior gera ponto de pedido maior (fornecedor de importação)", () => {
+    const pontoNacional = calcularPontoDePedido(0, 5, 3);
+    const pontoImportado = calcularPontoDePedido(0, 5, 45);
+    expect(pontoImportado).toBeGreaterThan(pontoNacional!);
+    expect(pontoNacional).toBe(15);
+    expect(pontoImportado).toBe(225);
+  });
+
+  it("consumo zero (mas não null) resulta só no estoque de segurança", () => {
+    expect(calcularPontoDePedido(20, 0, 7)).toBe(20);
+  });
+});
+
 describe("ordenarPorUrgencia", () => {
   function item(parcial: Partial<PrevisaoMateriaPrima>): PrevisaoMateriaPrima {
     return {
@@ -56,6 +89,9 @@ describe("ordenarPorUrgencia", () => {
       consumoMedioDiario: null,
       diasRestantes: null,
       dataPrevistaEsgotamento: null,
+      leadTimeDias: 7,
+      pontoDePedido: null,
+      abaixoDoPontoDePedido: false,
       ...parcial,
     };
   }

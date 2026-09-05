@@ -46,6 +46,8 @@ export default async function ConfiguracoesPage() {
     toleranciaTiragemPadraoPercent,
     toleranciaTiragemPercent,
     diasPrecoInsumoDesatualizado,
+    diasAlertaCompraPadrao,
+    leadTimePadraoDias,
     prazoEmDiasUteis,
     diasFuncionamento,
   } = await prisma.parametrosGrafica.findUniqueOrThrow({
@@ -72,6 +74,8 @@ export default async function ConfiguracoesPage() {
       toleranciaTiragemPadraoPercent: true,
       toleranciaTiragemPercent: true,
       diasPrecoInsumoDesatualizado: true,
+      diasAlertaCompraPadrao: true,
+      leadTimePadraoDias: true,
       prazoEmDiasUteis: true,
       diasFuncionamento: true,
     },
@@ -171,6 +175,8 @@ export default async function ConfiguracoesPage() {
           }
           toleranciaTiragemPercent={toleranciaTiragemPercent ? Number(toleranciaTiragemPercent) : 0}
           diasPrecoInsumoDesatualizado={diasPrecoInsumoDesatualizado}
+          diasAlertaCompraPadrao={diasAlertaCompraPadrao}
+          leadTimePadraoDias={leadTimePadraoDias}
           prazoEmDiasUteis={prazoEmDiasUteis}
           diasFuncionamento={diasFuncionamento}
         />

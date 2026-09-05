@@ -140,6 +140,8 @@ describe("salvarParametros", () => {
       formData.append("toleranciaTiragemPadraoPercent", "10");
       formData.append("toleranciaTiragemPercent", "5"); // Novo campo
       formData.append("diasPrecoInsumoDesatualizado", "90");
+      formData.append("diasAlertaCompraPadrao", "30");
+      formData.append("leadTimePadraoDias", "7");
       formData.append("gramaturaMinGm2", "30");
       formData.append("gramaturaMaxGm2", "500");
       formData.append("prazoEmDiasUteis", "on");
@@ -216,6 +218,8 @@ describe("salvarParametros", () => {
       formData.append("toleranciaTiragemPadraoPercent", "10");
       formData.append("toleranciaTiragemPercent", "0"); // Sem tolerância
       formData.append("diasPrecoInsumoDesatualizado", "90");
+      formData.append("diasAlertaCompraPadrao", "30");
+      formData.append("leadTimePadraoDias", "7");
       formData.append("gramaturaMinGm2", "30");
       formData.append("gramaturaMaxGm2", "500");
       formData.append("prazoEmDiasUteis", "on");
