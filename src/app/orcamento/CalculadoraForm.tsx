@@ -26,6 +26,7 @@ import {
 } from "./SeletorItemOrcamento";
 import type { CamposEtiqueta } from "./CamposEtiquetaOrcamento";
 import type { CamposPrecificacaoEtiqueta, PapelDisponivel } from "./CamposPrecificacaoEtiquetaOrcamento";
+import type { CamposCorEspecial } from "./cor-especial-campos";
 
 const OPCOES_TIPO_PEDIDO: [string, string][] = [
   ["MODELO_NOVO", "Modelo novo"],
@@ -163,6 +164,11 @@ type ItemCarrinho = {
   acabamento: string | null;
   descricaoLivre: string | null;
   acabamentoIds: string[];
+  // Achado F8 — QUAL cor especial/Pantone este item usa. Biblioteca do
+  // cliente não é oferecida aqui (a Calculadora ainda nem escolheu um
+  // cliente quando o item é montado) — só texto livre, ver comentário em
+  // coresEspeciaisDisponiveis mais abaixo.
+  coresEspeciais: CamposCorEspecial[];
   precoUnitario: string;
   precoTotal: string;
   modeloCalculo:
@@ -403,6 +409,7 @@ export function CalculadoraForm({
         acabamento: campos.acabamento.trim() || null,
         descricaoLivre: campos.descricaoLivre.trim() || null,
         acabamentoIds: campos.acabamentoIds,
+        coresEspeciais: campos.coresEspeciais,
         precoUnitario: resultado.precoUnitario,
         precoTotal: resultado.precoTotal,
         modeloCalculo: resultado.modeloCalculo,
@@ -444,6 +451,13 @@ export function CalculadoraForm({
       acabamento: i.acabamento,
       descricaoLivre: i.descricaoLivre,
       acabamentoIds: i.acabamentoIds,
+      coresEspeciais: i.coresEspeciais
+        .filter((c) => c.nomeDeclarado.trim() !== "")
+        .map((c) => ({
+          corEspecialId: c.corEspecialId || null,
+          nomeDeclarado: c.nomeDeclarado.trim(),
+          salvarNaBiblioteca: c.salvarNaBiblioteca,
+        })),
       etiqueta: etiquetaParaEntrada(i.etiqueta),
       papelId: i.precificacaoEtiqueta.papelId || null,
       quantidadeCores:

@@ -164,6 +164,9 @@ model Grafica {
   // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04) — ver
   // model ContaFinanceira.
   contasFinanceiras     ContaFinanceira[]
+  // Achado F8 da Parte 7 da auditoria de abrangência — ver model
+  // CorEspecialCliente (05-clientes.prisma).
+  coresEspeciaisCliente CorEspecialCliente[]
 
   @@map("graficas")
 }

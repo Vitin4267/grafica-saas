@@ -10,6 +10,7 @@ import { removerOpcaoOrcamento } from "./opcoes.actions";
 import { AdicionarOpcaoForm } from "./AdicionarOpcaoForm";
 import type { ItemVenda, ItemAcabamentoDisponivel } from "../SeletorItemOrcamento";
 import type { PapelDisponivel } from "../CamposPrecificacaoEtiquetaOrcamento";
+import type { CorEspecialDisponivel } from "@/lib/orcamento-cor-especial";
 
 export type OpcaoOrcamentoResumo = {
   id: string;
@@ -73,6 +74,7 @@ export function OpcoesOrcamento({
   itensVendaveis,
   acabamentosDisponiveis,
   papeisDisponiveis,
+  coresEspeciaisDisponiveis,
   unidadePadrao,
 }: {
   orcamentoId: string;
@@ -82,6 +84,7 @@ export function OpcoesOrcamento({
   itensVendaveis: ItemVenda[];
   acabamentosDisponiveis: ItemAcabamentoDisponivel[];
   papeisDisponiveis: PapelDisponivel[];
+  coresEspeciaisDisponiveis: CorEspecialDisponivel[];
   unidadePadrao: UnidadeDimensao;
 }) {
   const [mostrandoForm, setMostrandoForm] = useState(false);
@@ -133,6 +136,7 @@ export function OpcoesOrcamento({
           itens={itensVendaveis}
           acabamentosDisponiveis={acabamentosDisponiveis}
           papeisDisponiveis={papeisDisponiveis}
+          coresEspeciaisDisponiveis={coresEspeciaisDisponiveis}
           unidadePadrao={unidadePadrao}
           sugestaoNome={proximaSugestaoNome}
           aoCancelar={() => setMostrandoForm(false)}

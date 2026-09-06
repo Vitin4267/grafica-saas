@@ -5,6 +5,9 @@ import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
 import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { CamposEtiquetaOrcamento, etiquetaInicial, type CamposEtiqueta } from "./CamposEtiquetaOrcamento";
+import { CamposCorEspecialOrcamento } from "./CamposCorEspecialOrcamento";
+import type { CamposCorEspecial } from "./cor-especial-campos";
+import type { CorEspecialDisponivel } from "@/lib/orcamento-cor-especial";
 import {
   CamposPrecificacaoEtiquetaOrcamento,
   precificacaoEtiquetaInicial,
@@ -133,6 +136,10 @@ export type CamposItemOrcamento = {
   // motor de preço.
   descricaoLivre: string;
   acabamentoIds: string[];
+  // Achado F8 — QUAL cor especial/Pantone este item usa (0 a N linhas,
+  // independente de modeloCalculo, ao contrário de etiqueta abaixo, que é
+  // exclusiva de M2). Nunca entra no motor de preço.
+  coresEspeciais: CamposCorEspecial[];
   etiqueta: CamposEtiqueta;
   precificacaoEtiqueta: CamposPrecificacaoEtiqueta;
   // Achado N8 — só OFFSET: gramatura escolhida NESTE orçamento, sobrepondo a
@@ -186,6 +193,7 @@ export function camposIniciais(
     acabamento: "",
     descricaoLivre: "",
     acabamentoIds: [],
+    coresEspeciais: [],
     etiqueta: etiquetaInicial(),
     precificacaoEtiqueta: precificacaoEtiquetaInicial(),
     gramaturaGm2: "",
@@ -201,12 +209,19 @@ export function SeletorItemOrcamento({
   itens,
   acabamentosDisponiveis,
   papeisDisponiveis,
+  coresEspeciaisDisponiveis = [],
   valores,
   onChange,
 }: {
   itens: ItemVenda[];
   acabamentosDisponiveis: ItemAcabamentoDisponivel[];
   papeisDisponiveis: PapelDisponivel[];
+  // Achado F8 — biblioteca de cor do cliente do orçamento (+ genéricas da
+  // gráfica), pro autocomplete em CamposCorEspecialOrcamento. Default []
+  // pra quem ainda não conhece o cliente no momento de montar este form (ex:
+  // CalculadoraForm antes de escolher o cliente) — texto livre continua
+  // funcionando normalmente, só sem sugestão da biblioteca.
+  coresEspeciaisDisponiveis?: CorEspecialDisponivel[];
   valores: CamposItemOrcamento;
   onChange: (novo: CamposItemOrcamento) => void;
 }) {
@@ -323,6 +338,7 @@ export function SeletorItemOrcamento({
       acabamento: "",
       descricaoLivre: "",
       acabamentoIds: [],
+      coresEspeciais: [],
       etiqueta: etiquetaInicial(),
       precificacaoEtiqueta: precificacaoEtiquetaInicial(),
       gramaturaGm2: "",
@@ -624,6 +640,12 @@ export function SeletorItemOrcamento({
         onChange={set("cores")}
         placeholder="ex: 4x0, 4x4"
         hint="Deixe em branco se não se aplica."
+      />
+
+      <CamposCorEspecialOrcamento
+        linhas={valores.coresEspeciais}
+        disponiveis={coresEspeciaisDisponiveis}
+        onChange={(coresEspeciais) => onChange({ ...valores, coresEspeciais })}
       />
 
       <Input

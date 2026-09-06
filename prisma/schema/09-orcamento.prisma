@@ -605,6 +605,15 @@ model OrcamentoItem {
   ferramental Ferramental?    @relation(fields: [ferramentalId], references: [id], onDelete: SetNull)
 
   acabamentos          OrcamentoItemAcabamento[]
+  // Achado F8 da auditoria de abrangência (Parte 7) — QUAL cor especial/
+  // Pantone este item usa, ver model OrcamentoItemCor abaixo. Nome da
+  // relação deliberadamente NÃO é "cores" — colide com o campo `cores`
+  // acima (snapshot de texto livre "4x0"/"4x4", campo bem mais antigo e
+  // usado em ~20 lugares, nunca renomeado). Independente de modeloCalculo
+  // (ao contrário de etiqueta/hotStampings, exclusivos de M2) — cor
+  // especial pode aparecer em qualquer motor (serigrafia, flexografia,
+  // offset...).
+  coresEspeciais       OrcamentoItemCor[]
   etiqueta             OrcamentoItemEtiqueta?
   tinta                OrcamentoItemTinta?
   // Achado F5 — arte por item (opt-in, ver comentário completo no model
@@ -872,6 +881,44 @@ model OrcamentoItemAcabamento {
 
   @@index([orcamentoItemId])
   @@map("orcamento_item_acabamentos")
+}
+
+// Achado F8 da auditoria de abrangência (Parte 7) — QUAL cor especial/
+// Pantone está sendo usada neste item, mesmo padrão N:1 direto em
+// OrcamentoItem de OrcamentoItemAcabamento acima (mais de uma cor especial
+// por item — ex: um rótulo com 2 Pantones diferentes, um pra logo e outro
+// pro fundo). Puramente descritivo/organizacional — NUNCA entra no motor de
+// preço (mesma guarda estática de OrcamentoItemHotStamping/
+// OrcamentoItemEtiqueta, ver src/app/orcamento/cor-especial-nao-entra-preco.test.ts):
+// corFrente/numeroCoresFlexo/coresRotulo continuam sendo a CONTAGEM que o
+// motor cobra; isto aqui é só o NOME/receita de qual cor é qual, pro PDF,
+// pra produção e pro critério nº1 de aprovação/reclamação do cliente.
+//
+// Modela em OrcamentoItem direto (não em OrcamentoItemEtiqueta) de propósito
+// — diferente de OrcamentoItemHotStamping (exclusivo de M2/etiqueta), cor
+// especial se aplica a qualquer motor (serigrafia, flexografia, offset,
+// tampografia...), não só rótulo adesivo.
+model OrcamentoItemCor {
+  id              String  @id @default(cuid())
+  orcamentoItemId String
+  // Opcional — o vendedor pode digitar um nome de cor sem que ele já exista
+  // na biblioteca do cliente (ver CorEspecialCliente em 05-clientes.prisma).
+  // SetNull: apagar a entrada da biblioteca não pode apagar o histórico do
+  // orçamento que já usou aquele nome — nomeDeclarado (snapshot) continua
+  // valendo sozinho, mesmo padrão de Ferramental.clienteId/OrcamentoItem.ferramentalId.
+  corEspecialId   String?
+  // Snapshot sempre preenchido — nome/referência que aparece no PDF e na
+  // produção, congelado no momento em que a linha foi criada/editada. Não
+  // recarrega dinamicamente de CorEspecialCliente.nome depois (mesmo
+  // princípio de Comissao.usuarioNome: sobrevive à edição/remoção da fonte).
+  nomeDeclarado   String
+
+  orcamentoItem OrcamentoItem       @relation(fields: [orcamentoItemId], references: [id], onDelete: Cascade)
+  corEspecial   CorEspecialCliente? @relation(fields: [corEspecialId], references: [id], onDelete: SetNull)
+
+  @@index([orcamentoItemId])
+  @@index([corEspecialId])
+  @@map("orcamento_item_cores")
 }
 
 // Estimativa de gasto de tinta gerada por IA a partir de uma imagem da arte

@@ -83,6 +83,7 @@ import { UNIDADES_DIMENSAO, converterParaCm } from "@/lib/unidade-dimensao";
 import { paraDecimal, type Dec } from "@/lib/pricing/decimal";
 import { aplicarPisoDoPedido } from "@/lib/pricing";
 import { montarDadosItemParaRecalculo, calcularDescontoHerdado } from "@/lib/orcamento-duplicar";
+import { corEspecialEntradaSchema, resolverCoresEspeciais } from "@/lib/orcamento-cor-especial";
 
 import { buscarAlcadasDesconto } from "./helpers";
 
@@ -415,6 +416,16 @@ export async function editarOrcamento(
   // "Material fornecido pelo cliente" (achado B7) — checkbox, não número:
   // sem exigir presença no FormData, ausente = desmarcado = false.
   const materialFornecidoPeloCliente = formData.get("materialFornecidoPeloCliente") === "on";
+  // Achado F8 — QUAL cor especial/Pantone este item usa. Independente de
+  // modeloCalculo, nunca passa por calcularItemOrcamento (puramente
+  // descritivo) — resolvida (ownership + "salvar na biblioteca") mais abaixo,
+  // depois que orcamento.clienteId estiver disponível.
+  const coresEspeciaisResult = parseJsonArray(formData.get("coresEspeciaisJson"), corEspecialEntradaSchema, {
+    max: 20,
+  });
+  if (!coresEspeciaisResult.ok) {
+    return { ok: false, mensagem: coresEspeciaisResult.mensagem };
+  }
 
   if (!quantidade || quantidade <= 0 || quantidade > 1_000_000) {
     return { ok: false, mensagem: "Informe uma quantidade válida (até 1.000.000 unidades)." };
@@ -447,6 +458,17 @@ export async function editarOrcamento(
   const item = orcamento.itens.find((i) => i.id === orcamentoItemId);
   if (!item) {
     return { ok: false, mensagem: "Item do orçamento não encontrado." };
+  }
+
+  // Achado F8 — resolve ownership de cada corEspecialId (defesa contra IDOR)
+  // e o "salvar na biblioteca" antes de gravar.
+  const coresEspeciaisResolvidas = await resolverCoresEspeciais(
+    coresEspeciaisResult.data,
+    usuario.graficaId,
+    orcamento.clienteId
+  );
+  if (!coresEspeciaisResolvidas.ok) {
+    return { ok: false, mensagem: coresEspeciaisResolvidas.mensagem };
   }
 
   // Produto não muda em editarOrcamento, então dá pra saber se o motor é
@@ -577,6 +599,20 @@ export async function editarOrcamento(
               })),
             });
           }
+        }
+
+        // Achado F8 — lista pequena, sem histórico a preservar (mesmo
+        // padrão de acabamentos/hotStamping acima): apaga tudo e recria do
+        // zero a partir do array enviado. Independente de modeloCalculo.
+        await tx.orcamentoItemCor.deleteMany({ where: { orcamentoItemId } });
+        if (coresEspeciaisResolvidas.linhas.length > 0) {
+          await tx.orcamentoItemCor.createMany({
+            data: coresEspeciaisResolvidas.linhas.map((c) => ({
+              orcamentoItemId,
+              corEspecialId: c.corEspecialId,
+              nomeDeclarado: c.nomeDeclarado,
+            })),
+          });
         }
 
         // upsert (não create): a mesma linha é atualizada se o vendedor trocar
@@ -831,6 +867,16 @@ export async function adicionarItemOrcamento(
   // "Material fornecido pelo cliente" (achado B7) — checkbox, não número:
   // sem exigir presença no FormData, ausente = desmarcado = false.
   const materialFornecidoPeloCliente = formData.get("materialFornecidoPeloCliente") === "on";
+  // Achado F8 — QUAL cor especial/Pantone este item usa. Independente de
+  // modeloCalculo, nunca passa por calcularItemOrcamento (puramente
+  // descritivo) — resolvida (ownership + "salvar na biblioteca") mais
+  // abaixo, depois que orcamento.clienteId estiver disponível.
+  const coresEspeciaisResult = parseJsonArray(formData.get("coresEspeciaisJson"), corEspecialEntradaSchema, {
+    max: 20,
+  });
+  if (!coresEspeciaisResult.ok) {
+    return { ok: false, mensagem: coresEspeciaisResult.mensagem };
+  }
 
   if (!itemGraficaId || !quantidade || quantidade <= 0 || quantidade > 1_000_000) {
     return { ok: false, mensagem: "Escolha um produto e uma quantidade válida (até 1.000.000 unidades)." };
@@ -870,6 +916,17 @@ export async function adicionarItemOrcamento(
   }
   const margemLucroOverride =
     orcamento.cliente.margemPadraoOverride !== null ? Number(orcamento.cliente.margemPadraoOverride) : null;
+
+  // Achado F8 — resolve ownership de cada corEspecialId (defesa contra IDOR)
+  // e o "salvar na biblioteca" antes de gravar.
+  const coresEspeciaisResolvidas = await resolverCoresEspeciais(
+    coresEspeciaisResult.data,
+    usuario.graficaId,
+    orcamento.clienteId
+  );
+  if (!coresEspeciaisResolvidas.ok) {
+    return { ok: false, mensagem: coresEspeciaisResolvidas.mensagem };
+  }
 
   const itemGrafica = await prisma.itemGrafica.findFirst({
     where: {
@@ -1015,6 +1072,17 @@ export async function adicionarItemOrcamento(
                       itemGraficaId: a.itemGraficaId,
                       qtdBase: a.qtdBase,
                       custoCalculado: a.custoCalculado,
+                    })),
+                  }
+                : undefined,
+            // Achado F8 — independente de modeloCalculo, nunca passa por
+            // calcularItemOrcamento.
+            coresEspeciais:
+              coresEspeciaisResolvidas.linhas.length > 0
+                ? {
+                    create: coresEspeciaisResolvidas.linhas.map((c) => ({
+                      corEspecialId: c.corEspecialId,
+                      nomeDeclarado: c.nomeDeclarado,
                     })),
                   }
                 : undefined,

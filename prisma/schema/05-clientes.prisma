@@ -188,8 +188,8 @@ model Cliente {
   // A3 da mesma Parte da auditoria).
   inscricaoMunicipal String?
 
-  grafica        Grafica           @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  vendedor       Usuario?          @relation(fields: [vendedorId], references: [id], onDelete: SetNull)
+  grafica        Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  vendedor       Usuario?             @relation(fields: [vendedorId], references: [id], onDelete: SetNull)
   orcamentos     Orcamento[]
   creditoCliente CreditoCliente?
   // Achado A4 da Parte 5 da auditoria de abrangência — ver ContatoCliente
@@ -203,6 +203,10 @@ model Cliente {
   // Achado F1 da Parte 7 da auditoria de abrangência — ferramental (faca,
   // clichê...) de propriedade deste cliente, ver model Ferramental.
   ferramentais   Ferramental[]
+  // Achado F8 da Parte 7 da auditoria de abrangência — biblioteca de cor
+  // especial/Pantone da MARCA deste cliente, ver model CorEspecialCliente
+  // logo abaixo.
+  coresEspeciais CorEspecialCliente[]
 
   // NULL não colide com NULL em unique index do Postgres — várias gráficas
   // podem ter clientes sem documento cadastrado sem problema. Escopado por
@@ -492,4 +496,73 @@ model MovimentacaoCreditoCliente {
   @@index([creditoClienteId, createdAt])
   @@index([orcamentoId])
   @@map("movimentacoes_credito_cliente")
+}
+
+// Sistema de referência da cor especial (achado F8 da Parte 7 da auditoria de
+// abrangência) — enum-fechado+OUTRO, mesmo padrão do resto do schema.
+// Deliberadamente não valida `referencia` contra uma tabela oficial de cores
+// (não é objetivo do produto ser um conversor/catálogo de cor) — é só pra
+// filtrar/rotular na UI.
+enum SistemaCorEspecial {
+  PANTONE
+  RAL
+  OUTRO
+}
+
+// Biblioteca de cor especial/Pantone da MARCA de um cliente (achado F8 da
+// Parte 7 da auditoria de abrangência, pesquisa-abrangencia-modulos.md) —
+// até aqui todo campo de cor no schema era um NÚMERO (corFrente/
+// numeroCoresFlexo/coresRotulo — a CONTAGEM que o motor de preço cobra), sem
+// nenhum lugar pra dizer QUAIS cores. Cor especial é ao mesmo tempo tinta que
+// se mistura por fórmula, clichê/tela a mais, e o critério nº1 de aprovação/
+// reclamação do cliente — "PANTONE 485 C" errado é motivo de devolução de
+// tiragem inteira, o número de cores sozinho não captura isso.
+//
+// DECISÃO DE DESIGN (onde morar no schema multi-arquivo): fica aqui em
+// 05-clientes.prisma, não junto de OrcamentoItem em 09-orcamento.prisma —
+// mesmo critério que já levou Ferramental a viver em
+// 04-maquinas-equipamentos.prisma mesmo tendo Cliente.ferramentais lá: o dado
+// pertence ao domínio do CLIENTE (biblioteca da marca dele, existe
+// independente de qualquer orçamento, reaproveitada entre vários orçamentos
+// diferentes do MESMO cliente), não ao domínio do orçamento em si —
+// OrcamentoItemCor (em 09-orcamento.prisma, junto de OrcamentoItem que ela
+// pertence) é quem CONSOME isto, o inverso do sentido de dependência.
+//
+// clienteId opcional de propósito — dois motivos, não só "cliente sem
+// biblioteca ainda": (1) permite um cadastro GENÉRICO da gráfica (clienteId
+// null), ex. uma referência Pantone padrão que qualquer cliente pode usar,
+// distinta de uma fórmula de mistura exclusiva de UM cliente — ver
+// buscarCoresEspeciaisDisponiveis em src/lib/orcamento-cor-especial.ts, que
+// busca as duas (específicas do cliente do orçamento + genéricas da
+// gráfica); (2) SetNull preserva a cor (só perde o dono) se o cliente for
+// removido/anonimizado (LGPD, ver anonimizarCliente), mesmo padrão de
+// Ferramental.clienteId.
+//
+// Puramente descritivo/organizacional — NUNCA lido por src/lib/pricing/
+// (mesmo espírito de OrcamentoItemHotStamping/OrcamentoItemEtiqueta; corFrente/
+// numeroCoresFlexo/coresRotulo continuam sendo os únicos campos de cor que o
+// motor de preço enxerga). Reforçado em CI por uma guarda estática, ver
+// src/app/orcamento/cor-especial-nao-entra-preco.test.ts.
+model CorEspecialCliente {
+  id        String  @id @default(cuid())
+  graficaId String
+  clienteId String?
+
+  nome           String // rótulo interno curto, ex: "Azul institucional"
+  referencia     String // texto livre, ex: "PANTONE 485 C" — nunca validado contra uma tabela oficial
+  sistemaCor     SistemaCorEspecial @default(OUTRO)
+  // Só relevante quando a gráfica quer registrar a receita da tinta
+  // misturada (comum em serigrafia/flexografia com tinta especial batida na
+  // própria gráfica) — nunca lida por nenhum motor, puramente informativo.
+  formulaMistura String?            @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica Grafica            @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  cliente Cliente?           @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  usos    OrcamentoItemCor[]
+
+  @@index([graficaId, clienteId])
+  @@map("cores_especiais_cliente")
 }

@@ -11,8 +11,11 @@ import { Alert } from "@/components/ui/Alert";
 import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
 import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { CamposEtiquetaOrcamento, type CamposEtiqueta } from "../CamposEtiquetaOrcamento";
+import { CamposCorEspecialOrcamento } from "../CamposCorEspecialOrcamento";
+import type { CamposCorEspecial } from "../cor-especial-campos";
 import type { ItemAcabamentoDisponivel } from "../SeletorItemOrcamento";
 import type { PapelDisponivel } from "../CamposPrecificacaoEtiquetaOrcamento";
+import type { CorEspecialDisponivel } from "@/lib/orcamento-cor-especial";
 import {
   converterDeCm,
   converterParaCm,
@@ -56,6 +59,7 @@ export function EditarOrcamentoForm({
   unidadeDimensao,
   acabamentosDisponiveis,
   papeisDisponiveis,
+  coresEspeciaisDisponiveis,
 }: {
   orcamentoId: string;
   orcamentoItemId: string;
@@ -100,6 +104,8 @@ export function EditarOrcamentoForm({
     profundidadeCm: string;
     espessuraMm: string;
     cores: string;
+    // Achado F8 — QUAL cor especial/Pantone este item usa.
+    coresEspeciais: CamposCorEspecial[];
     acabamento: string;
     // Achado B6 — sobrepõe o nome do catálogo no PDF/link público quando
     // preenchido (ver src/lib/pdf/mapear-dados.ts). Disponível pra QUALQUER
@@ -131,6 +137,8 @@ export function EditarOrcamentoForm({
   podeRemover: boolean;
   acabamentosDisponiveis: ItemAcabamentoDisponivel[];
   papeisDisponiveis: PapelDisponivel[];
+  // Achado F8 — biblioteca de cor do cliente DESTE orçamento.
+  coresEspeciaisDisponiveis: CorEspecialDisponivel[];
 }) {
   const [state, formAction, isPending] = useActionState(editarOrcamento, null);
   const [estadoRemocao, acaoRemover, removendoPending] = useActionState(
@@ -228,6 +236,9 @@ export function EditarOrcamentoForm({
   );
   const [espessuraMm, setEspessuraMm] = useState(valoresIniciais.espessuraMm);
   const [etiqueta, setEtiqueta] = useState<CamposEtiqueta>(valoresIniciais.etiqueta);
+  const [coresEspeciais, setCoresEspeciais] = useState<CamposCorEspecial[]>(
+    valoresIniciais.coresEspeciais
+  );
   const [confirmandoRemocao, setConfirmandoRemocao] = useState(false);
 
   useAoMudar(estadoRemocao, (estadoRemocao) => {
@@ -568,6 +579,25 @@ export function EditarOrcamentoForm({
           name="cores"
           defaultValue={valoresIniciais.cores}
           placeholder="ex: 4x0, 4x4"
+        />
+
+        <CamposCorEspecialOrcamento
+          linhas={coresEspeciais}
+          disponiveis={coresEspeciaisDisponiveis}
+          onChange={setCoresEspeciais}
+        />
+        <input
+          type="hidden"
+          name="coresEspeciaisJson"
+          value={JSON.stringify(
+            coresEspeciais
+              .filter((c) => c.nomeDeclarado.trim() !== "")
+              .map((c) => ({
+                corEspecialId: c.corEspecialId || null,
+                nomeDeclarado: c.nomeDeclarado.trim(),
+                salvarNaBiblioteca: c.salvarNaBiblioteca,
+              }))
+          )}
         />
 
         <Textarea

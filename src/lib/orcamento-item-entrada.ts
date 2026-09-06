@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { UNIDADES_DIMENSAO } from "@/lib/unidade-dimensao";
+import { corEspecialEntradaSchema } from "@/lib/orcamento-cor-especial";
 
 // Schema do item de carrinho (entrada não confiável do client) — extraído de
 // src/app/orcamento/actions.ts (criarOrcamento) pra ser reaproveitado por
@@ -194,6 +195,12 @@ export const itemEntradaSchema = z.object({
   // aplica ao modo SIMPLES) — nunca entra no motor de preço.
   descricaoLivre: z.string().max(500).nullable(),
   acabamentoIds: z.array(z.string().min(1)).max(20).default([]),
+  // Achado F8 — QUAL cor especial/Pantone este item usa (nome + referência
+  // opcional da biblioteca do cliente, ver src/lib/orcamento-cor-especial.ts).
+  // Teto generoso (20, mesmo de hotStampings/acabamentoIds acima) só pra
+  // impedir um POST forjado com milhares de linhas — nunca entra no motor
+  // de preço.
+  coresEspeciais: corEspecialEntradaSchema.array().max(20).default([]),
   etiqueta: etiquetaEntradaSchema.nullable(),
   // Motor de clichê de etiqueta (só M2 com ConfiguracaoClicheEtiqueta) — ver
   // src/lib/orcamento-precificacao.ts.

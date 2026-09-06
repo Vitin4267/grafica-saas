@@ -15,6 +15,7 @@ import { aplicarPisoDoPedido } from "@/lib/pricing";
 import { revalidatePath, updateTag } from "next/cache";
 import { UNIDADES_DIMENSAO, converterParaCm } from "@/lib/unidade-dimensao";
 import { itemEntradaSchema, etiquetaEntradaSchema } from "@/lib/orcamento-item-entrada";
+import { resolverCoresEspeciais } from "@/lib/orcamento-cor-especial";
 
 // Nunca confia na unidade que vem do formulário/JSON — validada contra as
 // únicas 3 que existem (ver src/lib/unidade-dimensao.ts) antes de converter
@@ -397,6 +398,9 @@ export async function criarOrcamento(
     breakdown: Prisma.InputJsonValue | null;
     etiqueta: z.infer<typeof etiquetaEntradaSchema> | null;
     acabamentos: { itemGraficaId: string; qtdBase: string; custoCalculado: string }[];
+    // Achado F8 — já resolvido (ownership + "salvar na biblioteca", ver
+    // resolverCoresEspeciais) no momento em que entra nesta lista.
+    coresEspeciais: { corEspecialId: string | null; nomeDeclarado: string }[];
     precificacaoEtiqueta: {
       papelId: string;
       quantidadeCores: number;
@@ -495,6 +499,18 @@ export async function criarOrcamento(
       return { ok: false, mensagem: `Item ${indice + 1}: ${resultado.mensagem}` };
     }
 
+    // Achado F8 — resolve ownership de cada corEspecialId (defesa contra
+    // IDOR) e o "salvar na biblioteca" antes de gravar; nunca entra em
+    // calcularItemOrcamento (puramente descritivo).
+    const coresEspeciaisResult = await resolverCoresEspeciais(
+      entrada.coresEspeciais,
+      usuario.graficaId,
+      cliente.id
+    );
+    if (!coresEspeciaisResult.ok) {
+      return { ok: false, mensagem: `Item ${indice + 1}: ${coresEspeciaisResult.mensagem}` };
+    }
+
     total = total.plus(resultado.precoTotal);
     itensParaCriar.push({
       itemGraficaId: itemGrafica.id,
@@ -527,6 +543,7 @@ export async function criarOrcamento(
       breakdown: resultado.breakdown,
       etiqueta: entrada.etiqueta,
       acabamentos: resultado.acabamentos,
+      coresEspeciais: coresEspeciaisResult.linhas,
       precificacaoEtiqueta: resultado.precificacaoEtiqueta,
       precificacaoDigital: resultado.precificacaoDigital,
       precificacaoOffset: resultado.precificacaoOffset,
@@ -639,6 +656,18 @@ export async function criarOrcamento(
                     itemGraficaId: a.itemGraficaId,
                     qtdBase: a.qtdBase,
                     custoCalculado: a.custoCalculado,
+                  })),
+                }
+              : undefined,
+          // Achado F8 — independente de modeloCalculo (ao contrário do bloco
+          // de etiqueta acima, exclusivo de M2), nunca passa por
+          // calcularItemOrcamento.
+          coresEspeciais:
+            item.coresEspeciais.length > 0
+              ? {
+                  create: item.coresEspeciais.map((c) => ({
+                    corEspecialId: c.corEspecialId,
+                    nomeDeclarado: c.nomeDeclarado,
                   })),
                 }
               : undefined,

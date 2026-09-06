@@ -60,6 +60,8 @@ import { EtapasOrcamentoForm } from "./EtapasOrcamentoForm";
 import { ETAPAS_ORCAMENTO, type ChaveEtapaOrcamento } from "@/lib/orcamento-etapas";
 import { EtiquetaResumo } from "./EtiquetaResumo";
 import { etiquetaParaCampos } from "../etiqueta-campos";
+import { coresEspeciaisParaCampos } from "../cor-especial-campos";
+import { buscarCoresEspeciaisDisponiveis } from "@/lib/orcamento-cor-especial";
 import { AnaliseTintaCard } from "./AnaliseTintaCard";
 import { ArteItemCard } from "./ArteItemCard";
 import { verificarRecursoPago } from "@/lib/auth/recurso-pago";
@@ -117,6 +119,7 @@ export default async function OrcamentoDetalhePage({
             tinta: true,
             arteItem: true, // achado F5 — arte por item
             acabamentos: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
+            coresEspeciais: true, // achado F8
             precificacaoEtiqueta: true,
             precificacaoDigital: true, // achado N4
             precificacaoOffset: true, // achado N8
@@ -216,6 +219,16 @@ export default async function OrcamentoDetalhePage({
     orderBy: [{ principal: "desc" }, { nome: "asc" }],
     select: { id: true, nome: true, email: true, funcao: true, funcaoOutro: true },
   });
+
+  // Achado F8 da auditoria de abrangência (Parte 7) — biblioteca de cor
+  // especial/Pantone do cliente deste orçamento (+ genéricas da gráfica),
+  // pra alimentar o autocomplete em CamposCorEspecialOrcamento. Cliente sem
+  // nenhuma cor cadastrada ainda -> lista vazia -> só texto livre, mesmo
+  // princípio de contatosCliente/transportadoras acima.
+  const coresEspeciaisDisponiveis = await buscarCoresEspeciaisDisponiveis(
+    usuario.graficaId,
+    orcamento.clienteId
+  );
 
   // Achado F3 da auditoria de abrangência (Parte 7/Documento e transação) —
   // transportadoras ATIVAS da gráfica, pra popular o <select> opcional em
@@ -570,6 +583,7 @@ export default async function OrcamentoDetalhePage({
                   podeRemover={orcamento.itens.length > 1}
                   acabamentosDisponiveis={acabamentosDisponiveis}
                   papeisDisponiveis={papeisDisponiveis}
+                  coresEspeciaisDisponiveis={coresEspeciaisDisponiveis}
                   valoresIniciais={{
                     quantidade: item.quantidade,
                     larguraCm: item.larguraCm?.toString() ?? "",
@@ -579,6 +593,7 @@ export default async function OrcamentoDetalhePage({
                     profundidadeCm: item.profundidadeCm?.toString() ?? "",
                     espessuraMm: item.espessuraMm?.toString() ?? "",
                     cores: item.cores ?? "",
+                    coresEspeciais: coresEspeciaisParaCampos(item.coresEspeciais),
                     acabamento: item.acabamento ?? "",
                     descricaoLivre: item.descricaoLivre ?? "",
                     acabamentoIds: item.acabamentos.map((a) => a.itemGraficaId),
@@ -692,6 +707,7 @@ export default async function OrcamentoDetalhePage({
               unidadePadrao={usuario.grafica.unidadePadraoDimensao}
               acabamentosDisponiveis={acabamentosDisponiveis}
               papeisDisponiveis={papeisDisponiveis}
+              coresEspeciaisDisponiveis={coresEspeciaisDisponiveis}
             />
           </div>
         ) : (
@@ -847,6 +863,7 @@ export default async function OrcamentoDetalhePage({
             }))}
             acabamentosDisponiveis={acabamentosDisponiveis}
             papeisDisponiveis={papeisDisponiveis}
+            coresEspeciaisDisponiveis={coresEspeciaisDisponiveis}
             unidadePadrao={usuario.grafica.unidadePadraoDimensao}
           />
         )}

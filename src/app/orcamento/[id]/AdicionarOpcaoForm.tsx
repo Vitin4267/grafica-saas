@@ -19,6 +19,8 @@ import {
 } from "../SeletorItemOrcamento";
 import type { CamposEtiqueta } from "../CamposEtiquetaOrcamento";
 import type { PapelDisponivel } from "../CamposPrecificacaoEtiquetaOrcamento";
+import type { CamposCorEspecial } from "../cor-especial-campos";
+import type { CorEspecialDisponivel } from "@/lib/orcamento-cor-especial";
 
 // Mesma conversão de CalculadoraForm.tsx (etiquetaParaEntrada) — duplicada de
 // propósito (é um mapeamento puro de ~25 campos client→JSON, não vale a pena
@@ -100,6 +102,8 @@ type ItemCarrinho = {
   acabamento: string | null;
   descricaoLivre: string | null;
   acabamentoIds: string[];
+  // Achado F8 — QUAL cor especial/Pantone este item usa.
+  coresEspeciais: CamposCorEspecial[];
   precoUnitario: string;
   precoTotal: string;
   etiqueta: CamposEtiqueta;
@@ -119,6 +123,7 @@ export function AdicionarOpcaoForm({
   itens,
   acabamentosDisponiveis,
   papeisDisponiveis,
+  coresEspeciaisDisponiveis,
   unidadePadrao,
   sugestaoNome,
   aoCancelar,
@@ -127,6 +132,9 @@ export function AdicionarOpcaoForm({
   itens: ItemVenda[];
   acabamentosDisponiveis: ItemAcabamentoDisponivel[];
   papeisDisponiveis: PapelDisponivel[];
+  // Achado F8 — biblioteca de cor do cliente do orçamento-PAI (uma opção
+  // alternativa nunca tem cliente próprio).
+  coresEspeciaisDisponiveis: CorEspecialDisponivel[];
   unidadePadrao: UnidadeDimensao;
   // "Opção B" na primeira alternativa, "Opção C" na segunda — só um chute
   // inicial editável, nunca imposto (ver NOME_OPCAO_MAX em opcoes.actions.ts).
@@ -258,6 +266,7 @@ export function AdicionarOpcaoForm({
         acabamento: campos.acabamento.trim() || null,
         descricaoLivre: campos.descricaoLivre.trim() || null,
         acabamentoIds: campos.acabamentoIds,
+        coresEspeciais: campos.coresEspeciais,
         precoUnitario: resultado.precoUnitario,
         precoTotal: resultado.precoTotal,
         etiqueta: campos.etiqueta,
@@ -298,6 +307,13 @@ export function AdicionarOpcaoForm({
       acabamento: i.acabamento,
       descricaoLivre: i.descricaoLivre,
       acabamentoIds: i.acabamentoIds,
+      coresEspeciais: i.coresEspeciais
+        .filter((c) => c.nomeDeclarado.trim() !== "")
+        .map((c) => ({
+          corEspecialId: c.corEspecialId || null,
+          nomeDeclarado: c.nomeDeclarado.trim(),
+          salvarNaBiblioteca: c.salvarNaBiblioteca,
+        })),
       etiqueta: etiquetaParaEntrada(i.etiqueta),
       papelId: i.precificacaoEtiqueta.papelId || null,
       quantidadeCores:
@@ -327,6 +343,7 @@ export function AdicionarOpcaoForm({
             itens={itens}
             acabamentosDisponiveis={acabamentosDisponiveis}
             papeisDisponiveis={papeisDisponiveis}
+            coresEspeciaisDisponiveis={coresEspeciaisDisponiveis}
             valores={campos}
             onChange={setCampos}
           />

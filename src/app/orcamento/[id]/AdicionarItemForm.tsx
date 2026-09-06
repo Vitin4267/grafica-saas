@@ -14,6 +14,7 @@ import {
 } from "../SeletorItemOrcamento";
 import type { PapelDisponivel } from "../CamposPrecificacaoEtiquetaOrcamento";
 import type { UnidadeDimensao } from "@/lib/unidade-dimensao";
+import type { CorEspecialDisponivel } from "@/lib/orcamento-cor-especial";
 
 export function AdicionarItemForm({
   orcamentoId,
@@ -21,6 +22,7 @@ export function AdicionarItemForm({
   unidadePadrao,
   acabamentosDisponiveis,
   papeisDisponiveis,
+  coresEspeciaisDisponiveis,
 }: {
   orcamentoId: string;
   itens: ItemVenda[];
@@ -29,6 +31,9 @@ export function AdicionarItemForm({
   unidadePadrao: UnidadeDimensao;
   acabamentosDisponiveis: ItemAcabamentoDisponivel[];
   papeisDisponiveis: PapelDisponivel[];
+  // Achado F8 — biblioteca de cor do cliente DESTE orçamento (já fixo,
+  // diferente de CalculadoraForm, onde o cliente ainda nem foi escolhido).
+  coresEspeciaisDisponiveis: CorEspecialDisponivel[];
 }) {
   const [campos, setCampos] = useState<CamposItemOrcamento>(() =>
     camposIniciais(itens, unidadePadrao)
@@ -86,6 +91,21 @@ export function AdicionarItemForm({
         {campos.acabamentoIds.map((id) => (
           <input key={id} type="hidden" name="acabamentoIds" value={id} />
         ))}
+        {/* Achado F8 — cor(es) especial/Pantone deste item, mesmo padrão
+            hidden+JSON de hotStampingsJson abaixo. */}
+        <input
+          type="hidden"
+          name="coresEspeciaisJson"
+          value={JSON.stringify(
+            campos.coresEspeciais
+              .filter((c) => c.nomeDeclarado.trim() !== "")
+              .map((c) => ({
+                corEspecialId: c.corEspecialId || null,
+                nomeDeclarado: c.nomeDeclarado.trim(),
+                salvarNaBiblioteca: c.salvarNaBiblioteca,
+              }))
+          )}
+        />
         <input type="hidden" name="papelId" value={campos.precificacaoEtiqueta.papelId} />
         <input
           type="hidden"
@@ -162,6 +182,7 @@ export function AdicionarItemForm({
           itens={itens}
           acabamentosDisponiveis={acabamentosDisponiveis}
           papeisDisponiveis={papeisDisponiveis}
+          coresEspeciaisDisponiveis={coresEspeciaisDisponiveis}
           valores={campos}
           onChange={setCampos}
         />

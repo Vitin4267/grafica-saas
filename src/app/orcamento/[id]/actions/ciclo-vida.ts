@@ -206,6 +206,11 @@ export async function duplicarOrcamento(
         include: {
           itemGrafica: { select: { id: true, itemCatalogo: { select: { nome: true } } } },
           acabamentos: true,
+          // Achado F8 — copiado literalmente pro item novo (puramente
+          // descritivo, nunca recalculado — mesmo padrão de etiqueta/
+          // hotStampings abaixo, ao contrário de acabamentos, que É
+          // recalculado via montarDadosItemParaRecalculo/calcularItemOrcamento).
+          coresEspeciais: true,
           etiqueta: { include: { hotStampings: true } },
           precificacaoEtiqueta: true,
         },
@@ -312,6 +317,10 @@ export async function duplicarOrcamento(
     breakdown: Prisma.InputJsonValue | null;
     etiqueta: (typeof original.itens)[number]["etiqueta"];
     acabamentosParaGravar: { itemGraficaId: string; qtdBase: string; custoCalculado: string }[];
+    // Achado F8 — copiado literalmente do item original (nunca passa por
+    // montarDadosItemParaRecalculo/calcularItemOrcamento — puramente
+    // descritivo, mesmo padrão de `etiqueta` acima).
+    coresEspeciaisParaGravar: (typeof original.itens)[number]["coresEspeciais"];
     precificacaoEtiquetaParaGravar: {
       papelId: string;
       quantidadeCores: number;
@@ -469,6 +478,7 @@ export async function duplicarOrcamento(
       breakdown: resultado.breakdown ?? null,
       etiqueta: itemOriginal.etiqueta,
       acabamentosParaGravar: resultado.acabamentos,
+      coresEspeciaisParaGravar: itemOriginal.coresEspeciais,
       precificacaoEtiquetaParaGravar: resultado.precificacaoEtiqueta,
     });
   }
@@ -594,6 +604,20 @@ export async function duplicarOrcamento(
                     itemGraficaId: a.itemGraficaId,
                     qtdBase: a.qtdBase,
                     custoCalculado: a.custoCalculado,
+                  })),
+                }
+              : undefined,
+          // Achado F8 — cópia literal (mesmo padrão de etiqueta/hotStampings
+          // acima): a biblioteca do cliente é a MESMA (duplicarOrcamento nunca
+          // troca de cliente, ver clienteId: original.clienteId acima), então
+          // corEspecialId continua válido no orçamento novo sem precisar
+          // reresolver ownership.
+          coresEspeciais:
+            item.coresEspeciaisParaGravar.length > 0
+              ? {
+                  create: item.coresEspeciaisParaGravar.map((c) => ({
+                    corEspecialId: c.corEspecialId,
+                    nomeDeclarado: c.nomeDeclarado,
                   })),
                 }
               : undefined,
