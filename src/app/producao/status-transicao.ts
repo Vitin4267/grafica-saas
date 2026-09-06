@@ -170,6 +170,44 @@ function snapshotCustoFicha(
   };
 }
 
+// Achado F4 da auditoria de abrangência (Parte 7, 2026-09-05) — snapshot de
+// LOTE/VALIDADE no momento da baixa, mesmo espírito de snapshotCustoFicha
+// acima (mas pra lote em vez de custo): copia da ENTRADA_COMPRA pra dentro
+// da SAIDA_PRODUCAO, ligando lote→pedido "de graça", sem model novo.
+//
+// Só roda quando `ficha.materiaPrima.controlaLote` está ativo (opt-in) —
+// pra 99% das matérias-primas que nunca ligaram isso, zero query extra.
+//
+// IMPORTANTE (documentado também no schema, campo MovimentacaoEstoque.lote):
+// este sistema NÃO faz FEFO nem apropriação automática de lote (proposta
+// explícita do achado F4 — "não fazer agora"). Quando há mais de um lote
+// em estoque ao mesmo tempo pro mesmo item/variante, não há como saber com
+// certeza qual foi fisicamente consumido nesta baixa. Por isso o snapshot
+// aqui sempre copia o lote da ENTRADA_COMPRA MAIS RECENTE (com lote
+// preenchido) — é rastro documentado ("provavelmente saiu deste lote"),
+// não rastreabilidade FEFO de verdade. Uma gráfica que de fato precisa de
+// FEFO (apropriação exata por lote com saldo restante por lote) precisa de
+// um model novo — fora do escopo deste achado.
+async function snapshotLoteFicha(
+  tx: Prisma.TransactionClient,
+  ficha: { varianteId: string | null; materiaPrimaId: string; materiaPrima: { controlaLote: boolean } }
+): Promise<{ lote: string | null; validade: Date | null }> {
+  if (!ficha.materiaPrima.controlaLote) {
+    return { lote: null, validade: null };
+  }
+  const ultimaEntrada = await tx.movimentacaoEstoque.findFirst({
+    where: {
+      itemGraficaId: ficha.materiaPrimaId,
+      varianteId: ficha.varianteId,
+      tipo: "ENTRADA_COMPRA",
+      lote: { not: null },
+    },
+    orderBy: { createdAt: "desc" },
+    select: { lote: true, validade: true },
+  });
+  return { lote: ultimaEntrada?.lote ?? null, validade: ultimaEntrada?.validade ?? null };
+}
+
 // Custo automático da baixa de produção (fase "custo real", §1.4/§3.2 do
 // plano): cria um CustoPedido origem=CONSUMO_ESTOQUE atrelado 1:1 à
 // MovimentacaoEstoque recém-criada — movimentacaoEstoqueId é @unique no
@@ -530,6 +568,7 @@ export async function avancarStatusPedido(
                   quantidade: quantidadeConsumida,
                   motivo: `Produção do pedido ${pedido.id} (orçamento ${pedido.orcamentoId})`,
                   ...snapshotCustoFicha(ficha, quantidadeConsumida),
+                  ...(await snapshotLoteFicha(tx, ficha)),
                 },
               });
               if (custoAutomaticoConsumo) {
@@ -569,6 +608,7 @@ export async function avancarStatusPedido(
                     quantidade: perdaAplicada,
                     motivo: `Perda fixa de calibragem — pedido ${pedido.id} (orçamento ${pedido.orcamentoId})`,
                     ...snapshotCustoFicha(ficha, perdaAplicada),
+                    ...(await snapshotLoteFicha(tx, ficha)),
                   },
                 });
                 if (custoAutomaticoConsumo && perdaEhCustoDoPedido) {
@@ -642,6 +682,7 @@ export async function avancarStatusPedido(
                     motivo: `Acabamento do pedido ${pedido.id} (orçamento ${pedido.orcamentoId})`,
                     quantidade: quantidadeConsumida,
                     ...snapshotCustoFicha(ficha, quantidadeConsumida),
+                    ...(await snapshotLoteFicha(tx, ficha)),
                   },
                 });
                 if (custoAutomaticoConsumo) {
@@ -680,6 +721,7 @@ export async function avancarStatusPedido(
                       quantidade: perdaAplicada,
                       motivo: `Perda fixa de calibragem (acabamento) — pedido ${pedido.id} (orçamento ${pedido.orcamentoId})`,
                       ...snapshotCustoFicha(ficha, perdaAplicada),
+                      ...(await snapshotLoteFicha(tx, ficha)),
                     },
                   });
                   if (custoAutomaticoConsumo && perdaEhCustoDoPedido) {

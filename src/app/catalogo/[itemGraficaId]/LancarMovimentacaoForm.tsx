@@ -32,6 +32,7 @@ export function LancarMovimentacaoForm({
   estoqueAtual,
   variantes,
   fornecedores,
+  controlaLote,
 }: {
   itemGraficaId: string;
   nomeItem: string;
@@ -46,6 +47,11 @@ export function LancarMovimentacaoForm({
   // sempre válida (nem toda compra tem fornecedor cadastrado ainda, ver
   // src/app/configuracoes/fornecedores).
   fornecedores: { id: string; nome: string }[];
+  // Achado F4 da auditoria de abrangência (Parte 7, 2026-09-05) — opt-in
+  // (ver ItemGrafica.controlaLote/LoteCertificacaoForm.tsx): só quando true
+  // os campos "Nº do lote"/"Validade" aparecem na aba Entrada de compra.
+  // false (comportamento de hoje) esconde os dois campos por completo.
+  controlaLote: boolean;
 }) {
   const [tipo, setTipo] = useState<Tipo>("ENTRADA_COMPRA");
   const [varianteId, setVarianteId] = useState(variantes[0]?.id ?? "");
@@ -166,6 +172,16 @@ export function LancarMovimentacaoForm({
                 ))}
               </Select>
             </div>
+            {controlaLote && (
+              <>
+                <div className="w-40">
+                  <Input label="Nº do lote (opcional)" name="lote" type="text" maxLength={60} />
+                </div>
+                <div className="w-40">
+                  <Input label="Validade (opcional)" name="validade" type="date" />
+                </div>
+              </>
+            )}
           </div>
           {estadoEntrada && (
             <Alert variant={estadoEntrada.ok ? "success" : "error"}>{estadoEntrada.mensagem}</Alert>

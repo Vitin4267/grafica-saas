@@ -341,6 +341,15 @@ export async function cancelarPedido(
               custoUnitario: saida.custoUnitario,
               custoTotal: saida.custoTotal,
               precoReferenciaEm: saida.precoReferenciaEm,
+              // Achado F4 da auditoria de abrangência (Parte 7, 2026-09-05)
+              // — mesmo princípio do custo acima: copiado do snapshot da
+              // SAIDA_PRODUCAO original sendo revertida, nunca recalculado
+              // (a matéria-prima pode até ter mudado de controlaLote desde
+              // então). null quando a saída original também não tinha
+              // (item sem controlaLote, ou movimentação anterior a este
+              // campo).
+              lote: saida.lote,
+              validade: saida.validade,
             },
           });
         }

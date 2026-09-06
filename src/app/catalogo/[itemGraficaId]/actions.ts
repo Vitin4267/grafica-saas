@@ -24,6 +24,7 @@ import {
   type TipoEncadernacao,
   type TipoColagem,
 } from "@/lib/acabamento-estrutural";
+import { CERTIFICACOES_MATERIAL, type CertificacaoMaterial } from "@/lib/certificacao-material";
 
 const formatoQuantidade = new Intl.NumberFormat("pt-BR");
 
@@ -999,6 +1000,71 @@ export async function salvarAcabamentoEstrutural(
   return { ok: true, mensagem: "Salvo." };
 }
 
+export type SalvarLoteCertificacaoResult = SalvarConfigResult;
+
+const loteCertificacaoSchema = z.object({
+  controlaLote: z.boolean(),
+  certificacao: z.enum(CERTIFICACOES_MATERIAL as [CertificacaoMaterial, ...CertificacaoMaterial[]]).optional(),
+  certificacaoOutro: z
+    .string()
+    .trim()
+    .max(60)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+});
+
+// Achado F4 da auditoria de abrangência (Parte 7, 2026-09-05): opt-in de
+// controle de lote/validade (ligar aqui é o que faz os campos de lote
+// aparecerem na tela de Entrada de compra, ver LancarMovimentacaoForm.tsx e
+// lancarEntradaCompra acima) + certificação de cadeia de custódia
+// (FSC/PEFC), os dois cadastrados juntos por serem a mesma preocupação de
+// rastreabilidade/compliance de matéria-prima. certificacao é puramente
+// descritivo (mesmo espírito de salvarAcabamentoEstrutural acima — NUNCA
+// lido por src/lib/pricing/); controlaLote já muda comportamento real (que
+// campos aparecem no formulário de entrada), mas nunca preço nem estoque em
+// si.
+export async function salvarLoteCertificacao(
+  _estadoAnterior: SalvarLoteCertificacaoResult | null,
+  formData: FormData
+): Promise<SalvarLoteCertificacaoResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CATALOGO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar o catálogo." };
+  }
+  const itemGraficaId = String(formData.get("itemGraficaId"));
+
+  const itemGrafica = await prisma.itemGrafica.findFirst({
+    where: { id: itemGraficaId, graficaId: usuario.graficaId },
+  });
+  if (!itemGrafica) {
+    return { ok: false, mensagem: "Item não encontrado." };
+  }
+
+  const parsed = loteCertificacaoSchema.safeParse({
+    controlaLote: formData.get("controlaLote") === "on",
+    certificacao: formData.get("certificacao") || undefined,
+    certificacaoOutro: formData.get("certificacaoOutro") || undefined,
+  });
+  if (!parsed.success) {
+    return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Valor inválido." };
+  }
+  const { controlaLote, certificacao, certificacaoOutro } = parsed.data;
+
+  await prisma.itemGrafica.update({
+    where: { id: itemGraficaId },
+    data: {
+      controlaLote,
+      certificacao: certificacao ?? null,
+      certificacaoOutro: certificacao === "OUTRO" ? (certificacaoOutro ?? null) : null,
+    },
+  });
+
+  revalidatePath(`/catalogo/${itemGraficaId}`);
+  return { ok: true, mensagem: "Salvo." };
+}
+
 export async function salvarConfiguracaoAcabamento(
   _estadoAnterior: SalvarConfigResult | null,
   formData: FormData
@@ -1630,6 +1696,26 @@ const entradaCompraSchema = z.object({
     .min(1)
     .optional()
     .transform((v) => (v ? v : undefined)),
+  // Achado F4 da auditoria de abrangência (Parte 7, 2026-09-05) — só
+  // aparecem na UI (ver LancarMovimentacaoForm.tsx) quando
+  // ItemGrafica.controlaLote está ativo, mas o schema aceita os dois campos
+  // independente disso: quem decide se eles são de fato PERSISTIDOS é a
+  // Server Action abaixo, checando o controlaLote do item resolvido —
+  // nunca o formulário/cliente (ver "tudo sensível no backend"). lote é
+  // texto livre (cada fornecedor rotula do seu jeito); validade é só data
+  // (sem hora), formato yyyy-mm-dd do <input type="date">.
+  lote: z
+    .string()
+    .trim()
+    .max(60)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+  validade: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v ? v : undefined))
+    .refine((v) => v === undefined || !Number.isNaN(Date.parse(v)), "Data de validade inválida."),
 });
 
 // Entrada de compra: além de registrar a movimentação, atualiza o preço de
@@ -1657,11 +1743,14 @@ export async function lancarEntradaCompra(
     custoUnitario: formData.get("custoUnitario"),
     documento: formData.get("documento") ?? undefined,
     fornecedorId: formData.get("fornecedorId") ?? undefined,
+    lote: formData.get("lote") ?? undefined,
+    validade: formData.get("validade") ?? undefined,
   });
   if (!parsed.success) {
     return { ok: false, mensagem: parsed.error.issues[0].message };
   }
-  const { itemGraficaId, varianteId, quantidade, custoUnitario, documento, fornecedorId } = parsed.data;
+  const { itemGraficaId, varianteId, quantidade, custoUnitario, documento, fornecedorId, lote, validade } =
+    parsed.data;
 
   const resolvido = await resolverItemMateriaPrima(itemGraficaId, varianteId, usuario.graficaId);
   if (!resolvido) {
@@ -1731,6 +1820,14 @@ export async function lancarEntradaCompra(
           documento: documento ?? null,
           fornecedorId: fornecedorValidoId,
           criadoPorId: usuario.id,
+          // Achado F4 da auditoria de abrangência (Parte 7, 2026-09-05) —
+          // só persiste lote/validade quando a matéria-prima de fato ativou
+          // o controle (opt-in, ver ItemGrafica.controlaLote): nunca confia
+          // no formulário pra decidir isso (mesmo que o cliente tenha
+          // forjado os campos), sempre re-deriva do item resolvido no
+          // servidor.
+          lote: itemGrafica.controlaLote ? (lote ?? null) : null,
+          validade: itemGrafica.controlaLote && validade ? new Date(validade) : null,
         },
       });
     });

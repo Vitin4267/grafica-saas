@@ -24,10 +24,11 @@ import { NcmForm } from "./NcmForm";
 import { LancarMovimentacaoForm } from "./LancarMovimentacaoForm";
 import { QuantidadePorEmbalagemForm } from "./QuantidadePorEmbalagemForm";
 import { ConfiguracaoCompraForm } from "./ConfiguracaoCompraForm";
+import { LoteCertificacaoForm } from "./LoteCertificacaoForm";
 import { ROTULOS_TIPO_MOVIMENTACAO } from "@/lib/estoque-manual";
 import { rotuloUnidade } from "@/lib/unidade";
 import { formatoMoeda } from "@/lib/moeda";
-import { formatoInstanteRealComHora } from "@/lib/data";
+import { formatoInstanteRealComHora, formatoData } from "@/lib/data";
 import { indexarManutencoesAtivasPorMaquina } from "@/lib/manutencao-maquina";
 import type { TipoMovimentacao } from "@/generated/prisma/enums";
 
@@ -410,6 +411,15 @@ export default async function ConfiguracaoItemPage({
               }}
             />
 
+            <LoteCertificacaoForm
+              itemGraficaId={itemGrafica.id}
+              valoresAtuais={{
+                controlaLote: itemGrafica.controlaLote,
+                certificacao: itemGrafica.certificacao ?? "",
+                certificacaoOutro: itemGrafica.certificacaoOutro ?? "",
+              }}
+            />
+
             <LancarMovimentacaoForm
               itemGraficaId={itemGrafica.id}
               nomeItem={itemGrafica.itemCatalogo.nome}
@@ -423,6 +433,7 @@ export default async function ConfiguracaoItemPage({
                 estoqueAtual: v.estoqueAtual?.toString() ?? "",
               }))}
               fornecedores={fornecedores}
+              controlaLote={itemGrafica.controlaLote}
             />
 
             <Card className="flex flex-col gap-1 p-6">
@@ -452,6 +463,11 @@ export default async function ConfiguracaoItemPage({
                           {formatoInstanteRealComHora.format(m.createdAt)} ·{" "}
                           {m.criadoPorId ? (nomePorCriadorId.get(m.criadoPorId) ?? "Usuário removido") : "Sistema"}
                           {m.documento ? ` · NF ${m.documento}` : ""}
+                          {/* Achado F4 — lote/validade só aparecem quando preenchidos
+                              (ENTRADA_COMPRA com controlaLote ativo, ou SAIDA_PRODUCAO
+                              que copiou o snapshot, ver snapshotLoteFicha). */}
+                          {m.lote ? ` · Lote ${m.lote}` : ""}
+                          {m.validade ? ` · Val. ${formatoData.format(m.validade)}` : ""}
                           {m.pedidoId && (
                             <>
                               {" · "}

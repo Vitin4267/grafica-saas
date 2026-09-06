@@ -16,6 +16,7 @@ import { AlertTriangleIcon } from "@/components/icons";
 import { verificarEDispararAlertaEstoque } from "@/lib/alerta-estoque";
 import { listarPendenciasConfiguracao } from "@/lib/pendencias-configuracao";
 import { listarInsumosComPrecoDesatualizado } from "@/lib/custo-pedido";
+import { listarLotesProximosOuVencidos } from "@/lib/alerta-validade-estoque";
 import { obterStatusOnboarding } from "@/lib/onboarding";
 import { CatalogoForm } from "./CatalogoForm";
 
@@ -55,6 +56,15 @@ export default async function CatalogoPage() {
   const itemGraficaIdsComPrecoDesatualizado = statusOnboarding.completo
     ? await listarInsumosComPrecoDesatualizado(usuario.graficaId)
     : [];
+  // Achado F4 da auditoria de abrangência (Parte 7, 2026-09-05) — mesmo
+  // gate acima (não faz sentido no meio do cadastro inicial), mesmo padrão
+  // visual do badge de preço desatualizado. Só o itemGraficaId entra no Set
+  // do badge (não diferencia por variante) — a mesma granularidade de
+  // idsComPendencia/idsComPrecoDesatualizado.
+  const lotesProximosOuVencidos = statusOnboarding.completo
+    ? await listarLotesProximosOuVencidos(usuario.graficaId)
+    : [];
+  const itemGraficaIdsComLoteVencendo = [...new Set(lotesProximosOuVencidos.map((l) => l.itemGraficaId))];
 
   const selecoesPorItem = Object.fromEntries(
     itensGrafica.map((ig) => [
@@ -159,6 +169,7 @@ export default async function CatalogoPage() {
           selecoes={selecoesPorItem}
           itemGraficaIdsComPendencia={itemGraficaIdsComPendencia}
           itemGraficaIdsComPrecoDesatualizado={itemGraficaIdsComPrecoDesatualizado}
+          itemGraficaIdsComLoteVencendo={itemGraficaIdsComLoteVencendo}
         />
       </main>
     </div>

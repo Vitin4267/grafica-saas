@@ -71,6 +71,34 @@ model MovimentacaoEstoque {
   // (compra avulsa lançada direto, ajuste manual, etc.).
   solicitacaoCompraId String? @unique
 
+  // Achado F4 da auditoria de abrangência (Parte 7, 2026-09-05) —
+  // rastreabilidade de lote/validade, opt-in por matéria-prima (ver
+  // ItemGrafica.controlaLote). `lote` é digitado pela gráfica na tela de
+  // Entrada de compra (ver LancarMovimentacaoForm.tsx/lancarEntradaCompra em
+  // src/app/catalogo/[itemGraficaId]/actions.ts) — texto livre, cada
+  // fornecedor rotula lote do seu jeito, nunca um formato fixo.
+  //
+  // Em SAIDA_PRODUCAO estes dois campos são um SNAPSHOT copiado da
+  // ENTRADA_COMPRA no momento da baixa (ver snapshotLoteFicha em
+  // src/app/producao/status-transicao.ts) — liga lote→pedido "de graça",
+  // sem precisar de nenhum model novo. IMPORTANTE: este sistema não faz
+  // FEFO nem apropriação automática de lote (proposta explícita do achado
+  // F4: "não fazer agora") — quando há mais de um lote em estoque ao mesmo
+  // tempo, não há como saber com certeza qual foi fisicamente consumido.
+  // O snapshot copiado é sempre o da ENTRADA_COMPRA MAIS RECENTE (com lote
+  // preenchido) daquele item/variante: é rastro documentado
+  // ("provavelmente saiu deste lote"), não rastreabilidade FEFO de verdade.
+  //
+  // null em toda movimentação de item sem controlaLote, em toda
+  // movimentação anterior a este campo, e em ESTORNO_CANCELAMENTO/
+  // SAIDA_MANUAL/AJUSTE_INVENTARIO (que não participam deste rastro) —
+  // exceto o estorno específico que reverte uma SAIDA_PRODUCAO, que copia
+  // de volta o lote da saída original (ver cancelarPedido em
+  // src/app/producao/actions.ts), mesmo espírito do custoUnitario/
+  // custoTotal que já é copiado ali.
+  lote     String?
+  validade DateTime? @db.Date
+
   // Restrict (não Cascade) porque isso é o histórico de movimentação de
   // estoque em si — apagar o ItemGrafica junto apagaria o próprio registro
   // que a movimentação existe pra preservar. Não é SetNull (como pedido/

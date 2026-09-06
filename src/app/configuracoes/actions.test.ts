@@ -144,6 +144,7 @@ describe("salvarParametros", () => {
       formData.append("leadTimePadraoDias", "7");
       formData.append("gramaturaMinGm2", "30");
       formData.append("gramaturaMaxGm2", "500");
+      formData.append("diasAlertaValidadeEstoque", "30");
       formData.append("prazoEmDiasUteis", "on");
       formData.append("diaFuncionamento", "0");
       formData.append("diaFuncionamento", "1");
@@ -222,6 +223,7 @@ describe("salvarParametros", () => {
       formData.append("leadTimePadraoDias", "7");
       formData.append("gramaturaMinGm2", "30");
       formData.append("gramaturaMaxGm2", "500");
+      formData.append("diasAlertaValidadeEstoque", "30");
       formData.append("prazoEmDiasUteis", "on");
       formData.append("diaFuncionamento", "0");
       formData.append("diaFuncionamento", "1");

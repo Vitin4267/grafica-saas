@@ -372,6 +372,25 @@ export async function salvarParametros(
     };
   }
 
+  // Achado F4 da auditoria de abrangência (Parte 7, 2026-09-05) — mesmo
+  // cuidado de presença dos blocos acima (campo ausente/"" não pode virar 0
+  // silenciosamente). Limiar configurável do alerta de validade de lote
+  // (ver src/lib/alerta-validade-estoque.ts).
+  const diasAlertaValidadeEstoqueBruto = formData.get("diasAlertaValidadeEstoque");
+  if (
+    typeof diasAlertaValidadeEstoqueBruto !== "string" ||
+    diasAlertaValidadeEstoqueBruto.trim() === ""
+  ) {
+    return { ok: false, mensagem: 'Preencha o campo "Avisar quantos dias antes de vencer".' };
+  }
+  const diasAlertaValidadeEstoque = Number(diasAlertaValidadeEstoqueBruto);
+  if (!Number.isInteger(diasAlertaValidadeEstoque) || diasAlertaValidadeEstoque <= 0) {
+    return {
+      ok: false,
+      mensagem: 'Avisar quantos dias antes de vencer precisa ser um número inteiro maior que zero.',
+    };
+  }
+
   // Achado A8 da auditoria de abrangência (Parte 3/Compras) — mesmo cuidado
   // de presença dos blocos acima (campo ausente/"" não pode virar 0
   // silenciosamente). diasAlertaCompraPadrao substitui o 30 hardcoded que
@@ -487,6 +506,7 @@ export async function salvarParametros(
       diasFuncionamento,
       gramaturaMinGm2,
       gramaturaMaxGm2,
+      diasAlertaValidadeEstoque,
     },
   });
 
@@ -628,6 +648,12 @@ export async function salvarParametros(
   if (diasPrecoInsumoDesatualizadoAntes !== diasPrecoInsumoDesatualizado) {
     antesTextos.push(`Dias para avisar preço de insumo desatualizado: ${diasPrecoInsumoDesatualizadoAntes}`);
     depoisTextos.push(`Dias para avisar preço de insumo desatualizado: ${diasPrecoInsumoDesatualizado}`);
+  }
+
+  const diasAlertaValidadeEstoqueAntes = parametrosAntes?.diasAlertaValidadeEstoque ?? 30;
+  if (diasAlertaValidadeEstoqueAntes !== diasAlertaValidadeEstoque) {
+    antesTextos.push(`Dias para avisar validade de lote vencendo: ${diasAlertaValidadeEstoqueAntes}`);
+    depoisTextos.push(`Dias para avisar validade de lote vencendo: ${diasAlertaValidadeEstoque}`);
   }
 
   const diasAlertaCompraPadraoAntes = parametrosAntes?.diasAlertaCompraPadrao ?? 30;

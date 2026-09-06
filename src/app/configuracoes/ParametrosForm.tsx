@@ -93,6 +93,7 @@ export function ParametrosForm({
   leadTimePadraoDias,
   prazoEmDiasUteis,
   diasFuncionamento,
+  diasAlertaValidadeEstoque,
 }: {
   parametros: ParametrosTenant;
   comissaoVendedorBase: BaseComissao;
@@ -122,6 +123,7 @@ export function ParametrosForm({
   leadTimePadraoDias: number;
   prazoEmDiasUteis: boolean;
   diasFuncionamento: number;
+  diasAlertaValidadeEstoque: number;
 }) {
   const [state, formAction, isPending] = useActionState(salvarParametros, null);
 
@@ -666,6 +668,28 @@ export function ParametrosForm({
             step="1"
             min="1"
             defaultValue={diasPrecoInsumoDesatualizado}
+            className="max-w-xs"
+          />
+        </Card>
+
+        <Card className="flex flex-col gap-4 p-6">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+              Validade de lote
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Avisa no Catálogo quando o lote mais recente de uma matéria-prima com controle de
+              lote ativado (ver &quot;Lote, validade e certificação&quot; no cadastro do item) está
+              vencido ou perto de vencer.
+            </p>
+          </div>
+          <Input
+            label="Avisar quantos dias antes de vencer"
+            name="diasAlertaValidadeEstoque"
+            type="number"
+            step="1"
+            min="1"
+            defaultValue={diasAlertaValidadeEstoque}
             className="max-w-xs"
           />
         </Card>

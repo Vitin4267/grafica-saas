@@ -331,6 +331,7 @@ const ItemLinha = memo(function ItemLinha({
   onMudarPreco,
   temPendencia,
   temPrecoDesatualizado,
+  temLoteVencendo,
 }: {
   item: ItemCatalogo;
   selecionado: boolean;
@@ -340,6 +341,7 @@ const ItemLinha = memo(function ItemLinha({
   onMudarPreco: (id: string, valor: string) => void;
   temPendencia: boolean;
   temPrecoDesatualizado: boolean;
+  temLoteVencendo: boolean;
 }) {
   // Matéria-prima com variantes (ex: espessura de chapa) não usa mais preço/
   // estoque no nível do item — isso mora nas variantes, geridas numa tela
@@ -412,6 +414,15 @@ const ItemLinha = memo(function ItemLinha({
           >
             <AlertTriangleIcon className="h-3 w-3" />
             Preço desatualizado
+          </span>
+        )}
+        {temLoteVencendo && (
+          <span
+            title="O lote mais recente em estoque deste material está vencido ou vencendo (ajuste o limiar em Configurações) — confira em 'Lote, validade e certificação' na tela do item"
+            className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+          >
+            <AlertTriangleIcon className="h-3 w-3" />
+            Lote vencendo
           </span>
         )}
       </label>
@@ -690,6 +701,7 @@ export function CatalogoForm({
   selecoes,
   itemGraficaIdsComPendencia,
   itemGraficaIdsComPrecoDesatualizado,
+  itemGraficaIdsComLoteVencendo,
 }: {
   itensCatalogo: ItemCatalogo[];
   selecoes: Record<string, Selecao>;
@@ -698,6 +710,10 @@ export function CatalogoForm({
   // listarInsumosComPrecoDesatualizado) — achado A1-Parte6 da auditoria de
   // abrangência (2026-08-24).
   itemGraficaIdsComPrecoDesatualizado: string[];
+  // Ids de ItemGrafica cujo lote mais recente está vencido ou vencendo — ver
+  // listarLotesProximosOuVencidos (achado F4 da auditoria de abrangência,
+  // Parte 7, 2026-09-05). Mesma granularidade das duas listas acima.
+  itemGraficaIdsComLoteVencendo: string[];
 }) {
   const idsComPendencia = useMemo(
     () => new Set(itemGraficaIdsComPendencia),
@@ -706,6 +722,10 @@ export function CatalogoForm({
   const idsComPrecoDesatualizado = useMemo(
     () => new Set(itemGraficaIdsComPrecoDesatualizado),
     [itemGraficaIdsComPrecoDesatualizado]
+  );
+  const idsComLoteVencendo = useMemo(
+    () => new Set(itemGraficaIdsComLoteVencendo),
+    [itemGraficaIdsComLoteVencendo]
   );
   const [abaAtiva, setAbaAtiva] = useState<Tipo>("PRODUTO");
   const [busca, setBusca] = useState("");
@@ -988,6 +1008,9 @@ export function CatalogoForm({
                           )}
                           temPrecoDesatualizado={Boolean(
                             selecoes[item.id]?.id && idsComPrecoDesatualizado.has(selecoes[item.id].id)
+                          )}
+                          temLoteVencendo={Boolean(
+                            selecoes[item.id]?.id && idsComLoteVencendo.has(selecoes[item.id].id)
                           )}
                         />
                       </div>

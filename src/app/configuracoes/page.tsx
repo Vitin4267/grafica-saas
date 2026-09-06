@@ -50,6 +50,7 @@ export default async function ConfiguracoesPage() {
     leadTimePadraoDias,
     prazoEmDiasUteis,
     diasFuncionamento,
+    diasAlertaValidadeEstoque,
   } = await prisma.parametrosGrafica.findUniqueOrThrow({
     where: { graficaId: usuario.graficaId },
     select: {
@@ -78,6 +79,7 @@ export default async function ConfiguracoesPage() {
       leadTimePadraoDias: true,
       prazoEmDiasUteis: true,
       diasFuncionamento: true,
+      diasAlertaValidadeEstoque: true,
     },
   });
   // Alimenta o <select> de categoria de custo padrão — só as ativas, mesma
@@ -179,6 +181,7 @@ export default async function ConfiguracoesPage() {
           leadTimePadraoDias={leadTimePadraoDias}
           prazoEmDiasUteis={prazoEmDiasUteis}
           diasFuncionamento={diasFuncionamento}
+          diasAlertaValidadeEstoque={diasAlertaValidadeEstoque}
         />
       </main>
     </div>

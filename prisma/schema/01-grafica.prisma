@@ -345,6 +345,16 @@ model ParametrosGrafica {
   // segunda a sexta.
   diasFuncionamento Int     @default(31)
 
+  // Achado F4 da auditoria de abrangência (Parte 7, 2026-09-05) — quantos
+  // dias antes do vencimento o alerta de validade de lote (ver
+  // src/lib/alerta-validade-estoque.ts) já avisa a gráfica, mesmo espírito
+  // configurável de diasPrecoInsumoDesatualizado/diasAlertaCompraPadrao
+  // acima (nunca um limiar fixo pra todas as gráficas — cada uma tem seu
+  // próprio ciclo de giro). Só relevante pra matéria-prima com
+  // ItemGrafica.controlaLote=true. @default(30) é só o valor inicial de
+  // toda gráfica que nunca configurou — não é lido como "alerta desligado".
+  diasAlertaValidadeEstoque Int @default(30)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

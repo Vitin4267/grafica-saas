@@ -417,6 +417,29 @@ model ItemGrafica {
   tipoColagem           TipoColagem?
   tipoColagemOutro      String?
 
+  // Achado F4 da auditoria de abrangência (Parte 7, 2026-09-05) — opt-in
+  // EXPLÍCITO: só a matéria-prima marcada aqui ganha os campos de lote/
+  // validade na tela de Entrada de compra (ver LancarMovimentacaoForm.tsx)
+  // e participa do alerta de validade (ver
+  // src/lib/alerta-validade-estoque.ts). @default(false) preserva 100% do
+  // comportamento de hoje pra todo item existente e novo — nunca força a UI
+  // de lote em quem não ativou. Só relevante quando
+  // itemCatalogo.tipo=MATERIA_PRIMA, mas o campo em si não é restrito por
+  // constraint (mesma disciplina do resto do schema: validado na Server
+  // Action, não no banco).
+  controlaLote Boolean @default(false)
+
+  // Certificação de cadeia de custódia da matéria-prima (ex: FSC/PEFC de
+  // papel — achado F4 da auditoria de abrangência, Parte 7) — exigível em
+  // gráfica/rotulador que atende cliente com política de sustentabilidade.
+  // Puramente descritivo/organizacional: NUNCA lido por src/lib/pricing/,
+  // mesmo espírito de tipoDobra/tipoEncadernacao/tipoColagem acima. null =
+  // não informado (comportamento de hoje, sem mudança nenhuma).
+  // certificacaoOutro só usado quando certificacao=OUTRO (mesmo padrão de
+  // tipoDobraOutro acima).
+  certificacao      CertificacaoMaterial?
+  certificacaoOutro String?
+
   grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   itemCatalogo        ItemCatalogo         @relation(fields: [itemCatalogoId], references: [id])
   prensa              Prensa?              @relation(fields: [prensaId], references: [id], onDelete: Restrict)
@@ -822,5 +845,21 @@ enum TipoColagem {
   COLA_FRIA
   COLA_QUENTE
   PUR
+  OUTRO
+}
+
+// Certificação de cadeia de custódia da matéria-prima — achado F4 da
+// auditoria de abrangência (Parte 7, 2026-09-05). FSC (Forest Stewardship
+// Council) e PEFC (Programme for the Endorsement of Forest Certification)
+// são as duas certificações de fato relevantes pra papel/fibra de madeira
+// numa gráfica/rotulador brasileiro (cadeia de custódia com código de
+// licença exibido na peça impressa). NENHUMA é uma escolha explícita
+// (distinta de null = "não informado"), pra gráfica documentar que já
+// verificou e o material realmente não tem certificação nenhuma. Mesmo
+// padrão fechado+OUTRO do resto do arquivo.
+enum CertificacaoMaterial {
+  FSC
+  PEFC
+  NENHUMA
   OUTRO
 }
