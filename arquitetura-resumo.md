@@ -127,9 +127,14 @@ comportamento.
   seletor opcional `Orcamento.condicaoPagamentoId` em
   `EditarDadosGeraisOrcamentoForm.tsx` (FK pré-preenche o texto livre
   `condicoesPagamento`, mesmo padrão de `contatoClienteId`/
-  `transportadoraId`). **Gap residual que segue aberto:** `ContaReceber`
-  automática só dispara na âncora `APROVACAO` — `EMISSAO_NOTA`/`ENTREGA`
-  continuam com enum pronto e sem gatilho.
+  `transportadoraId`). **Correção 2026-09-06:** o "gap residual" descrito
+  aqui antes (só `APROVACAO` dispara `ContaReceber`) já não era verdade —
+  os gatilhos `EMISSAO_NOTA` (`gerarContasReceberDaEmissaoNota`, plumbado
+  em `emitirNotaFiscal`/`atualizarStatusNotaFiscal`) e `ENTREGA`
+  (`gerarContasReceberDaEntrega`, plumbado em `avancarStatusPedido` na
+  transição pra ENTREGUE) já existiam desde o achado R1 (Parte 8,
+  2026-09-03, commit 0b74f9b) — anterior a esta própria UI. Achado A7
+  fechado por completo, nada pendente; ver `pesquisa-abrangencia-modulos.md`.
 - **Catálogo/Preço — novo motor EDITORIAL (achado A10, Rota 1):**
   `ModeloCalculo.EDITORIAL` (13º rótulo) resolve os 7 produtos multipágina
   do catálogo mestre (Revista, Catálogo, Livro Brochura, Livro Capa Dura,
@@ -577,11 +582,13 @@ no código, não inventados:
   (1:N simples).
 - **`ContaReceber`** — parcela esperada de um `Orcamento` aprovado
   (contraparte de `Despesa`). `status`: `StatusContaReceber`
-  (PENDENTE/PARCIAL/RECEBIDO/CANCELADO). Gerada automaticamente na
-  aprovação quando o orçamento tem `CondicaoPagamento` vinculada (snapshot,
-  só âncora `APROVACAO` tem gatilho plumbado — `EMISSAO_NOTA`/`ENTREGA`
-  existem no enum mas sem trigger ainda). `clienteId` denormalizado
-  (índice direto pro relatório "quanto o cliente X deve").
+  (PENDENTE/PARCIAL/RECEBIDO/CANCELADO). Gerada automaticamente (snapshot)
+  quando o orçamento tem `CondicaoPagamento` vinculada, pras 3 âncoras do
+  enum `AncoraVencimento` — `APROVACAO` (aprovação do orçamento),
+  `EMISSAO_NOTA` (NF-e autorizada) e `ENTREGA` (pedido chega em ENTREGUE)
+  todas plumbadas via `gerarContasReceberPorAncora` (achado A7/R1,
+  `src/lib/condicao-pagamento.ts`). `clienteId` denormalizado (índice
+  direto pro relatório "quanto o cliente X deve").
 - **`BaixaContaReceber`** — N:N entre `ContaReceber` e `Pagamento` com
   valor (uma parcela pode levar mais de um pagamento pra fechar). Caminho
   NOVO — pagamento em valor EXATO continua fechando via
