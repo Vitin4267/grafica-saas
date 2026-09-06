@@ -413,6 +413,23 @@ model Filial {
   endereco  String?
   ativa     Boolean @default(true)
 
+  // Achado A8 da auditoria de abrangência (pesquisa-abrangencia-modulos.md,
+  // Parte 8/Clientes-Fiscal) — identidade visual/contato PRÓPRIA da filial,
+  // pro PDF de orçamento feito nela não sair sempre com a cara da matriz.
+  // Todos opcionais e SOBRESCREVEM o campo equivalente de Grafica só quando
+  // preenchidos — null = usa o da gráfica, exatamente o comportamento de
+  // hoje (100% preservado pra toda filial já cadastrada). Resolução por
+  // fallback em resolverIdentidadeVisual (src/lib/pdf/mapear-dados.ts),
+  // mesmo padrão que resolverDadosFiscais (src/lib/nota-fiscal.ts) já
+  // implementa pra dado fiscal. Sem `site`/`enderecoResumido` próprios de
+  // propósito: `endereco` (acima) já cobre referência de endereço da
+  // filial, e site institucional normalmente é único pra empresa toda —
+  // nenhum caso de mercado forte o bastante pra duplicar esses dois aqui.
+  telefone     String?
+  emailContato String?
+  logoUrl      String?
+  corPrimaria  String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

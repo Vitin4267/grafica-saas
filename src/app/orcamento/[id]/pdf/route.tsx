@@ -42,6 +42,13 @@ export async function GET(
           },
         },
       },
+      // Achado A8 — dado próprio da filial (se houver), sobrepõe o da
+      // Grafica via resolverIdentidadeVisual (mapear-dados.ts). `select`
+      // (não include) pra nunca puxar dado fiscal/endereço da filial pra
+      // dentro do PDF de identidade.
+      filial: {
+        select: { telefone: true, emailContato: true, logoUrl: true, corPrimaria: true },
+      },
       // opcaoId: null — o PDF sempre representa a opção-base ("Opção A").
       // MVP não gera PDF por opção alternativa (ver model OrcamentoOpcao no
       // schema.prisma); sem este filtro, itens de opções alternativas

@@ -18,6 +18,10 @@ function orcamentoBase(
     validoAteEm: null,
     toleranciaTiragemPercent: null,
     cliente: { nome: "Cliente Teste" },
+    // Achado A8 — orçamento sem filial vinculada (o caso de sempre) cai 100%
+    // no dado da Grafica; ver describe "identidade visual por filial" abaixo
+    // pros cenários com filial preenchida.
+    filial: null,
     grafica: {
       nome: "Gráfica Teste",
       logoUrl: null,
@@ -152,5 +156,98 @@ describe("mapearDadosPdf — dados de recebimento / PIX (achado F6)", () => {
     expect(dados.chavePix).toBeNull();
     expect(dados.favorecidoPix).toBe("João da Silva");
     expect(dados.dadosBancarios).toBe("Banco X, ag. 0001, c/c 12345-6");
+  });
+});
+
+// Achado A8 da auditoria de abrangência (pesquisa-abrangencia-modulos.md,
+// Parte 8/Clientes-Fiscal, restante pendente) — Filial pode sobrescrever
+// telefone/e-mail/logo/cor da Grafica no PDF de orçamento, campo a campo,
+// via resolverIdentidadeVisual. Mesmo padrão de fallback que
+// resolverDadosFiscais (src/lib/nota-fiscal.ts) já implementa pra dado
+// fiscal.
+describe("mapearDadosPdf — identidade visual por filial (achado A8)", () => {
+  it("orçamento sem filial vinculada (filial=null): usa 100% o dado da Grafica, comportamento de hoje", () => {
+    const base = orcamentoBase();
+    const dados = mapearDadosPdf({
+      ...base,
+      grafica: {
+        ...base.grafica,
+        logoUrl: "https://blob/logo-grafica.png",
+        corPrimaria: "#0d9488",
+        telefone: "(11) 4000-0000",
+        emailContato: "contato@grafica.com.br",
+        site: "https://grafica.com.br",
+        enderecoResumido: "Rua da Matriz, 1",
+      },
+    });
+    expect(dados.logoUrl).toBe("https://blob/logo-grafica.png");
+    expect(dados.corPrimaria).toBe("#0d9488");
+    expect(dados.telefone).toBe("(11) 4000-0000");
+    expect(dados.emailContato).toBe("contato@grafica.com.br");
+    expect(dados.site).toBe("https://grafica.com.br");
+    expect(dados.enderecoResumido).toBe("Rua da Matriz, 1");
+  });
+
+  it("filial vinculada sem NENHUM campo próprio preenchido: usa 100% o dado da Grafica, comportamento de hoje preservado", () => {
+    const base = orcamentoBase();
+    const dados = mapearDadosPdf({
+      ...base,
+      grafica: {
+        ...base.grafica,
+        logoUrl: "https://blob/logo-grafica.png",
+        corPrimaria: "#0d9488",
+        telefone: "(11) 4000-0000",
+        emailContato: "contato@grafica.com.br",
+      },
+      filial: { telefone: null, emailContato: null, logoUrl: null, corPrimaria: null },
+    });
+    expect(dados.logoUrl).toBe("https://blob/logo-grafica.png");
+    expect(dados.corPrimaria).toBe("#0d9488");
+    expect(dados.telefone).toBe("(11) 4000-0000");
+    expect(dados.emailContato).toBe("contato@grafica.com.br");
+  });
+
+  it("filial com só telefone preenchido: só o telefone vem da filial, o resto continua vindo da Grafica", () => {
+    const base = orcamentoBase();
+    const dados = mapearDadosPdf({
+      ...base,
+      grafica: {
+        ...base.grafica,
+        logoUrl: "https://blob/logo-grafica.png",
+        corPrimaria: "#0d9488",
+        telefone: "(11) 4000-0000",
+        emailContato: "contato@grafica.com.br",
+        site: "https://grafica.com.br",
+        enderecoResumido: "Rua da Matriz, 1",
+      },
+      filial: { telefone: "(21) 5000-0000", emailContato: null, logoUrl: null, corPrimaria: null },
+    });
+    expect(dados.telefone).toBe("(21) 5000-0000");
+    expect(dados.emailContato).toBe("contato@grafica.com.br");
+    expect(dados.logoUrl).toBe("https://blob/logo-grafica.png");
+    expect(dados.corPrimaria).toBe("#0d9488");
+    // site/enderecoResumido não têm campo próprio em Filial — sempre da Grafica.
+    expect(dados.site).toBe("https://grafica.com.br");
+    expect(dados.enderecoResumido).toBe("Rua da Matriz, 1");
+  });
+
+  it("filial com logo e cor próprias: PDF usa a logo/cor da filial, não a da Grafica", () => {
+    const base = orcamentoBase();
+    const dados = mapearDadosPdf({
+      ...base,
+      grafica: {
+        ...base.grafica,
+        logoUrl: "https://blob/logo-grafica.png",
+        corPrimaria: "#0d9488",
+      },
+      filial: {
+        telefone: null,
+        emailContato: null,
+        logoUrl: "https://blob/logo-filial.png",
+        corPrimaria: "#7c3aed",
+      },
+    });
+    expect(dados.logoUrl).toBe("https://blob/logo-filial.png");
+    expect(dados.corPrimaria).toBe("#7c3aed");
   });
 });

@@ -75,7 +75,11 @@ export default async function FilialDetalhePage({
             nome: filial.nome,
             endereco: filial.endereco ?? "",
             ativa: filial.ativa,
+            telefone: filial.telefone ?? "",
+            emailContato: filial.emailContato ?? "",
           }}
+          logoUrlAtual={filial.logoUrl}
+          corPrimariaAtual={filial.corPrimaria}
         />
 
         <div className="mt-10">

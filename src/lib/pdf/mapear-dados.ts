@@ -15,6 +15,56 @@ const ROTULO_TIPO_PEDIDO: Record<string, string> = {
 };
 const ROTULO_FRETE: Record<string, string> = { EMITENTE: "Emitente", DESTINATARIO: "Destinatário" };
 
+// Achado A8 da auditoria de abrangência (pesquisa-abrangencia-modulos.md,
+// Parte 8/Clientes-Fiscal, restante pendente) — resolução por fallback
+// filial → gráfica pra identidade visual/contato do PDF, MESMO PADRÃO que
+// resolverDadosFiscais (src/lib/nota-fiscal.ts) já implementa pra dado
+// fiscal. `site`/`enderecoResumido` não têm campo equivalente em Filial (ver
+// comentário do model no schema) — vêm sempre da Grafica.
+export type IdentidadeVisualFilial = {
+  telefone: string | null;
+  emailContato: string | null;
+  logoUrl: string | null;
+  corPrimaria: string | null;
+} | null;
+
+export type IdentidadeVisualGrafica = {
+  logoUrl: string | null;
+  corPrimaria: string | null;
+  telefone: string | null;
+  emailContato: string | null;
+  site: string | null;
+  enderecoResumido: string | null;
+};
+
+export type IdentidadeVisualResolvida = {
+  logoUrl: string | null;
+  corPrimaria: string | null;
+  telefone: string | null;
+  emailContato: string | null;
+  site: string | null;
+  enderecoResumido: string | null;
+};
+
+// Filial sem NENHUM campo preenchido (ou orçamento sem filial vinculada,
+// filial === null) cai 100% no dado da Grafica — comportamento de hoje
+// preservado. Filial com só um campo preenchido só sobrepõe aquele campo,
+// os demais continuam vindo da Grafica (fallback campo a campo, não
+// tudo-ou-nada).
+export function resolverIdentidadeVisual(
+  filial: IdentidadeVisualFilial,
+  grafica: IdentidadeVisualGrafica
+): IdentidadeVisualResolvida {
+  return {
+    logoUrl: filial?.logoUrl ?? grafica.logoUrl,
+    corPrimaria: filial?.corPrimaria ?? grafica.corPrimaria,
+    telefone: filial?.telefone ?? grafica.telefone,
+    emailContato: filial?.emailContato ?? grafica.emailContato,
+    site: grafica.site,
+    enderecoResumido: grafica.enderecoResumido,
+  };
+}
+
 // Formato compartilhado pelas duas rotas de PDF (autenticada e pública) — os
 // `include` do Prisma nas duas telas irmãs (orcamento/[id]/page.tsx e
 // o/[token]/page.tsx) já produzem essa mesma forma de dado.
@@ -34,6 +84,11 @@ export type OrcamentoParaPdf = {
   // ciclo de vida de validoAteEm acima, null enquanto RASCUNHO.
   toleranciaTiragemPercent: Prisma.Decimal | null;
   cliente: { nome: string };
+  // Achado A8 — filial vinculada ao orçamento (Orcamento.filialId), pra
+  // resolverIdentidadeVisual saber se sobrepõe algum campo da Grafica.
+  // null = orçamento sem filial (o caso de sempre) ou filial sem nenhum dado
+  // próprio cadastrado ainda — os dois caem 100% no dado da Grafica.
+  filial: IdentidadeVisualFilial;
   grafica: {
     nome: string;
     logoUrl: string | null;
@@ -183,15 +238,19 @@ export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
     prazoEntregaEstimadoDias: orcamento.prazoEntregaEstimadoDias,
   };
   const temDadosPedido = Object.values(dadosPedido).some((v) => v !== null);
+  // Achado A8 — filial vinculada (se houver) sobrepõe logo/cor/telefone/
+  // e-mail da Grafica campo a campo; null (sem filial, ou filial sem dado
+  // próprio) cai 100% no dado da Grafica, comportamento de hoje preservado.
+  const identidade = resolverIdentidadeVisual(orcamento.filial, orcamento.grafica);
 
   return {
     graficaNome: orcamento.grafica.nome,
-    logoUrl: orcamento.grafica.logoUrl,
-    corPrimaria: orcamento.grafica.corPrimaria,
-    telefone: orcamento.grafica.telefone,
-    emailContato: orcamento.grafica.emailContato,
-    site: orcamento.grafica.site,
-    enderecoResumido: orcamento.grafica.enderecoResumido,
+    logoUrl: identidade.logoUrl,
+    corPrimaria: identidade.corPrimaria,
+    telefone: identidade.telefone,
+    emailContato: identidade.emailContato,
+    site: identidade.site,
+    enderecoResumido: identidade.enderecoResumido,
     // Achado F6 — só exibição, chavePix nunca validada. tipoChavePix já sai
     // convertido pro rótulo em português (mesmo padrão de `frete`/
     // `tipoPedido` acima) pra OrcamentoDocumento não precisar saber do enum.
