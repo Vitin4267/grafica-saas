@@ -7,10 +7,33 @@
 > `prisma/schema.prisma` ou o código de verdade pra confirmar um detalhe
 > específico que este mapa não cobre ou que pode ter mudado.
 >
-> **Última atualização:** 2026-08-30. `prisma/schema.prisma` tinha 4535
-> linhas nesta data. Se o schema tiver crescido muito além disso, trate este
-> mapa como desatualizado e prefira reconferir enums/models críticos no
-> arquivo real antes de citar valores exatos.
+> **Última atualização de fundo:** 2026-08-30 (seções 1-9 abaixo). **Retocado
+> em 2026-09-05** — ver bloco "Atualização 2026-09-05" logo abaixo com o que
+> mudou de estrutura e os models/campos novos; o resto do documento (padrões,
+> domínios 1-9) não foi reescrito, só complementado. Se algo abaixo conflitar
+> com o retoque, o retoque é a versão atual.
+>
+> **⚠️ Mudança estrutural mais importante: o schema NÃO é mais
+> `prisma/schema.prisma` (arquivo único).** Desde a rodada 21 (04-05/09) é
+> **multi-arquivo** em `prisma/schema/` (14 arquivos por domínio —
+> `00-base.prisma`, `01-grafica.prisma`, `02-fiscal.prisma`,
+> `06-catalogo.prisma`, `08-compras.prisma`, `09-orcamento.prisma`,
+> `10-producao.prisma`, `11-financeiro.prisma`, etc.). `prisma.config.ts`
+> aponta `schema` pra pasta, não pra arquivo. Editar sempre o arquivo do
+> domínio certo, nunca recriar `schema.prisma`.
+>
+> **Outra mudança estrutural: `src/app/orcamento/[id]/actions.ts` (que este
+> mapa cita várias vezes abaixo como arquivo único) foi dividido** em
+> `src/app/orcamento/[id]/actions/` — `index.ts` (barrel `export *`, SEM
+> `"use server"` — reexport preserva a identidade de onde a função foi
+> definida), `status.ts`, `cabecalho.ts`, `arte.ts`, `itens.ts` (o maior,
+> ~1300+ linhas — `adicionarItemOrcamento`/`editarOrcamento`/
+> `removerItemOrcamento`/`aplicarDescontoItemOrcamento`), `ciclo-vida.ts`
+> (`atualizarStatusOrcamento`, `duplicarOrcamento`), `pagamentos.ts`,
+> `nfe.ts`, `faixas.ts` (achado B5, ver abaixo), `helpers.ts` (o único sem
+> `"use server"` — só funções privadas cross-file como
+> `buscarAlcadasDesconto`). Sempre que este mapa disser
+> "`[id]/actions.ts`", leia como "a pasta `[id]/actions/`".
 >
 > **O que é o GrafPro:** SaaS multi-tenant (Next.js 16 App Router + Server
 > Actions, Prisma 7, PostgreSQL/Neon) pra gráficas brasileiras. Cada
@@ -19,6 +42,75 @@
 > é vendido pra centenas de gráficas de perfis diferentes (offset comercial,
 > comunicação visual, estamparia, brindes, embalagem, editorial, corte a
 > laser, gráfica rápida...).
+
+---
+
+## Atualização 2026-09-05 — o que foi construído desde 30/08 (rodadas 18-21)
+
+Lista rápida dos models/enums/campos NOVOS que este mapa (seções 1-9 abaixo)
+ainda não cobre — confira o model real no arquivo de domínio certo se for
+mexer em algum destes:
+
+- **Catálogo/Preço:** `ModeloCalculo.DTF` (aponta pro mesmo `calcularM2` de
+  M2, achado A5) + `ItemGrafica.custoSubstratoPorPeca`/
+  `custoPrensagemPorPeca` (só DTF). `ItemGrafica.leadTimeDias` (achado A8,
+  ponto de pedido real) + `ItemGrafica.tipoDobra`/`tipoEncadernacao`/
+  `tipoColagem` (+ 3 enums fechado+OUTRO, achado C5 — puramente descritivo,
+  NUNCA lido por `src/lib/pricing/`).
+- **Orçamento:** `OrcamentoItem.larguraPlanificadaCm`/`alturaPlanificadaCm`
+  (achado A11 — dimensão do desenvolvimento da faca pro nesting de
+  embalagem/cartonagem, substitui `larguraCm`/`alturaCm` no cálculo quando
+  presente). Novo model `OrcamentoItemFaixaQuantidade` (achado B5 — tiragens
+  alternativas do MESMO item, "1.000/3.000/5.000", PARALELO a
+  `OrcamentoOpcao`, nunca entra em `Orcamento.total`, promoção na aprovação é
+  MANUAL). `Orcamento.transportadoraId`/`valorFrete` (achado F3, FK opcional
+  + snapshot texto convivendo com `transportadora`, mesmo padrão de
+  `contatoClienteId`).
+- **Produção:** novo model `ParadaPedido` + enum `MotivoParada` (achado C2 —
+  registro de pedido PARADO esperando material/aprovação/etc, paralelo ao
+  `StatusPedido`, nunca muda ele; índice único PARCIAL escrito à mão
+  garantindo "no máximo 1 parada ativa por pedido", não representável no
+  Prisma declarativo). `EtapaGrafica` (achado A1 Fase 1 — rótulo/liga-desliga
+  de cada estágio por tenant, ver `resolverEtapasGrafica` em
+  `src/lib/etapa-grafica.ts`; já cobria os 3 canais principais, e o achado
+  A2/Parte2 fechou o 4º canal que faltava — PDF de ordem de produção).
+  `Entrega.transportadoraId`/`volumes`/`pesoBrutoKg`/`especieVolume` (achado
+  F3, schema-only, sem UI própria ainda).
+- **Financeiro:** novo model `ContaFinanceira` + enum `TipoContaFinanceira`
+  (achado A15 — "onde o dinheiro está", vínculo opcional em
+  `Pagamento.contaFinanceiraId`/`Despesa.contaFinanceiraId`, NUNCA calcula
+  saldo agregado). `Despesa.filialId` (par do lado da despesa de
+  `Orcamento.filialId`). `ParametrosGrafica.diasAlertaCompraPadrao`/
+  `leadTimePadraoDias` (achado A8).
+- **Compras:** novo model `PrestadorServico` + enum `TipoPrestadorServico`
+  (achado D2 — serviço terceirizado recorrente, ex: acabamento/logística/
+  design, DIFERENTE de `Fornecedor` que é só compra de matéria-prima; nesta
+  rodada é só cadastro, sem FK de `Despesa` pra cá ainda).
+- **Configurações:** `AlcadaAprovacao` (achado A4/Parte6, teto de desconto
+  por papel/valor). Vários campos em `ParametrosGrafica` que já existiam no
+  schema desde antes ganharam TELA de verdade (`custoAutomaticoConsumo`,
+  `categoriaCustoConsumoPadraoId`, `margemFaixaBaixa`/`margemFaixaBoa`,
+  `descontoMaxSemAprovacao`, `perdaEhCustoDoPedido`,
+  `comissaoEntraNoCustoPedido`, `diasPrecoInsumoDesatualizado` — os 3
+  últimos também ganharam implementação real, antes eram campo morto sem
+  nenhum código lendo).
+- **N1-N18/R1/R3 (Parte 8 — auditoria de CÓDIGO, não de cobertura):** uma
+  dezena de bugs reais corrigidos no motor de preço/fiscal já existente —
+  gramatura aproximada descartada, trava de preço abaixo do custo com área
+  zero, ICMS origem sempre "0", CFOP interestadual sem distinguir
+  contribuinte, `EstagioAcabamento` gravado e nunca lido, acabamento
+  desativado não filtrado, NF-e ignorando `descricaoLivre`, remessa/retorno
+  de terceirização ausente, motor Digital sem nUp/folha, papel/gramatura do
+  Offset fixos no produto em vez de por-orçamento. Todos já `CONSTRUÍDO` no
+  `pesquisa-abrangencia-modulos.md` — não redescobrir.
+
+**Refatoração pura (sem achado, pedido direto do usuário):** os dois
+arquivos gigantes do repo foram divididos (ver aviso no topo deste
+documento) — `prisma/schema.prisma` → `prisma/schema/` multi-arquivo,
+`orcamento/[id]/actions.ts` → `orcamento/[id]/actions/` multi-arquivo. Os
+dois verificados via `prisma migrate diff` (schema) e `tsc`+`vitest`+`build`
+completos (actions) — equivalência semântica confirmada, zero mudança de
+comportamento.
 
 ---
 
@@ -689,18 +781,22 @@ Não é um dos 7 domínios de negócio, mas sustenta todos — útil saber onde 
   relevantes pra abrangência de produto, omitindo tabelas puramente
   técnicas (rate-limit, sessão, tokens) do detalhamento por domínio (elas
   aparecem só na seção 9).
-- Migrations pendentes não commitadas na sessão de 2026-08-30 (ver
-  `git status` do repo): `20260829120000_apontamento_etapa`,
-  `20260829120000_configuracao_emenda` — já refletidas nos models
-  `ApontamentoEtapa` e `ConfiguracaoEmenda` acima.
 - Pra achar rapidamente onde uma regra de negócio vive: os arquivos em
   `src/lib/*.ts` (sem sufixo `-db`) tendem a ser lógica PURA e testável
   (têm `.test.ts` irmão quase sempre); a Server Action em
-  `src/app/<modulo>/actions.ts` é a casca fina que autentica, chama a
-  lógica pura, e persiste.
+  `src/app/<modulo>/actions.ts` (ou `actions/` — ver aviso de estrutura no
+  topo) é a casca fina que autentica, chama a lógica pura, e persiste.
 - `pesquisa-abrangencia-modulos.md` (raiz do repo) é o documento de
-  achados/gaps — 112 achados catalogados até 2026-08-30 (Partes 1-7),
-  organizado pelos mesmos 7 domínios deste mapa. Leia ESTE arquivo
-  (`arquitetura-resumo.md`) primeiro pra entender "o que existe", depois
-  `pesquisa-abrangencia-modulos.md` pra "o que falta e já foi
-  identificado" — evita redescobrir gap já catalogado.
+  achados/gaps — 129 achados catalogados em 2026-09-05 (Partes 1-8, a
+  Parte 8 adicionada 02-04/09 é auditoria de CÓDIGO existente, não de
+  cobertura de mercado — ver bloco "N1-N18/R1/R3" acima), organizado pelos
+  mesmos domínios deste mapa (mais fiscal/motor de preço na Parte 8). Leia
+  ESTE arquivo (`arquitetura-resumo.md`) primeiro pra entender "o que
+  existe", depois `pesquisa-abrangencia-modulos.md` pra "o que falta e já
+  foi identificado" — evita redescobrir gap já catalogado. ~85 dos 129 já
+  `CONSTRUÍDO`/`PARCIALMENTE CONSTRUÍDO` em 2026-09-05 (checar o próprio
+  documento pro número exato, ele muda toda rodada).
+- **Toda migration escrita por subagente é feita À MÃO e nunca aplicada por
+  ele** — o orquestrador (thread principal) revisa e aplica depois. Não
+  assumir que uma migration em `prisma/migrations/` mencionada num
+  commit já está no banco de dev sem conferir `npx prisma migrate status`.
