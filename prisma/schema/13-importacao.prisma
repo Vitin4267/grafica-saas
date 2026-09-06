@@ -1,6 +1,7 @@
 enum TipoArquivoArmazenado {
   ARTE_PEDIDO
   ARTE_ORCAMENTO
+  ARTE_ITEM // achado F5 da auditoria de abrangência — arte por OrcamentoItem, ver model ArteItem
   LOGO_GRAFICA
   ANALISE_TINTA // reservado pra Cálculo de gasto de tinta com IA
   PLANILHA_IMPORTACAO // reservado pro Importador de planilha com IA (ver ImportacaoPlanilha)

@@ -312,6 +312,30 @@ export async function avancarStatusPedido(
     };
   }
 
+  // Achado F5 da auditoria de abrangência (Parte 7) — gate GEMEO do de cima,
+  // mas por ArteItem (arte por item de orçamento, ver model ArteItem no
+  // schema). Mesmo princípio opt-in: "toda ArteItem deste pedido está
+  // aprovada OU nenhuma ArteItem existe pra este pedido" — uma gráfica que
+  // nunca usa arte por item nunca tem nenhuma linha com este pedidoId, então
+  // count() sempre dá 0 e este bloco nunca bloqueia nada (zero mudança de
+  // comportamento pra quem só usa o arteUrl de cabeçalho acima). Distinto do
+  // gate de cabeçalho: aqui não importa se o PEDIDO tem arteUrl preenchido
+  // ou não, só se existe alguma ArteItem pendente vinculada a ele.
+  if (pedido.status === "ARTE") {
+    const arteItensPendentes = await prisma.arteItem.count({
+      where: { pedidoId: pedido.id, aprovadaEm: null },
+    });
+    if (arteItensPendentes > 0) {
+      return {
+        ok: false,
+        mensagem:
+          arteItensPendentes === 1
+            ? "A arte de 1 item ainda não foi aprovada pelo cliente."
+            : `A arte de ${arteItensPendentes} itens ainda não foi aprovada pelo cliente.`,
+      };
+    }
+  }
+
   // Achado A1 (Fase 1) — sequência resolvida por gráfica (liga/desliga e
   // reordena etapa, ver EtapaGrafica), não mais o array literal fixo. Uma
   // gráfica sem nenhuma linha configurada recebe de volta exatamente

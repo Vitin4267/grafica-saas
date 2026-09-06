@@ -364,6 +364,19 @@ export async function atualizarStatusOrcamento(
         },
       });
 
+      // Achado F5 — backfill do pedidoId de toda ArteItem que já existia
+      // como PRÉ-VISUALIZAÇÃO neste orçamento (upload feito ainda em
+      // RASCUNHO/ENVIADO, pedidoId null até aqui — ver comentário no model
+      // ArteItem/enviarArteItem). Mesmo espírito da cópia de arteUrl acima:
+      // a partir de agora essas linhas passam a valer pro gate de
+      // avancarStatusPedido (src/app/producao/status-transicao.ts). Sempre
+      // roda (mesmo sem nenhuma ArteItem pra este orçamento) — updateMany
+      // com 0 linhas afetadas é barato e idempotente em re-submissão.
+      await tx.arteItem.updateMany({
+        where: { orcamentoItem: { orcamentoId }, pedidoId: null },
+        data: { pedidoId: pedido.id },
+      });
+
       // Achado B1 — abre o apontamento da 1ª etapa (ARTE) na criação do
       // Pedido. Idempotente (ver comentário na função): necessário porque
       // este upsert roda de novo em toda re-submissão (duplo clique, retry).

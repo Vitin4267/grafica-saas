@@ -245,3 +245,198 @@ export async function removerArteOrcamento(
   revalidatePath(`/orcamento/${orcamentoId}`);
   return { ok: true, mensagem: "Arte removida." };
 }
+
+export type EnviarArteItemResult = { ok: boolean; mensagem: string };
+
+// Achado F5 da auditoria de abrangência (Parte 7) — arte POR ITEM (ver model
+// ArteItem no schema), complementando (nunca substituindo)
+// enviarArteOrcamento/enviarArte acima. Diferente daquelas duas, não é
+// restrita a um único status: um item pode receber arte tanto ainda em
+// RASCUNHO/ENVIADO (pré-visualização, pedidoId fica null — mesmo papel que
+// Orcamento.arteUrl tem hoje) quanto depois de o orçamento virar Pedido
+// (pedidoId é preenchido, e a partir daí passa a valer pro gate de
+// avancarStatusPedido em src/app/producao/status-transicao.ts) — a única
+// restrição é não poder mexer num pedido já FINALIZADO.
+export async function enviarArteItem(
+  _estadoAnterior: EnviarArteItemResult | null,
+  formData: FormData
+): Promise<EnviarArteItemResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
+  }
+
+  const orcamentoItemId = String(formData.get("orcamentoItemId"));
+  const arquivo = formData.get("arquivo");
+  if (!(arquivo instanceof File)) {
+    return { ok: false, mensagem: "Selecione um arquivo." };
+  }
+  const validacao = validarArquivoArte(arquivo);
+  if (!validacao.ok) {
+    return { ok: false, mensagem: validacao.mensagem };
+  }
+  // Confere a assinatura real do arquivo, não só o Content-Type declarado
+  // pelo cliente (forjável) — ver comentário em upload-validacao.ts.
+  const cabecalho = new Uint8Array(await arquivo.slice(0, BYTES_ASSINATURA).arrayBuffer());
+  if (!assinaturaBateComTipo(cabecalho, arquivo.type)) {
+    return { ok: false, mensagem: "O conteúdo do arquivo não corresponde a um PDF, JPG ou PNG." };
+  }
+
+  const item = await prisma.orcamentoItem.findFirst({
+    where: { id: orcamentoItemId, orcamento: { graficaId: usuario.graficaId } },
+    select: {
+      id: true,
+      orcamentoId: true,
+      larguraCm: true,
+      alturaCm: true,
+      orcamento: { select: { status: true, pedido: { select: { id: true, status: true } } } },
+      arteItem: { select: { url: true, versao: true } },
+    },
+  });
+  if (!item) {
+    return { ok: false, mensagem: "Item não encontrado." };
+  }
+  if (item.orcamento.status === "REJEITADO") {
+    return { ok: false, mensagem: "Não é possível anexar arte a um orçamento rejeitado." };
+  }
+  const pedido = item.orcamento.pedido;
+  if (pedido && (pedido.status === "ENTREGUE" || pedido.status === "CANCELADO")) {
+    return { ok: false, mensagem: "Este pedido já está finalizado — não é possível enviar/reenviar arte." };
+  }
+
+  // Reserva o espaço ANTES do put() — nunca depois, mesmo cuidado de
+  // enviarArteOrcamento/enviarArte acima.
+  const contextoArmazenamento = resolverContextoArmazenamento(usuario);
+  const reserva = await reservarEspaco({
+    graficaId: usuario.graficaId,
+    tipo: "ARTE_ITEM",
+    referenciaId: orcamentoItemId,
+    bytes: arquivo.size,
+    contexto: contextoArmazenamento,
+  });
+  if (!reserva.ok) {
+    return { ok: false, mensagem: reserva.mensagem };
+  }
+
+  const extensao = extensaoArte(arquivo.type);
+  let blob;
+  try {
+    blob = await put(
+      `orcamento-item-arte/${usuario.graficaId}/${orcamentoItemId}-${Date.now()}.${extensao}`,
+      arquivo,
+      { access: "public", addRandomSuffix: true, contentType: arquivo.type }
+    );
+  } catch (erro) {
+    await cancelarReserva(reserva.arquivoId);
+    console.error(
+      "[enviarArteItem] falha ao subir arquivo no Vercel Blob",
+      { graficaId: usuario.graficaId, orcamentoItemId },
+      erro
+    );
+    return {
+      ok: false,
+      mensagem: "Não foi possível enviar o arquivo agora. Tente de novo em instantes.",
+    };
+  }
+  await confirmarArquivo(reserva.arquivoId, { url: blob.url, pathname: blob.pathname });
+
+  // Preflight roda contra a geometria DESTE item sozinho — nunca contra o
+  // pedido inteiro (esse é o próprio motivo do achado F5: itens de tamanhos
+  // diferentes não podem compartilhar um preflight de cabeçalho único).
+  const bufferArquivo = Buffer.from(await arquivo.arrayBuffer());
+  const preflightAvisos = await analisarPreflight(bufferArquivo, arquivo.type, [
+    {
+      larguraCm: item.larguraCm == null ? null : Number(item.larguraCm),
+      alturaCm: item.alturaCm == null ? null : Number(item.alturaCm),
+    },
+  ]);
+
+  const arteAnteriorUrl = item.arteItem?.url ?? null;
+  const proximaVersao = (item.arteItem?.versao ?? 0) + 1;
+
+  await prisma.arteItem.upsert({
+    where: { orcamentoItemId },
+    create: {
+      orcamentoItemId,
+      pedidoId: pedido?.id ?? null,
+      url: blob.url,
+      versao: 1,
+      preflightAvisos,
+    },
+    update: {
+      // Resolvido de novo a cada reenvio: um item cuja arte foi enviada
+      // ainda em RASCUNHO (pedidoId null) e só depois virou Pedido passa a
+      // ficar coberto pelo gate assim que alguém reenviar — mas o backfill
+      // automático na aprovação (ver src/app/orcamento/[id]/actions/status.ts
+      // e src/app/o/[token]/actions.ts) já cobre o caso comum de nem
+      // precisar reenviar pra isso acontecer.
+      pedidoId: pedido?.id ?? null,
+      url: blob.url,
+      versao: proximaVersao,
+      aprovadaEm: null,
+      comentarioCliente: null,
+      respondidaPor: null,
+      preflightAvisos,
+    },
+  });
+
+  // Apaga a arte anterior DEPOIS que a nova já está gravada — mesmo cuidado
+  // de enviarArteOrcamento/enviarArte acima.
+  if (arteAnteriorUrl) {
+    await del(arteAnteriorUrl).catch(() => {});
+  }
+
+  revalidatePath(`/orcamento/${item.orcamentoId}`);
+  if (pedido) {
+    revalidatePath("/producao");
+  }
+
+  return { ok: true, mensagem: "Arte do item enviada." };
+}
+
+// Única forma de liberar o espaço ocupado pela arte de um item sem precisar
+// substituí-la por outra — mesmos gates de enviarArteItem. Remove a linha
+// inteira (diferente de removerArteOrcamento/removerArte, que zeram campos
+// num model 1:1 fixo) porque ArteItem é opt-in: um item sem nenhuma arte
+// enviada simplesmente não tem linha nenhuma aqui, mesmo estado de antes de
+// qualquer upload.
+export async function removerArteItem(
+  _estadoAnterior: EnviarArteItemResult | null,
+  formData: FormData
+): Promise<EnviarArteItemResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "ORCAMENTO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
+  }
+
+  const orcamentoItemId = String(formData.get("orcamentoItemId"));
+  const item = await prisma.orcamentoItem.findFirst({
+    where: { id: orcamentoItemId, orcamento: { graficaId: usuario.graficaId } },
+    select: { id: true, orcamentoId: true, arteItem: { select: { id: true } } },
+  });
+  if (!item) {
+    return { ok: false, mensagem: "Item não encontrado." };
+  }
+  if (!item.arteItem) {
+    return { ok: false, mensagem: "Este item não tem arte enviada." };
+  }
+
+  await prisma.arteItem.delete({ where: { orcamentoItemId } });
+
+  const arquivoRemovido = await removerArquivo({
+    graficaId: usuario.graficaId,
+    tipo: "ARTE_ITEM",
+    referenciaId: orcamentoItemId,
+  });
+  if (arquivoRemovido) {
+    await del(arquivoRemovido.url).catch(() => {});
+  }
+
+  revalidatePath(`/orcamento/${item.orcamentoId}`);
+  revalidatePath("/producao");
+  return { ok: true, mensagem: "Arte do item removida." };
+}

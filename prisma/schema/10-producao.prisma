@@ -238,6 +238,11 @@ model Pedido {
   // que este pedido ficou PARADO (aguardando material, aprovação do
   // cliente, etc.), ver model ParadaPedido.
   paradas             ParadaPedido[]
+  // Achado F5 da auditoria de abrangência (Parte 7) — arte por item deste
+  // pedido, ver comentário completo no model ArteItem
+  // (prisma/schema/09-orcamento.prisma). [] pra TODO pedido que nunca usou
+  // arte por item (opt-in) — comportamento de sempre, sem migração nenhuma.
+  arteItens           ArteItem[]
 
   @@index([graficaId])
   @@map("pedidos")

@@ -361,6 +361,16 @@ export async function responderOrcamentoPublico(
         },
       });
 
+      // Achado F5 — mesmo backfill do caminho autenticado
+      // (src/app/orcamento/[id]/actions/status.ts): toda ArteItem que já
+      // existia como pré-visualização neste orçamento (pedidoId ainda null)
+      // passa a apontar pro Pedido recém-criado, entrando a partir de agora
+      // no gate de avancarStatusPedido.
+      await tx.arteItem.updateMany({
+        where: { orcamentoItem: { orcamentoId: orcamento.id }, pedidoId: null },
+        data: { pedidoId: pedido.id },
+      });
+
       // Achado B1 — mesmo comportamento do caminho autenticado
       // (src/app/orcamento/[id]/actions.ts), só que origemConfirmacao
       // LINK_PUBLICO (cliente aprovando sem login pelo próprio token).

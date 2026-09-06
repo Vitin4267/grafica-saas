@@ -61,6 +61,7 @@ import { ETAPAS_ORCAMENTO, type ChaveEtapaOrcamento } from "@/lib/orcamento-etap
 import { EtiquetaResumo } from "./EtiquetaResumo";
 import { etiquetaParaCampos } from "../etiqueta-campos";
 import { AnaliseTintaCard } from "./AnaliseTintaCard";
+import { ArteItemCard } from "./ArteItemCard";
 import { verificarRecursoPago } from "@/lib/auth/recurso-pago";
 import { urlAssinadaLeitura } from "@/lib/blob-assinado";
 import { converterDeCm, ROTULO_UNIDADE_DIMENSAO } from "@/lib/unidade-dimensao";
@@ -114,6 +115,7 @@ export default async function OrcamentoDetalhePage({
             },
             etiqueta: { include: { hotStampings: true } },
             tinta: true,
+            arteItem: true, // achado F5 — arte por item
             acabamentos: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
             precificacaoEtiqueta: true,
             precificacaoDigital: true, // achado N4
@@ -434,6 +436,22 @@ export default async function OrcamentoDetalhePage({
     };
   }
 
+  // Achado F5 da auditoria de abrangência — mesmo padrão de mapearTinta
+  // acima, convertendo Decimal/Json do Prisma pro shape que ArteItemCard
+  // espera. null pra todo item que nunca recebeu arte por item (o caso de
+  // sempre, opt-in).
+  function mapearArteItem(item: NonNullable<typeof orcamento>["itens"][number]) {
+    if (!item.arteItem) return null;
+    return {
+      url: item.arteItem.url,
+      versao: item.arteItem.versao,
+      aprovadaEm: item.arteItem.aprovadaEm,
+      comentarioCliente: item.arteItem.comentarioCliente,
+      respondidaPor: item.arteItem.respondidaPor,
+      preflightAvisos: (item.arteItem.preflightAvisos as AvisoPreflight[] | null) ?? [],
+    };
+  }
+
   return (
     <div className="flex flex-1 flex-col">
       <UserNav
@@ -657,6 +675,7 @@ export default async function OrcamentoDetalhePage({
                   tinta={mapearTinta(item)}
                   custoPorMl={custoTintaPorMl}
                 />
+                <ArteItemCard orcamentoItemId={item.id} arte={mapearArteItem(item)} />
               </div>
             ))}
             <AdicionarItemForm
@@ -764,6 +783,9 @@ export default async function OrcamentoDetalhePage({
                     tinta={mapearTinta(item)}
                     custoPorMl={custoTintaPorMl}
                   />
+                )}
+                {orcamento.status !== "REJEITADO" && (
+                  <ArteItemCard orcamentoItemId={item.id} arte={mapearArteItem(item)} />
                 )}
               </div>
             ))}

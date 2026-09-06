@@ -607,6 +607,9 @@ model OrcamentoItem {
   acabamentos          OrcamentoItemAcabamento[]
   etiqueta             OrcamentoItemEtiqueta?
   tinta                OrcamentoItemTinta?
+  // Achado F5 — arte por item (opt-in, ver comentário completo no model
+  // ArteItem abaixo).
+  arteItem             ArteItem?
   precificacaoEtiqueta OrcamentoItemPrecificacaoEtiqueta?
   precificacaoDigital  OrcamentoItemPrecificacaoDigital? // achado N4 — papel escolhido neste orçamento pro motor Digital
   precificacaoOffset   OrcamentoItemPrecificacaoOffset? // achado N8 — papel/gramatura escolhidos neste orçamento pro motor Offset
@@ -920,6 +923,78 @@ model OrcamentoItemTinta {
   orcamentoItem OrcamentoItem @relation(fields: [orcamentoItemId], references: [id], onDelete: Cascade)
 
   @@map("orcamento_item_tinta")
+}
+
+// Achado F5 da auditoria de abrangência (Parte 7, 2026-09-05) — arte POR
+// ITEM de orçamento/pedido, complementando (nunca substituindo)
+// Orcamento.arteUrl/Pedido.arteUrl no cabeçalho. O caso que expôs a falta:
+// um pedido com 6 SKUs de rótulo diferentes só podia receber UMA aprovação
+// de arte, e o preflight de DPI/sangria (src/lib/preflight.ts) checava o
+// arquivo único contra a geometria de todos os itens ao mesmo tempo, mesmo
+// eles tendo dimensões diferentes entre si. Feature OPT-IN por USO (nunca
+// por config): uma gráfica que nunca cria nenhuma ArteItem continua 100% no
+// fluxo de cabeçalho de sempre — nada aqui é obrigatório nem migrado
+// automaticamente a partir do que já existe.
+//
+// 1:1 com substituição (unique orcamentoItemId, mesmo padrão de
+// OrcamentoItemTinta acima) — reenviar a arte deste item SOBRESCREVE a
+// linha (nunca acumula uma tabela de histórico completo): `versao` só conta
+// quantas vezes já foi reenviada (1 na criação, +1 a cada reenvio), pra UI
+// poder mostrar "v2", "v3" etc. sem precisar guardar os arquivos antigos.
+// aprovadaEm/comentarioCliente/respondidaPor são zerados a cada reenvio —
+// mesma semântica de Pedido.arteUrl (a aprovação/comentário anterior era
+// sobre o arquivo antigo, não faz sentido continuar valendo pro novo).
+//
+// pedidoId é OPCIONAL e resolvido automaticamente (nunca escolhido pelo
+// usuário) a partir de orcamentoItem.orcamento.pedido no momento do
+// upload — null enquanto o orçamento ainda não virou Pedido (upload feito
+// em RASCUNHO/ENVIADO é só pré-visualização, mesmo papel de Orcamento.arteUrl
+// antes da promoção, e não gate nada); preenchido assim que existir um
+// Pedido, tanto no upload feito depois da aprovação quanto por um backfill
+// automático (ver comentário em src/app/orcamento/[id]/actions/status.ts e
+// src/app/o/[token]/actions.ts, na criação do Pedido) pra toda ArteItem que
+// já existia como preview no momento da promoção. O GATE de avanço de
+// status (avancarStatusPedido em src/app/producao/status-transicao.ts) só
+// enxerga ArteItem com pedidoId preenchido — exatamente como só
+// Pedido.arteUrl (nunca Orcamento.arteUrl) gate a saída de ARTE hoje.
+//
+// Aprovação pelo cliente acontece pelo MESMO link público de sempre
+// (Pedido.arteLinkToken, /a/[token]) — não existe token dedicado por item;
+// a página lista a arte de cabeçalho (se houver) e, junto, cada ArteItem
+// deste pedido pra aprovação individual (ver src/app/a/[token]/page.tsx).
+model ArteItem {
+  id              String  @id @default(cuid())
+  orcamentoItemId String  @unique
+  pedidoId        String?
+
+  url    String
+  versao Int    @default(1)
+
+  aprovadaEm        DateTime?
+  comentarioCliente String?
+  // Nome DECLARADO por quem respondeu pelo link público — não verificado,
+  // mesmo par de Pedido.arteRespondidaPor (ver comentário lá).
+  respondidaPor     String?
+
+  // Mesmo campo/formato de Orcamento.preflightAvisos/Pedido.preflightAvisos
+  // (ver comentário em Orcamento acima) — mas calculado contra a geometria
+  // DESTE item sozinho (larguraCm/alturaCm), não contra o pedido inteiro.
+  // Isso é o próprio motivo de existir o achado F5: um pedido com itens de
+  // tamanhos diferentes não tem como ser checado corretamente por um único
+  // preflight de cabeçalho.
+  preflightAvisos Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orcamentoItem OrcamentoItem @relation(fields: [orcamentoItemId], references: [id], onDelete: Cascade)
+  // SetNull, não Cascade: apagar o Pedido (hoje só possível junto do
+  // cancelamento/exclusão em cascata da Grafica) não pode arrastar a arte do
+  // item, que continua pertencendo ao OrcamentoItem indefinidamente.
+  pedido        Pedido?       @relation(fields: [pedidoId], references: [id], onDelete: SetNull)
+
+  @@index([pedidoId])
+  @@map("arte_itens")
 }
 
 // Log de USO (não de conteúdo) do cálculo de tinta com IA — mesmo padrão de

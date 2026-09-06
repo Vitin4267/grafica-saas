@@ -190,3 +190,147 @@ export async function responderArtePublica(
         : "Pedido de alteração enviado pra gráfica.",
   };
 }
+
+// Achado F5 da auditoria de abrangência (Parte 7) — gêmeo de
+// responderArtePublica acima, mas decidindo sobre UMA ArteItem (arte por
+// item de orçamento, ver model ArteItem no schema) em vez do Pedido inteiro.
+// Mesmo token/link público (Pedido.arteLinkToken) — não existe token
+// dedicado por item; a checagem `pedidoId: pedido.id` abaixo é o que
+// garante que quem tem o link só decide sobre artes DESTE pedido, nunca de
+// outro (mesmo princípio de isolamento por token de responderArtePublica).
+export async function responderArteItemPublica(
+  _estadoAnterior: ResponderArteResult | null,
+  formData: FormData
+): Promise<ResponderArteResult> {
+  const token = String(formData.get("token"));
+  const arteItemId = String(formData.get("arteItemId"));
+  const decisao = String(formData.get("decisao"));
+
+  if (decisao !== "APROVADA" && decisao !== "ALTERACAO") {
+    return { ok: false, mensagem: "Ação inválida." };
+  }
+
+  const nome = String(formData.get("nome") ?? "").trim();
+  if (!nome) {
+    return { ok: false, mensagem: "Informe seu nome pra confirmar." };
+  }
+  if (nome.length > NOME_MAX) {
+    return { ok: false, mensagem: "Nome muito longo — use até 200 caracteres." };
+  }
+
+  const pedido = await prisma.pedido.findUnique({
+    where: { arteLinkToken: token },
+    include: { orcamento: { include: { cliente: true, grafica: true } } },
+  });
+  if (!pedido) {
+    return { ok: false, mensagem: "Arte não encontrada." };
+  }
+
+  // pedidoId: pedido.id — garante que a ArteItem pertence a ESTE pedido
+  // (o token só é credencial sobre o pedido dele, nunca sobre outro).
+  const arteItem = await prisma.arteItem.findFirst({
+    where: { id: arteItemId, pedidoId: pedido.id },
+    include: { orcamentoItem: { include: { itemGrafica: { include: { itemCatalogo: true } } } } },
+  });
+  if (!arteItem) {
+    return { ok: false, mensagem: "Arte não encontrada." };
+  }
+  if (arteItem.aprovadaEm) {
+    return { ok: false, mensagem: "Esta arte já foi aprovada." };
+  }
+
+  // Mesmo furo de paywall coberto em responderArtePublica acima — ver
+  // comentário lá.
+  const assinatura = await prisma.assinaturaGrafica.findUnique({
+    where: { graficaId: pedido.graficaId },
+  });
+  if (!assinaturaEstaLiberada(assinatura)) {
+    return {
+      ok: false,
+      mensagem: "A assinatura desta gráfica não está ativa no momento — não é possível responder por aqui.",
+    };
+  }
+
+  // Rate limit compartilhado com responderArtePublica (chave é o pedidoId,
+  // não a ArteItem) — protege o pedido inteiro contra spam de qualquer uma
+  // das suas artes, cabeçalho ou por item.
+  const ip = await obterIpRequisicao();
+  let bloqueado: boolean;
+  try {
+    bloqueado = await tentarRegistrarRespostaArte(pedido.id, ip);
+  } catch (erro) {
+    if (ehConflitoDeSerializacao(erro)) {
+      bloqueado = true;
+    } else {
+      throw erro;
+    }
+  }
+  if (bloqueado) {
+    return { ok: false, mensagem: "Muitas tentativas — aguarde alguns minutos e tente de novo." };
+  }
+
+  const nomeItem = arteItem.orcamentoItem.itemGrafica.itemCatalogo.nome;
+
+  if (decisao === "APROVADA") {
+    // CAS: só aprova se ainda não tinha sido aprovada — mesmo princípio de
+    // responderArtePublica acima.
+    const resultado = await prisma.arteItem.updateMany({
+      where: { id: arteItemId, aprovadaEm: null },
+      data: { aprovadaEm: new Date(), respondidaPor: nome },
+    });
+    if (resultado.count === 0) {
+      return { ok: false, mensagem: "Esta arte já foi respondida." };
+    }
+
+    const origem = await resolverOrigemPublica();
+    const template = templateArteAprovada(
+      pedido.orcamento.grafica.nome,
+      pedido.orcamento.cliente.nome,
+      [{ nome: nomeItem, quantidade: arteItem.orcamentoItem.quantidade }],
+      `${origem}/producao`,
+      pedido.orcamento.grafica.corPrimaria
+    );
+    await notificarDonos(pedido.graficaId, "arte_aprovada", template);
+  } else {
+    const comentario = String(formData.get("comentario") ?? "").trim();
+    if (!comentario) {
+      return { ok: false, mensagem: "Descreva a alteração que você precisa." };
+    }
+    if (comentario.length > COMENTARIO_MAX) {
+      return { ok: false, mensagem: "Comentário muito longo — resuma em até 2000 caracteres." };
+    }
+
+    const resultado = await prisma.arteItem.updateMany({
+      where: { id: arteItemId, aprovadaEm: null },
+      data: { comentarioCliente: comentario, respondidaPor: nome },
+    });
+    if (resultado.count === 0) {
+      return { ok: false, mensagem: "Esta arte já foi respondida." };
+    }
+
+    const origem = await resolverOrigemPublica();
+    // Prefixa com o nome do item — templateArteAlteracaoSolicitada é
+    // genérico (fala "a arte de um pedido"), sem isso o e-mail não deixaria
+    // claro QUAL item, num pedido com vários.
+    const template = templateArteAlteracaoSolicitada(
+      pedido.orcamento.grafica.nome,
+      pedido.orcamento.cliente.nome,
+      `[${nomeItem}] ${comentario}`,
+      `${origem}/producao`,
+      pedido.orcamento.grafica.corPrimaria
+    );
+    await notificarDonos(pedido.graficaId, "arte_alteracao_solicitada", template);
+  }
+
+  revalidatePath(`/a/${token}`);
+  revalidatePath("/producao");
+  revalidatePath(`/orcamento/${arteItem.orcamentoItem.orcamentoId}`);
+
+  return {
+    ok: true,
+    mensagem:
+      decisao === "APROVADA"
+        ? `Arte de ${nomeItem} aprovada!`
+        : "Pedido de alteração enviado pra gráfica.",
+  };
+}
