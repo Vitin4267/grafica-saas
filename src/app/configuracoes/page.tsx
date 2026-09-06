@@ -51,6 +51,8 @@ export default async function ConfiguracoesPage() {
     prazoEmDiasUteis,
     diasFuncionamento,
     diasAlertaValidadeEstoque,
+    comissaoSegueVendedorDoCliente,
+    paginasPorCadernoPadrao,
   } = await prisma.parametrosGrafica.findUniqueOrThrow({
     where: { graficaId: usuario.graficaId },
     select: {
@@ -80,6 +82,8 @@ export default async function ConfiguracoesPage() {
       prazoEmDiasUteis: true,
       diasFuncionamento: true,
       diasAlertaValidadeEstoque: true,
+      comissaoSegueVendedorDoCliente: true,
+      paginasPorCadernoPadrao: true,
     },
   });
   // Alimenta o <select> de categoria de custo padrão — só as ativas, mesma
@@ -182,6 +186,8 @@ export default async function ConfiguracoesPage() {
           prazoEmDiasUteis={prazoEmDiasUteis}
           diasFuncionamento={diasFuncionamento}
           diasAlertaValidadeEstoque={diasAlertaValidadeEstoque}
+          comissaoSegueVendedorDoCliente={comissaoSegueVendedorDoCliente}
+          paginasPorCadernoPadrao={paginasPorCadernoPadrao}
         />
       </main>
     </div>

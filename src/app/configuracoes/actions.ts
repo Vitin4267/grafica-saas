@@ -294,6 +294,11 @@ export async function salvarParametros(
   // com o bloqueio manual de Cliente, que nunca vira trava de verdade.
   const bloqueiaAoUltrapassarLimiteCredito = formData.get("bloqueiaAoUltrapassarLimiteCredito") === "on";
 
+  // Achado A8 da auditoria de abrangência (pesquisa-abrangencia-modulos.md)
+  // — mesmo padrão dos booleans acima. Decide se Comissao.usuarioId nasce de
+  // Cliente.vendedorId (quando preenchido) em vez de Orcamento.usuarioId.
+  const comissaoSegueVendedorDoCliente = formData.get("comissaoSegueVendedorDoCliente") === "on";
+
   // categoriaCustoConsumoPadraoId — FK opcional pra CategoriaCusto ("nenhuma"
   // = cai no fallback "primeira categoria ativa por ordem", ver
   // criarCustoAutomaticoConsumo em src/app/producao/status-transicao.ts).
@@ -388,6 +393,21 @@ export async function salvarParametros(
     return {
       ok: false,
       mensagem: 'Avisar quantos dias antes de vencer precisa ser um número inteiro maior que zero.',
+    };
+  }
+
+  // Achado A10 da Parte 1 da auditoria de abrangência (rota 1, 2026-09-06) —
+  // mesmo cuidado de presença dos blocos acima. Tamanho do caderno do motor
+  // Editorial (ver src/lib/pricing/editorial.ts).
+  const paginasPorCadernoPadraoBruto = formData.get("paginasPorCadernoPadrao");
+  if (typeof paginasPorCadernoPadraoBruto !== "string" || paginasPorCadernoPadraoBruto.trim() === "") {
+    return { ok: false, mensagem: 'Preencha o campo "Páginas por caderno".' };
+  }
+  const paginasPorCadernoPadrao = Number(paginasPorCadernoPadraoBruto);
+  if (!Number.isInteger(paginasPorCadernoPadrao) || paginasPorCadernoPadrao <= 0) {
+    return {
+      ok: false,
+      mensagem: 'Páginas por caderno precisa ser um número inteiro maior que zero.',
     };
   }
 
@@ -507,6 +527,8 @@ export async function salvarParametros(
       gramaturaMinGm2,
       gramaturaMaxGm2,
       diasAlertaValidadeEstoque,
+      comissaoSegueVendedorDoCliente,
+      paginasPorCadernoPadrao,
     },
   });
 
@@ -602,6 +624,18 @@ export async function salvarParametros(
     depoisTextos.push(
       `Comissão do vendedor entra no custo do pedido: ${comissaoEntraNoCustoPedido ? "sim" : "não"}`
     );
+  }
+  if ((parametrosAntes?.comissaoSegueVendedorDoCliente ?? false) !== comissaoSegueVendedorDoCliente) {
+    antesTextos.push(
+      `Comissão segue vendedor do cliente: ${(parametrosAntes?.comissaoSegueVendedorDoCliente ?? false) ? "sim" : "não"}`
+    );
+    depoisTextos.push(
+      `Comissão segue vendedor do cliente: ${comissaoSegueVendedorDoCliente ? "sim" : "não"}`
+    );
+  }
+  if ((parametrosAntes?.paginasPorCadernoPadrao ?? 16) !== paginasPorCadernoPadrao) {
+    antesTextos.push(`Páginas por caderno: ${parametrosAntes?.paginasPorCadernoPadrao ?? 16}`);
+    depoisTextos.push(`Páginas por caderno: ${paginasPorCadernoPadrao}`);
   }
   if ((parametrosAntes?.bloqueiaAoUltrapassarLimiteCredito ?? false) !== bloqueiaAoUltrapassarLimiteCredito) {
     antesTextos.push(

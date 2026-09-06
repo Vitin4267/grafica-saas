@@ -94,6 +94,8 @@ export function ParametrosForm({
   prazoEmDiasUteis,
   diasFuncionamento,
   diasAlertaValidadeEstoque,
+  comissaoSegueVendedorDoCliente,
+  paginasPorCadernoPadrao,
 }: {
   parametros: ParametrosTenant;
   comissaoVendedorBase: BaseComissao;
@@ -124,6 +126,8 @@ export function ParametrosForm({
   prazoEmDiasUteis: boolean;
   diasFuncionamento: number;
   diasAlertaValidadeEstoque: number;
+  comissaoSegueVendedorDoCliente: boolean;
+  paginasPorCadernoPadrao: number;
 }) {
   const [state, formAction, isPending] = useActionState(salvarParametros, null);
 
@@ -359,6 +363,29 @@ export function ParametrosForm({
               defaultValue={parametros.gramaturaMaxGm2 ?? 500}
             />
           </div>
+        </Card>
+
+        <Card className="flex flex-col gap-4 p-6">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+              Motor Editorial (livros, revistas, apostilas)
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Quantas páginas compõem um caderno (signature) do miolo — o
+              motor sempre arredonda o número de páginas pra cima pro próximo
+              múltiplo desse valor. 16 é o mais comum no Brasil, mas 8 e 32
+              também são usados dependendo do formato.
+            </p>
+          </div>
+          <Input
+            label="Páginas por caderno"
+            name="paginasPorCadernoPadrao"
+            type="number"
+            step="1"
+            min="1"
+            defaultValue={paginasPorCadernoPadrao}
+            className="max-w-xs"
+          />
         </Card>
 
         <Card className="flex flex-col gap-4 p-6">
@@ -852,6 +879,26 @@ export function ParametrosForm({
               <option value="LUCRO">% sobre o lucro (valor − custo estimado)</option>
             </select>
           </label>
+
+          <label className="flex items-center gap-2.5">
+            <input
+              type="checkbox"
+              name="comissaoSegueVendedorDoCliente"
+              defaultChecked={comissaoSegueVendedorDoCliente}
+              className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              Comissão vai pro vendedor do CLIENTE, não pra quem digitou o orçamento
+            </span>
+          </label>
+          <p className="text-xs text-slate-500">
+            Desligado (padrão): a comissão é sempre atribuída a quem criou o
+            orçamento no sistema. Ligado: se o cliente (Clientes {"›"} editar)
+            tiver um vendedor cadastrado, a comissão vai pra ele — útil quando
+            um auxiliar administrativo digita orçamentos que a vendedora de
+            campo fechou. Sem vendedor cadastrado no cliente, cai no
+            comportamento de sempre.
+          </p>
         </Card>
       </GrupoParametros>
 
