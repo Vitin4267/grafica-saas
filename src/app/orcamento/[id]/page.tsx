@@ -237,6 +237,18 @@ export default async function OrcamentoDetalhePage({
     orcamento.clienteId
   );
 
+  // Achado A7 da Parte 4 da auditoria de abrangência (2026-08-28) —
+  // condições de pagamento ATIVAS da gráfica, pra popular o <select>
+  // opcional em EditarDadosGeraisOrcamentoForm.tsx. Mesmo princípio de
+  // transportadoras acima: gráfica sem nenhuma cadastrada -> lista vazia ->
+  // select não aparece, digitação livre em `condicoesPagamento` continua
+  // idêntica a hoje.
+  const condicoesPagamento = await prisma.condicaoPagamento.findMany({
+    where: { graficaId: usuario.graficaId, ativa: true },
+    orderBy: { nome: "asc" },
+    select: { id: true, nome: true },
+  });
+
   // Achado F3 da auditoria de abrangência (Parte 7/Documento e transação) —
   // transportadoras ATIVAS da gráfica, pra popular o <select> opcional em
   // EditarDadosGeraisOrcamentoForm.tsx. Mesmo princípio de contatosCliente
@@ -560,6 +572,7 @@ export default async function OrcamentoDetalhePage({
               contatoEmail: orcamento.contatoEmail,
               contatoClienteId: orcamento.contatoClienteId,
               condicoesPagamento: orcamento.condicoesPagamento,
+              condicaoPagamentoId: orcamento.condicaoPagamentoId,
               frete: orcamento.frete,
               transportadora: orcamento.transportadora,
               transportadoraId: orcamento.transportadoraId,
@@ -571,6 +584,7 @@ export default async function OrcamentoDetalhePage({
             }}
             contatosCliente={contatosCliente}
             transportadoras={transportadoras}
+            condicoesPagamento={condicoesPagamento}
           />
         </Card>
 

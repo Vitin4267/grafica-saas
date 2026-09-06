@@ -38,6 +38,11 @@ type DadosGerais = {
   // aparece no PDF/link público) — ver comentário completo no schema.
   contatoClienteId: string | null;
   condicoesPagamento: string | null;
+  // Achado A7 da Parte 4 da auditoria de abrangência — id da
+  // CondicaoPagamento escolhida no <select> abaixo, quando houver. Convive
+  // com condicoesPagamento acima (snapshot em texto, o que de fato aparece
+  // no PDF) — mesmo padrão de contatoClienteId/transportadoraId.
+  condicaoPagamentoId: string | null;
   frete: string | null;
   transportadora: string | null;
   // Achado F3 da auditoria de abrangência — id da Transportadora escolhida
@@ -73,6 +78,14 @@ type TransportadoraOpcao = {
   nome: string;
 };
 
+// Achado A7 da Parte 4 da auditoria de abrangência — condições de pagamento
+// ATIVAS da gráfica, pra popular o <select> opcional de condição de
+// pagamento. Mesmo princípio de TransportadoraOpcao acima.
+type CondicaoPagamentoOpcao = {
+  id: string;
+  nome: string;
+};
+
 // Bloco de campos gerais do pedido — editável a qualquer status do
 // orçamento (ver comentário em editarDadosGeraisOrcamento, actions.ts): não
 // mexe em total nem no que o cliente já viu. Mesmo padrão de
@@ -83,6 +96,7 @@ export function EditarDadosGeraisOrcamentoForm({
   dados,
   contatosCliente,
   transportadoras,
+  condicoesPagamento,
 }: {
   orcamentoId: string;
   dados: DadosGerais;
@@ -95,6 +109,11 @@ export function EditarDadosGeraisOrcamentoForm({
   // caso o <select> nem aparece (digitação livre em `transportadora`
   // continua idêntica a hoje).
   transportadoras: TransportadoraOpcao[];
+  // Achado A7 da Parte 4 da auditoria de abrangência — condições de
+  // pagamento ATIVAS da gráfica (ver page.tsx). Vazio pra quem nunca
+  // cadastrou nenhuma, e nesse caso o <select> nem aparece (digitação livre
+  // em `condicoesPagamento` continua idêntica a hoje).
+  condicoesPagamento: CondicaoPagamentoOpcao[];
 }) {
   const [state, formAction, isPending] = useActionState(editarDadosGeraisOrcamento, null);
   const [editando, setEditando] = useState(false);
@@ -111,6 +130,12 @@ export function EditarDadosGeraisOrcamentoForm({
   // usado hoje.
   const [transportadora, setTransportadora] = useState(dados.transportadora ?? "");
   const [transportadoraId, setTransportadoraId] = useState(dados.transportadoraId ?? "");
+  // Achado A7 da Parte 4 da auditoria de abrangência — mesmo padrão de
+  // transportadora/transportadoraId acima: escolher no <select> pré-preenche
+  // o texto livre `condicoesPagamento`, que continua editável/o que de fato
+  // aparece no PDF.
+  const [condicoesPagamentoTexto, setCondicoesPagamentoTexto] = useState(dados.condicoesPagamento ?? "");
+  const [condicaoPagamentoId, setCondicaoPagamentoId] = useState(dados.condicaoPagamentoId ?? "");
 
   function aoEscolherContato(id: string) {
     setContatoClienteId(id);
@@ -126,6 +151,14 @@ export function EditarDadosGeraisOrcamentoForm({
     const transportadoraEscolhida = transportadoras.find((t) => t.id === id);
     if (transportadoraEscolhida) {
       setTransportadora(transportadoraEscolhida.nome);
+    }
+  }
+
+  function aoEscolherCondicaoPagamento(id: string) {
+    setCondicaoPagamentoId(id);
+    const condicaoEscolhida = condicoesPagamento.find((c) => c.id === id);
+    if (condicaoEscolhida) {
+      setCondicoesPagamentoTexto(condicaoEscolhida.nome);
     }
   }
 
@@ -227,10 +260,27 @@ export function EditarDadosGeraisOrcamentoForm({
           value={contatoEmail}
           onChange={(e) => setContatoEmail(e.target.value)}
         />
+        {condicoesPagamento.length > 0 && (
+          <Select
+            label="Condição de pagamento cadastrada"
+            name="condicaoPagamentoId"
+            value={condicaoPagamentoId}
+            onChange={(e) => aoEscolherCondicaoPagamento(e.target.value)}
+            hint="Escolher preenche o campo abaixo — que continua editável e é o que aparece no PDF"
+          >
+            <option value="">digitar manualmente</option>
+            {condicoesPagamento.map((condicao) => (
+              <option key={condicao.id} value={condicao.id}>
+                {condicao.nome}
+              </option>
+            ))}
+          </Select>
+        )}
         <Input
           label="Condições de pagamento"
           name="condicoesPagamento"
-          defaultValue={dados.condicoesPagamento ?? ""}
+          value={condicoesPagamentoTexto}
+          onChange={(e) => setCondicoesPagamentoTexto(e.target.value)}
           placeholder="ex: 28/35ddl"
         />
         <Select label="Frete" name="frete" defaultValue={dados.frete ?? ""}>

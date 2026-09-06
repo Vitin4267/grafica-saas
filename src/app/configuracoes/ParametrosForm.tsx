@@ -1055,6 +1055,29 @@ export function ParametrosForm({
           </Link>
         </Card>
 
+        {/* Achado A7 da Parte 4 da auditoria de abrangência (2026-08-28) —
+            "jeito de cobrar" reutilizável (nome, âncora, acréscimo,
+            parcelas), vinculável a um orçamento pra gerar ContaReceber
+            automaticamente na aprovação. Ver model CondicaoPagamento no
+            schema. */}
+        <Card className="flex items-center justify-between gap-4 p-6">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+              Condições de pagamento
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              1x faturado, 50%+50% na entrega, 30/60/90 com acréscimo... vincule
+              uma condição a um orçamento pra gerar as parcelas de conta a
+              receber automaticamente.
+            </p>
+          </div>
+          <Link href="/configuracoes/condicoes-pagamento">
+            <Button type="button" variant="outline">
+              Gerenciar condições
+            </Button>
+          </Link>
+        </Card>
+
         <Card className="flex items-center justify-between gap-4 p-6">
           <div>
             <h2 className="text-base font-semibold text-slate-900 dark:text-white">

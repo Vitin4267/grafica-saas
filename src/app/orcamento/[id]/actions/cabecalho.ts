@@ -234,6 +234,25 @@ export async function editarDadosGeraisOrcamento(
     transportadoraId = transportadora.id;
   }
 
+  // Achado A7 da Parte 4 da auditoria de abrangência — mesmo princípio de
+  // contatoClienteId/transportadoraId acima: condicaoPagamentoId nunca é
+  // lido do form sem verificar que a condição pertence à MESMA gráfica
+  // (nunca confia no id cru vindo do <select>). "" = digitação manual, sem
+  // condição escolhida (`condicoesPagamento` texto livre continua
+  // funcionando exatamente como hoje).
+  const condicaoPagamentoIdBruto = String(formData.get("condicaoPagamentoId") ?? "").trim();
+  let condicaoPagamentoId: string | null = null;
+  if (condicaoPagamentoIdBruto) {
+    const condicaoPagamento = await prisma.condicaoPagamento.findFirst({
+      where: { id: condicaoPagamentoIdBruto, graficaId: usuario.graficaId },
+      select: { id: true },
+    });
+    if (!condicaoPagamento) {
+      return { ok: false, mensagem: "Condição de pagamento selecionada inválida." };
+    }
+    condicaoPagamentoId = condicaoPagamento.id;
+  }
+
   // Achado F3 da auditoria de abrangência — valor do frete em R$, opcional.
   // "" = sem valor informado (null, mesmo comportamento de hoje: a NF-e
   // manda valor_frete "0" fixo). Formato inválido é ignorado silenciosamente
@@ -260,6 +279,7 @@ export async function editarDadosGeraisOrcamento(
       contatoEmail: campoTexto("contatoEmail", 200),
       contatoClienteId,
       condicoesPagamento: campoTexto("condicoesPagamento", 200),
+      condicaoPagamentoId,
       frete: freteParsed?.success ? freteParsed.data : null,
       transportadora: campoTexto("transportadora", 120),
       transportadoraId,
