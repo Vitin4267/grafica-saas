@@ -60,8 +60,15 @@ export default async function OrcamentoPage() {
     prisma.cliente.findMany({
       // desativadoEm: null — cliente desativado some do dropdown de novo
       // orçamento (ver achado A9/A13: desativação reversível em Cliente).
+      // take: salvaguarda de escala (achado A13, "o que falta") — este
+      // <select> não tem busca própria (diferente de /clientes, que já tem
+      // busca+paginação real), então um teto alto evita mandar a base
+      // inteira pro payload numa gráfica com milhares de clientes. Combobox
+      // com busca server-side de verdade fica pra quando alguém precisar de
+      // mais que isso na prática.
       where: { graficaId: usuario.graficaId, desativadoEm: null },
       orderBy: { nome: "asc" },
+      take: 200,
     }),
     // Só usado pra decidir se o campo "Filial" aparece no formulário — sem
     // nenhuma cadastrada, o campo nem existe (gráfica sem filial não vê nada

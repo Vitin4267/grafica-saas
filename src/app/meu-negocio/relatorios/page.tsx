@@ -82,9 +82,15 @@ export default async function RelatoriosNegocioPage({
       // (ver achado A9/A13). Relatório histórico (receita por cliente/mês)
       // continua enxergando clientes desativados via clienteId gravado no
       // Orcamento — só o filtro deste <select> muda.
+      // take: salvaguarda de escala (achado A13) — mesmo raciocínio de
+      // /producao/page.tsx: é um <select> de FILTRO, o filtro em si usa
+      // clienteIdFiltro de searchParams, então cliente fora do corte
+      // alfabético só faz o <select> mostrar "Todos os clientes" sem
+      // desmarcar o filtro de verdade.
       where: { graficaId: usuario.graficaId, desativadoEm: null },
       select: { id: true, nome: true },
       orderBy: { nome: "asc" },
+      take: 200,
     }),
     // Faixas do medidor de margem (fase "custo real" §1.5/PR-5) — configuráveis
     // por gráfica, com o mesmo default 10/25 do componente se a gráfica nunca

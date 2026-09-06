@@ -300,9 +300,16 @@ export default async function ProducaoPage({
     prisma.cliente.findMany({
       // desativadoEm: null — mesmo filtro dos outros dropdowns de cliente
       // (ver achado A9/A13).
+      // take: salvaguarda de escala (achado A13) — este é um <select> de
+      // FILTRO (o filtro em si usa clienteIdFiltro vindo de searchParams,
+      // não depende de o cliente estar nesta lista), então o pior caso de
+      // um cliente cair fora do corte alfabético é o <select> mostrar
+      // "Todos os clientes" sem desmarcar o filtro de verdade — aceitável,
+      // diferente do <select> de troca de cliente em orcamento/[id]/page.tsx.
       where: { graficaId: usuario.graficaId, desativadoEm: null },
       select: { id: true, nome: true },
       orderBy: { nome: "asc" },
+      take: 200,
     }),
     // Quem é responsável por CADA etapa (não só a do usuário logado, ver
     // `responsabilidades` acima) — pra mostrar o nome na tela, tanto na

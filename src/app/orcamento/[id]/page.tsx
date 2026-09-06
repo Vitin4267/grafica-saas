@@ -145,8 +145,15 @@ export default async function OrcamentoDetalhePage({
       // orçamento for desativado depois, ele deixa de aparecer nesta lista
       // de troca — mas orcamento.cliente (include acima) continua mostrando
       // o cliente certo, e trocarClienteOrcamento só é permitido em RASCUNHO.
+      // take: mesma salvaguarda de escala do achado A13 (ver orcamento/page.tsx)
+      // — o cliente ATUAL do orçamento é garantido na lista abaixo (fora
+      // desta query) mesmo que caia fora do corte alfabético, porque o
+      // <select> usa defaultValue=clienteAtualId e precisa dele presente
+      // pra não trocar de cliente silenciosamente se o usuário só clicar
+      // "Salvar" sem mexer na seleção.
       where: { graficaId: usuario.graficaId, desativadoEm: null },
       orderBy: { nome: "asc" },
+      take: 200,
     }),
     prisma.itemGrafica.findMany({
       where: { graficaId: usuario.graficaId, ativo: true, precoVenda: { not: null } },
@@ -510,8 +517,18 @@ export default async function OrcamentoDetalhePage({
                   // Remapeado pra {id,nome} — sem isso, CPF/CNPJ e endereço
                   // de todo cliente iam pro payload da página só pra
                   // alimentar este <select> (ver mesmo achado em
-                  // orcamento/page.tsx).
-                  clientes={clientes.map((c) => ({ id: c.id, nome: c.nome }))}
+                  // orcamento/page.tsx). Cliente atual garantido na lista
+                  // (ver comentário no take: 200 acima) mesmo se cair fora
+                  // do corte alfabético — sem isso o <select> podia abrir
+                  // com outro cliente pré-selecionado por engano.
+                  clientes={
+                    clientes.some((c) => c.id === orcamento.clienteId)
+                      ? clientes.map((c) => ({ id: c.id, nome: c.nome }))
+                      : [
+                          { id: orcamento.clienteId, nome: orcamento.cliente.nome },
+                          ...clientes.map((c) => ({ id: c.id, nome: c.nome })),
+                        ]
+                  }
                 />
               </div>
             )}
