@@ -83,6 +83,7 @@ import { UNIDADES_DIMENSAO, converterParaCm } from "@/lib/unidade-dimensao";
 import { paraDecimal, type Dec } from "@/lib/pricing/decimal";
 import { aplicarPisoDoPedido } from "@/lib/pricing";
 import { montarDadosItemParaRecalculo, calcularDescontoHerdado } from "@/lib/orcamento-duplicar";
+import { buscarUsuariosVendedores } from "@/lib/usuarios-vendedores";
 
 export type AlterarClienteResult = { ok: boolean; mensagem: string };
 
@@ -253,6 +254,22 @@ export async function editarDadosGeraisOrcamento(
     condicaoPagamentoId = condicaoPagamento.id;
   }
 
+  // Feature "vendedor real no orçamento" (2026-09-06) — mesmo princípio de
+  // contatoClienteId/condicaoPagamentoId acima: vendedorUsuarioId nunca é
+  // lido do form sem revalidar contra a MESMA gráfica E contra a lista
+  // fechada de quem pode ser vendedor (buscarUsuariosVendedores — cargo
+  // Vendedor ou DONO/ADMIN). "" = digitação manual, sem usuário escolhido
+  // (`vendedor` texto livre continua funcionando exatamente como hoje).
+  const vendedorUsuarioIdBruto = String(formData.get("vendedorUsuarioId") ?? "").trim();
+  let vendedorUsuarioId: string | null = null;
+  if (vendedorUsuarioIdBruto) {
+    const vendedoresValidos = await buscarUsuariosVendedores(usuario.graficaId);
+    if (!vendedoresValidos.some((v) => v.id === vendedorUsuarioIdBruto)) {
+      return { ok: false, mensagem: "Vendedor selecionado inválido." };
+    }
+    vendedorUsuarioId = vendedorUsuarioIdBruto;
+  }
+
   // Achado F3 da auditoria de abrangência — valor do frete em R$, opcional.
   // "" = sem valor informado (null, mesmo comportamento de hoje: a NF-e
   // manda valor_frete "0" fixo). Formato inválido é ignorado silenciosamente
@@ -274,6 +291,7 @@ export async function editarDadosGeraisOrcamento(
     where: { id: orcamentoId },
     data: {
       vendedor: campoTexto("vendedor", 120),
+      vendedorUsuarioId,
       tipoPedido: tipoPedidoParsed?.success ? tipoPedidoParsed.data : null,
       contatoNome: campoTexto("contatoNome", 120),
       contatoEmail: campoTexto("contatoEmail", 200),

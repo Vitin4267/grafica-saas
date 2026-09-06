@@ -13,6 +13,7 @@ import { contatoClienteSchema, ORDEM_FUNCAO_CONTATO_CLIENTE } from "@/lib/contat
 import { enderecoClienteSchema, ORDEM_TIPO_ENDERECO_CLIENTE } from "@/lib/enderecos-cliente";
 import { ehViolacaoDeChaveEstrangeira } from "@/lib/prisma-conflito";
 import { registrarAuditoria } from "@/lib/auditoria";
+import { buscarUsuariosVendedores } from "@/lib/usuarios-vendedores";
 import {
   ORDEM_ORIGEM_CLIENTE,
   ORDEM_SEGMENTO_CLIENTE,
@@ -115,10 +116,11 @@ function validarIndicadorInscricaoEstadual(
 }
 
 // Achado A8 da auditoria de abrangência — vendedor/responsável comercial do
-// cliente, opcional. Precisa pertencer à MESMA gráfica (nunca confia no id
-// cru do formulário) e estar ativo — a lista que alimenta o <select> já só
-// mostra usuários com desativadoEm: null, então um id de usuário desativado
-// aqui só pode vir de um POST forjado.
+// cliente, opcional. Nunca confia no id cru do formulário: revalida contra a
+// MESMA lista fechada que alimenta o <select> (buscarUsuariosVendedores —
+// cargo Vendedor + DONO/ADMIN, feature "multi-cargo" de 2026-09-06), não só
+// contra graficaId/ativo — um id fora dessa lista só pode vir de um POST
+// forjado (ex: um Operador ativo sem cargo Vendedor).
 async function validarVendedorId(
   formData: FormData,
   graficaId: string
@@ -127,14 +129,11 @@ async function validarVendedorId(
   if (!vendedorId) {
     return { ok: true, vendedorId: null };
   }
-  const vendedor = await prisma.usuario.findFirst({
-    where: { id: vendedorId, graficaId, desativadoEm: null },
-    select: { id: true },
-  });
-  if (!vendedor) {
+  const vendedoresValidos = await buscarUsuariosVendedores(graficaId);
+  if (!vendedoresValidos.some((v) => v.id === vendedorId)) {
     return { ok: false, mensagem: "Vendedor inválido." };
   }
-  return { ok: true, vendedorId: vendedor.id };
+  return { ok: true, vendedorId };
 }
 
 // Achado A7 — sobrescreve ParametrosGrafica.margemPadrao só pra este

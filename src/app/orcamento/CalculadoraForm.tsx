@@ -44,6 +44,11 @@ const OPCOES_FRETE: [string, string][] = [
 
 type DadosGerais = {
   vendedor: string;
+  // Feature "vendedor real no orçamento" (2026-09-06) — id do usuário
+  // escolhido no <select> abaixo, quando houver (convive com `vendedor`
+  // acima, o snapshot em texto que continua editável — mesmo padrão de
+  // contatoClienteId/condicaoPagamentoId em EditarDadosGeraisOrcamentoForm.tsx).
+  vendedorUsuarioId: string;
   tipoPedido: string;
   contatoNome: string;
   contatoEmail: string;
@@ -57,6 +62,7 @@ type DadosGerais = {
 function dadosGeraisIniciais(): DadosGerais {
   return {
     vendedor: "",
+    vendedorUsuarioId: "",
     tipoPedido: "",
     contatoNome: "",
     contatoEmail: "",
@@ -122,6 +128,15 @@ type Cliente = {
 };
 
 type Filial = {
+  id: string;
+  nome: string;
+};
+
+// Feature "vendedor real no orçamento" (2026-09-06) — usuários ativos com
+// cargo Vendedor + DONO/ADMIN (ver buscarUsuariosVendedores), pra popular o
+// <select> opcional de vendedor. Vazio pra quem nunca cadastrou ninguém com
+// esse cargo — o campo de texto livre continua funcionando normalmente.
+type VendedorOpcao = {
   id: string;
   nome: string;
 };
@@ -199,6 +214,7 @@ export function CalculadoraForm({
   papeisDisponiveis,
   clientes,
   filiais,
+  vendedores,
   unidadePadrao,
 }: {
   itens: ItemVenda[];
@@ -206,6 +222,8 @@ export function CalculadoraForm({
   papeisDisponiveis: PapelDisponivel[];
   clientes: Cliente[];
   filiais: Filial[];
+  // Feature "vendedor real no orçamento" (2026-09-06) — ver VendedorOpcao.
+  vendedores: VendedorOpcao[];
   // Grafica.unidadePadraoDimensao — o formulário de item nasce nessa unidade
   // (mesmo contrato de AdicionarItemForm.tsx). Sem isto o seletor sempre
   // começaria em cm e a configuração da gráfica não valeria de nada
@@ -245,6 +263,20 @@ export function CalculadoraForm({
           : atual
       );
     });
+  }
+
+  // Feature "vendedor real no orçamento" (2026-09-06) — mesmo padrão de
+  // aoEscolherContato/aoEscolherTransportadora em
+  // EditarDadosGeraisOrcamentoForm.tsx: escolher no <select> pré-preenche o
+  // texto livre `vendedor`, que continua editável/é o que de fato aparece
+  // no PDF.
+  function aoEscolherVendedor(id: string) {
+    const vendedorEscolhido = vendedores.find((v) => v.id === id);
+    setDadosGerais((atual) => ({
+      ...atual,
+      vendedorUsuarioId: id,
+      vendedor: vendedorEscolhido ? vendedorEscolhido.nome : atual.vendedor,
+    }));
   }
 
   const itemSelecionado = itens.find((i) => i.id === campos.itemGraficaId);
@@ -524,6 +556,21 @@ export function CalculadoraForm({
           ) : (
             <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-800/30">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {vendedores.length > 0 && (
+                  <Select
+                    label="Vendedor cadastrado"
+                    value={dadosGerais.vendedorUsuarioId}
+                    onChange={(e) => aoEscolherVendedor(e.target.value)}
+                    hint="Escolher preenche o campo abaixo — que continua editável"
+                  >
+                    <option value="">digitar manualmente</option>
+                    {vendedores.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.nome}
+                      </option>
+                    ))}
+                  </Select>
+                )}
                 <Input label="Vendedor" value={dadosGerais.vendedor} onChange={setDadoGeral("vendedor")} />
                 <Select label="Tipo de pedido" value={dadosGerais.tipoPedido} onChange={setDadoGeral("tipoPedido")}>
                   <option value="">não informado</option>
@@ -658,6 +705,7 @@ export function CalculadoraForm({
             <input type="hidden" name="filialId" value={filialId} />
             <input type="hidden" name="itensJson" value={itensJson} />
             <input type="hidden" name="vendedor" value={dadosGerais.vendedor} />
+            <input type="hidden" name="vendedorUsuarioId" value={dadosGerais.vendedorUsuarioId} />
             <input type="hidden" name="tipoPedido" value={dadosGerais.tipoPedido} />
             <input type="hidden" name="contatoNome" value={dadosGerais.contatoNome} />
             <input type="hidden" name="contatoEmail" value={dadosGerais.contatoEmail} />

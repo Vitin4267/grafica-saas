@@ -19,7 +19,9 @@ type FuncionarioAtivo = {
   papel: string;
   // Achado A5 da auditoria de abrangência — só é lido/mostrado pra OPERADOR
   // (ver PerfilAcessoCell); DONO/ADMIN sempre têm o campo, mas ignoram.
-  perfilAcessoId: string | null;
+  // Array desde a feature "multi-cargo" (2026-09-06) — um usuário pode ter
+  // vários cargos ao mesmo tempo.
+  perfilAcessoIds: string[];
 };
 
 type FuncionarioDesativado = FuncionarioAtivo & {
@@ -86,7 +88,7 @@ export function UsuariosLista({
                     {perfisAcesso.length > 0 && (
                       <PerfilAcessoCell
                         usuarioId={u.id}
-                        perfilAcessoIdAtual={u.perfilAcessoId}
+                        perfilAcessoIdsAtuais={u.perfilAcessoIds}
                         perfis={perfisAcesso}
                       />
                     )}

@@ -413,3 +413,103 @@ describe("duplicarOrcamento", () => {
     TIMEOUT_MS
   );
 });
+
+// Feature "vendedor real no orçamento" (2026-09-06) — duplicarOrcamento
+// copia vendedorUsuarioId SÓ se o usuário ainda existir/estiver ativo
+// (diferente de transportadoraId/valorFrete, que nunca são copiados de
+// propósito); `vendedor` (texto snapshot) é sempre copiado, mesmo quando o
+// vínculo não pôde ser preservado.
+describe("duplicarOrcamento — vendedorUsuarioId", () => {
+  it(
+    "vendedor ATIVO: vendedorUsuarioId é copiado pro novo orçamento",
+    async () => {
+      const fixture = await criarFixture();
+      graficaIdsParaLimpar.push(fixture.graficaId);
+      const original = await prisma.orcamento.create({
+        data: {
+          graficaId: fixture.graficaId,
+          clienteId: fixture.clienteId,
+          usuarioId: fixture.usuarioDonoId,
+          status: "APROVADO",
+          total: 1000,
+          vendedor: "Dono da Gráfica",
+          vendedorUsuarioId: fixture.usuarioDonoId,
+          itens: {
+            create: {
+              itemGraficaId: fixture.itemGraficaId,
+              quantidade: 10,
+              precoUnitario: 100,
+              precoTotal: 1000,
+              precoSugeridoUnitario: 100,
+            },
+          },
+        },
+      });
+
+      vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(
+        (await usuarioParaMock(fixture.usuarioOperadorId)) as never
+      );
+
+      await expect(
+        duplicarOrcamento(null, formDataDe({ orcamentoId: original.id }))
+      ).rejects.toThrow(/^NEXT_REDIRECT:/);
+
+      const novoId = (redirectMock.mock.calls[0][0] as string).split("/").pop()!;
+      const novo = await prisma.orcamento.findUniqueOrThrow({ where: { id: novoId } });
+
+      expect(novo.vendedorUsuarioId).toBe(fixture.usuarioDonoId);
+      expect(novo.vendedor).toBe("Dono da Gráfica");
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "vendedor REMOVIDO (desativadoEm preenchido): vendedorUsuarioId NÃO é copiado, mas o texto snapshot continua",
+    async () => {
+      const fixture = await criarFixture();
+      graficaIdsParaLimpar.push(fixture.graficaId);
+      // Vendedor original é removido DEPOIS de aprovar o orçamento — cenário
+      // real: a pessoa saiu da empresa, mas o histórico do pedido antigo
+      // continua com o nome dela.
+      await prisma.usuario.update({
+        where: { id: fixture.usuarioOperadorId },
+        data: { desativadoEm: new Date() },
+      });
+      const original = await prisma.orcamento.create({
+        data: {
+          graficaId: fixture.graficaId,
+          clienteId: fixture.clienteId,
+          usuarioId: fixture.usuarioDonoId,
+          status: "APROVADO",
+          total: 1000,
+          vendedor: "Ex-Funcionário",
+          vendedorUsuarioId: fixture.usuarioOperadorId,
+          itens: {
+            create: {
+              itemGraficaId: fixture.itemGraficaId,
+              quantidade: 10,
+              precoUnitario: 100,
+              precoTotal: 1000,
+              precoSugeridoUnitario: 100,
+            },
+          },
+        },
+      });
+
+      vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(
+        (await usuarioParaMock(fixture.usuarioDonoId)) as never
+      );
+
+      await expect(
+        duplicarOrcamento(null, formDataDe({ orcamentoId: original.id }))
+      ).rejects.toThrow(/^NEXT_REDIRECT:/);
+
+      const novoId = (redirectMock.mock.calls[0][0] as string).split("/").pop()!;
+      const novo = await prisma.orcamento.findUniqueOrThrow({ where: { id: novoId } });
+
+      expect(novo.vendedorUsuarioId).toBeNull();
+      expect(novo.vendedor).toBe("Ex-Funcionário");
+    },
+    TIMEOUT_MS
+  );
+});

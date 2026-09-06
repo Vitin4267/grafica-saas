@@ -163,10 +163,10 @@ export type ExcluirPerfilAcessoResult = { ok: boolean; mensagem: string };
 // Hard delete (schema não tem campo de desativação pra PerfilAcesso, ver
 // proposta original do achado) — mas bloqueado enquanto algum usuário ainda
 // usa o perfil, pra nunca tirar acesso de alguém como efeito colateral
-// silencioso de uma exclusão. onDelete: SetNull em Usuario.perfilAcessoId
-// garante que, se algum dia isto for relaxado, a exclusão nunca apagaria
-// usuário nem travaria no banco — mas a UI aqui é deliberadamente mais
-// cautelosa que o schema permite.
+// silencioso de uma exclusão. onDelete: Cascade em PerfilUsuario (feature
+// "multi-cargo", 2026-09-06) garante que, se algum dia isto for relaxado, a
+// exclusão só apaga o VÍNCULO (nunca o usuário) — mas a UI aqui é
+// deliberadamente mais cautelosa que o schema permite.
 export async function excluirPerfilAcesso(
   _estadoAnterior: ExcluirPerfilAcessoResult | null,
   formData: FormData

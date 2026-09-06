@@ -58,24 +58,25 @@ model Usuario {
   // reativa.
   desativadoEm DateTime?
 
-  // Achado A5 da auditoria de abrangência (Parte 6/Configurações,
-  // pesquisa-abrangencia-modulos.md, 2026-08-27) — perfil reutilizável de
-  // permissão por módulo, pra não configurar OPERADOR por OPERADOR quando
-  // vários fazem a mesma função (ex: 3 de acabamento no mesmo turno). Só tem
-  // efeito pra papel OPERADOR (mesma restrição de PermissaoUsuario) e só é
-  // CONSULTADO quando não existe override individual em PermissaoUsuario pro
-  // módulo em questão — ver resolverPermissaoOperador em
-  // src/lib/auth/permissoes.ts pra ordem exata de resolução. null = sem
-  // perfil atribuído, comportamento 100% igual ao de hoje (só PermissaoUsuario
-  // individual, ausência = sem acesso). onDelete: SetNull (não Restrict nem
-  // Cascade): apagar um PerfilAcesso nunca pode apagar usuário nem travar a
-  // exclusão do perfil — o usuário só volta a depender exclusivamente de
-  // PermissaoUsuario individual, o fallback mais seguro.
-  perfilAcessoId String?
-
   grafica                       Grafica                     @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  perfilAcesso                  PerfilAcesso?               @relation(fields: [perfilAcessoId], references: [id], onDelete: SetNull)
+  // Cargos com permissão pré-configurada (feature "multi-cargo",
+  // 2026-09-06) — substitui o antigo Usuario.perfilAcessoId (FK única pra
+  // PerfilAcesso). Um usuário pode ter N cargos ao mesmo tempo (ex: Vendedor
+  // E Financeiro, sem precisar de dois logins) — permissão de cada módulo é
+  // a UNIÃO (OR) entre todos os cargos, com override individual
+  // (PermissaoUsuario) sempre vencendo quando presente — ver
+  // resolverPermissaoOperador/obterModulosVisiveis em src/lib/auth/permissoes.ts
+  // pra ordem exata de resolução. A migration
+  // 20260906000000_perfil_usuario_multi_cargo migrou toda linha
+  // Usuario.perfilAcessoId != null pra uma linha de PerfilUsuario ANTES de
+  // dropar a coluna antiga — zero usuário perdeu o(s) perfil(is) que já tinha.
+  perfis                        PerfilUsuario[]
   orcamentos                    Orcamento[]
+  // Vendedor real do orçamento (pedido do dono, 2026-09-06) — distinto da
+  // relação `orcamentos` acima (quem DIGITOU o orçamento no sistema,
+  // Orcamento.usuarioId). Ver Orcamento.vendedorUsuarioId e
+  // buscarUsuariosVendedores.
+  orcamentosVendidos            Orcamento[]                 @relation("OrcamentoVendedor")
   sessoes                       Sessao[]
   permissoes                    PermissaoUsuario[]
   tokensResetSenha              TokenResetSenha[]
@@ -92,7 +93,6 @@ model Usuario {
   cotacoesFornecedorRegistradas CotacaoFornecedor[]
 
   @@index([graficaId])
-  @@index([perfilAcessoId])
   @@map("usuarios")
 }
 
@@ -131,31 +131,78 @@ model PermissaoUsuario {
   @@map("permissoes_usuario")
 }
 
+// Cargo de negócio dos perfis PRÉ-SEMEADOS (feature "multi-cargo",
+// 2026-09-06, garantirPerfisAcessoPadrao em src/lib/perfis-acesso-padrao.ts)
+// — distinto de PerfilAcesso.nome, que o DONO pode renomear livremente sem
+// quebrar nada. Um perfil customizado criado do zero pelo DONO tem
+// funcaoBase = null (não é nenhum dos pré-configurados, só um nome livre).
+// Dá um sinal ESTÁVEL de "quem pode ser vendedor" (buscarUsuariosVendedores)
+// — não depende de comparar string de nome, que pode ser editado.
+enum FuncaoPerfil {
+  VENDEDOR
+  FINANCEIRO
+  PRODUCAO
+  COMPRAS
+  ADMINISTRATIVO
+  ATENDIMENTO
+}
+
 // Achado A5 da auditoria de abrangência (Parte 6/Configurações,
 // pesquisa-abrangencia-modulos.md, 2026-08-27) — perfil de acesso reutilizável
 // ("Impressor", "Acabamento", "Vendedor externo"): em vez de configurar
 // PermissaoUsuario módulo por módulo pra cada OPERADOR novo, o DONO monta o
-// perfil uma vez e atribui a quantos usuários quiser (Usuario.perfilAcessoId).
-// Aditivo de propósito — PermissaoUsuario continua existindo do jeito que
-// está e continua vencendo o perfil quando as duas coexistem pro mesmo
-// usuário+módulo (override individual, ver resolverPermissaoOperador em
-// src/lib/auth/permissoes.ts). Só se aplica a OPERADOR, igual PermissaoUsuario
-// — DONO/ADMIN nunca consultam nem esta tabela nem a de override individual.
+// perfil uma vez e atribui a quantos usuários quiser (ver PerfilUsuario,
+// N:N desde a feature "multi-cargo" de 2026-09-06 — antes era
+// Usuario.perfilAcessoId, FK única). Aditivo de propósito — PermissaoUsuario
+// continua existindo do jeito que está e continua vencendo os perfis quando
+// coexistem pro mesmo usuário+módulo (override individual, ver
+// resolverPermissaoOperador em src/lib/auth/permissoes.ts). Só se aplica a
+// OPERADOR, igual PermissaoUsuario — DONO/ADMIN nunca consultam nem esta
+// tabela nem a de override individual.
 model PerfilAcesso {
-  id        String @id @default(cuid())
+  id        String        @id @default(cuid())
   graficaId String
   nome      String // "Impressor", "Acabamento", "Vendedor externo"
+  // null = perfil customizado criado do zero pelo DONO. Preenchido só nos 6
+  // perfis pré-semeados por garantirPerfisAcessoPadrao — ver comentário
+  // completo no enum FuncaoPerfil acima.
+  funcaoBase FuncaoPerfil?
 
   grafica    Grafica           @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   permissoes PermissaoPerfil[]
-  // Usuários que têm este perfil atribuído (Usuario.perfilAcessoId) — usado
-  // pra avisar/bloquear a exclusão do perfil quando ainda está em uso, e pra
-  // listar "quem usa este perfil" na tela de detalhe.
-  usuarios   Usuario[]
+  // Usuários que têm este perfil atribuído — usado pra avisar/bloquear a
+  // exclusão do perfil quando ainda está em uso (ver excluirPerfilAcesso),
+  // e pra listar "quem usa este perfil" na tela de detalhe.
+  usuarios   PerfilUsuario[]
 
   @@unique([graficaId, nome])
   @@index([graficaId])
   @@map("perfis_acesso")
+}
+
+// Tabela de junção N:N entre Usuario e PerfilAcesso (feature "multi-cargo",
+// 2026-09-06) — substitui a antiga FK única Usuario.perfilAcessoId. Um
+// usuário pode ter vários cargos ao mesmo tempo (ex: Vendedor E Financeiro);
+// a permissão de cada módulo é a UNIÃO (OR) entre todos os cargos do
+// usuário, com PermissaoUsuario (override individual) sempre vencendo
+// quando presente pro módulo — ver resolverPermissaoOperador/
+// obterModulosVisiveis em src/lib/auth/permissoes.ts pra ordem exata de
+// resolução. onDelete: Cascade nos dois lados — remover o usuário ou o
+// perfil apaga só o VÍNCULO, nunca o outro lado (Usuario e PerfilAcesso já
+// se apagam em cascade a partir de Grafica, então este model nunca fica
+// órfão de propósito).
+model PerfilUsuario {
+  id             String @id @default(cuid())
+  usuarioId      String
+  perfilAcessoId String
+
+  usuario      Usuario      @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  perfilAcesso PerfilAcesso @relation(fields: [perfilAcessoId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, perfilAcessoId])
+  @@index([usuarioId])
+  @@index([perfilAcessoId])
+  @@map("perfis_usuario")
 }
 
 model PermissaoPerfil {

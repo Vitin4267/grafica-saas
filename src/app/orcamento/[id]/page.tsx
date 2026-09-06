@@ -26,6 +26,7 @@ import {
 import { somarDiasUteis } from "@/lib/dias-uteis";
 import { saldoCreditoCliente } from "@/lib/credito-cliente";
 import { calcularPrazoEfetivoDias } from "@/lib/orcamento-prazo";
+import { buscarUsuariosVendedores } from "@/lib/usuarios-vendedores";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/Badge";
@@ -259,6 +260,13 @@ export default async function OrcamentoDetalhePage({
     orderBy: { nome: "asc" },
     select: { id: true, nome: true },
   });
+
+  // Feature "vendedor real no orçamento" (2026-09-06) — usuários ativos com
+  // cargo Vendedor + DONO/ADMIN, pra popular o <select> opcional em
+  // EditarDadosGeraisOrcamentoForm.tsx. Mesmo princípio de transportadoras
+  // acima: gráfica sem ninguém com esse cargo -> lista vazia -> select não
+  // aparece, digitação livre em `vendedor` continua idêntica a hoje.
+  const vendedores = await buscarUsuariosVendedores(usuario.graficaId);
 
   // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04) — só
   // alimenta o <select> opcional de conta financeira em PagamentosCard;
@@ -567,6 +575,7 @@ export default async function OrcamentoDetalhePage({
             orcamentoId={orcamento.id}
             dados={{
               vendedor: orcamento.vendedor,
+              vendedorUsuarioId: orcamento.vendedorUsuarioId,
               tipoPedido: orcamento.tipoPedido,
               contatoNome: orcamento.contatoNome,
               contatoEmail: orcamento.contatoEmail,
@@ -585,6 +594,7 @@ export default async function OrcamentoDetalhePage({
             contatosCliente={contatosCliente}
             transportadoras={transportadoras}
             condicoesPagamento={condicoesPagamento}
+            vendedores={vendedores}
           />
         </Card>
 

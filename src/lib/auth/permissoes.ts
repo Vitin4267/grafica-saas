@@ -30,61 +30,83 @@ async function buscarPermissao(usuarioId: string, modulo: ModuloPermissao) {
   });
 }
 
+// Feature "multi-cargo" (2026-09-06) — um usuário pode ter N cargos
+// (PerfilAcesso) ao mesmo tempo, ver model PerfilUsuario no schema. Lista os
+// ids dos perfis atribuídos a este usuário; array vazio = sem nenhum cargo
+// (mesmo tratamento de "sem perfil" de antes desta feature).
+async function buscarPerfilIds(usuarioId: string): Promise<string[]> {
+  const vinculos = await prisma.perfilUsuario.findMany({
+    where: { usuarioId },
+    select: { perfilAcessoId: true },
+  });
+  return vinculos.map((v) => v.perfilAcessoId);
+}
+
 // Achado A5 da auditoria de abrangência (Parte 6/Configurações) — perfil de
-// acesso reutilizável (ver model PerfilAcesso no schema). Só consultado
-// quando o usuário tem um perfil atribuído — retorna null (não uma linha
-// "vazia") quando `perfilAcessoId` é null, pra resolverPermissaoOperador
-// tratar os dois casos ("sem perfil" e "tem perfil mas o perfil não cobre
-// este módulo") do mesmo jeito: cai pro passo 3 (sem acesso).
-async function buscarPermissaoDoPerfil(perfilAcessoId: string | null, modulo: ModuloPermissao) {
-  if (!perfilAcessoId) return null;
-  return prisma.permissaoPerfil.findUnique({
-    where: { perfilId_modulo: { perfilId: perfilAcessoId, modulo } },
+// acesso reutilizável (ver model PerfilAcesso no schema). Uma linha por
+// cargo que TEM PermissaoPerfil pro módulo em questão — cargo sem linha pro
+// módulo simplesmente não aparece no array (equivalente a null, contribui
+// "false" pra união em resolverPermissaoOperador).
+async function buscarPermissoesDosPerfis(perfilIds: string[], modulo: ModuloPermissao) {
+  if (perfilIds.length === 0) return [];
+  return prisma.permissaoPerfil.findMany({
+    where: { perfilId: { in: perfilIds }, modulo },
     select: { podeVer: true, podeEditar: true },
   });
 }
 
 type LinhaPermissao = { podeVer: boolean; podeEditar: boolean } | null;
 
-// Resolução de 3 níveis pra permissão de OPERADOR — EXATA ORDEM (achado A5
-// da auditoria de abrangência, pesquisa-abrangencia-modulos.md):
+// Resolução de permissão de OPERADOR — EXATA ORDEM (achado A5 da auditoria
+// de abrangência, pesquisa-abrangencia-modulos.md; união por multi-cargo
+// adicionada 2026-09-06):
 //
 // 1. PermissaoUsuario (override individual): se existe QUALQUER linha pro
 //    par [usuarioId, modulo], ela vence — mesmo que o usuário também tenha
-//    um perfil atribuído, e mesmo que a linha seja podeVer=false/podeEditar=
-//    false (a PRESENÇA da linha já é um override explícito, não só o valor).
-//    Isto preserva 100% o comportamento de hoje pra quem já configura
-//    permissão individual: um perfil novo nunca muda o que já estava
-//    configurado na unha.
-// 2. Sem override individual pra este módulo: se o usuário tem
-//    perfilAcessoId e o perfil tem PermissaoPerfil pro módulo, usa o perfil.
+//    um ou mais cargos atribuídos, e mesmo que a linha seja podeVer=false/
+//    podeEditar=false (a PRESENÇA da linha já é um override explícito, não
+//    só o valor). Isto preserva 100% o comportamento de hoje pra quem já
+//    configura permissão individual: nenhum cargo nunca muda o que já
+//    estava configurado na unha.
+// 2. Sem override individual pra este módulo: UNIÃO (OR) entre TODOS os
+//    cargos do usuário que têm PermissaoPerfil pro módulo — o cargo mais
+//    permissivo vence (podeVer/podeEditar cada um resolvido
+//    independentemente). Um usuário com 2 cargos (ex: Vendedor +
+//    Financeiro) enxerga a soma dos dois, nunca menos que qualquer um deles
+//    sozinho.
 // 3. Nenhum dos dois: "ausência = sem acesso" — o mesmo padrão mais seguro
 //    por omissão que o sistema já tinha antes deste achado existir.
 //
 // Função pura (sem I/O) de propósito — toda a lógica de decisão mora aqui,
 // testável isoladamente do banco (ver permissoes.test.ts). resolverPermissao
-// logo abaixo só busca os dois inputs e delega pra esta função.
+// logo abaixo só busca os inputs e delega pra esta função.
 export function resolverPermissaoOperador(
   individual: LinhaPermissao,
-  doPerfil: LinhaPermissao
+  doPerfis: LinhaPermissao[]
 ): { podeVer: boolean; podeEditar: boolean } {
-  const linha = individual ?? doPerfil;
-  return { podeVer: linha?.podeVer ?? false, podeEditar: linha?.podeEditar ?? false };
+  if (individual) {
+    return { podeVer: individual.podeVer, podeEditar: individual.podeEditar };
+  }
+  return {
+    podeVer: doPerfis.some((p) => p?.podeVer ?? false),
+    podeEditar: doPerfis.some((p) => p?.podeEditar ?? false),
+  };
 }
 
 async function resolverPermissao(
-  usuario: { id: string; perfilAcessoId: string | null },
+  usuario: { id: string },
   modulo: ModuloPermissao
 ): Promise<{ podeVer: boolean; podeEditar: boolean }> {
-  const [individual, doPerfil] = await Promise.all([
+  const [individual, perfilIds] = await Promise.all([
     buscarPermissao(usuario.id, modulo),
-    buscarPermissaoDoPerfil(usuario.perfilAcessoId, modulo),
+    buscarPerfilIds(usuario.id),
   ]);
-  return resolverPermissaoOperador(individual, doPerfil);
+  const doPerfis = await buscarPermissoesDosPerfis(perfilIds, modulo);
+  return resolverPermissaoOperador(individual, doPerfis);
 }
 
 export async function podeVerModulo(
-  usuario: { id: string; papel: PapelUsuario; perfilAcessoId: string | null },
+  usuario: { id: string; papel: PapelUsuario },
   modulo: ModuloPermissao
 ): Promise<boolean> {
   if (usuario.papel !== "OPERADOR") return true;
@@ -93,7 +115,7 @@ export async function podeVerModulo(
 }
 
 export async function podeEditarModulo(
-  usuario: { id: string; papel: PapelUsuario; perfilAcessoId: string | null },
+  usuario: { id: string; papel: PapelUsuario },
   modulo: ModuloPermissao
 ): Promise<boolean> {
   if (usuario.papel !== "OPERADOR") return true;
@@ -106,7 +128,7 @@ export async function podeEditarModulo(
 // pra outra tela com gate de módulo aqui, senão risco de loop se o usuário
 // também não tiver acesso ao destino.
 export async function exigirVerModulo(
-  usuario: { id: string; papel: PapelUsuario; perfilAcessoId: string | null },
+  usuario: { id: string; papel: PapelUsuario },
   modulo: ModuloPermissao
 ): Promise<void> {
   if (!(await podeVerModulo(usuario, modulo))) {
@@ -117,7 +139,7 @@ export async function exigirVerModulo(
 // Pra usar no topo de uma Server Action: recusa a ação (sem redirecionar —
 // uma action não navega) se o usuário não puder editar o módulo.
 export async function exigirEditarModulo(
-  usuario: { id: string; papel: PapelUsuario; perfilAcessoId: string | null },
+  usuario: { id: string; papel: PapelUsuario },
   modulo: ModuloPermissao
 ): Promise<boolean> {
   return podeEditarModulo(usuario, modulo);
@@ -127,24 +149,25 @@ export async function exigirEditarModulo(
 // mostrar no menu (UserNav). null = vê tudo (DONO/ADMIN); nunca é a única
 // linha de defesa, a página de destino sempre re-checa por conta própria.
 //
-// Mesma resolução de 3 níveis de podeVerModulo, só que pra TODOS os módulos
-// de uma vez (evita N buscas): módulo com override individual (mesmo que
-// negativo) usa só esse valor; módulo sem override cai no perfil, se houver.
+// Mesma resolução de podeVerModulo, só que pra TODOS os módulos de uma vez
+// (evita N buscas): módulo com override individual (mesmo que negativo) usa
+// só esse valor; módulo sem override é a UNIÃO de podeVer entre todos os
+// cargos do usuário (multi-cargo, 2026-09-06).
 export async function obterModulosVisiveis(usuario: {
   id: string;
   papel: PapelUsuario;
-  perfilAcessoId: string | null;
 }): Promise<ModuloPermissao[] | null> {
   if (usuario.papel !== "OPERADOR") return null;
 
-  const [individuais, doPerfil] = await Promise.all([
+  const perfilIds = await buscarPerfilIds(usuario.id);
+  const [individuais, doPerfis] = await Promise.all([
     prisma.permissaoUsuario.findMany({
       where: { usuarioId: usuario.id },
       select: { modulo: true, podeVer: true },
     }),
-    usuario.perfilAcessoId
+    perfilIds.length > 0
       ? prisma.permissaoPerfil.findMany({
-          where: { perfilId: usuario.perfilAcessoId },
+          where: { perfilId: { in: perfilIds } },
           select: { modulo: true, podeVer: true },
         })
       : Promise.resolve([]),
@@ -156,9 +179,11 @@ export async function obterModulosVisiveis(usuario: {
   for (const [modulo, podeVer] of individualPorModulo) {
     if (podeVer) modulos.add(modulo);
   }
-  for (const { modulo, podeVer } of doPerfil) {
-    // Override individual pro módulo (mesmo negativo) já decidiu — perfil só
+  for (const { modulo, podeVer } of doPerfis) {
+    // Override individual pro módulo (mesmo negativo) já decidiu — cargo só
     // preenche módulo em que o usuário não tem nenhuma linha individual.
+    // Vários cargos podem repetir o mesmo módulo aqui (união) — o Set
+    // absorve a duplicidade sem problema.
     if (individualPorModulo.has(modulo)) continue;
     if (podeVer) modulos.add(modulo);
   }

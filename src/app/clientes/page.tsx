@@ -9,6 +9,7 @@ import {
   podeEditarModulo,
   obterModulosVisiveis,
 } from "@/lib/auth/permissoes";
+import { buscarUsuariosVendedores } from "@/lib/usuarios-vendedores";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
@@ -68,14 +69,12 @@ export default async function ClientesPage({
     }),
     prisma.cliente.count({ where: { graficaId: usuario.graficaId } }),
     // Achado A8 — lista fechada de usuários que podem ser atribuídos como
-    // vendedor de um cliente: ativos da própria gráfica. Sem role
-    // "vendedor" no sistema hoje, então lista todos (DONO/ADMIN/OPERADOR
-    // podem todos vender, mesmo princípio de Usuario.comissaoPercent).
-    prisma.usuario.findMany({
-      where: { graficaId: usuario.graficaId, desativadoEm: null },
-      orderBy: { nome: "asc" },
-      select: { id: true, nome: true },
-    }),
+    // vendedor de um cliente: cargo Vendedor (feature "multi-cargo",
+    // 2026-09-06 — corrige o gap documentado antes, quando não existia
+    // nenhum sinal de "vendedor" no sistema e a lista incluía TODOS os
+    // ativos) + DONO/ADMIN, que sempre podem vender (mesmo princípio de
+    // Usuario.comissaoPercent).
+    buscarUsuariosVendedores(usuario.graficaId),
   ]);
 
   const totalPaginas = Math.max(1, Math.ceil(totalClientes / POR_PAGINA));

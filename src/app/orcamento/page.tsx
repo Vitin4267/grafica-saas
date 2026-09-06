@@ -10,6 +10,7 @@ import {
   obterModulosVisiveis,
 } from "@/lib/auth/permissoes";
 import { formatoMoeda } from "@/lib/moeda";
+import { buscarUsuariosVendedores } from "@/lib/usuarios-vendedores";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -25,7 +26,7 @@ export default async function OrcamentoPage() {
   await exigirVerModulo(usuario, "ORCAMENTO");
   const podeEditar = await podeEditarModulo(usuario, "ORCAMENTO");
 
-  const [itensVendaveis, acabamentosDisponiveis, papeisDisponiveis, clientes, filiais, orcamentosRecentes] = await Promise.all([
+  const [itensVendaveis, acabamentosDisponiveis, papeisDisponiveis, clientes, filiais, vendedores, orcamentosRecentes] = await Promise.all([
     prisma.itemGrafica.findMany({
       where: {
         graficaId: usuario.graficaId,
@@ -77,6 +78,10 @@ export default async function OrcamentoPage() {
       where: { graficaId: usuario.graficaId, ativa: true },
       orderBy: { nome: "asc" },
     }),
+    // Feature "vendedor real no orçamento" (2026-09-06) — usuários ativos
+    // com cargo Vendedor + DONO/ADMIN (sempre elegíveis), pra popular o
+    // <select> opcional de vendedor em CalculadoraForm.tsx.
+    buscarUsuariosVendedores(usuario.graficaId),
     prisma.orcamento.findMany({
       where: { graficaId: usuario.graficaId },
       include: {
@@ -206,6 +211,7 @@ export default async function OrcamentoPage() {
             // "ver código-fonte"/aba Network pra qualquer um.
             clientes={clientes.map((c) => ({ id: c.id, nome: c.nome }))}
             filiais={filiais.map((f) => ({ id: f.id, nome: f.nome }))}
+            vendedores={vendedores}
             unidadePadrao={usuario.grafica.unidadePadraoDimensao}
           />
         )}

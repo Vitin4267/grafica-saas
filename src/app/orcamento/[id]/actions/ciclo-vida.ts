@@ -488,6 +488,19 @@ export async function duplicarOrcamento(
   // duplicados, mesma regra de criarOrcamento (ver aplicarPisoDoPedido).
   total = aplicarPisoDoPedido(total, pedidoMinimo, incrementoArredondamento);
 
+  // Feature "vendedor real no orçamento" (2026-09-06) — vendedorUsuarioId só
+  // é copiado se o usuário ainda EXISTIR e estiver ATIVO (diferente de
+  // transportadoraId/valorFrete acima, que nunca são copiados de propósito):
+  // um vendedor removido ou de outra gráfica não pode "vazar" pro pedido
+  // novo. `vendedor` (texto snapshot) sempre é copiado — nunca fica em
+  // branco só porque o vínculo não pôde ser preservado.
+  const vendedorAindaAtivo = original.vendedorUsuarioId
+    ? await prisma.usuario.findFirst({
+        where: { id: original.vendedorUsuarioId, graficaId: usuario.graficaId, desativadoEm: null },
+        select: { id: true },
+      })
+    : null;
+
   const novoOrcamento = await prisma.orcamento.create({
     data: {
       graficaId: usuario.graficaId,
@@ -497,6 +510,7 @@ export async function duplicarOrcamento(
       duplicadoDeId: original.id,
       total: total.toFixed(2),
       vendedor: original.vendedor,
+      vendedorUsuarioId: vendedorAindaAtivo?.id ?? null,
       tipoPedido: "REPETICAO_SEM_ALTERACAO",
       contatoNome: original.contatoNome,
       contatoEmail: original.contatoEmail,

@@ -58,18 +58,42 @@ export async function criarUsuario(
 
   const senhaHash = await hashPassword(senha);
 
-  const novoUsuario = await prisma.usuario.create({
-    data: {
-      graficaId: usuario.graficaId,
-      nome,
-      email,
-      senhaHash,
-      papel,
-      // Convite de colega por um DONO já verificado — confiança transitiva,
-      // nunca fica pendente em /verificar-email (diferente do cadastro
-      // self-service em /registro).
-      emailVerificadoEm: new Date(),
-    },
+  // Feature "multi-cargo" (2026-09-06) — cargos escolhidos na hora da
+  // criação (checkbox múltiplo em UsuarioForm.tsx), pra não exigir um passo
+  // separado depois em PerfilAcessoCell. Nunca confia nos ids crus do form —
+  // revalida cada um contra a MESMA gráfica (mesmo cuidado de
+  // condicaoPagamentoId/transportadoraId em actions/cabecalho.ts). Só tem
+  // efeito de verdade pra papel OPERADOR (ver resolverPermissaoOperador) —
+  // marcar um cargo pra ADMIN/DONO não quebra nada, só fica sem uso.
+  const idsCargosBrutos = [...new Set(formData.getAll("perfilAcessoId").map((v) => String(v)))];
+  const cargosValidos =
+    idsCargosBrutos.length > 0
+      ? await prisma.perfilAcesso.findMany({
+          where: { id: { in: idsCargosBrutos }, graficaId: usuario.graficaId },
+          select: { id: true },
+        })
+      : [];
+
+  const novoUsuario = await prisma.$transaction(async (tx) => {
+    const criado = await tx.usuario.create({
+      data: {
+        graficaId: usuario.graficaId,
+        nome,
+        email,
+        senhaHash,
+        papel,
+        // Convite de colega por um DONO já verificado — confiança transitiva,
+        // nunca fica pendente em /verificar-email (diferente do cadastro
+        // self-service em /registro).
+        emailVerificadoEm: new Date(),
+      },
+    });
+    if (cargosValidos.length > 0) {
+      await tx.perfilUsuario.createMany({
+        data: cargosValidos.map((c) => ({ usuarioId: criado.id, perfilAcessoId: c.id })),
+      });
+    }
+    return criado;
   });
 
   await registrarAuditoria({
@@ -249,13 +273,16 @@ export async function salvarPermissoes(
 export type SalvarPerfilUsuarioResult = { ok: boolean; mensagem: string };
 
 // Achado A5 da auditoria de abrangência (Parte 6/Configurações,
-// pesquisa-abrangencia-modulos.md, 2026-08-27) — atribui/troca o
-// PerfilAcesso de UM usuário por vez (ver PerfilAcessoCell, auto-salva no
-// onChange do select). Só se aplica a OPERADOR (mesma restrição de
-// PermissaoUsuario/perfilAcessoId em toda a resolução de permissão) — DONO/
-// ADMIN não têm o select renderizado na tela, mas o servidor não confia
-// nisso: rejeita explicitamente se o alvo não for OPERADOR, mesmo que o form
-// seja adulterado.
+// pesquisa-abrangencia-modulos.md, 2026-08-27) — atribui/troca os cargos
+// (PerfilAcesso) de UM usuário por vez (ver PerfilAcessoCell, auto-salva no
+// onChange de cada checkbox). Feature "multi-cargo" (2026-09-06): passou de
+// "trocar 1 valor" pra "substituir o conjunto inteiro" — apaga os que
+// saíram e insere os que entraram, numa transação (nunca um DELETE-then-
+// INSERT visível como dois estados intermediários). Só se aplica a OPERADOR
+// (mesma restrição de PermissaoUsuario em toda a resolução de permissão) —
+// DONO/ADMIN não têm os checkboxes renderizados na tela, mas o servidor não
+// confia nisso: rejeita explicitamente se o alvo não for OPERADOR, mesmo que
+// o form seja adulterado.
 export async function salvarPerfilUsuario(
   _estadoAnterior: SalvarPerfilUsuarioResult | null,
   formData: FormData
@@ -273,41 +300,55 @@ export async function salvarPerfilUsuario(
     return { ok: false, mensagem: "Usuário não encontrado (ou não é Operador)." };
   }
 
-  const bruto = String(formData.get("perfilAcessoId") ?? "").trim();
-  let perfilNovo: { id: string; nome: string } | null = null;
-  if (bruto) {
-    perfilNovo = await prisma.perfilAcesso.findFirst({
-      where: { id: bruto, graficaId: usuario.graficaId },
-      select: { id: true, nome: true },
+  // Nunca confia nos ids crus do form — revalida cada um contra a MESMA
+  // gráfica (mesmo cuidado de condicaoPagamentoId/transportadoraId em
+  // actions/cabecalho.ts). Um id que não pertence a esta gráfica (só pode
+  // vir de um POST forjado, o checkbox real só lista perfis desta gráfica)
+  // é silenciosamente ignorado em vez de rejeitar a submissão inteira.
+  const idsBrutos = [...new Set(formData.getAll("perfilAcessoId").map((v) => String(v)))];
+  const perfisNovos =
+    idsBrutos.length > 0
+      ? await prisma.perfilAcesso.findMany({
+          where: { id: { in: idsBrutos }, graficaId: usuario.graficaId },
+          select: { id: true, nome: true },
+        })
+      : [];
+
+  const perfisAntes = await prisma.perfilUsuario.findMany({
+    where: { usuarioId: alvo.id },
+    select: { perfilAcesso: { select: { nome: true } } },
+  });
+  const nomesAntes = perfisAntes.map((p) => p.perfilAcesso.nome).sort();
+  const nomesDepois = perfisNovos.map((p) => p.nome).sort();
+
+  await prisma.$transaction([
+    prisma.perfilUsuario.deleteMany({ where: { usuarioId: alvo.id } }),
+    ...(perfisNovos.length > 0
+      ? [
+          prisma.perfilUsuario.createMany({
+            data: perfisNovos.map((p) => ({ usuarioId: alvo.id, perfilAcessoId: p.id })),
+          }),
+        ]
+      : []),
+  ]);
+
+  const mudou = nomesAntes.join("||") !== nomesDepois.join("||");
+  if (mudou) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "usuario.salvar_perfil_acesso",
+      entidade: "Usuario",
+      entidadeId: alvo.id,
+      descricao: `Cargos de "${alvo.nome}" atualizados`,
+      valorAnterior: nomesAntes.length > 0 ? nomesAntes.join(", ") : "Sem cargo",
+      valorNovo: nomesDepois.length > 0 ? nomesDepois.join(", ") : "Sem cargo",
     });
-    if (!perfilNovo) {
-      return { ok: false, mensagem: "Perfil de acesso não encontrado." };
-    }
   }
 
-  const perfilAntigo = alvo.perfilAcessoId
-    ? await prisma.perfilAcesso.findUnique({ where: { id: alvo.perfilAcessoId }, select: { nome: true } })
-    : null;
-
-  await prisma.usuario.update({
-    where: { id: alvo.id },
-    data: { perfilAcessoId: perfilNovo?.id ?? null },
-  });
-
-  await registrarAuditoria({
-    graficaId: usuario.graficaId,
-    usuarioId: usuario.id,
-    usuarioNome: usuario.nome,
-    acao: "usuario.salvar_perfil_acesso",
-    entidade: "Usuario",
-    entidadeId: alvo.id,
-    descricao: `Perfil de acesso de "${alvo.nome}" atualizado`,
-    valorAnterior: perfilAntigo?.nome ?? "Sem perfil",
-    valorNovo: perfilNovo?.nome ?? "Sem perfil",
-  });
-
   revalidatePath("/usuarios");
-  return { ok: true, mensagem: `Perfil de "${alvo.nome}" atualizado com sucesso!` };
+  return { ok: true, mensagem: `Cargos de "${alvo.nome}" atualizados com sucesso!` };
 }
 
 export type SalvarComissaoResult = { ok: boolean; mensagem: string };

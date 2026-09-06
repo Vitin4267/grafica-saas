@@ -29,6 +29,11 @@ const ROTULO_FRETE = Object.fromEntries(OPCOES_FRETE);
 
 type DadosGerais = {
   vendedor: string | null;
+  // Feature "vendedor real no orçamento" (2026-09-06) — id do usuário
+  // escolhido no <select> abaixo, quando houver. Convive com `vendedor`
+  // acima (snapshot em texto, o que de fato aparece no PDF/link público) —
+  // mesmo padrão de contatoClienteId/condicaoPagamentoId.
+  vendedorUsuarioId: string | null;
   tipoPedido: string | null;
   contatoNome: string | null;
   contatoEmail: string | null;
@@ -86,6 +91,16 @@ type CondicaoPagamentoOpcao = {
   nome: string;
 };
 
+// Feature "vendedor real no orçamento" (2026-09-06) — usuários ativos com
+// cargo Vendedor + DONO/ADMIN (ver buscarUsuariosVendedores), pra popular o
+// <select> opcional de vendedor. Mesmo princípio de TransportadoraOpcao/
+// CondicaoPagamentoOpcao acima (lista vazia -> select não aparece,
+// digitação livre em `vendedor` continua idêntica a hoje).
+type VendedorOpcao = {
+  id: string;
+  nome: string;
+};
+
 // Bloco de campos gerais do pedido — editável a qualquer status do
 // orçamento (ver comentário em editarDadosGeraisOrcamento, actions.ts): não
 // mexe em total nem no que o cliente já viu. Mesmo padrão de
@@ -97,6 +112,7 @@ export function EditarDadosGeraisOrcamentoForm({
   contatosCliente,
   transportadoras,
   condicoesPagamento,
+  vendedores,
 }: {
   orcamentoId: string;
   dados: DadosGerais;
@@ -114,6 +130,8 @@ export function EditarDadosGeraisOrcamentoForm({
   // cadastrou nenhuma, e nesse caso o <select> nem aparece (digitação livre
   // em `condicoesPagamento` continua idêntica a hoje).
   condicoesPagamento: CondicaoPagamentoOpcao[];
+  // Feature "vendedor real no orçamento" (2026-09-06) — ver VendedorOpcao.
+  vendedores: VendedorOpcao[];
 }) {
   const [state, formAction, isPending] = useActionState(editarDadosGeraisOrcamento, null);
   const [editando, setEditando] = useState(false);
@@ -136,6 +154,12 @@ export function EditarDadosGeraisOrcamentoForm({
   // aparece no PDF.
   const [condicoesPagamentoTexto, setCondicoesPagamentoTexto] = useState(dados.condicoesPagamento ?? "");
   const [condicaoPagamentoId, setCondicaoPagamentoId] = useState(dados.condicaoPagamentoId ?? "");
+  // Feature "vendedor real no orçamento" (2026-09-06) — mesmo padrão de
+  // transportadora/transportadoraId acima: escolher no <select> pré-preenche
+  // o texto livre `vendedor`, que continua editável/é o que de fato aparece
+  // no PDF.
+  const [vendedorTexto, setVendedorTexto] = useState(dados.vendedor ?? "");
+  const [vendedorUsuarioId, setVendedorUsuarioId] = useState(dados.vendedorUsuarioId ?? "");
 
   function aoEscolherContato(id: string) {
     setContatoClienteId(id);
@@ -159,6 +183,14 @@ export function EditarDadosGeraisOrcamentoForm({
     const condicaoEscolhida = condicoesPagamento.find((c) => c.id === id);
     if (condicaoEscolhida) {
       setCondicoesPagamentoTexto(condicaoEscolhida.nome);
+    }
+  }
+
+  function aoEscolherVendedor(id: string) {
+    setVendedorUsuarioId(id);
+    const vendedorEscolhido = vendedores.find((v) => v.id === id);
+    if (vendedorEscolhido) {
+      setVendedorTexto(vendedorEscolhido.nome);
     }
   }
 
@@ -217,7 +249,28 @@ export function EditarDadosGeraisOrcamentoForm({
     <form action={formAction} className="flex flex-col gap-4">
       <input type="hidden" name="orcamentoId" value={orcamentoId} />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Input label="Vendedor" name="vendedor" defaultValue={dados.vendedor ?? ""} />
+        {vendedores.length > 0 && (
+          <Select
+            label="Vendedor cadastrado"
+            name="vendedorUsuarioId"
+            value={vendedorUsuarioId}
+            onChange={(e) => aoEscolherVendedor(e.target.value)}
+            hint="Escolher preenche o campo abaixo — que continua editável"
+          >
+            <option value="">digitar manualmente</option>
+            {vendedores.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.nome}
+              </option>
+            ))}
+          </Select>
+        )}
+        <Input
+          label="Vendedor"
+          name="vendedor"
+          value={vendedorTexto}
+          onChange={(e) => setVendedorTexto(e.target.value)}
+        />
         <Select label="Tipo de pedido" name="tipoPedido" defaultValue={dados.tipoPedido ?? ""}>
           <option value="">não informado</option>
           {OPCOES_TIPO_PEDIDO.map(([v, rotulo]) => (

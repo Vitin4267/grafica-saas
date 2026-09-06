@@ -25,8 +25,16 @@ export default async function PerfilAcessoDetalhePage({
       where: { id, graficaId: usuario.graficaId },
       include: { permissoes: true },
     }),
+    // Achado A5 (multi-cargo, 2026-09-06) — perfilAcessoId deixou de ser
+    // coluna de "usuarios" (virou tabela de junção PerfilUsuario, N:N).
+    // Busca por quem tem uma linha de PerfilUsuario apontando pra ESTE
+    // perfil (mesmo filtro de graficaId/desativadoEm de antes).
     prisma.usuario.findMany({
-      where: { perfilAcessoId: id, graficaId: usuario.graficaId, desativadoEm: null },
+      where: {
+        graficaId: usuario.graficaId,
+        desativadoEm: null,
+        perfis: { some: { perfilAcessoId: id } },
+      },
       select: { id: true, nome: true },
       orderBy: { nome: "asc" },
     }),

@@ -119,6 +119,19 @@ model Orcamento {
   // de preço). contatoNome/contatoEmail são um snapshot específico DESTE
   // pedido, diferente de Cliente.nome/Cliente.email (que são o cadastro).
   vendedor                 String?
+  // Feature "vendedor real no orçamento" (2026-09-06) — quando quem lança o
+  // orçamento escolhe um usuário cadastrado com cargo Vendedor (ou
+  // DONO/ADMIN, sempre elegíveis — ver buscarUsuariosVendedores) em vez de
+  // digitar `vendedor` à mão, este id fica salvo aqui. FK opcional que
+  // CONVIVE com o snapshot em texto acima (mesmo precedente de
+  // contatoClienteId/contatoNome, achado A4): escolher um usuário
+  // pré-preenche o texto livre, que continua sendo o que aparece no
+  // PDF/link público — nunca lido daqui, pra não quebrar se o usuário for
+  // desativado depois de o orçamento já enviado. Distinto de `usuarioId`
+  // (quem DIGITOU o orçamento no sistema) — os dois podem ser pessoas
+  // diferentes. SetNull: usuário removido não pode travar nada, só perde o
+  // vínculo — o texto snapshot continua valendo.
+  vendedorUsuarioId        String?
   tipoPedido               TipoPedidoOrcamento?
   contatoNome              String?
   contatoEmail             String?
@@ -272,6 +285,10 @@ model Orcamento {
   grafica                  Grafica            @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   cliente                  Cliente            @relation(fields: [clienteId], references: [id])
   usuario                  Usuario            @relation(fields: [usuarioId], references: [id])
+  // Nome de relação explícito ("OrcamentoVendedor") — Prisma exige quando há
+  // mais de uma relação entre os dois mesmos models (`usuario` acima já
+  // liga Orcamento a Usuario via usuarioId).
+  vendedorUsuario          Usuario?           @relation("OrcamentoVendedor", fields: [vendedorUsuarioId], references: [id], onDelete: SetNull)
   filial                   Filial?            @relation(fields: [filialId], references: [id], onDelete: SetNull)
   contatoCliente           ContatoCliente?    @relation(fields: [contatoClienteId], references: [id], onDelete: SetNull)
   condicaoPagamento        CondicaoPagamento? @relation(fields: [condicaoPagamentoId], references: [id], onDelete: SetNull)
@@ -305,6 +322,7 @@ model Orcamento {
   @@index([condicaoPagamentoId])
   @@index([enderecoEntregaId])
   @@index([transportadoraId])
+  @@index([vendedorUsuarioId])
   // Query da lista de "orçamentos parados" (ver /orcamento/parados) —
   // filtra por graficaId+status=ENVIADO e ordena por enviadoEm.
   @@index([graficaId, status, enviadoEm])

@@ -16,6 +16,7 @@ import { revalidatePath, updateTag } from "next/cache";
 import { UNIDADES_DIMENSAO, converterParaCm } from "@/lib/unidade-dimensao";
 import { itemEntradaSchema, etiquetaEntradaSchema } from "@/lib/orcamento-item-entrada";
 import { resolverCoresEspeciais } from "@/lib/orcamento-cor-especial";
+import { buscarUsuariosVendedores } from "@/lib/usuarios-vendedores";
 
 // Nunca confia na unidade que vem do formulário/JSON — validada contra as
 // únicas 3 que existem (ver src/lib/unidade-dimensao.ts) antes de converter
@@ -303,8 +304,26 @@ export async function criarOrcamento(
   }
   const campoTexto = (nome: string, max: number) =>
     String(formData.get(nome) || "").trim().slice(0, max) || null;
+
+  // Feature "vendedor real no orçamento" (2026-09-06) — mesmo cuidado de
+  // contatoClienteId/condicaoPagamentoId em actions/cabecalho.ts: nunca lido
+  // do form sem revalidar contra a MESMA gráfica E contra a lista fechada de
+  // quem pode ser vendedor (buscarUsuariosVendedores) — o <select> real só
+  // oferece essas opções, um id fora dela só pode vir de um POST forjado.
+  // "" = digitação manual, sem usuário escolhido.
+  const vendedorUsuarioIdBruto = String(formData.get("vendedorUsuarioId") ?? "").trim();
+  let vendedorUsuarioId: string | null = null;
+  if (vendedorUsuarioIdBruto) {
+    const vendedoresValidos = await buscarUsuariosVendedores(usuario.graficaId);
+    if (!vendedoresValidos.some((v) => v.id === vendedorUsuarioIdBruto)) {
+      return { ok: false, mensagem: "Vendedor selecionado inválido." };
+    }
+    vendedorUsuarioId = vendedorUsuarioIdBruto;
+  }
+
   const dadosGerais = {
     vendedor: campoTexto("vendedor", 120),
+    vendedorUsuarioId,
     tipoPedido: tipoPedidoParsed?.success ? tipoPedidoParsed.data : null,
     contatoNome: campoTexto("contatoNome", 120),
     contatoEmail: campoTexto("contatoEmail", 200),

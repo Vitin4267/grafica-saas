@@ -4,6 +4,7 @@ import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { exigirPapel, podeVerMeuNegocio } from "@/lib/auth/permissoes";
+import { garantirPerfisAcessoPadrao } from "@/lib/perfis-acesso-padrao";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { UsuarioForm } from "./UsuarioForm";
@@ -20,6 +21,12 @@ export default async function UsuariosPage() {
   await exigirAssinaturaAtiva(usuario);
   exigirPapel(usuario, ["DONO"]);
 
+  // Idempotente: só cria os 6 cargos padrão (Vendedor, Financeiro, Produção,
+  // Compras, Administrativo, Atendimento) se a gráfica ainda não tem NENHUM
+  // PerfilAcesso cadastrado — mesmo princípio de garantirCondicoesPagamentoPadrao
+  // (ver comentário completo em src/lib/perfis-acesso-padrao.ts).
+  await garantirPerfisAcessoPadrao(usuario.graficaId);
+
   const [todosUsuarios, perfisAcesso, etapas] = await Promise.all([
     prisma.usuario.findMany({
       where: { graficaId: usuario.graficaId },
@@ -27,6 +34,9 @@ export default async function UsuariosPage() {
       include: {
         responsaveisEstagio: { select: { status: true } },
         responsaveisAdministrativo: { select: { area: true } },
+        // Feature "multi-cargo" (2026-09-06) — ids dos cargos atribuídos a
+        // cada usuário (ver PerfilAcessoCell/UsuarioForm).
+        perfis: { select: { perfilAcessoId: true } },
       },
     }),
     // Achado A5 da auditoria de abrangência — ver PerfilAcessoCell.
@@ -73,7 +83,7 @@ export default async function UsuariosPage() {
             <h2 className="mb-5 text-base font-semibold text-slate-900 dark:text-white">
               Novo usuário
             </h2>
-            <UsuarioForm />
+            <UsuarioForm perfisAcesso={perfisAcesso} />
           </Card>
 
           <div className="lg:col-span-3">
@@ -83,14 +93,14 @@ export default async function UsuariosPage() {
                 nome: u.nome,
                 email: u.email,
                 papel: u.papel,
-                perfilAcessoId: u.perfilAcessoId,
+                perfilAcessoIds: u.perfis.map((p) => p.perfilAcessoId),
               }))}
               usuariosDesativados={usuariosDesativados.map((u) => ({
                 id: u.id,
                 nome: u.nome,
                 email: u.email,
                 papel: u.papel,
-                perfilAcessoId: u.perfilAcessoId,
+                perfilAcessoIds: u.perfis.map((p) => p.perfilAcessoId),
                 desativadoEm: u.desativadoEm!.toISOString(),
               }))}
               perfisAcesso={perfisAcesso}
@@ -106,9 +116,10 @@ export default async function UsuariosPage() {
               </h2>
               <p className="mt-1 text-sm text-slate-500">
                 Monte um conjunto de permissões reutilizável e atribua a
-                quantos Operadores quiser, em vez de configurar módulo por
-                módulo pra cada pessoa (o select &quot;Sem perfil&quot; ao
-                lado de cada Operador acima).
+                quantos Operadores quiser — um mesmo Operador pode ter mais
+                de um cargo ao mesmo tempo (os cargos ao lado de cada
+                Operador acima), em vez de configurar módulo por módulo pra
+                cada pessoa.
               </p>
             </div>
             <Link

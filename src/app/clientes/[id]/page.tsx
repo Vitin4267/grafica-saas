@@ -10,6 +10,7 @@ import {
   podeEditarModulo,
   obterModulosVisiveis,
 } from "@/lib/auth/permissoes";
+import { buscarUsuariosVendedores } from "@/lib/usuarios-vendedores";
 import { UserNav } from "@/components/UserNav";
 import { ArrowLeftIcon } from "@/components/icons";
 import { ClienteEditForm } from "./ClienteEditForm";
@@ -33,13 +34,9 @@ export default async function ClienteDetalhePage({
     prisma.cliente.findFirst({
       where: { id, graficaId: usuario.graficaId },
     }),
-    // Achado A8 — mesma lista fechada de ClientesPage (usuários ativos da
-    // gráfica, sem role "vendedor" explícita no sistema).
-    prisma.usuario.findMany({
-      where: { graficaId: usuario.graficaId, desativadoEm: null },
-      orderBy: { nome: "asc" },
-      select: { id: true, nome: true },
-    }),
+    // Achado A8 — mesma lista fechada de ClientesPage (cargo Vendedor +
+    // DONO/ADMIN, ver buscarUsuariosVendedores).
+    buscarUsuariosVendedores(usuario.graficaId),
     // Achado A4 da Parte 5 — inclui inativos de propósito: esta é a tela de
     // GESTÃO dos contatos (precisa reativar), diferente do <select> do
     // orçamento (esse sim só ativos, ver EditarDadosGeraisOrcamentoForm.tsx).
