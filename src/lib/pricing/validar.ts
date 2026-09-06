@@ -2,11 +2,13 @@ import { ErroPrecificacao } from "./erros";
 import type {
   ContextoBordado,
   ContextoDigital,
+  ContextoEditorial,
   ContextoFlexografia,
   ContextoM2,
   ContextoOffset,
   ContextoRevenda,
   PedidoDigital,
+  PedidoEditorial,
   PedidoFlexografia,
   PedidoM2,
   PedidoBordado,
@@ -255,6 +257,54 @@ export function validarPedidoTempoMaquina(pedido: PedidoTempoMaquina) {
       "DIMENSAO_INVALIDA",
       "Os metros de corte precisam ser maiores que zero.",
       { metrosCorte: pedido.metrosCorte }
+    );
+  }
+}
+
+// Editorial multipágina (achado A10, Rota 1) — sem nesting, mas COM
+// dimensões obrigatórias (formato fechado da página, precisa da área pro
+// peso do papel — diferente de Digital/setup-por-peça/Bordado/Tempo de
+// máquina acima, onde largura/altura são opcionais). numeroPaginas é a
+// contagem do MIOLO, sempre obrigatória e maior que zero (sem "1 página
+// padrão" que faça sentido, mesmo raciocínio de numeroPontos do Bordado).
+// Papel de miolo e capa não têm fallback de produto (diferente de OFFSET) —
+// os dois preços por kg precisam ser > 0.
+export function validarPedidoEditorial(pedido: PedidoEditorial, contexto: ContextoEditorial) {
+  validarComum(pedido.quantidade, pedido.larguraM, pedido.alturaM);
+
+  if (!Number.isInteger(pedido.numeroPaginas) || pedido.numeroPaginas < 1) {
+    throw new ErroPrecificacao(
+      "NUMERO_PAGINAS_INVALIDO",
+      "O número de páginas do miolo precisa ser um inteiro maior ou igual a 1.",
+      { numeroPaginas: pedido.numeroPaginas }
+    );
+  }
+  if (pedido.temOrelhas && (!pedido.larguraOrelhaM || pedido.larguraOrelhaM <= 0)) {
+    throw new ErroPrecificacao(
+      "DIMENSAO_INVALIDA",
+      "Informe a largura da orelha (maior que zero) quando o item tem orelhas.",
+      { larguraOrelhaM: pedido.larguraOrelhaM }
+    );
+  }
+  if (contexto.precoPorKgMiolo <= 0) {
+    throw new ErroPrecificacao(
+      "PAPEL_MIOLO_NAO_CONFIGURADO",
+      "O preço por kg do papel do miolo precisa ser maior que zero.",
+      { precoPorKgMiolo: contexto.precoPorKgMiolo }
+    );
+  }
+  if (contexto.precoPorKgCapa <= 0) {
+    throw new ErroPrecificacao(
+      "PAPEL_CAPA_NAO_CONFIGURADO",
+      "O preço por kg do papel da capa precisa ser maior que zero.",
+      { precoPorKgCapa: contexto.precoPorKgCapa }
+    );
+  }
+  if (!Number.isInteger(contexto.paginasPorCaderno) || contexto.paginasPorCaderno < 1) {
+    throw new ErroPrecificacao(
+      "NUMERO_PAGINAS_INVALIDO",
+      "O número de páginas por caderno configurado na gráfica precisa ser um inteiro maior ou igual a 1.",
+      { paginasPorCaderno: contexto.paginasPorCaderno }
     );
   }
 }

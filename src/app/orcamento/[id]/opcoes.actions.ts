@@ -124,7 +124,8 @@ export async function adicionarOpcaoOrcamento(
       | "REVENDA"
       | "BORDADO"
       | "TEMPO_MAQUINA"
-      | "DTF";
+      | "DTF"
+      | "EDITORIAL";
     corFrente: number | null;
     corVerso: number | null;
     numeroCoresFlexo: number | null;

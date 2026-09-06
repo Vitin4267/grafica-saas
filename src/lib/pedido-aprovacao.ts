@@ -187,6 +187,7 @@ function componentesCustoBreakdown(
     | "BORDADO"
     | "TEMPO_MAQUINA"
     | "DTF"
+    | "EDITORIAL"
 ): ComponenteCusto[] | null {
   if (!breakdown || typeof breakdown !== "object" || Array.isArray(breakdown)) return null;
   const raiz = breakdown as Record<string, unknown>;
@@ -297,6 +298,20 @@ function componentesCustoBreakdown(
   // SUBLIMACAO/ESTAMPAGEM_QUENTE/PERSONALIZACAO acima.
   if (modeloCalculo === "TEMPO_MAQUINA") {
     return materialTotal.gt(0) ? [{ chave: "impressao", valor: materialTotal }] : [];
+  }
+
+  // Editorial (achado A10, rota 1) — mesmo raciocínio de BORDADO acima:
+  // `setup` no breakdown é o custo de encadernação (ver detalhesExtras.setup
+  // em src/lib/pricing/precificar.ts), o resto do total (papel + impressão
+  // de miolo e capa) é roteado como "material".
+  if (modeloCalculo === "EDITORIAL") {
+    const custoEncadernacao = lerDecimalDeJson(detalhes.setup) ?? paraDecimal(0);
+    const restante = materialTotal.minus(custoEncadernacao);
+
+    const componentes: ComponenteCusto[] = [];
+    if (restante.gt(0)) componentes.push({ chave: "material", valor: restante });
+    if (custoEncadernacao.gt(0)) componentes.push({ chave: "impressao", valor: custoEncadernacao });
+    return componentes;
   }
 
   // OFFSET

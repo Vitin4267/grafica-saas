@@ -116,6 +116,18 @@ export function AdicionarItemForm({
         <input type="hidden" name="custoFrete" value={campos.precificacaoEtiqueta.custoFrete} />
         {/* Achado N8 — gramatura Offset escolhida NESTE orçamento. */}
         <input type="hidden" name="gramaturaGm2" value={campos.gramaturaGm2} />
+        {/* Achado A10 (rota 1) — campos do motor Editorial. */}
+        <input type="hidden" name="numeroPaginas" value={campos.numeroPaginas} />
+        <input type="hidden" name="tipoEncadernacao" value={campos.tipoEncadernacao} />
+        <input type="hidden" name="tipoEncadernacaoOutro" value={campos.tipoEncadernacaoOutro} />
+        <input type="hidden" name="temOrelhas" value={campos.temOrelhas ? "on" : ""} />
+        <input type="hidden" name="larguraOrelha" value={campos.larguraOrelha} />
+        <input type="hidden" name="papelMioloId" value={campos.papelMioloId} />
+        <input type="hidden" name="gramaturaMioloGm2" value={campos.gramaturaMioloGm2} />
+        <input type="hidden" name="coresMiolo" value={campos.coresMiolo} />
+        <input type="hidden" name="papelCapaId" value={campos.papelCapaId} />
+        <input type="hidden" name="gramaturaCapaGm2" value={campos.gramaturaCapaGm2} />
+        <input type="hidden" name="coresCapa" value={campos.coresCapa} />
         <input type="hidden" name="materialSubstrato" value={campos.etiqueta.materialSubstrato} />
         <input type="hidden" name="materialSubstratoOutro" value={campos.etiqueta.materialSubstratoOutro} />
         <input type="hidden" name="tipoAdesivo" value={campos.etiqueta.tipoAdesivo} />

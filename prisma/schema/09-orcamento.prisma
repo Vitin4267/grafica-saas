@@ -543,6 +543,41 @@ model OrcamentoItem {
   // Int) porque o vendedor pode estimar em fração de minuto/metro.
   tempoEstimadoMin             Decimal?      @db.Decimal(10, 2)
   metrosCorte                  Decimal?      @db.Decimal(10, 2)
+  // Achado A10 (rota 1) da auditoria de abrangência — modeloCalculo=
+  // EDITORIAL only (ver src/lib/pricing/editorial.ts). numeroPaginas é do
+  // MIOLO (a capa não conta aqui — sempre um "caderno" próprio de 4
+  // páginas na prática, tratado à parte no motor). tipoEncadernacao usa o
+  // enum TipoEncadernacaoEditorial (DELIBERADAMENTE separado de
+  // ItemGrafica.tipoEncadernacao/TipoEncadernacao — ver comentário completo
+  // no schema do enum, 06-catalogo.prisma) — aqui é só SNAPSHOT informativo
+  // pro PDF/produção; a Rota 1 não varia o custo de encadernação por tipo
+  // (ver ItemGrafica.custoEncadernacaoPorPeca), só registra qual foi
+  // escolhida. temOrelhas/larguraOrelhaCm SÃO usados no cálculo (aumentam a
+  // largura da capa aberta) — mesma unidade cm de largura/altura acima,
+  // seguindo unidadeDimensao pra entrada/exibição.
+  numeroPaginas                 Int?
+  tipoEncadernacao               TipoEncadernacaoEditorial?
+  tipoEncadernacaoOutro          String?
+  temOrelhas                     Boolean                    @default(false)
+  larguraOrelhaCm                Decimal?                   @db.Decimal(8, 2)
+  // Papel/gramatura/cores do MIOLO e da CAPA — campos DIRETOS em
+  // OrcamentoItem (duplicando com sufixo Miolo/Capa, não um model de
+  // override separado como OrcamentoItemPrecificacaoOffset): diferente do
+  // Offset, um produto EDITORIAL não tem papel/gramatura FIXOS no PRODUTO
+  // pra ter algo a "sobrepor" — cada orçamento de livro tipicamente escolhe
+  // um papel de miolo e um de capa bem diferentes entre si (ex: pólen 70g
+  // no miolo, couché 250g na capa), então os dois são sempre escolhidos
+  // AQUI, não um default de catálogo. coresMiolo/coresCapa são snapshot de
+  // texto livre, mesmo caráter não-computacional do campo `cores` acima
+  // (ex: "1x1", "4x4") — a Rota 1 não decompõe custo de impressão por
+  // número de cores (ver comentário em ModeloCalculo.EDITORIAL), só
+  // registra o que foi usado.
+  papelMioloId                   String?
+  gramaturaMioloGm2               Decimal?                  @db.Decimal(6, 1)
+  coresMiolo                      String?
+  papelCapaId                     String?
+  gramaturaCapaGm2                Decimal?                  @db.Decimal(6, 1)
+  coresCapa                       String?
   // Estimativa de horas — só usada quando o item tem um acabamento anexado
   // com ConfiguracaoAcabamento.baseCobranca=HORA (ex: instalação, criação de
   // arte). Independente de modeloCalculo, ao contrário de numeroSetups
@@ -603,6 +638,11 @@ model OrcamentoItem {
   opcao       OrcamentoOpcao? @relation(fields: [opcaoId], references: [id], onDelete: Cascade)
   itemGrafica ItemGrafica     @relation(fields: [itemGraficaId], references: [id])
   ferramental Ferramental?    @relation(fields: [ferramentalId], references: [id], onDelete: SetNull)
+  // Achado A10 (rota 1) — SetNull (não Restrict): desativar/remover o papel
+  // usado como miolo/capa não pode travar nada, mesmo padrão de
+  // OrcamentoItemPrecificacaoOffset.papel (ver comentário lá).
+  papelMiolo  ItemGrafica?    @relation("PapelMioloDoItemOrcamento", fields: [papelMioloId], references: [id], onDelete: SetNull)
+  papelCapa   ItemGrafica?    @relation("PapelCapaDoItemOrcamento", fields: [papelCapaId], references: [id], onDelete: SetNull)
 
   acabamentos          OrcamentoItemAcabamento[]
   // Achado F8 da auditoria de abrangência (Parte 7) — QUAL cor especial/
@@ -631,6 +671,8 @@ model OrcamentoItem {
   @@index([orcamentoId])
   @@index([opcaoId])
   @@index([ferramentalId])
+  @@index([papelMioloId])
+  @@index([papelCapaId])
   @@map("orcamento_itens")
 }
 

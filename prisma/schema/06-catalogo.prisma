@@ -103,6 +103,27 @@ enum ModeloCalculo {
   // camiseta/substrato que recebe o transfer) e custoPrensagemPorPeca (a
   // prensa térmica) — ver os dois campos em ItemGrafica abaixo.
   DTF
+  // Achado A10 (rota 1) da Parte 1 da auditoria de abrangência
+  // (pesquisa-abrangencia-modulos.md, 2026-09-06): editorial multipágina
+  // (Revista, Catálogo, Livro Brochura, Livro Capa Dura, Apostila,
+  // Encadernação Espiral, Wire-o) — nenhum era precificável porque o motor
+  // OFFSET assume uma peça plana única (um papelId, uma gramatura, um
+  // corFrente/corVerso), enquanto um livro tem MIOLO e CAPA com papel/
+  // gramatura/cores PRÓPRIOS e independentes, mais nº de páginas e
+  // encadernação. custoBase = custoMiolo (papel + impressão, função do nº de
+  // CADERNOS — grupos de páginas múltiplos de
+  // ParametrosGrafica.paginasPorCadernoPadrao) + custoCapa (papel + impressão,
+  // função da área da capa aberta, incluindo orelhas quando presentes) +
+  // custoEncadernacao (fixo por peça, configurável abaixo) — ver
+  // src/lib/pricing/editorial.ts. SIMPLIFICAÇÃO DELIBERADA (Rota 1, escopo
+  // menor que a Rota 2 do achado — item de orçamento composto — que NÃO foi
+  // construída nesta rodada): sem nesting/imposição real de folha de máquina
+  // (diferente de OFFSET) — cada caderno é custeado por PESO de papel (área ×
+  // gramatura × preço/kg), não pelo aproveitamento físico de uma folha de
+  // prensa; não há Prensa/chapas neste modelo. Resolve os 7 produtos do
+  // catálogo mestre listados no achado; não resolve caixa/berço/luva
+  // (múltiplos componentes de embalagem — isso é Rota 2, fora de escopo).
+  EDITORIAL
 }
 
 // Como um acabamento (SERVICO) é cobrado — spec §3. FOLHA_IMPRESSA é o caso mais sutil:
@@ -383,6 +404,27 @@ model ItemGrafica {
   custoSubstratoPorPeca Decimal? @db.Decimal(12, 4)
   custoPrensagemPorPeca Decimal? @db.Decimal(12, 4)
 
+  // Achado A10 (rota 1) da auditoria de abrangência — só relevante quando
+  // modeloCalculo=EDITORIAL. custoImpressaoM2Editorial é R$/m² impresso,
+  // aplicado tanto no miolo quanto na capa (mesma taxa pros dois —
+  // simplificação deliberada da Rota 1: um produto editorial normalmente
+  // imprime miolo e capa no mesmo parque de máquinas/processo da própria
+  // gráfica; se algum dia isso não bastar, é natural desdobrar em dois
+  // campos, sem quebrar quem já usa um só). Campo DEDICADO (não reaproveita
+  // ItemGrafica.custoImpressaoM2, que é escopo de M2/DTF só) porque a UI de
+  // M2 esconde/mostra aquele campo condicionalmente a esses dois modelos —
+  // misturar exigiria mexer nessa condição pra um 3º modelo com fórmula de
+  // custo bem diferente (sem nesting em bobina). custoEncadernacaoPorPeca é
+  // o custo FIXO de encadernar UM exemplar (independente de
+  // OrcamentoItem.tipoEncadernacao — Rota 1 não modela um preço por TIPO de
+  // encadernação, só um valor por produto, mesmo princípio de
+  // custoSubstratoPorPeca/custoPrensagemPorPeca acima: quando um produto
+  // realmente precisa de 2 encadernações a preços diferentes, cadastra 2
+  // ItemGrafica). NULL (e portanto 0 no cálculo) pra todo produto não-
+  // editorial — nenhuma regressão.
+  custoImpressaoM2Editorial Decimal? @db.Decimal(12, 4)
+  custoEncadernacaoPorPeca  Decimal? @db.Decimal(12, 4)
+
   // Em qual CategoriaCusto a baixa automática desta matéria-prima cai (ver
   // fase-custo-real.md §1.5, §3.2) — só relevante quando tipo=MATERIA_PRIMA.
   // Nulo cai na categoria padrão configurada em
@@ -466,6 +508,13 @@ model ItemGrafica {
   usadoComoPapelEtiqueta        OrcamentoItemPrecificacaoEtiqueta[] @relation("PapelDoItemOrcamentoEtiqueta")
   usadoComoPapelDigital         OrcamentoItemPrecificacaoDigital[]  @relation("PapelDoItemOrcamentoDigital") // achado N4
   usadoComoPapelOffset          OrcamentoItemPrecificacaoOffset[]   @relation("PapelDoItemOrcamentoOffset") // achado N8
+  // Achado A10 (rota 1) — papel do MIOLO/CAPA escolhido em itens de
+  // orçamento EDITORIAL, campos diretos em OrcamentoItem (não um model de
+  // override separado como PapelDoItemOrcamentoOffset, porque EDITORIAL não
+  // tem papel/gramatura fixos no PRODUTO pra ter algo a sobrepor — ver
+  // comentário em OrcamentoItem.papelMioloId).
+  usadoComoPapelMioloEditorial  OrcamentoItem[]                     @relation("PapelMioloDoItemOrcamento")
+  usadoComoPapelCapaEditorial   OrcamentoItem[]                     @relation("PapelCapaDoItemOrcamento")
 
   // Ficha técnica (spec de baixa automática de estoque): só relevante quando
   // tipo=PRODUTO. fichaTecnica = quais matérias-primas este produto consome;
@@ -835,6 +884,34 @@ enum TipoDobra {
 
 enum TipoEncadernacao {
   BROCHURA
+  WIRE_O
+  ESPIRAL
+  CAPA_DURA
+  OUTRO
+}
+
+// Achado A10 (rota 1) da auditoria de abrangência — enum DELIBERADAMENTE
+// SEPARADO de TipoEncadernacao acima, apesar do nome parecido. Motivo: o
+// enum acima (ligado a ItemGrafica.tipoEncadernacao, achado C5) é
+// puramente descritivo/organizacional — "NUNCA lido por src/lib/pricing/",
+// documentado no comentário de C5 mais abaixo neste arquivo — enquanto ESTE
+// aqui é referenciado por OrcamentoItem.tipoEncadernacao (ver
+// 09-orcamento.prisma) só como SNAPSHOT informativo pro PDF/produção (a
+// Rota 1 não varia custo por tipo — ver ItemGrafica.custoEncadernacaoPorPeca
+// acima), mas com um conjunto de valores mais granular e mais correto pra
+// encadernação de LIVRO especificamente (a pesquisa de mercado do achado
+// A10 pediu COLADA_HOTMELT/PUR/COSTURADA/GRAMPO_CANOA, que BROCHURA sozinho
+// não distingue). Reaproveitar o enum acima faria BROCHURA e
+// COLADA_HOTMELT coexistirem como sinônimos confusos, ou exigiria migrar o
+// enum de C5 pra um domínio (livro) que ele não foi desenhado pra cobrir
+// (C5 também serve embalagem/comunicação visual, onde WIRE_O/ESPIRAL fazem
+// sentido mas COSTURADA/GRAMPO_CANOA não). Mesmo padrão fechado+OUTRO do
+// resto do arquivo.
+enum TipoEncadernacaoEditorial {
+  COLADA_HOTMELT
+  PUR
+  COSTURADA
+  GRAMPO_CANOA
   WIRE_O
   ESPIRAL
   CAPA_DURA

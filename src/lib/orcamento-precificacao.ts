@@ -17,7 +17,8 @@ type ModeloCalculoPrecificavel =
   | "REVENDA"
   | "BORDADO"
   | "TEMPO_MAQUINA"
-  | "DTF";
+  | "DTF"
+  | "EDITORIAL";
 
 // Os 4 modelos de "setup por peça" — SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE/
 // PERSONALIZACAO (achado A3 da auditoria de abrangência: tampografia,
@@ -142,6 +143,21 @@ export type DadosItemOrcamento = {
   // hoje, motor cai no padrão da gráfica — ver ContextoPrecificacao em
   // src/lib/pricing/precificar.ts).
   margemLucroOverride: number | null;
+  // Achado A10 (rota 1) — modeloCalculo=EDITORIAL only. Todos opcionais
+  // (`?`), mesmo padrão de larguraPlanificadaCm acima: só pra não quebrar
+  // os fixtures/chamadores que ainda não conhecem estes campos (criarOrcamento/
+  // precificarItem/adicionarOpcaoOrcamento — a Rota 1 focou em
+  // adicionarItemOrcamento/editarOrcamento, ver AGENTS/relatório da
+  // implementação). Ausente = tratado como null/false — o guard abaixo
+  // rejeita com mensagem clara em vez de custar R$0 em silêncio, mesmo
+  // padrão de numeroPontos/papelId em qualquer outro modelo.
+  numeroPaginas?: number | null;
+  temOrelhas?: boolean;
+  larguraOrelhaCm?: number | null;
+  papelMioloId?: string | null;
+  gramaturaMioloGm2?: number | null;
+  papelCapaId?: string | null;
+  gramaturaCapaGm2?: number | null;
 };
 
 export type AcabamentoParaGravar = {
@@ -196,6 +212,18 @@ export type ResultadoItemOrcamento =
       // não é OFFSET OU quando é OFFSET mas nenhum dos dois foi sobrescrito
       // (usa 100% os valores fixos do produto, comportamento de sempre).
       precificacaoOffset: { papelId: string | null; gramaturaGm2: number | null } | null;
+      // Achado A10 (rota 1) — ecoa o valor REALMENTE usado no cálculo (não
+      // dados.* cru): papelMioloId/papelCapaId só chegam aqui depois de
+      // carregarContextoPrecificacao validar que os dois existem e estão
+      // ativos (mesma proteção de precificacaoDigital/precificacaoOffset
+      // acima). null pra qualquer modeloCalculo != EDITORIAL.
+      numeroPaginas: number | null;
+      temOrelhas: boolean;
+      larguraOrelhaCm: number | null;
+      papelMioloId: string | null;
+      gramaturaMioloGm2: number | null;
+      papelCapaId: string | null;
+      gramaturaCapaGm2: number | null;
     }
   | { ok: false; mensagem: string };
 
@@ -367,6 +395,48 @@ export async function calcularItemOrcamento(
     }
   }
 
+  // Guarda de EDITORIAL (achado A10, Rota 1) — número de páginas do miolo e
+  // papel do miolo/capa são os campos essenciais; sem eles o item custaria
+  // só a capa/encadernação (ou nada) em silêncio, mesmo espírito das
+  // guardas de BORDADO/TEMPO_MAQUINA acima. gramaturaMiolo/gramaturaCapa
+  // não têm fallback de produto (diferente do Offset, achado N8) — sempre
+  // obrigatórias aqui, não um override opcional.
+  if (itemGrafica.modeloCalculo === "EDITORIAL") {
+    if (!Number.isInteger(dados.numeroPaginas) || (dados.numeroPaginas ?? 0) < 1) {
+      return {
+        ok: false,
+        mensagem: "Informe o número de páginas do miolo (mínimo 1) — item de cálculo editorial.",
+      };
+    }
+    if (!dados.papelMioloId) {
+      return { ok: false, mensagem: "Selecione o papel do miolo — item de cálculo editorial." };
+    }
+    if (!dados.papelCapaId) {
+      return { ok: false, mensagem: "Selecione o papel da capa — item de cálculo editorial." };
+    }
+    if (
+      !Number.isFinite(dados.gramaturaMioloGm2) ||
+      (dados.gramaturaMioloGm2 ?? 0) <= 0
+    ) {
+      return { ok: false, mensagem: "Gramatura do miolo inválida (deve ser maior que zero)." };
+    }
+    if (
+      !Number.isFinite(dados.gramaturaCapaGm2) ||
+      (dados.gramaturaCapaGm2 ?? 0) <= 0
+    ) {
+      return { ok: false, mensagem: "Gramatura da capa inválida (deve ser maior que zero)." };
+    }
+    if (
+      dados.temOrelhas &&
+      (!Number.isFinite(dados.larguraOrelhaCm ?? NaN) || (dados.larguraOrelhaCm ?? 0) <= 0)
+    ) {
+      return {
+        ok: false,
+        mensagem: "Informe a largura da orelha (maior que zero) quando o item tem orelhas.",
+      };
+    }
+  }
+
   if (itemGrafica.modeloCalculo === "SIMPLES") {
     // Number(null) é 0, não erro — sem esta guarda, um produto que ficou sem
     // preço no catálogo (ex: campo limpo por engano numa edição em lote)
@@ -412,6 +482,13 @@ export async function calcularItemOrcamento(
       precificacaoEtiqueta: null,
       precificacaoDigital: null,
       precificacaoOffset: null,
+      numeroPaginas: null,
+      temOrelhas: false,
+      larguraOrelhaCm: null,
+      papelMioloId: null,
+      gramaturaMioloGm2: null,
+      papelCapaId: null,
+      gramaturaCapaGm2: null,
     };
   }
 
@@ -460,6 +537,16 @@ export async function calcularItemOrcamento(
         ? {
             papelId: dados.papelId ?? undefined,
             gramaturaGm2: dados.gramaturaGm2 ?? undefined,
+          }
+        : undefined,
+      // Achado A10 (rota 1) — a guarda acima já garantiu os 4 campos
+      // presentes e válidos quando modeloCalculo=EDITORIAL.
+      itemGrafica.modeloCalculo === "EDITORIAL"
+        ? {
+            papelMioloId: dados.papelMioloId!,
+            gramaturaMioloGm2: dados.gramaturaMioloGm2!,
+            papelCapaId: dados.papelCapaId!,
+            gramaturaCapaGm2: dados.gramaturaCapaGm2!,
           }
         : undefined
     );
@@ -676,6 +763,29 @@ export async function calcularItemOrcamento(
         },
         acabamentos,
       };
+    } else if (itemGrafica.modeloCalculo === "EDITORIAL") {
+      // Achado A10 (rota 1) — a guarda acima já garantiu largura/altura
+      // presentes (EDITORIAL não está em MODELOS_SEM_NESTING, então a
+      // guarda genérica de dimensão obrigatória logo acima já exigiu
+      // larguraCm/alturaCm — a página fechada do livro). Sem
+      // larguraPlanificadaCm: não é um modelo de nesting/imposição de
+      // folha (ver comentário em editorial.ts), então larguraCm/alturaCm
+      // (não larguraNestingCm) é sempre o formato certo aqui.
+      pedido = {
+        tipo: "EDITORIAL",
+        pedido: {
+          quantidade,
+          numeroPaginas: dados.numeroPaginas!,
+          larguraM: larguraCm! / 100,
+          alturaM: alturaCm! / 100,
+          temOrelhas: dados.temOrelhas ?? false,
+          larguraOrelhaM:
+            dados.larguraOrelhaCm !== null && dados.larguraOrelhaCm !== undefined
+              ? dados.larguraOrelhaCm / 100
+              : undefined,
+        },
+        acabamentos,
+      };
     } else if (itemGrafica.modeloCalculo === "DTF") {
       // Achado A5 — mesmo PedidoM2 do branch M2 abaixo (DTF reaproveita o
       // mesmo motor calcularM2, ver carregarContextoPrecificacao); só o
@@ -789,6 +899,17 @@ export async function calcularItemOrcamento(
               gramaturaGm2: contexto.offset?.gramaturaGm2Override ?? null,
             }
           : null,
+      // Achado A10 (rota 1) — ecoa contexto.editorial (já validado/resolvido
+      // por carregarContextoPrecificacao), nunca dados.* cru, mesma proteção
+      // de precificacaoDigital/precificacaoOffset acima.
+      numeroPaginas: itemGrafica.modeloCalculo === "EDITORIAL" ? dados.numeroPaginas! : null,
+      temOrelhas: itemGrafica.modeloCalculo === "EDITORIAL" ? (dados.temOrelhas ?? false) : false,
+      larguraOrelhaCm:
+        itemGrafica.modeloCalculo === "EDITORIAL" ? (dados.larguraOrelhaCm ?? null) : null,
+      papelMioloId: contexto.editorial ? dados.papelMioloId! : null,
+      gramaturaMioloGm2: contexto.editorial ? contexto.editorial.gramaturaMioloGm2 : null,
+      papelCapaId: contexto.editorial ? dados.papelCapaId! : null,
+      gramaturaCapaGm2: contexto.editorial ? contexto.editorial.gramaturaCapaGm2 : null,
     };
   } catch (erro) {
     if (erro instanceof ErroPrecificacao) {

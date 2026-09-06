@@ -7,6 +7,7 @@ import { calcularSetupPorPeca } from "./setup-por-peca";
 import { calcularRevenda } from "./revenda";
 import { calcularBordado } from "./bordado";
 import { calcularTempoMaquina } from "./tempo-maquina";
+import { calcularEditorial } from "./editorial";
 import { calcularAcabamentos } from "./acabamento";
 import { comporPreco, type ResultadoComposicao } from "./compor";
 import { ErroPrecificacao } from "./erros";
@@ -15,6 +16,7 @@ import type {
   ContextoAcabamento,
   ContextoBordado,
   ContextoDigital,
+  ContextoEditorial,
   ContextoFlexografia,
   ContextoM2,
   ContextoOffset,
@@ -31,6 +33,7 @@ import type {
   ParametrosTenant,
   PedidoBordado,
   PedidoDigital,
+  PedidoEditorial,
   PedidoFlexografia,
   PedidoM2,
   PedidoOffset,
@@ -70,7 +73,11 @@ export type PedidoPrecificacao =
   // correto, e ecoa 1:1 o ModeloCalculo do produto). Único caso em que dois
   // membros desta união chamam a MESMA função de cálculo (calcularM2) — ver
   // o `||` no branch abaixo.
-  | { tipo: "DTF"; pedido: PedidoM2; acabamentos: ConfigAcabamento[] };
+  | { tipo: "DTF"; pedido: PedidoM2; acabamentos: ConfigAcabamento[] }
+  // Editorial multipágina (achado A10, Rota 1) — sem nesting, mas COM
+  // dimensões obrigatórias (formato fechado da página), diferente da
+  // família DIGITAL/setup-por-peça/REVENDA/BORDADO/TEMPO_MAQUINA acima.
+  | { tipo: "EDITORIAL"; pedido: PedidoEditorial; acabamentos: ConfigAcabamento[] };
 
 export type ContextoPrecificacao = {
   itemGraficaId: string;
@@ -97,6 +104,7 @@ export type ContextoPrecificacao = {
   maquinaBordadoUsada?: { id: string; nome: string };
   parametrosMaquinaTempo?: ParametrosMaquinaTempo;
   maquinaTempoUsada?: { id: string; nome: string };
+  editorial?: ContextoEditorial;
   margemLucroOverride?: number;
   custoEmbalagem?: number;
   custoFreteEstimado?: number;
@@ -510,6 +518,60 @@ export function precificar(
         custoCorte: resultado.custoCorte.toNumber(),
         custoSetup: resultado.custoSetup.toNumber(),
         maquinaTempoUsada: contexto.maquinaTempoUsada ?? null,
+      },
+    };
+  }
+
+  if (pedido.tipo === "EDITORIAL") {
+    if (!contexto.editorial) {
+      throw new ErroPrecificacao(
+        "CONTEXTO_EDITORIAL_NAO_CONFIGURADO",
+        "Contexto editorial não fornecido para um item com modeloCalculo=EDITORIAL."
+      );
+    }
+
+    const resultado = calcularEditorial(pedido.pedido, contexto.editorial);
+
+    // COM dimensões (diferente do Digital/setup-por-peça acima) — a página
+    // fechada do livro É a geometria do item, mesmo raciocínio de OFFSET.
+    const ctxAcabamento: ContextoAcabamento = {
+      quantidade: pedido.pedido.quantidade,
+      larguraEfetivaM: pedido.pedido.larguraM,
+      alturaEfetivaM: pedido.pedido.alturaM,
+      ...ctxAcabamentoExtra(contexto, pedido.pedido.larguraM, pedido.pedido.alturaM),
+    };
+    const acabamentos = calcularAcabamentos(pedido.acabamentos, ctxAcabamento);
+
+    const composicao = comporPreco({
+      quantidade: pedido.pedido.quantidade,
+      custoBase: resultado.custoBase,
+      custoAcabamentos: acabamentos.total,
+      acabamentosDetalhe: acabamentos.itens,
+      custoEmbalagem: contexto.custoEmbalagem !== undefined ? paraDecimal(contexto.custoEmbalagem) : undefined,
+      custoFreteEstimado:
+        contexto.custoFreteEstimado !== undefined ? paraDecimal(contexto.custoFreteEstimado) : undefined,
+      custoFaca: contexto.custoFaca !== undefined ? paraDecimal(contexto.custoFaca) : undefined,
+      parametros: contexto.parametros,
+      margemLucroOverride: contexto.margemLucroOverride,
+      // "setup" é o bucket mais próximo pra encadernação (custo fixo por
+      // peça, não escala com área/gramatura) — mesmo reaproveitamento que
+      // BORDADO/TEMPO_MAQUINA já fazem pra custoMatriz/custoSetup acima.
+      detalhesExtras: { setup: resultado.custoEncadernacao },
+    });
+
+    return {
+      ...composicao,
+      metricas: {
+        numeroCadernos: resultado.numeroCadernos,
+        paginasEfetivas: resultado.paginasEfetivas,
+        pesoMioloKg: resultado.pesoMioloKg.toNumber(),
+        custoPapelMiolo: resultado.custoPapelMiolo.toNumber(),
+        custoImpressaoMiolo: resultado.custoImpressaoMiolo.toNumber(),
+        areaCapaM2: resultado.areaCapaM2.toNumber(),
+        pesoCapaKg: resultado.pesoCapaKg.toNumber(),
+        custoPapelCapa: resultado.custoPapelCapa.toNumber(),
+        custoImpressaoCapa: resultado.custoImpressaoCapa.toNumber(),
+        custoEncadernacao: resultado.custoEncadernacao.toNumber(),
       },
     };
   }

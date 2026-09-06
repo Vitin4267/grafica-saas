@@ -13,7 +13,8 @@ export type ModeloCalculo =
   | "REVENDA"
   | "BORDADO"
   | "TEMPO_MAQUINA"
-  | "DTF";
+  | "DTF"
+  | "EDITORIAL";
 export type BaseCobranca =
   | "UNIDADE"
   | "M2"
@@ -175,6 +176,13 @@ export type ParametrosTenant = {
   // antigas que não passam esses campos continuam válidas.
   gramaturaMinGm2?: number;
   gramaturaMaxGm2?: number;
+
+  // Achado A10 (rota 1) — quantas páginas compõem um CADERNO do motor
+  // Editorial (ver ContextoEditorial abaixo e calcularEditorial em
+  // editorial.ts). Opcional só pra não quebrar fixtures de teste antigas
+  // que montam ParametrosTenant à mão; carregarParametrosTenant sempre
+  // popula com o valor real (default 16 no schema).
+  paginasPorCadernoPadrao?: number;
 };
 
 // ---------- Parâmetros da prensa (custo de máquina, só OFFSET) ----------
@@ -370,4 +378,46 @@ export type ParametrosMaquinaTempo = {
   custoSetupPorJob: number; // 1× por item, não escala com Q
   custoMinimo: number; // piso do job — 0 quando a máquina não tem piso cadastrado
   custoPorMetroCorte: number; // 0 quando a máquina não cobra por metro de corte
+};
+
+// ---------- Cenário 10 (editorial multipágina — achado A10 rota 1, sem nesting) ----------
+
+// larguraM/alturaM são o formato FECHADO da página (trim size) — o mesmo
+// número usado tanto pra calcular a área do miolo quanto, dobrado (+
+// orelhas), a área da capa aberta. numeroPaginas é só do MIOLO (múltiplo de
+// paginasPorCaderno arredondado pra CIMA pelo motor — ver calcularEditorial
+// em editorial.ts). SIMPLIFICAÇÃO DELIBERADA: sem imposição/nesting de
+// folha de máquina (diferente de OFFSET) — cada caderno é custeado por PESO
+// de papel (área × gramatura × preço/kg), documentado no comentário do
+// enum ModeloCalculo.EDITORIAL (schema).
+export type PedidoEditorial = {
+  quantidade: number; // Q, número de exemplares
+  numeroPaginas: number; // páginas do MIOLO
+  larguraM: number; // largura da página fechada
+  alturaM: number; // altura da página fechada
+  temOrelhas?: boolean;
+  larguraOrelhaM?: number; // só usado quando temOrelhas=true
+};
+
+// gramaturaMioloGm2/precoPorKgMiolo e gramaturaCapaGm2/precoPorKgCapa vêm de
+// resolverPrecoPapel (mesma função que OFFSET usa) contra a TabelaPrecoPapel
+// dos dois papéis ESCOLHIDOS NESTE ORÇAMENTO (OrcamentoItem.papelMioloId/
+// papelCapaId) — EDITORIAL não tem papel fixo no produto pra usar como
+// fallback (diferente de OFFSET), então os dois são sempre obrigatórios.
+// custoImpressaoM2 e custoEncadernacaoPorPeca vêm de ItemGrafica
+// (custoImpressaoM2Editorial/custoEncadernacaoPorPeca) — mesma taxa de
+// impressão pro miolo e pra capa (simplificação documentada no schema).
+export type ContextoEditorial = {
+  gramaturaMioloGm2: number;
+  precoPorKgMiolo: number;
+  gramaturaCapaGm2: number;
+  precoPorKgCapa: number;
+  custoImpressaoM2: number;
+  custoEncadernacaoPorPeca: number;
+  // Achado A10 — quantas páginas compõem um caderno (default 16, ver
+  // ParametrosGrafica.paginasPorCadernoPadrao). Repetido aqui (em vez de só
+  // em ParametrosTenant) pra calcularEditorial não precisar de dois
+  // parâmetros pra uma única fórmula — carregarContextoPrecificacao sempre
+  // ecoa o mesmo valor de parametros.paginasPorCadernoPadrao.
+  paginasPorCaderno: number;
 };

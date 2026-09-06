@@ -68,6 +68,7 @@ const modeloCalculoSchema = z.enum([
   "BORDADO",
   "TEMPO_MAQUINA",
   "DTF",
+  "EDITORIAL",
 ]);
 // Sem OUTRO de propósito: unidadeContagem não tem campo "outro" livre (só
 // ItemCatalogo.unidade tem), então OUTRO aqui só mostraria o rótulo genérico
@@ -200,6 +201,7 @@ export async function salvarModeloProduto(
     BORDADO: "Bordado",
     TEMPO_MAQUINA: "Tempo de máquina (corte a laser, router, plotter)",
     DTF: "DTF (transfer têxtil)",
+    EDITORIAL: "Editorial (livro/revista multipágina)",
   };
   const modeloAntes = ROTULO_MODELO[itemGrafica.modeloCalculo as typeof modeloCalculo] ?? itemGrafica.modeloCalculo;
 
@@ -695,6 +697,45 @@ export async function salvarModeloProduto(
         descricao: `Modelo de cálculo do item atualizado para ${ROTULO_MODELO.TEMPO_MAQUINA}`,
         valorAnterior: `Modelo: ${modeloAntes}`,
         valorNovo: `Modelo: ${ROTULO_MODELO.TEMPO_MAQUINA}`,
+      });
+    } else if (modeloCalculo === "EDITORIAL") {
+      // Achado A10 (rota 1) da auditoria de abrangência — editorial
+      // multipágina (Revista, Catálogo, Livro Brochura, Livro Capa Dura,
+      // Apostila, Encadernação Espiral, Wire-o). Sem bobina/formato/máquina
+      // aqui: papel/gramatura/cores do miolo e da capa são escolhidos POR
+      // ORÇAMENTO (ver OrcamentoItem.papelMioloId/papelCapaId), só os 2
+      // custos fixos do produto (impressão por m², encadernação por peça)
+      // ficam aqui.
+      const custoImpressaoM2Editorial = Number(formData.get("custoImpressaoM2Editorial") || 0);
+      const custoEncadernacaoPorPeca = Number(formData.get("custoEncadernacaoPorPeca") || 0);
+      if (!Number.isFinite(custoImpressaoM2Editorial) || custoImpressaoM2Editorial < 0) {
+        return { ok: false, mensagem: "Custo de impressão por m² inválido." };
+      }
+      if (!Number.isFinite(custoEncadernacaoPorPeca) || custoEncadernacaoPorPeca < 0) {
+        return { ok: false, mensagem: "Custo de encadernação por exemplar inválido." };
+      }
+
+      await prisma.itemGrafica.update({
+        where: { id: itemGraficaId },
+        data: {
+          modeloCalculo: "EDITORIAL",
+          custoImpressaoM2Editorial,
+          custoEncadernacaoPorPeca,
+          unidadeContagem: unidadeContagemFinal,
+          fatorConversao: fatorConversaoFinal,
+        },
+      });
+
+      await registrarAuditoria({
+        graficaId: usuario.graficaId,
+        usuarioId: usuario.id,
+        usuarioNome: usuario.nome,
+        acao: "catalogo.salvar_modelo_calculo",
+        entidade: "ItemGrafica",
+        entidadeId: itemGraficaId,
+        descricao: `Modelo de cálculo do item atualizado para ${ROTULO_MODELO.EDITORIAL}`,
+        valorAnterior: `Modelo: ${modeloAntes}`,
+        valorNovo: `Modelo: ${ROTULO_MODELO.EDITORIAL}, custo impressão/m²: ${formatarPreco(custoImpressaoM2Editorial)}, encadernação/peça: ${formatarPreco(custoEncadernacaoPorPeca)}`,
       });
     }
   } catch {

@@ -25,7 +25,8 @@ type ModeloCalculo =
   | "REVENDA"
   | "BORDADO"
   | "TEMPO_MAQUINA"
-  | "DTF";
+  | "DTF"
+  | "EDITORIAL";
 
 // Mesmo conjunto de unidadeContagemSchema em actions.ts — sem OUTRO (sem
 // campo de texto livre pra essa, ficaria só "outro" na exibição de preço).
@@ -216,6 +217,8 @@ export function ConfiguracaoProdutoForm({
   areaMinimaFaturavel: areaMinimaFaturavelInicial,
   custoSubstratoPorPeca: custoSubstratoPorPecaInicial,
   custoPrensagemPorPeca: custoPrensagemPorPecaInicial,
+  custoImpressaoM2Editorial: custoImpressaoM2EditorialInicial,
+  custoEncadernacaoPorPeca: custoEncadernacaoPorPecaInicial,
   gramaturaGm2: gramaturaGm2Inicial,
   papelId: papelIdInicial,
   papeis,
@@ -252,6 +255,10 @@ export function ConfiguracaoProdutoForm({
   // abaixo.
   custoSubstratoPorPeca: string;
   custoPrensagemPorPeca: string;
+  // Achado A10 (rota 1) — só relevantes/exibidos quando modeloCalculo=
+  // EDITORIAL, ver bloco Editorial abaixo.
+  custoImpressaoM2Editorial: string;
+  custoEncadernacaoPorPeca: string;
   gramaturaGm2: string;
   papelId: string;
   papeis: { id: string; nome: string; gramaturas: number[] }[];
@@ -417,6 +424,7 @@ export function ConfiguracaoProdutoForm({
           <option value="BORDADO">Bordado</option>
           <option value="TEMPO_MAQUINA">Tempo de máquina (corte a laser, router, plotter)</option>
           <option value="REVENDA">Revenda / terceirização</option>
+          <option value="EDITORIAL">Editorial — livro/revista multipágina (miolo + capa)</option>
         </Select>
 
         {modeloCalculo === "SIMPLES" && (
@@ -550,6 +558,50 @@ export function ConfiguracaoProdutoForm({
               </button>
             )}
             <BobinasEditor itens={bobinas} onChange={setBobinas} />
+          </div>
+        )}
+
+        {/* Achado A10 (rota 1) da auditoria de abrangência — editorial
+            multipágina (Revista, Catálogo, Livro Brochura, Livro Capa Dura,
+            Apostila, Encadernação Espiral, Wire-o). Sem máquina/bobina/papel
+            fixos aqui — miolo e capa são escolhidos POR ORÇAMENTO (ver
+            EditarOrcamentoForm.tsx/AdicionarItemForm.tsx), só os dois custos
+            fixos do PRODUTO ficam aqui. */}
+        {modeloCalculo === "EDITORIAL" && (
+          <div className="flex flex-col gap-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+            <p className="text-xs text-slate-500">
+              Papel, gramatura e cores do miolo e da capa são escolhidos em cada orçamento (o mesmo
+              produto pode sair em papéis diferentes a cada pedido). Aqui ficam só os dois custos
+              fixos do produto.
+            </p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Input
+                label={
+                  <>
+                    Custo de impressão por m²
+                    <CampoAjuda texto="R$ por m² impresso — usado tanto no miolo quanto na capa (mesma taxa pros dois). Some aqui o custo de tinta/chapa/máquina que sua gráfica cobra por área impressa." />
+                  </>
+                }
+                name="custoImpressaoM2Editorial"
+                type="number"
+                step="0.0001"
+                min="0"
+                defaultValue={custoImpressaoM2EditorialInicial}
+              />
+              <Input
+                label={
+                  <>
+                    Custo de encadernação por exemplar
+                    <CampoAjuda texto="Custo fixo de encadernar UM exemplar (colagem, costura, wire-o, espiral, capa dura...), independente do tipo escolhido no orçamento. Se este produto oferece encadernações a preços bem diferentes, cadastre um produto separado para cada uma." />
+                  </>
+                }
+                name="custoEncadernacaoPorPeca"
+                type="number"
+                step="0.0001"
+                min="0"
+                defaultValue={custoEncadernacaoPorPecaInicial}
+              />
+            </div>
           </div>
         )}
 

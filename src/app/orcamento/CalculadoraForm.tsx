@@ -184,7 +184,8 @@ type ItemCarrinho = {
     | "REVENDA"
     | "BORDADO"
     | "TEMPO_MAQUINA"
-    | "DTF";
+    | "DTF"
+    | "EDITORIAL";
   etiqueta: CamposEtiqueta;
   precificacaoEtiqueta: CamposPrecificacaoEtiqueta;
   // Achado N8 — só OFFSET: gramatura escolhida NESTE orçamento, sobrepondo a

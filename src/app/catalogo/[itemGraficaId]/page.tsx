@@ -263,6 +263,8 @@ export default async function ConfiguracaoItemPage({
               areaMinimaFaturavel={itemGrafica.areaMinimaFaturavel?.toString() ?? ""}
               custoSubstratoPorPeca={itemGrafica.custoSubstratoPorPeca?.toString() ?? ""}
               custoPrensagemPorPeca={itemGrafica.custoPrensagemPorPeca?.toString() ?? ""}
+              custoImpressaoM2Editorial={itemGrafica.custoImpressaoM2Editorial?.toString() ?? ""}
+              custoEncadernacaoPorPeca={itemGrafica.custoEncadernacaoPorPeca?.toString() ?? ""}
               gramaturaGm2={itemGrafica.gramaturaGm2?.toString() ?? ""}
               papelId={itemGrafica.papelId ?? ""}
               papeis={materiasPrimas.map((m) => ({

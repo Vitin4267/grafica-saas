@@ -358,6 +358,18 @@ model ParametrosGrafica {
   // toda gráfica que nunca configurou — não é lido como "alerta desligado".
   diasAlertaValidadeEstoque Int @default(30)
 
+  // Achado A10 da Parte 1 da auditoria de abrangência (rota 1, 2026-09-06):
+  // quantas páginas compõem UM CADERNO (signature) do motor Editorial (ver
+  // ModeloCalculo.EDITORIAL) — o miolo de um livro é sempre múltiplo desse
+  // número (16 páginas por caderno é o padrão mais comum do mercado
+  // brasileiro, mas varia por formato/gráfica: 8, 16 ou 32 são todos usados
+  // na prática). Configurável em vez de constante fixa (mesmo princípio de
+  // toda a Parte 6 desta auditoria) — não achamos um 2º sinal no schema além
+  // da pesquisa de mercado pra decidir isso automaticamente por produto, só
+  // um default razoável por tenant. @default(16) preserva o valor mais comum
+  // pra quem nunca configurou nada.
+  paginasPorCadernoPadrao Int @default(16)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

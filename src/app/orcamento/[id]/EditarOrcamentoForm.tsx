@@ -77,7 +77,8 @@ export function EditarOrcamentoForm({
     | "REVENDA"
     | "BORDADO"
     | "TEMPO_MAQUINA"
-    | "DTF";
+    | "DTF"
+    | "EDITORIAL";
   // ConfiguracaoClicheEtiqueta presente pro produto deste item — só então
   // mostra o seletor de papel/cores/faca/frete.
   usaClicheEtiqueta: boolean;
@@ -133,6 +134,23 @@ export function EditarOrcamentoForm({
     // a do produto quando preenchida. papelId acima é reaproveitado como o
     // mesmo override de papel do Offset.
     gramaturaGm2: string;
+    // Achado A10 (rota 1) — só EDITORIAL. numeroPaginas é do MIOLO;
+    // tipoEncadernacao/tipoEncadernacaoOutro são snapshot informativo (não
+    // entram no cálculo); temOrelhas/larguraOrelhaCm afetam o custo da capa;
+    // papelMioloId/gramaturaMioloGm2/coresMiolo e papelCapaId/
+    // gramaturaCapaGm2/coresCapa são independentes um do outro (miolo e capa
+    // quase sempre em papéis diferentes).
+    numeroPaginas: string;
+    tipoEncadernacao: string;
+    tipoEncadernacaoOutro: string;
+    temOrelhas: boolean;
+    larguraOrelhaCm: string;
+    papelMioloId: string;
+    gramaturaMioloGm2: string;
+    coresMiolo: string;
+    papelCapaId: string;
+    gramaturaCapaGm2: string;
+    coresCapa: string;
   };
   podeRemover: boolean;
   acabamentosDisponiveis: ItemAcabamentoDisponivel[];
@@ -168,19 +186,27 @@ export function EditarOrcamentoForm({
     modeloCalculo === "TEMPO_MAQUINA" ||
     // DTF (achado A5) — mesmo motor avançado de M2 (calcularM2
     // compartilhado).
-    modeloCalculo === "DTF";
+    modeloCalculo === "DTF" ||
+    // Editorial (achado A10, rota 1) — sempre motor avançado, mesma razão
+    // de REVENDA/BORDADO acima.
+    modeloCalculo === "EDITORIAL";
   // Diferente de usaMotorAvancado: M2/OFFSET/FLEXOGRAFIA/DIGITAL (achado N4:
   // agora faz imposição igual ao Offset) EXIGEM largura/altura pro cálculo em
   // si (nesting) — os 3 de setup-por-peça, Revenda, Bordado e Tempo de
   // máquina têm a dimensão opcional (ver design "dimensões opcionais" do
-  // plano). DTF (achado A5) exige dimensão pela mesma razão de M2.
+  // plano). DTF (achado A5) exige dimensão pela mesma razão de M2. EDITORIAL
+  // (achado A10) também exige — largura/altura SÃO o formato fechado da
+  // página, driver direto do peso de papel (sem nesting, mas dimensão
+  // continua obrigatória, diferente dos "sem nesting" acima).
   const exigeDimensao =
     modeloCalculo === "M2" ||
     modeloCalculo === "OFFSET" ||
     modeloCalculo === "FLEXOGRAFIA" ||
     modeloCalculo === "DIGITAL" ||
-    modeloCalculo === "DTF";
+    modeloCalculo === "DTF" ||
+    modeloCalculo === "EDITORIAL";
   const usaModeloDigital = modeloCalculo === "DIGITAL";
+  const usaModeloEditorial = modeloCalculo === "EDITORIAL";
   // Achado B7 — mesmo agrupamento de SeletorItemOrcamento.tsx (os 5
   // compartilham a mesma checkbox "material fornecido pelo cliente").
   const usaModeloSetupPorPeca =
@@ -235,6 +261,9 @@ export function EditarOrcamentoForm({
     paraExibicao(valoresIniciais.profundidadeCm, unidadeDimensao)
   );
   const [espessuraMm, setEspessuraMm] = useState(valoresIniciais.espessuraMm);
+  // Achado A10 (rota 1) — mesma conversão de largura/altura acima (largura
+  // da orelha segue a mesma unidadeDimensao do item).
+  const [larguraOrelhaCm, setLarguraOrelhaCm] = useState(valoresIniciais.larguraOrelhaCm);
   const [etiqueta, setEtiqueta] = useState<CamposEtiqueta>(valoresIniciais.etiqueta);
   const [coresEspeciais, setCoresEspeciais] = useState<CamposCorEspecial[]>(
     valoresIniciais.coresEspeciais
@@ -819,6 +848,154 @@ export function EditarOrcamentoForm({
               defaultValue={valoresIniciais.gramaturaGm2}
               placeholder="opcional — usa a gramatura do produto"
             />
+          </div>
+        )}
+
+        {usaModeloEditorial && (
+          <div className="flex flex-col gap-4 rounded-xl border border-slate-300 p-4 dark:border-slate-700">
+            <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              Editorial — miolo e capa
+            </p>
+
+            <Input
+              label={
+                <>
+                  Número de páginas do miolo
+                  <CampoAjuda texto="Total de páginas do miolo (não conta a capa). O motor arredonda pra cima pro múltiplo mais próximo do caderno configurado na gráfica (normalmente 16) — ex: 100 páginas vira 112 no cálculo, nunca trunca perdendo conteúdo." />
+                </>
+              }
+              name="numeroPaginas"
+              type="number"
+              min={1}
+              required
+              defaultValue={valoresIniciais.numeroPaginas}
+            />
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Select
+                label="Tipo de encadernação"
+                name="tipoEncadernacao"
+                defaultValue={valoresIniciais.tipoEncadernacao}
+              >
+                <option value="">Não informado</option>
+                <option value="COLADA_HOTMELT">Colada (hotmelt)</option>
+                <option value="PUR">Colada (PUR)</option>
+                <option value="COSTURADA">Costurada</option>
+                <option value="GRAMPO_CANOA">Grampo canoa</option>
+                <option value="WIRE_O">Wire-o</option>
+                <option value="ESPIRAL">Espiral</option>
+                <option value="CAPA_DURA">Capa dura</option>
+                <option value="OUTRO">Outro</option>
+              </Select>
+              <Input
+                label="Outro tipo (se selecionado acima)"
+                name="tipoEncadernacaoOutro"
+                defaultValue={valoresIniciais.tipoEncadernacaoOutro}
+                placeholder="opcional"
+              />
+            </div>
+            <span className="text-xs text-slate-500">
+              A encadernação é só informativa (snapshot pro PDF/produção) — o custo fixo por
+              exemplar é configurado no produto, no Catálogo, independente do tipo escolhido aqui.
+            </span>
+
+            <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
+              <input
+                type="checkbox"
+                name="temOrelhas"
+                defaultChecked={valoresIniciais.temOrelhas}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+              />
+              <span>Tem orelhas (capa com dobra lateral)</span>
+            </label>
+            <Input
+              label={
+                <>
+                  {`Largura da orelha (${ROTULO_UNIDADE_DIMENSAO[unidadeDimensao]})`}
+                  <CampoAjuda texto="Só usado quando 'Tem orelhas' está marcado — aumenta a largura (e o custo) da capa aberta." />
+                </>
+              }
+              name="larguraOrelhaCmExibicao"
+              type="number"
+              step={passoInputDimensao(unidadeDimensao)}
+              defaultValue={paraExibicao(valoresIniciais.larguraOrelhaCm, unidadeDimensao)}
+              placeholder="opcional — só se tem orelhas"
+              onChange={(e) =>
+                setLarguraOrelhaCm(paraCm(e.target.value, unidadeDimensao))
+              }
+            />
+            <input type="hidden" name="larguraOrelhaCm" value={larguraOrelhaCm} />
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {papeisDisponiveis.length === 0 ? (
+                <span className="text-xs text-slate-500 sm:col-span-2">
+                  Nenhuma matéria-prima de papel cadastrada ainda — cadastre em Catálogo.
+                </span>
+              ) : (
+                <>
+                  <Select
+                    label="Papel do miolo"
+                    name="papelMioloId"
+                    defaultValue={valoresIniciais.papelMioloId}
+                    required
+                  >
+                    <option value="" disabled>
+                      Selecione o papel do miolo
+                    </option>
+                    {papeisDisponiveis.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.nome}
+                      </option>
+                    ))}
+                  </Select>
+                  <Select
+                    label="Papel da capa"
+                    name="papelCapaId"
+                    defaultValue={valoresIniciais.papelCapaId}
+                    required
+                  >
+                    <option value="" disabled>
+                      Selecione o papel da capa
+                    </option>
+                    {papeisDisponiveis.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.nome}
+                      </option>
+                    ))}
+                  </Select>
+                </>
+              )}
+              <Input
+                label="Gramatura do miolo (g/m²)"
+                name="gramaturaMioloGm2"
+                type="number"
+                min={1}
+                step="0.1"
+                required
+                defaultValue={valoresIniciais.gramaturaMioloGm2}
+              />
+              <Input
+                label="Gramatura da capa (g/m²)"
+                name="gramaturaCapaGm2"
+                type="number"
+                min={1}
+                step="0.1"
+                required
+                defaultValue={valoresIniciais.gramaturaCapaGm2}
+              />
+              <Input
+                label="Cores do miolo"
+                name="coresMiolo"
+                defaultValue={valoresIniciais.coresMiolo}
+                placeholder="ex: 1x1, 4x4"
+              />
+              <Input
+                label="Cores da capa"
+                name="coresCapa"
+                defaultValue={valoresIniciais.coresCapa}
+                placeholder="ex: 4x0, 4x4"
+              />
+            </div>
           </div>
         )}
 

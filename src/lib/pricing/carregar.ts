@@ -40,6 +40,10 @@ export async function carregarParametrosTenant(graficaId: string): Promise<Param
 
     gramaturaMinGm2: Number(registro.gramaturaMinGm2),
     gramaturaMaxGm2: Number(registro.gramaturaMaxGm2),
+
+    // Achado A10 (rota 1) — quantas páginas compõem um caderno do motor
+    // Editorial (ver ContextoEditorial em tipos.ts).
+    paginasPorCadernoPadrao: registro.paginasPorCadernoPadrao,
   };
 }
 
@@ -189,7 +193,18 @@ export async function carregarContextoPrecificacao(
   // continuam sendo o default/fallback, exigidos como sempre). Isto aqui é
   // um OVERRIDE opcional por orçamento — papelId e gramaturaGm2 podem vir
   // independentemente um do outro (o objeto todo também pode vir ausente).
-  dadosOffset?: { papelId?: string; gramaturaGm2?: number }
+  dadosOffset?: { papelId?: string; gramaturaGm2?: number },
+  // Achado A10 (rota 1) — papel do MIOLO e da CAPA, SEMPRE escolhidos NESTE
+  // ORÇAMENTO (diferente do Offset, EDITORIAL não tem papel fixo no
+  // produto pra usar como fallback — ver comentário em
+  // OrcamentoItem.papelMioloId no schema). Os dois obrigatórios juntos
+  // (quem chama só monta este objeto quando tem os 4 campos).
+  dadosEditorial?: {
+    papelMioloId: string;
+    gramaturaMioloGm2: number;
+    papelCapaId: string;
+    gramaturaCapaGm2: number;
+  }
 ): Promise<ContextoPrecificacao> {
   const item = await prisma.itemGrafica.findFirstOrThrow({
     where: { id: itemGraficaId, graficaId },
@@ -499,6 +514,68 @@ export async function carregarContextoPrecificacao(
     contexto.tempoMaquina = {};
     contexto.parametrosMaquinaTempo = await carregarParametrosMaquinaTempo(item.maquinaTempo.id, graficaId);
     contexto.maquinaTempoUsada = { id: item.maquinaTempo.id, nome: item.maquinaTempo.nome };
+  } else if (item.modeloCalculo === "EDITORIAL") {
+    // Achado A10 (rota 1) — papel do miolo/capa SEMPRE escolhidos NESTE
+    // ORÇAMENTO (mesmo padrão de dadosDigital acima) — EDITORIAL não tem
+    // papel fixo no produto.
+    if (!dadosEditorial) {
+      throw new ErroPrecificacao(
+        "PAPEL_MIOLO_NAO_CONFIGURADO",
+        "Este produto usa o modelo Editorial — escolha o papel e a gramatura do miolo e da capa deste orçamento."
+      );
+    }
+
+    const [papelMiolo, papelCapa] = await Promise.all([
+      prisma.itemGrafica.findFirst({
+        where: {
+          id: dadosEditorial.papelMioloId,
+          graficaId,
+          ativo: true,
+          itemCatalogo: { tipo: "MATERIA_PRIMA" },
+        },
+        include: { tabelaPrecoPapel: true },
+      }),
+      prisma.itemGrafica.findFirst({
+        where: {
+          id: dadosEditorial.papelCapaId,
+          graficaId,
+          ativo: true,
+          itemCatalogo: { tipo: "MATERIA_PRIMA" },
+        },
+        include: { tabelaPrecoPapel: true },
+      }),
+    ]);
+    if (!papelMiolo) {
+      throw new ErroPrecificacao(
+        "PAPEL_MIOLO_NAO_CONFIGURADO",
+        "O papel do miolo escolhido não é válido — verifique se ele ainda existe e está ativo no catálogo."
+      );
+    }
+    if (!papelCapa) {
+      throw new ErroPrecificacao(
+        "PAPEL_CAPA_NAO_CONFIGURADO",
+        "O papel da capa escolhido não é válido — verifique se ele ainda existe e está ativo no catálogo."
+      );
+    }
+
+    const precoMiolo = resolverPrecoPapel(
+      papelMiolo.tabelaPrecoPapel.map((linha) => ({ gramatura: linha.gramatura, precoKg: Number(linha.precoKg) })),
+      dadosEditorial.gramaturaMioloGm2
+    );
+    const precoCapa = resolverPrecoPapel(
+      papelCapa.tabelaPrecoPapel.map((linha) => ({ gramatura: linha.gramatura, precoKg: Number(linha.precoKg) })),
+      dadosEditorial.gramaturaCapaGm2
+    );
+
+    contexto.editorial = {
+      gramaturaMioloGm2: dadosEditorial.gramaturaMioloGm2,
+      precoPorKgMiolo: precoMiolo.precoKg,
+      gramaturaCapaGm2: dadosEditorial.gramaturaCapaGm2,
+      precoPorKgCapa: precoCapa.precoKg,
+      custoImpressaoM2: Number(item.custoImpressaoM2Editorial ?? 0),
+      custoEncadernacaoPorPeca: Number(item.custoEncadernacaoPorPeca ?? 0),
+      paginasPorCaderno: parametros.paginasPorCadernoPadrao ?? 16,
+    };
   }
 
   return contexto;

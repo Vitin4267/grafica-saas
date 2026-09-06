@@ -660,6 +660,19 @@ export default async function OrcamentoDetalhePage({
                       item.custoFaca?.toString() ??
                       "",
                     custoFrete: item.precificacaoEtiqueta?.custoFrete?.toString() ?? "",
+                    // Achado A10 (rota 1) — campos diretos em OrcamentoItem
+                    // (ver comentário completo no schema).
+                    numeroPaginas: item.numeroPaginas?.toString() ?? "",
+                    tipoEncadernacao: item.tipoEncadernacao ?? "",
+                    tipoEncadernacaoOutro: item.tipoEncadernacaoOutro ?? "",
+                    temOrelhas: item.temOrelhas,
+                    larguraOrelhaCm: item.larguraOrelhaCm?.toString() ?? "",
+                    papelMioloId: item.papelMioloId ?? "",
+                    gramaturaMioloGm2: item.gramaturaMioloGm2?.toString() ?? "",
+                    coresMiolo: item.coresMiolo ?? "",
+                    papelCapaId: item.papelCapaId ?? "",
+                    gramaturaCapaGm2: item.gramaturaCapaGm2?.toString() ?? "",
+                    coresCapa: item.coresCapa ?? "",
                   }}
                 />
                 <DescontoItemForm

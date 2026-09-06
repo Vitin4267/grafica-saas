@@ -98,6 +98,24 @@ const MENSAGEM_CONFLITO_CONCORRENTE =
 // centímetro na fronteira (usada por adicionarItemOrcamento).
 const unidadeDimensaoSchema = z.enum(UNIDADES_DIMENSAO);
 
+// Achado A10 (rota 1) — enum TipoEncadernacaoEditorial, validado solto vindo
+// de FormData (mesmo padrão de unidadeDimensaoSchema acima) — campo
+// puramente informativo (nunca passa por calcularItemOrcamento), mas ainda
+// precisa bater com o enum do banco pra não estourar erro genérico do
+// Prisma numa gravação inválida.
+const tipoEncadernacaoEditorialSchema = z
+  .enum([
+    "COLADA_HOTMELT",
+    "PUR",
+    "COSTURADA",
+    "GRAMPO_CANOA",
+    "WIRE_O",
+    "ESPIRAL",
+    "CAPA_DURA",
+    "OUTRO",
+  ])
+  .optional();
+
 // Sinaliza, de dentro de uma transação Serializable, que o orçamento já está
 // no último item — usado só pra abortar a transação com uma mensagem amigável
 // (ver removerItemOrcamento). Não é um erro de banco de verdade.
@@ -416,6 +434,29 @@ export async function editarOrcamento(
   // "Material fornecido pelo cliente" (achado B7) — checkbox, não número:
   // sem exigir presença no FormData, ausente = desmarcado = false.
   const materialFornecidoPeloCliente = formData.get("materialFornecidoPeloCliente") === "on";
+  // Achado A10 (rota 1) — motor Editorial. larguraOrelhaCm já vem
+  // convertida pra cm no client (EditarOrcamentoForm.tsx), mesmo padrão de
+  // larguraCm/alturaCm/larguraPlanificadaCm acima (edição não reconverte
+  // unidade). tipoEncadernacao/coresMiolo/coresCapa nunca passam por
+  // calcularItemOrcamento (puramente descritivos, mesmo caráter de
+  // `cores`/`acabamento` no topo deste arquivo).
+  const numeroPaginas = formData.get("numeroPaginas") ? Number(formData.get("numeroPaginas")) : null;
+  const tipoEncadernacaoResult = tipoEncadernacaoEditorialSchema.safeParse(
+    formData.get("tipoEncadernacao") || undefined
+  );
+  if (!tipoEncadernacaoResult.success) {
+    return { ok: false, mensagem: "Tipo de encadernação inválido." };
+  }
+  const tipoEncadernacao = tipoEncadernacaoResult.data ?? null;
+  const tipoEncadernacaoOutro = String(formData.get("tipoEncadernacaoOutro") || "").trim().slice(0, 120) || null;
+  const temOrelhas = formData.get("temOrelhas") === "on";
+  const larguraOrelhaCm = formData.get("larguraOrelhaCm") ? Number(formData.get("larguraOrelhaCm")) : null;
+  const papelMioloId = String(formData.get("papelMioloId") || "").trim() || null;
+  const gramaturaMioloGm2 = formData.get("gramaturaMioloGm2") ? Number(formData.get("gramaturaMioloGm2")) : null;
+  const coresMiolo = String(formData.get("coresMiolo") || "").trim().slice(0, 60) || null;
+  const papelCapaId = String(formData.get("papelCapaId") || "").trim() || null;
+  const gramaturaCapaGm2 = formData.get("gramaturaCapaGm2") ? Number(formData.get("gramaturaCapaGm2")) : null;
+  const coresCapa = String(formData.get("coresCapa") || "").trim().slice(0, 60) || null;
   // Achado F8 — QUAL cor especial/Pantone este item usa. Independente de
   // modeloCalculo, nunca passa por calcularItemOrcamento (puramente
   // descritivo) — resolvida (ownership + "salvar na biblioteca") mais abaixo,
@@ -503,6 +544,13 @@ export async function editarOrcamento(
     custoAquisicaoUnitario,
     materialFornecidoPeloCliente,
     margemLucroOverride,
+    numeroPaginas,
+    temOrelhas,
+    larguraOrelhaCm,
+    papelMioloId,
+    gramaturaMioloGm2,
+    papelCapaId,
+    gramaturaCapaGm2,
   });
   if (!resultado.ok) {
     return { ok: false, mensagem: resultado.mensagem };
@@ -580,6 +628,26 @@ export async function editarOrcamento(
             custoFaca: resultado.custoFaca,
             materialFornecidoPeloCliente: resultado.materialFornecidoPeloCliente,
             breakdown: resultado.breakdown ?? undefined,
+            // Achado A10 (rota 1) — tipoEncadernacao/tipoEncadernacaoOutro/
+            // coresMiolo/coresCapa nunca passam por calcularItemOrcamento
+            // (puramente descritivos, gravados direto do FormData, mesmo
+            // caminho de `cores`/`acabamento` acima). numeroPaginas/
+            // temOrelhas/larguraOrelhaCm/papelMioloId/gramaturaMioloGm2/
+            // papelCapaId/gramaturaCapaGm2 vêm de `resultado` (valor
+            // REALMENTE usado no cálculo, já validado por
+            // carregarContextoPrecificacao) — null pra qualquer item que
+            // não é EDITORIAL.
+            numeroPaginas: resultado.numeroPaginas,
+            tipoEncadernacao,
+            tipoEncadernacaoOutro,
+            temOrelhas: resultado.temOrelhas,
+            larguraOrelhaCm: resultado.larguraOrelhaCm,
+            papelMioloId: resultado.papelMioloId,
+            gramaturaMioloGm2: resultado.gramaturaMioloGm2,
+            coresMiolo,
+            papelCapaId: resultado.papelCapaId,
+            gramaturaCapaGm2: resultado.gramaturaCapaGm2,
+            coresCapa,
           },
         });
 
@@ -867,6 +935,28 @@ export async function adicionarItemOrcamento(
   // "Material fornecido pelo cliente" (achado B7) — checkbox, não número:
   // sem exigir presença no FormData, ausente = desmarcado = false.
   const materialFornecidoPeloCliente = formData.get("materialFornecidoPeloCliente") === "on";
+  // Achado A10 (rota 1) — motor Editorial. larguraOrelhaBruta segue a mesma
+  // convenção de larguraPlanificadaBruta acima: DIGITADA na unidade do
+  // formulário, convertida pra cm mais abaixo (ver unidadeDimensao,
+  // resolvido logo adiante). tipoEncadernacao/coresMiolo/coresCapa nunca
+  // passam por calcularItemOrcamento (puramente descritivos).
+  const numeroPaginas = formData.get("numeroPaginas") ? Number(formData.get("numeroPaginas")) : null;
+  const tipoEncadernacaoResult = tipoEncadernacaoEditorialSchema.safeParse(
+    formData.get("tipoEncadernacao") || undefined
+  );
+  if (!tipoEncadernacaoResult.success) {
+    return { ok: false, mensagem: "Tipo de encadernação inválido." };
+  }
+  const tipoEncadernacao = tipoEncadernacaoResult.data ?? null;
+  const tipoEncadernacaoOutro = String(formData.get("tipoEncadernacaoOutro") || "").trim().slice(0, 120) || null;
+  const temOrelhas = formData.get("temOrelhas") === "on";
+  const larguraOrelhaBruta = formData.get("larguraOrelha") ? Number(formData.get("larguraOrelha")) : null;
+  const papelMioloId = String(formData.get("papelMioloId") || "").trim() || null;
+  const gramaturaMioloGm2 = formData.get("gramaturaMioloGm2") ? Number(formData.get("gramaturaMioloGm2")) : null;
+  const coresMiolo = String(formData.get("coresMiolo") || "").trim().slice(0, 60) || null;
+  const papelCapaId = String(formData.get("papelCapaId") || "").trim() || null;
+  const gramaturaCapaGm2 = formData.get("gramaturaCapaGm2") ? Number(formData.get("gramaturaCapaGm2")) : null;
+  const coresCapa = String(formData.get("coresCapa") || "").trim().slice(0, 60) || null;
   // Achado F8 — QUAL cor especial/Pantone este item usa. Independente de
   // modeloCalculo, nunca passa por calcularItemOrcamento (puramente
   // descritivo) — resolvida (ownership + "salvar na biblioteca") mais
@@ -901,6 +991,9 @@ export async function adicionarItemOrcamento(
   // espessuraMm já chega em mm. Nenhum dos dois vai pro motor de preço.
   const profundidadeCm =
     profundidadeBruta !== null ? converterParaCm(profundidadeBruta, unidadeDimensao) : null;
+  // Achado A10 (rota 1) — mesma conversão de largura/altura acima.
+  const larguraOrelhaCm =
+    larguraOrelhaBruta !== null ? converterParaCm(larguraOrelhaBruta, unidadeDimensao) : null;
 
   const orcamento = await prisma.orcamento.findFirst({
     where: { id: orcamentoId, graficaId: usuario.graficaId },
@@ -964,6 +1057,13 @@ export async function adicionarItemOrcamento(
     custoAquisicaoUnitario,
     materialFornecidoPeloCliente,
     margemLucroOverride,
+    numeroPaginas,
+    temOrelhas,
+    larguraOrelhaCm,
+    papelMioloId,
+    gramaturaMioloGm2,
+    papelCapaId,
+    gramaturaCapaGm2,
   });
   if (!resultado.ok) {
     return { ok: false, mensagem: resultado.mensagem };
@@ -1020,6 +1120,18 @@ export async function adicionarItemOrcamento(
             custoFaca: resultado.custoFaca,
             materialFornecidoPeloCliente: resultado.materialFornecidoPeloCliente,
             breakdown: resultado.breakdown ?? undefined,
+            // Achado A10 (rota 1) — mesmo padrão de editarOrcamento acima.
+            numeroPaginas: resultado.numeroPaginas,
+            tipoEncadernacao,
+            tipoEncadernacaoOutro,
+            temOrelhas: resultado.temOrelhas,
+            larguraOrelhaCm: resultado.larguraOrelhaCm,
+            papelMioloId: resultado.papelMioloId,
+            gramaturaMioloGm2: resultado.gramaturaMioloGm2,
+            coresMiolo,
+            papelCapaId: resultado.papelCapaId,
+            gramaturaCapaGm2: resultado.gramaturaCapaGm2,
+            coresCapa,
             etiqueta:
               resultado.modeloCalculo === "M2"
                 ? {
