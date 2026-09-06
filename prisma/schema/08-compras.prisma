@@ -144,12 +144,48 @@ enum OrigemSolicitacaoCompra {
   OUTRO
 }
 
+// Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06): antes
+// desta feature, SolicitacaoCompra.itemGraficaId era obrigatório e
+// resolverItemMateriaPrima (src/app/compras/actions.ts) filtrava
+// rigidamente itemCatalogo.tipo=MATERIA_PRIMA — impossível registrar em
+// Compras um clichê de clicheria, tela de serigrafia terceirizada, peça de
+// manutenção, EPI ou qualquer compra pontual fora do catálogo. Categoriza
+// POR QUE a compra existe (independente de o alvo ser um item do catálogo
+// ou uma descrição livre — ver SolicitacaoCompra.itemGraficaId/
+// descricaoLivre abaixo, os dois eixos são ortogonais: dá pra ter
+// tipoCompra=MATERIA_PRIMA com itemGraficaId, ou MATERIA_PRIMA com
+// descricaoLivre quando o material não está cadastrado no catálogo).
+// tipoCompraOutro é texto livre só usado quando tipoCompra=OUTRO, mesmo
+// padrão do resto do schema.
+enum TipoCompra {
+  MATERIA_PRIMA // default — comportamento de toda solicitação criada antes desta feature
+  SERVICO_TERCEIRIZADO // clichê, corte a laser externo, acabamento terceirizado etc.
+  PECA_MANUTENCAO
+  EQUIPAMENTO
+  CONSUMO_INTERNO
+  OUTRO
+}
+
 model SolicitacaoCompra {
   id        String                  @id @default(cuid())
   graficaId String
   status    StatusSolicitacaoCompra @default(SOLICITADO)
 
-  itemGraficaId String // a matéria-prima (ItemGrafica tipo=MATERIA_PRIMA)
+  // Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+  // nullable: nem toda compra tem um alvo estruturado no catálogo (ver
+  // enum TipoCompra acima). Pelo menos um entre itemGraficaId e
+  // descricaoLivre é exigido na aplicação (não em constraint de banco,
+  // mesmo padrão do resto do schema) — os dois podem coexistir (ex: item
+  // do catálogo + observação livre sobre esta compra específica).
+  itemGraficaId String? // a matéria-prima (ItemGrafica tipo=MATERIA_PRIMA), quando estruturada
+  // Descrição livre do que está sendo comprado, quando não há item de
+  // catálogo pra apontar — ex: "Clichê 4 cores — arte Rótulo Cerveja X".
+  // Nunca usada pra baixa de estoque nem pra atualizar preço de nenhum
+  // ItemGrafica (só texto exibido na tela de detalhe/listagem).
+  descricaoLivre String?
+  // Achado A1 da auditoria de abrangência — ver enum TipoCompra acima.
+  tipoCompra      TipoCompra @default(MATERIA_PRIMA)
+  tipoCompraOutro String?
   // Qual variante (ex: espessura de chapa) quando a matéria-prima tem
   // VarianteMateriaPrima cadastrada — mesmo padrão opcional de
   // FichaTecnicaItem.varianteId. null = matéria-prima sem variantes.
@@ -186,6 +222,22 @@ model SolicitacaoCompra {
   // gerada em RECEBIDO.
   valorEstimado        Decimal?       @db.Decimal(12, 2)
   valorFinal           Decimal?       @db.Decimal(12, 2)
+
+  // Achado A2 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+  // "rota curta": custo de aquisição real de UMA solicitação (1 item por
+  // nota continua sendo a limitação conhecida — nota com múltiplos itens é
+  // achado separado, maior, "rota completa"). Todos opcionais/null =
+  // comportamento de hoje 100% preservado (custoAquisicaoTotal, calculado
+  // on-the-fly onde custoUnitario é derivado — ver avancarStatusCompra em
+  // ./status-transicao.ts — vira exatamente valorFinal quando os 4 campos
+  // abaixo estão vazios). Preenchidos a partir de COMPRADO, mesmo passo do
+  // formulário que já pede valorFinal (ver AcoesSolicitacaoForm.tsx).
+  // valorIcmsCreditavel e valorDesconto REDUZEM o custo de aquisição;
+  // valorFrete e valorIpi AUMENTAM.
+  valorFrete           Decimal?       @db.Decimal(12, 2)
+  valorIpi             Decimal?       @db.Decimal(12, 2)
+  valorIcmsCreditavel  Decimal?       @db.Decimal(12, 2)
+  valorDesconto        Decimal?       @db.Decimal(12, 2)
 
   observacao String? // texto livre — ex: motivo da solicitação, condição de pagamento
 
@@ -236,8 +288,9 @@ model SolicitacaoCompra {
 
   grafica              Grafica               @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   // Restrict, mesmo raciocínio de MovimentacaoEstoque.itemGrafica: hoje não
-  // existe fluxo que apague um ItemGrafica, isto é só defensivo.
-  itemGrafica          ItemGrafica           @relation(fields: [itemGraficaId], references: [id], onDelete: Restrict)
+  // existe fluxo que apague um ItemGrafica, isto é só defensivo. Opcional
+  // desde o achado A1 — ver comentário de itemGraficaId acima.
+  itemGrafica          ItemGrafica?          @relation(fields: [itemGraficaId], references: [id], onDelete: Restrict)
   // SetNull: desativar/apagar uma variante não pode apagar a solicitação —
   // ela só perde a referência de qual variante era o alvo.
   variante             VarianteMateriaPrima? @relation(fields: [varianteId], references: [id], onDelete: SetNull)

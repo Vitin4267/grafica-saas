@@ -39,6 +39,37 @@ export const ORIGENS_SOLICITACAO_COMPRA: OrigemSolicitacaoCompra[] = [
   "OUTRO",
 ];
 
+// Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) — O
+// QUE está sendo comprado, ortogonal à origem acima (POR QUE a compra
+// existe) e a itemGraficaId/descricaoLivre no schema (alvo estruturado ou
+// texto livre). MATERIA_PRIMA é o default — preserva o comportamento de
+// toda solicitação criada antes desta feature.
+export type TipoCompra =
+  | "MATERIA_PRIMA"
+  | "SERVICO_TERCEIRIZADO"
+  | "PECA_MANUTENCAO"
+  | "EQUIPAMENTO"
+  | "CONSUMO_INTERNO"
+  | "OUTRO";
+
+export const ROTULOS_TIPO_COMPRA: Record<TipoCompra, string> = {
+  MATERIA_PRIMA: "Matéria-prima do catálogo",
+  SERVICO_TERCEIRIZADO: "Serviço terceirizado",
+  PECA_MANUTENCAO: "Peça de manutenção",
+  EQUIPAMENTO: "Equipamento",
+  CONSUMO_INTERNO: "Consumo interno",
+  OUTRO: "Outro",
+};
+
+export const TIPOS_COMPRA: TipoCompra[] = [
+  "MATERIA_PRIMA",
+  "SERVICO_TERCEIRIZADO",
+  "PECA_MANUTENCAO",
+  "EQUIPAMENTO",
+  "CONSUMO_INTERNO",
+  "OUTRO",
+];
+
 // Nunca confia no status enviado pelo client — só permite as transições
 // abaixo, validadas de novo no servidor a partir do status atual lido do
 // banco (mesmo padrão de TRANSICOES_VALIDAS em src/lib/orcamento-status.ts).

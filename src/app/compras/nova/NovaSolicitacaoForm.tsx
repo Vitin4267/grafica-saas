@@ -14,7 +14,14 @@ import { chaveComparativo } from "@/lib/comparativo-fornecedores";
 import { contratosAplicaveis, type ContratoAtivoResumo } from "@/lib/contrato-fornecimento";
 import { rotuloUnidadeCompra } from "@/lib/unidade-compra";
 import { criarSolicitacaoCompra } from "../actions";
-import { ORIGENS_SOLICITACAO_COMPRA, ROTULOS_ORIGEM_SOLICITACAO_COMPRA, type OrigemSolicitacaoCompra } from "@/lib/compras-status";
+import {
+  ORIGENS_SOLICITACAO_COMPRA,
+  ROTULOS_ORIGEM_SOLICITACAO_COMPRA,
+  TIPOS_COMPRA,
+  ROTULOS_TIPO_COMPRA,
+  type OrigemSolicitacaoCompra,
+  type TipoCompra,
+} from "@/lib/compras-status";
 import {
   UNIDADES_COMPRA,
   ROTULO_UNIDADE_COMPRA,
@@ -85,6 +92,15 @@ export function NovaSolicitacaoForm({
   const [itemGraficaId, setItemGraficaId] = useState(itemGraficaIdInicial || materiais[0]?.id || "");
   const [varianteId, setVarianteId] = useState(varianteIdInicial);
   const [origem, setOrigem] = useState<OrigemSolicitacaoCompra>("REPOSICAO_ESTOQUE");
+  // Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+  // O QUE está sendo comprado (ver enum TipoCompra). MATERIA_PRIMA é o
+  // default, preserva o fluxo de sempre (seletor de item do catálogo).
+  const [tipoCompra, setTipoCompra] = useState<TipoCompra>("MATERIA_PRIMA");
+  // "Este item não está no catálogo" — só relevante quando tipoCompra=
+  // MATERIA_PRIMA (as demais categorias já usam descrição livre por
+  // padrão, ver mostrarSeletorItem abaixo).
+  const [usarDescricaoLivre, setUsarDescricaoLivre] = useState(false);
+  const mostrarSeletorItem = tipoCompra === "MATERIA_PRIMA" && !usarDescricaoLivre;
   // Achado A9 da auditoria de abrangência (Parte 3/Compras) — fornecedorId
   // precisa ser controlado (não só defaultValue) pra "usar este contrato"
   // poder selecioná-lo programaticamente junto com a origem. contratoFornecimentoId
@@ -152,27 +168,96 @@ export function NovaSolicitacaoForm({
     <Card className="p-6">
       <form action={formAction} className="flex flex-col gap-4">
         <Select
-          label="Matéria-prima"
-          name="itemGraficaId"
-          value={itemGraficaId}
+          label={
+            <>
+              Tipo de compra
+              <CampoAjuda texto="O que está sendo comprado. Matéria-prima do catálogo é o caso de sempre (papel, tinta, chapa...). As demais opções liberam uma descrição livre no lugar do item do catálogo — use pra clichê de clicheria, serviço terceirizado, peça de manutenção, equipamento ou qualquer compra pontual que não está cadastrada no catálogo." />
+            </>
+          }
+          name="tipoCompra"
+          value={tipoCompra}
           onChange={(e) => {
-            const novoId = e.target.value;
-            setItemGraficaId(novoId);
-            setVarianteId("");
-            const novoMaterial = materiais.find((m) => m.id === novoId);
-            setUnidadeCompra(novoMaterial?.unidadeCompraPadrao ?? "");
-            setFatorConversaoCompraTexto(novoMaterial?.fatorConversaoCompraPadrao ?? "");
-            setQuantidadeCompraTexto("");
-            setContratoFornecimentoId(""); // troca de item invalida o contrato escolhido antes
+            const novoTipo = e.target.value as TipoCompra;
+            setTipoCompra(novoTipo);
+            if (novoTipo !== "MATERIA_PRIMA") {
+              // Sai do fluxo de item do catálogo — descricaoLivre assume,
+              // unidade de compra/contrato escolhidos antes deixam de fazer
+              // sentido.
+              setUnidadeCompra("");
+              setQuantidadeCompraTexto("");
+              setContratoFornecimentoId("");
+            }
           }}
-          required
         >
-          {materiais.map((material) => (
-            <option key={material.id} value={material.id}>
-              {material.nome}
+          {TIPOS_COMPRA.map((t) => (
+            <option key={t} value={t}>
+              {ROTULOS_TIPO_COMPRA[t]}
             </option>
           ))}
         </Select>
+
+        {tipoCompra === "OUTRO" && <Input label="Qual? (opcional)" name="tipoCompraOutro" type="text" maxLength={120} />}
+
+        {mostrarSeletorItem ? (
+          <>
+            <Select
+              label="Matéria-prima"
+              name="itemGraficaId"
+              value={itemGraficaId}
+              onChange={(e) => {
+                const novoId = e.target.value;
+                setItemGraficaId(novoId);
+                setVarianteId("");
+                const novoMaterial = materiais.find((m) => m.id === novoId);
+                setUnidadeCompra(novoMaterial?.unidadeCompraPadrao ?? "");
+                setFatorConversaoCompraTexto(novoMaterial?.fatorConversaoCompraPadrao ?? "");
+                setQuantidadeCompraTexto("");
+                setContratoFornecimentoId(""); // troca de item invalida o contrato escolhido antes
+              }}
+              required
+            >
+              {materiais.map((material) => (
+                <option key={material.id} value={material.id}>
+                  {material.nome}
+                </option>
+              ))}
+            </Select>
+            {materiais.length > 0 && (
+              <button
+                type="button"
+                className="-mt-2 self-start text-xs font-medium text-teal-700 underline dark:text-teal-400"
+                onClick={() => {
+                  setUsarDescricaoLivre(true);
+                  setVarianteId("");
+                  setUnidadeCompra("");
+                  setQuantidadeCompraTexto("");
+                  setContratoFornecimentoId("");
+                }}
+              >
+                Este item não está no catálogo — descrever manualmente
+              </button>
+            )}
+          </>
+        ) : (
+          <>
+            <Textarea
+              label="Descrição da compra"
+              name="descricaoLivre"
+              maxLength={300}
+              required
+              placeholder='Ex: "Clichê 4 cores — arte Rótulo Cerveja X"'
+            />
+            {tipoCompra === "MATERIA_PRIMA" && (
+              <button
+                type="button"
+                className="-mt-2 self-start text-xs font-medium text-teal-700 underline dark:text-teal-400"
+                onClick={() => setUsarDescricaoLivre(false)}
+              >
+                Selecionar item do catálogo
+              </button>
+            )}
+          </>
+        )}
 
         <Select
           label={
@@ -217,7 +302,7 @@ export function NovaSolicitacaoForm({
 
         {origem === "OUTRO" && <Input label="Qual? (opcional)" name="origemOutro" type="text" maxLength={120} />}
 
-        {materialSelecionado && materialSelecionado.variantes.length > 0 && (
+        {mostrarSeletorItem && materialSelecionado && materialSelecionado.variantes.length > 0 && (
           <Select
             label="Variante"
             name="varianteId"
@@ -237,9 +322,9 @@ export function NovaSolicitacaoForm({
           </Select>
         )}
 
-        <input type="hidden" name="contratoFornecimentoId" value={contratoFornecimentoId} />
+        {mostrarSeletorItem && <input type="hidden" name="contratoFornecimentoId" value={contratoFornecimentoId} />}
 
-        {materialSelecionado && !aguardandoVariante && contratosParaSelecao.length > 0 && (
+        {mostrarSeletorItem && materialSelecionado && !aguardandoVariante && contratosParaSelecao.length > 0 && (
           <ContratoAtivoCard
             contratos={contratosParaSelecao}
             contratoSelecionadoId={contratoFornecimentoId}
@@ -251,14 +336,14 @@ export function NovaSolicitacaoForm({
           />
         )}
 
-        {origem === "CONTRATO_PROGRAMADO" && !contratoFornecimentoId && (
+        {mostrarSeletorItem && origem === "CONTRATO_PROGRAMADO" && !contratoFornecimentoId && (
           <Alert variant="warning">
             Selecione um contrato ativo acima pra usar esta origem — sem isso a solicitação não pode nascer
             aprovada automaticamente.
           </Alert>
         )}
 
-        {materialSelecionado && !aguardandoVariante && (
+        {mostrarSeletorItem && materialSelecionado && !aguardandoVariante && (
           <ComparativoFornecedoresCard
             unidade={materialSelecionado.unidade}
             linhas={comparativo}
@@ -266,30 +351,32 @@ export function NovaSolicitacaoForm({
           />
         )}
 
-        <div className="w-52">
-          <Select
-            label={
-              <>
-                Unidade de compra (opcional)
-                <CampoAjuda texto="Use quando você compra este material numa unidade diferente da que usa no estoque — por exemplo, compra em rolo ou fardo, mas controla o estoque em metro ou unidade. Ao escolher, o sistema pede o fator de conversão e calcula sozinho quanto isso representa no estoque." />
-              </>
-            }
-            name="unidadeCompra"
-            value={unidadeCompra}
-            onChange={(e) => setUnidadeCompra(e.target.value)}
-          >
-            <option value="">
-              Direto na unidade de estoque{materialSelecionado?.unidade ? ` (${materialSelecionado.unidade})` : ""}
-            </option>
-            {UNIDADES_COMPRA.map((u) => (
-              <option key={u} value={u}>
-                {ROTULO_UNIDADE_COMPRA[u as UnidadeCompra]}
+        {mostrarSeletorItem && (
+          <div className="w-52">
+            <Select
+              label={
+                <>
+                  Unidade de compra (opcional)
+                  <CampoAjuda texto="Use quando você compra este material numa unidade diferente da que usa no estoque — por exemplo, compra em rolo ou fardo, mas controla o estoque em metro ou unidade. Ao escolher, o sistema pede o fator de conversão e calcula sozinho quanto isso representa no estoque." />
+                </>
+              }
+              name="unidadeCompra"
+              value={unidadeCompra}
+              onChange={(e) => setUnidadeCompra(e.target.value)}
+            >
+              <option value="">
+                Direto na unidade de estoque{materialSelecionado?.unidade ? ` (${materialSelecionado.unidade})` : ""}
               </option>
-            ))}
-          </Select>
-        </div>
+              {UNIDADES_COMPRA.map((u) => (
+                <option key={u} value={u}>
+                  {ROTULO_UNIDADE_COMPRA[u as UnidadeCompra]}
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
 
-        {unidadeCompra ? (
+        {mostrarSeletorItem && unidadeCompra ? (
           <div className="flex flex-wrap items-end gap-3">
             {unidadeCompra === "OUTRO" && (
               <div className="w-40">
@@ -333,7 +420,7 @@ export function NovaSolicitacaoForm({
         ) : (
           <div className="w-40">
             <Input
-              label={`Quantidade${materialSelecionado?.unidade ? ` (${materialSelecionado.unidade})` : ""}`}
+              label={`Quantidade${mostrarSeletorItem && materialSelecionado?.unidade ? ` (${materialSelecionado.unidade})` : ""}`}
               name="quantidade"
               type="number"
               step="0.0001"
@@ -343,12 +430,12 @@ export function NovaSolicitacaoForm({
           </div>
         )}
 
-        {quantidadeEstoquePreview !== null && (
+        {mostrarSeletorItem && quantidadeEstoquePreview !== null && (
           <p className="-mt-2 text-sm text-slate-500">
             = {quantidadeEstoquePreview} {materialSelecionado?.unidade || "unidade(s)"} em estoque
           </p>
         )}
-        {avisoLote && <Alert variant="warning">{avisoLote}</Alert>}
+        {mostrarSeletorItem && avisoLote && <Alert variant="warning">{avisoLote}</Alert>}
 
         <div className="flex flex-wrap gap-3">
           <div className="w-44">

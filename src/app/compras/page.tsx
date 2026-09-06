@@ -217,15 +217,19 @@ export default async function ComprasPage() {
                   >
                     <div>
                       <p className="font-medium text-slate-900 dark:text-white">
-                        {solicitacao.itemGrafica.itemCatalogo.nome}
-                        {solicitacao.variante ? ` (${solicitacao.variante.rotulo})` : ""}
+                        {/* Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+                            itemGrafica pode ser null (compra por descricaoLivre). */}
+                        {solicitacao.itemGrafica
+                          ? `${solicitacao.itemGrafica.itemCatalogo.nome}${solicitacao.variante ? ` (${solicitacao.variante.rotulo})` : ""}`
+                          : (solicitacao.descricaoLivre ?? "Compra avulsa")}
                       </p>
                       <p className="mt-0.5 text-xs text-slate-500">
-                        {formatoQuantidade.format(Number(solicitacao.quantidade))}{" "}
-                        {rotuloUnidade(
-                          solicitacao.itemGrafica.itemCatalogo.unidade,
-                          solicitacao.itemGrafica.itemCatalogo.unidadeOutro
-                        )}
+                        {formatoQuantidade.format(Number(solicitacao.quantidade))}
+                        {solicitacao.itemGrafica &&
+                          ` ${rotuloUnidade(
+                            solicitacao.itemGrafica.itemCatalogo.unidade,
+                            solicitacao.itemGrafica.itemCatalogo.unidadeOutro
+                          )}`}
                         {solicitacao.fornecedor ? ` · ${solicitacao.fornecedor.nome}` : ""}
                       </p>
                     </div>

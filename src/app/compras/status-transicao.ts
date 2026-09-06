@@ -7,10 +7,12 @@ import {
   TRANSICOES_VALIDAS,
   ROTULOS_STATUS_SOLICITACAO_COMPRA,
   type StatusSolicitacaoCompra,
+  type TipoCompra,
 } from "@/lib/compras-status";
 import { criarCustoAutomaticoCompra } from "@/lib/custo-pedido";
 import { resolverLimiteAprovacaoCompra } from "@/lib/alcada-aprovacao";
 import { formatoMoeda } from "@/lib/moeda";
+import { calcularCustoAquisicaoTotal } from "@/lib/custo-aquisicao-compra";
 
 // Núcleo da transição de status de uma SolicitacaoCompra — mesma filosofia
 // de avancarStatusPedido (src/app/producao/status-transicao.ts): não faz
@@ -26,7 +28,10 @@ export type SolicitacaoParaTransicao = {
   id: string;
   graficaId: string;
   status: StatusSolicitacaoCompra;
-  itemGraficaId: string;
+  // Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+  // nullable: compra sem alvo estruturado no catálogo (ver tipoCompra
+  // abaixo e descricaoLivre no schema).
+  itemGraficaId: string | null;
   varianteId: string | null;
   quantidade: Prisma.Decimal;
   // Estimativa no momento da solicitação/cotação — usada (junto da cotação
@@ -45,6 +50,22 @@ export type SolicitacaoParaTransicao = {
   // ContratoFornecimento.quantidadeConsumida deste contrato (ver bloco
   // RECEBIDO abaixo).
   contratoFornecimentoId: string | null;
+  // Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+  // opcional só pra não quebrar chamador/teste anterior a esta feature;
+  // ausente (undefined) é tratado igual a "MATERIA_PRIMA" abaixo (o
+  // default do schema, e o único valor que qualquer solicitação anterior a
+  // esta feature podia ter). Decide, junto de itemGraficaId, se RECEBIDO
+  // gera MovimentacaoEstoque (ver geraMovimentacaoEstoque abaixo).
+  tipoCompra?: TipoCompra;
+  // Achado A2 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+  // "rota curta" de custo de aquisição real, todos opcionais (ver
+  // calcularCustoAquisicaoTotal em src/lib/custo-aquisicao-compra.ts).
+  // Ausentes/null = comportamento de hoje (custoAquisicaoTotal ===
+  // valorFinal).
+  valorFrete?: Prisma.Decimal | null;
+  valorIpi?: Prisma.Decimal | null;
+  valorIcmsCreditavel?: Prisma.Decimal | null;
+  valorDesconto?: Prisma.Decimal | null;
 };
 
 // Campos opcionais que o formulário de transição pode enviar junto — cada
@@ -57,6 +78,14 @@ export type DadosTransicaoCompra = {
   fornecedorId?: string | null;
   valorFinal?: number | null;
   documento?: string | null;
+  // Achado A2 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+  // mesmo campo contextual de valorFinal (só relevante em COMPRADO, ver
+  // camposContextuais em AcoesSolicitacaoForm.tsx): `undefined` = "não
+  // mexer", `null` = "limpar", número = "definir".
+  valorFrete?: number | null;
+  valorIpi?: number | null;
+  valorIcmsCreditavel?: number | null;
+  valorDesconto?: number | null;
 };
 
 export type AvancarStatusCompraResult =
@@ -217,23 +246,45 @@ export async function avancarStatusCompra(
     dadosUpdate.fornecedorId = fornecedorIdFinal;
   }
   if (dados.documento !== undefined) dadosUpdate.documento = documentoFinal;
-  if (proximoStatus === "COMPRADO") dadosUpdate.valorFinal = valorFinalFinal;
+  if (proximoStatus === "COMPRADO") {
+    dadosUpdate.valorFinal = valorFinalFinal;
+    // Achado A2 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+    // mesmo padrão undefined/null/valor de documento acima.
+    if (dados.valorFrete !== undefined) dadosUpdate.valorFrete = dados.valorFrete;
+    if (dados.valorIpi !== undefined) dadosUpdate.valorIpi = dados.valorIpi;
+    if (dados.valorIcmsCreditavel !== undefined) dadosUpdate.valorIcmsCreditavel = dados.valorIcmsCreditavel;
+    if (dados.valorDesconto !== undefined) dadosUpdate.valorDesconto = dados.valorDesconto;
+  }
 
   try {
     if (proximoStatus === "RECEBIDO") {
+      // Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06)
+      // — só compra de matéria-prima COM item de catálogo vira estoque.
+      // Compra de serviço/peça/equipamento (tipoCompra != MATERIA_PRIMA),
+      // ou até matéria-prima sem item estruturado (só descricaoLivre),
+      // nunca gera MovimentacaoEstoque nem mexe em estoqueAtual — vira só
+      // custo do pedido (bloco de CustoPedido abaixo), quando há pedidoId.
+      // tipoCompra ausente (chamador/teste anterior a esta feature) é
+      // tratado como MATERIA_PRIMA, o único valor possível antes dela.
+      const tipoCompraEfetivo = solicitacao.tipoCompra ?? "MATERIA_PRIMA";
+      const geraMovimentacaoEstoque = tipoCompraEfetivo === "MATERIA_PRIMA" && solicitacao.itemGraficaId !== null;
+
       // Leitura do estoque atual FORA da transação (mantém a transação
       // curta, mesmo padrão de lancarEntradaCompra em
       // src/app/catalogo/[itemGraficaId]/actions.ts) — o CAS abaixo garante
-      // que ninguém mexeu no estoque entre esta leitura e a escrita.
-      const registroEstoque = solicitacao.varianteId
-        ? await prisma.varianteMateriaPrima.findUnique({
-            where: { id: solicitacao.varianteId },
-            select: { estoqueAtual: true },
-          })
-        : await prisma.itemGrafica.findUnique({
-            where: { id: solicitacao.itemGraficaId },
-            select: { estoqueAtual: true },
-          });
+      // que ninguém mexeu no estoque entre esta leitura e a escrita. Pulada
+      // inteiramente quando a compra não gera movimentação de estoque.
+      const registroEstoque = !geraMovimentacaoEstoque
+        ? null
+        : solicitacao.varianteId
+          ? await prisma.varianteMateriaPrima.findUnique({
+              where: { id: solicitacao.varianteId },
+              select: { estoqueAtual: true },
+            })
+          : await prisma.itemGrafica.findUnique({
+              where: { id: solicitacao.itemGraficaId! },
+              select: { estoqueAtual: true },
+            });
 
       // Achado N15 da auditoria de abrangência (Parte 7,
       // pesquisa-abrangencia-modulos.md) — estoqueAtual = null é a
@@ -248,13 +299,36 @@ export async function avancarStatusCompra(
       // (`registroEstoque === null`, não deveria acontecer — FK garante
       // que o item existe — mas se acontecer preserva o comportamento de
       // sempre, tratando como estoque zerado).
-      const semControleEstoque = registroEstoque !== null && registroEstoque.estoqueAtual === null;
+      const semControleEstoque =
+        geraMovimentacaoEstoque && registroEstoque !== null && registroEstoque.estoqueAtual === null;
       const estoqueAnterior = registroEstoque?.estoqueAtual;
 
       const quantidadeDec = new D(solicitacao.quantidade.toString());
       const novoEstoque = new D(estoqueAnterior?.toString() ?? 0).plus(quantidadeDec).toFixed(4);
+      // Achado A2 da auditoria de abrangência (Parte 3/Compras, 2026-09-06)
+      // — custoUnitario/custoTotal snapshotados na MovimentacaoEstoque (e o
+      // "valor" do CustoPedido gerado abaixo, quando há pedidoId) usam o
+      // custo de aquisição REAL (valorFinal + frete + IPI - ICMS
+      // creditável - desconto), não só valorFinal — é o que a gráfica de
+      // fato pagou por unidade. PONTO MAIS IMPORTANTE DO ACHADO: sem esta
+      // troca, os campos novos (valorFrete/valorIpi/valorIcmsCreditavel/
+      // valorDesconto) existiriam sem nenhum efeito. Ver
+      // calcularCustoAquisicaoTotal em src/lib/custo-aquisicao-compra.ts —
+      // os 4 componentes ausentes (compra antiga, ou nova sem preenchê-
+      // los) reduzem a EXATAMENTE valorFinal, comportamento de hoje
+      // preservado (ver testes de compatibilidade em status-transicao.test.ts).
+      const custoAquisicaoTotalDec =
+        valorFinalFinal !== null
+          ? calcularCustoAquisicaoTotal(
+              valorFinalFinal,
+              solicitacao.valorFrete,
+              solicitacao.valorIpi,
+              solicitacao.valorIcmsCreditavel,
+              solicitacao.valorDesconto
+            )
+          : null;
       const custoUnitarioDec =
-        valorFinalFinal !== null && quantidadeDec.gt(0) ? new D(valorFinalFinal).div(quantidadeDec) : null;
+        custoAquisicaoTotalDec !== null && quantidadeDec.gt(0) ? custoAquisicaoTotalDec.div(quantidadeDec) : null;
 
       await prisma.$transaction(async (tx) => {
         const casStatus = await tx.solicitacaoCompra.updateMany({
@@ -263,27 +337,27 @@ export async function avancarStatusCompra(
         });
         if (casStatus.count === 0) throw new ErroSolicitacaoJaAlterada();
 
-        if (!semControleEstoque) {
+        if (geraMovimentacaoEstoque && !semControleEstoque) {
           const casEstoque = solicitacao.varianteId
             ? await tx.varianteMateriaPrima.updateMany({
                 where: { id: solicitacao.varianteId, estoqueAtual: estoqueAnterior ?? null },
                 data: { estoqueAtual: novoEstoque },
               })
             : await tx.itemGrafica.updateMany({
-                where: { id: solicitacao.itemGraficaId, estoqueAtual: estoqueAnterior ?? null },
+                where: { id: solicitacao.itemGraficaId!, estoqueAtual: estoqueAnterior ?? null },
                 data: { estoqueAtual: novoEstoque },
               });
           if (casEstoque.count === 0) throw new ErroEstoqueDivergenteCompra();
 
           await tx.movimentacaoEstoque.create({
             data: {
-              itemGraficaId: solicitacao.itemGraficaId,
+              itemGraficaId: solicitacao.itemGraficaId!,
               varianteId: solicitacao.varianteId,
               solicitacaoCompraId: solicitacao.id,
               tipo: "ENTRADA_COMPRA",
               quantidade: quantidadeDec.toFixed(4),
               custoUnitario: custoUnitarioDec ? custoUnitarioDec.toFixed(4) : null,
-              custoTotal: valorFinalFinal !== null ? new D(valorFinalFinal).toFixed(2) : null,
+              custoTotal: custoAquisicaoTotalDec ? custoAquisicaoTotalDec.toFixed(2) : null,
               metodoCusteio: "ULTIMA_COMPRA",
               precoReferenciaEm: new Date(),
               documento: documentoFinal,
@@ -298,12 +372,17 @@ export async function avancarStatusCompra(
         // COMPRA deste pedido — REPOSICAO_ESTOQUE e as demais origens nunca
         // têm pedidoId, então nunca entram aqui (comportamento de hoje
         // preservado). Nunca lança (ver comentário de
-        // criarCustoAutomaticoCompra em src/lib/custo-pedido.ts).
-        if (solicitacao.pedidoId && valorFinalFinal !== null) {
-          const itemGraficaMaterial = await tx.itemGrafica.findUnique({
-            where: { id: solicitacao.itemGraficaId },
-            select: { categoriaCustoId: true },
-          });
+        // criarCustoAutomaticoCompra em src/lib/custo-pedido.ts). Achado A1
+        // — pedidoId + compra de serviço/peça sem item de catálogo também
+        // entra aqui (itemGraficaId null é aceito). Achado A2 — o valor
+        // lançado é o custo de aquisição REAL, não só valorFinal.
+        if (solicitacao.pedidoId && custoAquisicaoTotalDec !== null) {
+          const itemGraficaMaterial = solicitacao.itemGraficaId
+            ? await tx.itemGrafica.findUnique({
+                where: { id: solicitacao.itemGraficaId },
+                select: { categoriaCustoId: true },
+              })
+            : null;
           await criarCustoAutomaticoCompra(tx, {
             graficaId: solicitacao.graficaId,
             pedidoId: solicitacao.pedidoId,
@@ -311,7 +390,7 @@ export async function avancarStatusCompra(
             itemGraficaId: solicitacao.itemGraficaId,
             varianteId: solicitacao.varianteId,
             categoriaCustoIdMaterial: itemGraficaMaterial?.categoriaCustoId ?? null,
-            valor: valorFinalFinal,
+            valor: custoAquisicaoTotalDec.toNumber(),
           });
         }
 

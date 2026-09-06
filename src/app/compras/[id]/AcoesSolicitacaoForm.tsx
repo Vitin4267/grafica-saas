@@ -25,6 +25,10 @@ function camposContextuais(status: StatusSolicitacaoCompra, statusAtual: StatusS
   return {
     fornecedor: status === "APROVADO" && statusAtual !== "COTANDO",
     valorFinal: status === "COMPRADO",
+    // Achado A2 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+    // mesmo passo do formulário que já pede valorFinal (a nota fiscal de
+    // compra costuma chegar com frete/IPI/desconto discriminados).
+    custoAquisicao: status === "COMPRADO",
     documento: status === "COMPRADO" || status === "RECEBIDO",
   };
 }
@@ -38,6 +42,7 @@ export function AcoesSolicitacaoForm({
   valorEstimado,
   documentoAtual,
   fornecedores,
+  geraMovimentacaoEstoque,
 }: {
   solicitacaoId: string;
   statusAtual: StatusSolicitacaoCompra;
@@ -51,6 +56,11 @@ export function AcoesSolicitacaoForm({
   valorEstimado: number | null;
   documentoAtual: string | null;
   fornecedores: { id: string; nome: string }[];
+  // Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+  // true só quando tipoCompra=MATERIA_PRIMA com item de catálogo (ver
+  // geraMovimentacaoEstoque em ../status-transicao.ts) — decide a
+  // mensagem exibida ao escolher RECEBIDO logo abaixo.
+  geraMovimentacaoEstoque: boolean;
 }) {
   const [state, formAction, pending] = useActionState(avancarSolicitacaoCompra, null);
   const [stateCancelar, formActionCancelar, pendingCancelar] = useActionState(avancarSolicitacaoCompra, null);
@@ -119,6 +129,29 @@ export function AcoesSolicitacaoForm({
               />
             )}
 
+            {campos?.custoAquisicao && (
+              <div className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Custo de aquisição real (opcional)
+                  <CampoAjuda texto="Preencha só se a nota fiscal desta compra tiver frete, IPI, ICMS creditável ou desconto — eles entram no custo real por unidade em vez de só o valor final pago. Deixe em branco se a nota não tiver nenhum desses valores (o cálculo continua igual a antes)." />
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  <div className="w-36">
+                    <Input label="Frete (R$)" name="valorFrete" type="number" step="0.01" min="0" />
+                  </div>
+                  <div className="w-36">
+                    <Input label="IPI (R$)" name="valorIpi" type="number" step="0.01" min="0" />
+                  </div>
+                  <div className="w-40">
+                    <Input label="ICMS creditável (R$)" name="valorIcmsCreditavel" type="number" step="0.01" min="0" />
+                  </div>
+                  <div className="w-36">
+                    <Input label="Desconto (R$)" name="valorDesconto" type="number" step="0.01" min="0" />
+                  </div>
+                </div>
+              </div>
+            )}
+
             {campos?.documento && (
               <Input
                 label="Nº da nota (opcional)"
@@ -131,7 +164,9 @@ export function AcoesSolicitacaoForm({
 
             {proximoStatus === "RECEBIDO" && (
               <p className="text-xs text-slate-500">
-                Confirmar aqui gera automaticamente uma entrada no estoque desta matéria-prima.
+                {geraMovimentacaoEstoque
+                  ? "Confirmar aqui gera automaticamente uma entrada no estoque desta matéria-prima."
+                  : "Esta compra não gera entrada de estoque (não é matéria-prima do catálogo)."}
               </p>
             )}
 

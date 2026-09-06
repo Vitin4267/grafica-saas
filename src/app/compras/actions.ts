@@ -14,8 +14,10 @@ import {
   ROTULOS_STATUS_SOLICITACAO_COMPRA,
   TRANSICOES_VALIDAS,
   ORIGENS_SOLICITACAO_COMPRA,
+  TIPOS_COMPRA,
   type StatusSolicitacaoCompra,
   type OrigemSolicitacaoCompra,
+  type TipoCompra,
 } from "@/lib/compras-status";
 import { dataInputParaUTC } from "@/lib/data";
 import { formatoMoeda } from "@/lib/moeda";
@@ -46,7 +48,36 @@ async function resolverItemMateriaPrima(itemGraficaId: string, varianteId: strin
 export type CriarSolicitacaoResult = { ok: boolean; mensagem: string };
 
 const criarSchema = z.object({
-  itemGraficaId: z.string().min(1, "Selecione uma matéria-prima."),
+  // Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+  // opcional: nem toda compra tem um item do catálogo pra apontar (ver
+  // descricaoLivre abaixo). Pelo menos um dos dois é exigido, validado
+  // depois do parse (não dá pra expressar "OU" no schema do zod aqui sem
+  // complicar o resto dos campos condicionais já existentes).
+  itemGraficaId: z
+    .string()
+    .trim()
+    .min(1)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+  descricaoLivre: z
+    .string()
+    .trim()
+    .max(300, "Descrição deve ter no máximo 300 caracteres.")
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+  // Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+  // default MATERIA_PRIMA preserva o comportamento de toda solicitação
+  // criada antes desta feature (formulário antigo não manda este campo).
+  tipoCompra: z
+    .enum(TIPOS_COMPRA as [TipoCompra, ...TipoCompra[]])
+    .optional()
+    .default("MATERIA_PRIMA"),
+  tipoCompraOutro: z
+    .string()
+    .trim()
+    .max(120)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
   varianteId: z
     .string()
     .trim()
@@ -132,7 +163,10 @@ export async function criarSolicitacaoCompra(
   }
 
   const parsed = criarSchema.safeParse({
-    itemGraficaId: formData.get("itemGraficaId"),
+    itemGraficaId: formData.get("itemGraficaId") || undefined,
+    descricaoLivre: formData.get("descricaoLivre") || undefined,
+    tipoCompra: formData.get("tipoCompra") || undefined,
+    tipoCompraOutro: formData.get("tipoCompraOutro") || undefined,
     varianteId: formData.get("varianteId") || undefined,
     fornecedorId: formData.get("fornecedorId") || undefined,
     quantidade: formData.get("quantidade") || undefined,
@@ -153,6 +187,9 @@ export async function criarSolicitacaoCompra(
   }
   const {
     itemGraficaId,
+    descricaoLivre,
+    tipoCompra,
+    tipoCompraOutro,
     varianteId,
     fornecedorId,
     quantidade,
@@ -169,6 +206,17 @@ export async function criarSolicitacaoCompra(
     contratoFornecimentoId,
   } = parsed.data;
 
+  // Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+  // pelo menos um dos dois é exigido (os dois podem coexistir, ver
+  // comentário do schema); sem isso a solicitação não teria alvo nenhum
+  // pra mostrar na listagem/detalhe.
+  if (!itemGraficaId && !descricaoLivre) {
+    return {
+      ok: false,
+      mensagem: "Selecione uma matéria-prima do catálogo ou descreva o que está sendo comprado.",
+    };
+  }
+
   // Achado A6 da auditoria de abrangência (Parte 3/Compras): sem
   // unidadeCompra, `quantidade` (unidade de estoque) é usada direto — 100%
   // do comportamento de hoje preservado. Com unidadeCompra, `quantidade` é
@@ -177,6 +225,14 @@ export async function criarSolicitacaoCompra(
   let quantidadeFinal: number;
   let unidadeCompraOutroFinal: string | null = null;
   if (unidadeCompra) {
+    // Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+    // a conversão pra unidade de ESTOQUE só faz sentido quando há um item
+    // do catálogo (é dele que vem a unidade de estoque, ver
+    // ItemGrafica.unidadeCompraPadrao) — compra por descricaoLivre sempre
+    // digita `quantidade` direto.
+    if (!itemGraficaId) {
+      return { ok: false, mensagem: "Unidade de compra exige selecionar um item do catálogo." };
+    }
     if (quantidadeCompra === undefined || fatorConversaoCompra === undefined) {
       return {
         ok: false,
@@ -212,12 +268,21 @@ export async function criarSolicitacaoCompra(
     pedidoValidoId = pedidoValido.id;
   }
 
-  const resolvido = await resolverItemMateriaPrima(itemGraficaId, varianteId, usuario.graficaId);
-  if (!resolvido) {
+  // Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+  // só resolve contra o catálogo quando itemGraficaId foi informado; sem
+  // ele (compra por descricaoLivre) itemGrafica/variante ficam null e o
+  // nome exibido cai pra descrição livre digitada.
+  const resolvido = itemGraficaId
+    ? await resolverItemMateriaPrima(itemGraficaId, varianteId, usuario.graficaId)
+    : null;
+  if (itemGraficaId && !resolvido) {
     return { ok: false, mensagem: "Matéria-prima não encontrada." };
   }
-  const { itemGrafica, variante } = resolvido;
-  const nomeItem = `${itemGrafica.itemCatalogo.nome}${variante ? ` (${variante.rotulo})` : ""}`;
+  const itemGrafica = resolvido?.itemGrafica ?? null;
+  const variante = resolvido?.variante ?? null;
+  const nomeItem = itemGrafica
+    ? `${itemGrafica.itemCatalogo.nome}${variante ? ` (${variante.rotulo})` : ""}`
+    : (descricaoLivre ?? "Compra avulsa");
 
   let fornecedorValidoId: string | null = null;
   if (fornecedorId) {
@@ -243,6 +308,13 @@ export async function criarSolicitacaoCompra(
   let valorEstimadoFinal = valorEstimado;
 
   if (origem === "CONTRATO_PROGRAMADO") {
+    // Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+    // ContratoFornecimento é sempre sobre um item do catálogo (ou "coringa"
+    // pra qualquer item do fornecedor) — sem itemGrafica resolvido não há
+    // como validar escopo do contrato contra nada.
+    if (!itemGrafica) {
+      return { ok: false, mensagem: "Contrato de fornecimento exige selecionar uma matéria-prima do catálogo." };
+    }
     if (!contratoFornecimentoId) {
       return { ok: false, mensagem: "Selecione o contrato de fornecimento pra esta compra programada." };
     }
@@ -276,7 +348,10 @@ export async function criarSolicitacaoCompra(
   const novaSolicitacao = await prisma.solicitacaoCompra.create({
     data: {
       graficaId: usuario.graficaId,
-      itemGraficaId: itemGrafica.id,
+      itemGraficaId: itemGrafica?.id ?? null,
+      descricaoLivre: descricaoLivre ?? null,
+      tipoCompra,
+      tipoCompraOutro: tipoCompra === "OUTRO" ? (tipoCompraOutro ?? null) : null,
       varianteId: variante?.id ?? null,
       fornecedorId: fornecedorValidoId,
       origem,
@@ -398,7 +473,37 @@ export async function avancarSolicitacaoCompra(
     valorFinal = numero;
   }
 
-  const nomeItem = `${solicitacao.itemGrafica.itemCatalogo.nome}${solicitacao.variante ? ` (${solicitacao.variante.rotulo})` : ""}`;
+  // Achado A2 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+  // mesmo campo contextual de valorFinal (só aparece em COMPRADO, ver
+  // AcoesSolicitacaoForm.tsx), mas aceitando zero (diferente de valorFinal,
+  // que exige > 0) — frete/IPI/ICMS/desconto zero é um valor válido, não
+  // "não informado".
+  function parseValorNaoNegativoOpcional(nome: string): { ok: true; valor: number | null | undefined } | { ok: false; mensagem: string } {
+    if (!formData.has(nome)) return { ok: true, valor: undefined };
+    const texto = String(formData.get(nome) ?? "").trim();
+    if (texto === "") return { ok: true, valor: null };
+    const numero = Number(texto);
+    if (!Number.isFinite(numero) || numero < 0) {
+      return { ok: false, mensagem: "Valor informado é inválido." };
+    }
+    return { ok: true, valor: numero };
+  }
+
+  const parseFrete = parseValorNaoNegativoOpcional("valorFrete");
+  if (!parseFrete.ok) return { ok: false, mensagem: parseFrete.mensagem };
+  const parseIpi = parseValorNaoNegativoOpcional("valorIpi");
+  if (!parseIpi.ok) return { ok: false, mensagem: parseIpi.mensagem };
+  const parseIcms = parseValorNaoNegativoOpcional("valorIcmsCreditavel");
+  if (!parseIcms.ok) return { ok: false, mensagem: parseIcms.mensagem };
+  const parseDesconto = parseValorNaoNegativoOpcional("valorDesconto");
+  if (!parseDesconto.ok) return { ok: false, mensagem: parseDesconto.mensagem };
+
+  // Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+  // itemGrafica pode ser null (compra por descricaoLivre); nome exibido
+  // cai pra descrição livre digitada na criação.
+  const nomeItem = solicitacao.itemGrafica
+    ? `${solicitacao.itemGrafica.itemCatalogo.nome}${solicitacao.variante ? ` (${solicitacao.variante.rotulo})` : ""}`
+    : (solicitacao.descricaoLivre ?? "Compra avulsa");
 
   const solicitacaoParaTransicao: SolicitacaoParaTransicao = {
     id: solicitacao.id,
@@ -413,6 +518,11 @@ export async function avancarSolicitacaoCompra(
     documento: solicitacao.documento,
     pedidoId: solicitacao.pedidoId,
     contratoFornecimentoId: solicitacao.contratoFornecimentoId,
+    tipoCompra: solicitacao.tipoCompra,
+    valorFrete: solicitacao.valorFrete,
+    valorIpi: solicitacao.valorIpi,
+    valorIcmsCreditavel: solicitacao.valorIcmsCreditavel,
+    valorDesconto: solicitacao.valorDesconto,
   };
 
   const resultado = await avancarStatusCompra(
@@ -423,6 +533,10 @@ export async function avancarSolicitacaoCompra(
       fornecedorId: fornecedorIdBruto,
       documento: documentoBruto,
       valorFinal,
+      valorFrete: parseFrete.valor,
+      valorIpi: parseIpi.valor,
+      valorIcmsCreditavel: parseIcms.valor,
+      valorDesconto: parseDesconto.valor,
     }
   );
 
@@ -587,7 +701,11 @@ export async function registrarCotacaoFornecedor(
     },
   });
 
-  const nomeItem = `${solicitacao.itemGrafica.itemCatalogo.nome}${solicitacao.variante ? ` (${solicitacao.variante.rotulo})` : ""}`;
+  // Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+  // itemGrafica pode ser null (compra por descricaoLivre).
+  const nomeItem = solicitacao.itemGrafica
+    ? `${solicitacao.itemGrafica.itemCatalogo.nome}${solicitacao.variante ? ` (${solicitacao.variante.rotulo})` : ""}`
+    : (solicitacao.descricaoLivre ?? "Compra avulsa");
   await registrarAuditoria({
     graficaId: usuario.graficaId,
     usuarioId: usuario.id,

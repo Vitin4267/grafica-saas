@@ -263,7 +263,13 @@ export async function criarCustoAutomaticoCompra(
     graficaId: string;
     pedidoId: string;
     solicitacaoCompraId: string;
-    itemGraficaId: string;
+    // Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+    // nullable: uma compra PEDIDO_ESPECIFICO pode ser de serviço/peça sem
+    // ItemGrafica nenhum (ex: clichê terceirizado pra este pedido). Sem
+    // item, `bate` abaixo nunca casa com nenhuma linha de ficha técnica
+    // (materiaPrimaId é sempre uma string não-nula) — materialNaFichaTecnica
+    // fica false naturalmente, sem branch extra.
+    itemGraficaId: string | null;
     varianteId: string | null;
     categoriaCustoIdMaterial: string | null;
     valor: number;

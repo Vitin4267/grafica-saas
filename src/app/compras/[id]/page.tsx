@@ -17,8 +17,14 @@ import { ArrowLeftIcon } from "@/components/icons";
 import { formatoMoeda } from "@/lib/moeda";
 import { formatoInstanteRealComHora } from "@/lib/data";
 import { rotuloUnidade } from "@/lib/unidade";
-import { TRANSICOES_VALIDAS, ROTULOS_STATUS_SOLICITACAO_COMPRA, ROTULOS_ORIGEM_SOLICITACAO_COMPRA } from "@/lib/compras-status";
+import {
+  TRANSICOES_VALIDAS,
+  ROTULOS_STATUS_SOLICITACAO_COMPRA,
+  ROTULOS_ORIGEM_SOLICITACAO_COMPRA,
+  ROTULOS_TIPO_COMPRA,
+} from "@/lib/compras-status";
 import { buscarUltimasCotacoesPorItem } from "@/lib/cotacao-fornecedor-db";
+import { calcularCustoAquisicaoTotal } from "@/lib/custo-aquisicao-compra";
 import { AcoesSolicitacaoForm } from "./AcoesSolicitacaoForm";
 import { CotacoesFornecedorCard } from "./CotacoesFornecedorCard";
 
@@ -73,8 +79,36 @@ export default async function DetalheSolicitacaoCompraPage({
     notFound();
   }
 
-  const nomeItem = `${solicitacao.itemGrafica.itemCatalogo.nome}${solicitacao.variante ? ` (${solicitacao.variante.rotulo})` : ""}`;
-  const unidade = rotuloUnidade(solicitacao.itemGrafica.itemCatalogo.unidade, solicitacao.itemGrafica.itemCatalogo.unidadeOutro);
+  // Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+  // itemGrafica pode ser null (compra por descricaoLivre, ver enum
+  // TipoCompra); nome/unidade caem pra descrição livre/genérico.
+  const nomeItem = solicitacao.itemGrafica
+    ? `${solicitacao.itemGrafica.itemCatalogo.nome}${solicitacao.variante ? ` (${solicitacao.variante.rotulo})` : ""}`
+    : (solicitacao.descricaoLivre ?? "Compra avulsa");
+  const unidade = solicitacao.itemGrafica
+    ? rotuloUnidade(solicitacao.itemGrafica.itemCatalogo.unidade, solicitacao.itemGrafica.itemCatalogo.unidadeOutro)
+    : "";
+
+  // Achado A2 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+  // custo de aquisição real pra exibição (mesma fórmula usada no servidor
+  // ao gerar a MovimentacaoEstoque, ver avancarStatusCompra) — só some da
+  // tela quando não há nenhum dos 4 componentes preenchidos E valorFinal
+  // também é null (nada a mostrar ainda).
+  const temComponenteCustoAquisicao =
+    solicitacao.valorFrete !== null ||
+    solicitacao.valorIpi !== null ||
+    solicitacao.valorIcmsCreditavel !== null ||
+    solicitacao.valorDesconto !== null;
+  const custoAquisicaoTotal =
+    solicitacao.valorFinal !== null
+      ? calcularCustoAquisicaoTotal(
+          solicitacao.valorFinal,
+          solicitacao.valorFrete,
+          solicitacao.valorIpi,
+          solicitacao.valorIcmsCreditavel,
+          solicitacao.valorDesconto
+        ).toNumber()
+      : null;
 
   // Cotações mudam de figura conforme o status: enquanto SOLICITADO/COTANDO
   // ainda dá pra registrar/editar/marcar vencedora (ver STATUS_PERMITE_COTACAO
@@ -87,9 +121,13 @@ export default async function DetalheSolicitacaoCompraPage({
   // "Última cotação conhecida" de cada fornecedor pra ESTE item/variante —
   // só vale a pena buscar quando o formulário de nova cotação vai de fato
   // aparecer (evita um round-trip extra ao banco em status posteriores).
-  const ultimasCotacoesConhecidas = cotacaoEditavel
-    ? await buscarUltimasCotacoesPorItem(usuario.graficaId, solicitacao.itemGraficaId, solicitacao.varianteId)
-    : [];
+  // Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+  // sem item de catálogo (compra por descricaoLivre) não há "último preço
+  // conhecido" pra buscar.
+  const ultimasCotacoesConhecidas =
+    cotacaoEditavel && solicitacao.itemGraficaId
+      ? await buscarUltimasCotacoesPorItem(usuario.graficaId, solicitacao.itemGraficaId, solicitacao.varianteId)
+      : [];
   const ultimasPorFornecedor = Object.fromEntries(
     ultimasCotacoesConhecidas.map((c) => [
       c.fornecedorId,
@@ -151,6 +189,19 @@ export default async function DetalheSolicitacaoCompraPage({
         <div className="flex flex-col gap-6">
           <Card className="grid grid-cols-2 gap-4 p-6 text-sm">
             <div>
+              <p className="text-xs font-medium text-slate-500">Tipo de compra</p>
+              <p className="mt-0.5 text-slate-900 dark:text-white">
+                {ROTULOS_TIPO_COMPRA[solicitacao.tipoCompra]}
+                {solicitacao.tipoCompra === "OUTRO" && solicitacao.tipoCompraOutro ? ` — ${solicitacao.tipoCompraOutro}` : ""}
+              </p>
+            </div>
+            {solicitacao.descricaoLivre && (
+              <div>
+                <p className="text-xs font-medium text-slate-500">Descrição</p>
+                <p className="mt-0.5 whitespace-pre-wrap text-slate-900 dark:text-white">{solicitacao.descricaoLivre}</p>
+              </div>
+            )}
+            <div>
               <p className="text-xs font-medium text-slate-500">Valor estimado</p>
               <p className="mt-0.5 text-slate-900 dark:text-white">
                 {solicitacao.valorEstimado ? formatoMoeda.format(Number(solicitacao.valorEstimado)) : "—"}
@@ -162,6 +213,33 @@ export default async function DetalheSolicitacaoCompraPage({
                 {solicitacao.valorFinal ? formatoMoeda.format(Number(solicitacao.valorFinal)) : "—"}
               </p>
             </div>
+            {/* Achado A2 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+                só aparece quando algum dos 4 componentes foi preenchido, pra não
+                poluir a tela de toda compra simples (o padrão da maioria). */}
+            {temComponenteCustoAquisicao && (
+              <>
+                <div>
+                  <p className="text-xs font-medium text-slate-500">Frete / IPI</p>
+                  <p className="mt-0.5 text-slate-900 dark:text-white">
+                    {formatoMoeda.format(Number(solicitacao.valorFrete ?? 0))} /{" "}
+                    {formatoMoeda.format(Number(solicitacao.valorIpi ?? 0))}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-slate-500">ICMS creditável / Desconto</p>
+                  <p className="mt-0.5 text-slate-900 dark:text-white">
+                    {formatoMoeda.format(Number(solicitacao.valorIcmsCreditavel ?? 0))} /{" "}
+                    {formatoMoeda.format(Number(solicitacao.valorDesconto ?? 0))}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-slate-500">Custo de aquisição total</p>
+                  <p className="mt-0.5 font-medium text-slate-900 dark:text-white">
+                    {custoAquisicaoTotal !== null ? formatoMoeda.format(custoAquisicaoTotal) : "—"}
+                  </p>
+                </div>
+              </>
+            )}
             <div>
               <p className="text-xs font-medium text-slate-500">Fornecedor</p>
               <p className="mt-0.5 text-slate-900 dark:text-white">{solicitacao.fornecedor?.nome ?? "Ainda não definido"}</p>
@@ -258,6 +336,7 @@ export default async function DetalheSolicitacaoCompraPage({
               valorEstimado={solicitacao.valorEstimado ? Number(solicitacao.valorEstimado) : null}
               documentoAtual={solicitacao.documento}
               fornecedores={fornecedores}
+              geraMovimentacaoEstoque={solicitacao.tipoCompra === "MATERIA_PRIMA" && solicitacao.itemGraficaId !== null}
             />
           )}
 

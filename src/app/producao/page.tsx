@@ -105,7 +105,9 @@ function mapearParadas(
     motivo: MotivoParada;
     motivoOutro: string | null;
     solicitacaoCompraId: string | null;
-    solicitacaoCompra: { itemGrafica: { itemCatalogo: { nome: string } } } | null;
+    solicitacaoCompra:
+      | { itemGrafica: { itemCatalogo: { nome: string } } | null; descricaoLivre: string | null }
+      | null;
     iniciadaEm: Date;
     finalizadaEm: Date | null;
     observacao: string | null;
@@ -116,8 +118,12 @@ function mapearParadas(
     motivo: parada.motivo as ParadaResumo["motivo"],
     motivoOutro: parada.motivoOutro,
     solicitacaoCompraId: parada.solicitacaoCompraId,
+    // Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+    // itemGrafica pode ser null (compra por descricaoLivre).
     solicitacaoCompraLabel: parada.solicitacaoCompra
-      ? parada.solicitacaoCompra.itemGrafica.itemCatalogo.nome
+      ? (parada.solicitacaoCompra.itemGrafica?.itemCatalogo.nome ??
+        parada.solicitacaoCompra.descricaoLivre ??
+        "Compra avulsa")
       : null,
     iniciadaEm: parada.iniciadaEm.toISOString(),
     finalizadaEm: parada.finalizadaEm ? parada.finalizadaEm.toISOString() : null,
@@ -289,7 +295,14 @@ export default async function ProducaoPage({
         paradas: {
           include: {
             solicitacaoCompra: {
-              select: { itemGrafica: { select: { itemCatalogo: { select: { nome: true } } } } },
+              // Achado A1 da auditoria de abrangência (Parte 3/Compras,
+              // 2026-09-06) — itemGrafica pode ser null (compra por
+              // descricaoLivre); descricaoLivre também selecionado pro
+              // fallback do rótulo (ver mapearParadas abaixo).
+              select: {
+                itemGrafica: { select: { itemCatalogo: { select: { nome: true } } } },
+                descricaoLivre: true,
+              },
             },
           },
           orderBy: { iniciadaEm: "desc" },
@@ -342,7 +355,12 @@ export default async function ProducaoPage({
         id: true,
         status: true,
         quantidade: true,
+        // Achado A1 da auditoria de abrangência (Parte 3/Compras,
+        // 2026-09-06) — itemGrafica pode ser null (compra por
+        // descricaoLivre); descricaoLivre selecionado pro fallback do
+        // rótulo (ver solicitacoesCompraOpcoes abaixo).
         itemGrafica: { select: { itemCatalogo: { select: { nome: true } } } },
+        descricaoLivre: true,
       },
       orderBy: { solicitadoEm: "desc" },
     }),
@@ -368,7 +386,9 @@ export default async function ProducaoPage({
   // join com ItemGrafica/ItemCatalogo já trazido acima.
   const solicitacoesCompraOpcoes: SolicitacaoCompraOpcao[] = solicitacoesCompraAtivas.map((s) => ({
     id: s.id,
-    label: `${s.itemGrafica.itemCatalogo.nome} — ${Number(s.quantidade)} (${ROTULOS_STATUS_SOLICITACAO_COMPRA[s.status]})`,
+    // Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
+    // itemGrafica pode ser null (compra por descricaoLivre).
+    label: `${s.itemGrafica?.itemCatalogo.nome ?? s.descricaoLivre ?? "Compra avulsa"} — ${Number(s.quantidade)} (${ROTULOS_STATUS_SOLICITACAO_COMPRA[s.status]})`,
   }));
 
   const responsaveisPorEtapa: Partial<Record<StatusPedido, string[]>> = {};
