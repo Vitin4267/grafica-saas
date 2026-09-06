@@ -114,6 +114,52 @@ comportamento.
 
 ---
 
+## Atualização 2026-09-06 — construído desde a rodada 21 (A13, A7/Parte4, A10)
+
+- **Clientes/escala:** `take: 200` em 4 `<select>` que carregavam a base
+  inteira de clientes (achado A13/Parte5) — `/orcamento`, `/producao`,
+  `/meu-negocio/relatorios` (filtro, seguro truncar) e `/orcamento/[id]`
+  (troca de cliente — o cliente ATUAL é garantido presente na lista mesmo
+  fora do corte, via `defaultValue=clienteAtualId`).
+- **Financeiro/UI:** `model CondicaoPagamento`/`CondicaoPagamentoParcela` já
+  existiam (schema + `gerarContasReceberDaAprovacao`) mas sem tela — achado
+  A7/Parte4 fechou a UI: CRUD em `/configuracoes/condicoes-pagamento` +
+  seletor opcional `Orcamento.condicaoPagamentoId` em
+  `EditarDadosGeraisOrcamentoForm.tsx` (FK pré-preenche o texto livre
+  `condicoesPagamento`, mesmo padrão de `contatoClienteId`/
+  `transportadoraId`). **Gap residual que segue aberto:** `ContaReceber`
+  automática só dispara na âncora `APROVACAO` — `EMISSAO_NOTA`/`ENTREGA`
+  continuam com enum pronto e sem gatilho.
+- **Catálogo/Preço — novo motor EDITORIAL (achado A10, Rota 1):**
+  `ModeloCalculo.EDITORIAL` (13º rótulo) resolve os 7 produtos multipágina
+  do catálogo mestre (Revista, Catálogo, Livro Brochura, Livro Capa Dura,
+  Apostila, Encadernação Espiral, Wire-o) — `src/lib/pricing/editorial.ts`.
+  Miolo e capa com papel/gramatura/cores PRÓPRIOS, como campos DIRETOS em
+  `OrcamentoItem` (sufixo `Miolo`/`Capa`, sem model de override — diferente
+  de Offset, Editorial não tem papel fixo no produto pra sobrepor).
+  `numeroPaginas` arredonda pra CIMA pro próximo múltiplo do caderno
+  (`ParametrosGrafica.paginasPorCadernoPadrao`, default 16).
+  `ItemGrafica.custoImpressaoM2Editorial`/`custoEncadernacaoPorPeca` — campos
+  DEDICADOS, não reaproveitam os do M2. Novo enum
+  `TipoEncadernacaoEditorial`, DELIBERADAMENTE separado do
+  `TipoEncadernacao` já existente (`ItemGrafica.tipoEncadernacao`, achado
+  C5, puramente descritivo, nunca lido por pricing) — não confundir os
+  dois. **SIMPLIFICAÇÃO DELIBERADA:** custeio por peso de papel + área
+  impressa, SEM nesting/imposição real de folha de prensa (documentado
+  no schema/migration). **Rota 2 do achado (item de orçamento composto,
+  `itemPaiId`, sub-linhas com `modeloCalculo` próprio — resolveria livro/
+  caixa/kit-de-brinde/letreiro num só golpe) continua NÃO construída,
+  deliberadamente fora de escopo** — é transversal a dezenas de call-sites
+  (PDF, breakdown, produção, nota fiscal), não tentar numa rodada de
+  subagente só. **Gaps aceitos:** criar orçamento novo com EDITORIAL como
+  primeiro item (fluxo Calculadora) não está cabeado (falha segura, erro de
+  validação claro — workaround: criar com outro item, adicionar o Editorial
+  depois via "+ Adicionar item"); duplicação/"Pedir de novo" não recopia
+  papel/gramatura/páginas (mesmo gap já aceito em N8/Offset); capa não soma
+  lombada.
+
+---
+
 ## Índice
 
 1. [Padrões arquiteturais estabelecidos](#1-padrões-arquiteturais-estabelecidos) — leia isto primeiro, vale pra todo domínio
