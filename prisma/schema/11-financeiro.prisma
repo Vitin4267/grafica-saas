@@ -571,6 +571,13 @@ enum OrigemCusto {
   // achado E1 da auditoria de abrangência (Parte 2/Produção, 2026-09-01). Ver
   // criarCustoAutomaticoTerceirizacao em src/lib/custo-pedido.ts.
   TERCEIRIZACAO
+  // Estoque de produto pré-produzido (pedido direto do dono, 2026-09-08) —
+  // pedido atendido direto do estoque pronto (ItemGrafica.estoqueAtual do
+  // PRODUTO), em vez de rodar produção consumindo matéria-prima agora. Ver
+  // o branch condicional em avancarStatusPedido (src/app/producao/
+  // status-transicao.ts) — distinta de CONSUMO_ESTOQUE, que é especificamente
+  // consumo de MATÉRIA-PRIMA na produção.
+  PRODUTO_PRE_PRODUZIDO
 }
 
 // Um lançamento de custo REAL incorrido num pedido específico — diferente do

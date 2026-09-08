@@ -8,12 +8,14 @@ import { previsaoBaixaEstoque, type PrevisaoBaixaEstoqueResult } from "./actions
 import { SeletorMaquina, type MaquinaOpcaoUI } from "./SeletorMaquina";
 
 type ItemPrevisao = Extract<PrevisaoBaixaEstoqueResult, { ok: true }>["itens"][number];
+// Estoque de produto pré-produzido (2026-09-08).
+type ItemElegivelEstoque = Extract<PrevisaoBaixaEstoqueResult, { ok: true }>["itensElegiveisEstoque"][number];
 
 type Estado =
   | { tipo: "idle" }
   | { tipo: "carregando" }
   | { tipo: "erro"; mensagem: string }
-  | { tipo: "confirmando"; itens: ItemPrevisao[] };
+  | { tipo: "confirmando"; itens: ItemPrevisao[]; itensElegiveisEstoque: ItemElegivelEstoque[] };
 
 // Estado + chamada de previsaoBaixaEstoque isolados num hook próprio pra
 // PedidoLinha.tsx poder colocar o gatilho (inline, na linha de botões) e o
@@ -30,7 +32,11 @@ export function useIniciarImpressao(pedidoId: string) {
       setEstado({ tipo: "erro", mensagem: resultado.mensagem });
       return;
     }
-    setEstado({ tipo: "confirmando", itens: resultado.itens });
+    setEstado({
+      tipo: "confirmando",
+      itens: resultado.itens,
+      itensElegiveisEstoque: resultado.itensElegiveisEstoque,
+    });
   };
 
   const cancelar = () => setEstado({ tipo: "idle" });
@@ -60,6 +66,7 @@ export function IniciarImpressaoBotao({
 export function PainelConfirmacaoImpressao({
   pedidoId,
   itens,
+  itensElegiveisEstoque = [],
   formAction,
   isPending,
   erroSubmit,
@@ -69,6 +76,9 @@ export function PainelConfirmacaoImpressao({
 }: {
   pedidoId: string;
   itens: ItemPrevisao[];
+  // Estoque de produto pré-produzido (2026-09-08) — itens do pedido cujo
+  // PRODUTO tem estoque pronto suficiente pra cobrir a quantidade pedida.
+  itensElegiveisEstoque?: ItemElegivelEstoque[];
   formAction: (formData: FormData) => void;
   isPending: boolean;
   erroSubmit?: string;
@@ -83,12 +93,23 @@ export function PainelConfirmacaoImpressao({
     Object.fromEntries(itens.map((i) => [i.chave, String(i.perdaPadrao)]))
   );
   const [maquinaEscolhida, setMaquinaEscolhida] = useState(sugestaoValor);
+  // Estoque de produto pré-produzido (2026-09-08) — desmarcado por padrão
+  // pra todo item (preserva 100% o fluxo de produção normal pra quem nunca
+  // usar a feature). Chave = orcamentoItemId.
+  const [atenderEstoque, setAtenderEstoque] = useState<Record<string, boolean>>({});
+
+  // Linhas de consumo do item que acabou de ser marcado "atender do
+  // estoque" somem da lista abaixo — nada será consumido pra ele, então não
+  // há perda a confirmar (mesmo filtro que o servidor aplica em
+  // avancarStatusPedido, ver itensParaBaixaProduto/itensParaBaixaAcabamento
+  // em status-transicao.ts).
+  const itensVisiveis = itens.filter((item) => !atenderEstoque[item.orcamentoItemId]);
 
   // Só pra destacar visualmente quando o mesmo material aparece em mais de um
   // produto do pedido — cada linha continua editável e independente, o
   // usuário decide caso a caso se mantém a perda em cada uma ou zera as
   // repetidas (não existe um "modo" especial, é só uma pista visual).
-  const contagemPorMaterial = itens.reduce<Record<string, number>>((acc, item) => {
+  const contagemPorMaterial = itensVisiveis.reduce<Record<string, number>>((acc, item) => {
     const chaveMaterial = `${item.materiaPrimaNome}::${item.varianteRotulo ?? ""}`;
     acc[chaveMaterial] = (acc[chaveMaterial] ?? 0) + 1;
     return acc;
@@ -99,12 +120,12 @@ export function PainelConfirmacaoImpressao({
   // poluir cada linha com mais uma coluna. Ignora itens sem preço de custo
   // cadastrado (não inventa valor); se algum ficou de fora, um aviso avisa
   // que a soma é parcial.
-  const itensComCusto = itens.filter((item) => item.custoEstimado !== null);
+  const itensComCusto = itensVisiveis.filter((item) => item.custoEstimado !== null);
   const custoEstimadoTotal =
     itensComCusto.length > 0
       ? itensComCusto.reduce((soma, item) => soma + (item.custoEstimado as number), 0)
       : null;
-  const algumSemPreco = itens.length > 0 && itensComCusto.length < itens.length;
+  const algumSemPreco = itensVisiveis.length > 0 && itensComCusto.length < itensVisiveis.length;
 
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-800/30">
@@ -118,13 +139,40 @@ export function PainelConfirmacaoImpressao({
         </p>
       </div>
 
-      {itens.length === 0 ? (
+      {itensElegiveisEstoque.length > 0 && (
+        <div className="flex flex-col gap-2 rounded-xl border border-teal-200 bg-teal-50/50 p-3 dark:border-teal-900 dark:bg-teal-950/20">
+          <p className="text-xs font-medium text-teal-800 dark:text-teal-300">
+            Estoque pré-produzido disponível
+          </p>
+          {itensElegiveisEstoque.map((item) => (
+            <label key={item.orcamentoItemId} className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={atenderEstoque[item.orcamentoItemId] ?? false}
+                onChange={(e) =>
+                  setAtenderEstoque((atual) => ({ ...atual, [item.orcamentoItemId]: e.target.checked }))
+                }
+              />
+              <span className="text-slate-700 dark:text-slate-200">
+                Atender <strong>{item.nomeProduto}</strong> do estoque pré-produzido (tem{" "}
+                {item.estoqueDisponivel} disponível) — não vai consumir matéria-prima nem gerar
+                produção pra este item.
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
+
+      {itensVisiveis.length === 0 ? (
         <p className="text-sm text-slate-500">
-          Nenhum material com controle de estoque neste pedido — pode confirmar direto.
+          {itens.length === 0
+            ? "Nenhum material com controle de estoque neste pedido — pode confirmar direto."
+            : "Todos os itens serão atendidos do estoque pré-produzido — nenhuma matéria-prima será consumida."}
         </p>
       ) : (
         <div className="flex flex-col gap-2">
-          {itens.map((item) => {
+          {itensVisiveis.map((item) => {
             const chaveMaterial = `${item.materiaPrimaNome}::${item.varianteRotulo ?? ""}`;
             const repetido = (contagemPorMaterial[chaveMaterial] ?? 0) > 1;
             return (
@@ -195,12 +243,20 @@ export function PainelConfirmacaoImpressao({
           type="hidden"
           name="perdasJson"
           value={JSON.stringify(
-            itens.map((item) => ({
+            itensVisiveis.map((item) => ({
               chave: item.chave,
               perdaAplicada: Number(perdas[item.chave] || 0),
             }))
           )}
         />
+        {/* Estoque de produto pré-produzido (2026-09-08) — um <input> hidden
+            por item marcado, mesmo padrão de checkbox multi-valor nativo do
+            HTML (formData.getAll em avancarPedido, producao/actions.ts). */}
+        {Object.entries(atenderEstoque)
+          .filter(([, marcado]) => marcado)
+          .map(([orcamentoItemId]) => (
+            <input key={orcamentoItemId} type="hidden" name="atenderEstoque" value={orcamentoItemId} />
+          ))}
         {maquinas.length > 0 && (
           <SeletorMaquina maquinas={maquinas} valor={maquinaEscolhida} onChange={setMaquinaEscolhida} />
         )}

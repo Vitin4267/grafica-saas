@@ -22,6 +22,7 @@ import { TabelaGramaturaForm } from "./TabelaGramaturaForm";
 import { VariantesMateriaPrimaForm } from "./VariantesMateriaPrimaForm";
 import { NcmForm } from "./NcmForm";
 import { LancarMovimentacaoForm } from "./LancarMovimentacaoForm";
+import { PreProducaoForm } from "./PreProducaoForm";
 import { QuantidadePorEmbalagemForm } from "./QuantidadePorEmbalagemForm";
 import { ConfiguracaoCompraForm } from "./ConfiguracaoCompraForm";
 import { LoteCertificacaoForm } from "./LoteCertificacaoForm";
@@ -42,8 +43,11 @@ const formatoQuantidadeAbs = new Intl.NumberFormat("pt-BR", { maximumFractionDig
 // ESTORNO_CANCELAMENTO/ENTRADA_COMPRA idem, na direção contrária.
 // AJUSTE_INVENTARIO é o único que já grava um delta com sinal (ver
 // calcularDeltaAjusteInventario) — nesse caso o sinal exibido é o do valor.
-const TIPOS_SAIDA: TipoMovimentacao[] = ["SAIDA_PRODUCAO", "SAIDA_MANUAL"];
-const TIPOS_ENTRADA: TipoMovimentacao[] = ["ESTORNO_CANCELAMENTO", "ENTRADA_COMPRA"];
+// Estoque de produto pré-produzido (2026-09-08) — ENTRADA_PRODUCAO soma
+// (produto fabricado), SAIDA_ATENDIMENTO_PEDIDO subtrai (produto consumido
+// por um pedido), mesmo espírito de SAIDA_PRODUCAO/ENTRADA_COMPRA acima.
+const TIPOS_SAIDA: TipoMovimentacao[] = ["SAIDA_PRODUCAO", "SAIDA_MANUAL", "SAIDA_ATENDIMENTO_PEDIDO"];
+const TIPOS_ENTRADA: TipoMovimentacao[] = ["ESTORNO_CANCELAMENTO", "ENTRADA_COMPRA", "ENTRADA_PRODUCAO"];
 
 function formatarQuantidadeMovimentacao(tipo: TipoMovimentacao, valor: unknown): string {
   const texto = formatoQuantidadeAbs.format(Math.abs(Number(valor)));
@@ -54,6 +58,91 @@ function formatarQuantidadeMovimentacao(tipo: TipoMovimentacao, valor: unknown):
 
 function formatarCustoUnitario(valor: unknown): string {
   return valor === null || valor === undefined ? "—" : formatoMoeda.format(Number(valor));
+}
+
+type MovimentacaoHistorico = {
+  id: string;
+  tipo: TipoMovimentacao;
+  quantidade: unknown;
+  custoUnitario: unknown;
+  motivo: string | null;
+  createdAt: Date;
+  documento: string | null;
+  lote: string | null;
+  validade: Date | null;
+  pedidoId: string | null;
+  criadoPorId: string | null;
+  variante: { rotulo: string } | null;
+  fornecedor: { nome: string } | null;
+};
+
+// Estoque de produto pré-produzido (2026-09-08) — extraído do que já era o
+// histórico de MATERIA_PRIMA (inline até então) pra ser reaproveitado
+// também no ramo PRODUTO (que agora também tem estoque com movimentação
+// própria, ver PreProducaoForm.tsx). Mesmo JSX/estilo de sempre, só
+// parametrizado por título/descrição — o filtro por item já vem de fora
+// (`itemGrafica.movimentacoes`, relação do Prisma, já é só deste item).
+function HistoricoMovimentacaoCard({
+  movimentacoes,
+  nomePorCriadorId,
+  titulo,
+  descricao,
+}: {
+  movimentacoes: MovimentacaoHistorico[];
+  nomePorCriadorId: Map<string, string>;
+  titulo: string;
+  descricao: string;
+}) {
+  return (
+    <Card className="flex flex-col gap-1 p-6">
+      <h2 className="text-base font-semibold text-slate-900 dark:text-white">{titulo}</h2>
+      <p className="mb-3 text-sm text-slate-500">{descricao}</p>
+      {movimentacoes.length === 0 ? (
+        <p className="py-6 text-center text-sm text-slate-500">
+          Nenhuma movimentação registrada ainda.
+        </p>
+      ) : (
+        <div className="-mx-6 divide-y divide-slate-100 dark:divide-slate-800">
+          {movimentacoes.map((m) => (
+            <div key={m.id} className="flex items-start justify-between gap-4 px-6 py-4">
+              <div>
+                <p className="text-sm text-slate-900 dark:text-white">
+                  {ROTULOS_TIPO_MOVIMENTACAO[m.tipo]}
+                  {m.variante ? ` · ${m.variante.rotulo}` : ""}
+                  {m.fornecedor ? ` · ${m.fornecedor.nome}` : ""}
+                  {m.motivo ? ` — ${m.motivo}` : ""}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {formatoInstanteRealComHora.format(m.createdAt)} ·{" "}
+                  {m.criadoPorId ? (nomePorCriadorId.get(m.criadoPorId) ?? "Usuário removido") : "Sistema"}
+                  {m.documento ? ` · NF ${m.documento}` : ""}
+                  {/* Achado F4 — lote/validade só aparecem quando preenchidos
+                      (ENTRADA_COMPRA com controlaLote ativo, ou SAIDA_PRODUCAO
+                      que copiou o snapshot, ver snapshotLoteFicha). */}
+                  {m.lote ? ` · Lote ${m.lote}` : ""}
+                  {m.validade ? ` · Val. ${formatoData.format(m.validade)}` : ""}
+                  {m.pedidoId && (
+                    <>
+                      {" · "}
+                      <Link href="/producao" className="underline">
+                        Ver pedido
+                      </Link>
+                    </>
+                  )}
+                </p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="text-sm font-medium text-slate-900 dark:text-white">
+                  {formatarQuantidadeMovimentacao(m.tipo, m.quantidade)}
+                </p>
+                <p className="text-xs text-slate-500">{formatarCustoUnitario(m.custoUnitario)}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
 }
 
 export default async function ConfiguracaoItemPage({
@@ -182,6 +271,28 @@ export default async function ConfiguracaoItemPage({
     itemGrafica.quantidadePorEmbalagem !== null && itemGrafica.estoqueAtual !== null
       ? Number(itemGrafica.estoqueAtual) * Number(itemGrafica.quantidadePorEmbalagem)
       : null;
+
+  // Estoque de produto pré-produzido (2026-09-08) — join em JS entre
+  // itemGrafica.fichaTecnica (só ids + quantidadePorUnidade, ver include no
+  // topo) e `materiasPrimas` (já buscado pra FichaTecnicaForm, com preço/
+  // estoque/variantes) pra montar a prévia de consumo do PreProducaoForm —
+  // mesma técnica que FichaTecnicaForm já usa pra `materiasPrimas` acima,
+  // nenhuma query nova.
+  const materiaPrimaPorId = new Map(materiasPrimas.map((m) => [m.id, m]));
+  const fichaTecnicaPreProducao = itemGrafica.fichaTecnica.map((f) => {
+    const materiaPrima = materiaPrimaPorId.get(f.materiaPrimaId);
+    const variante = f.varianteId ? materiaPrima?.variantes.find((v) => v.id === f.varianteId) : undefined;
+    return {
+      materiaPrimaNome: materiaPrima?.itemCatalogo.nome ?? "—",
+      varianteRotulo: variante?.rotulo ?? null,
+      quantidadePorUnidade: f.quantidadePorUnidade.toString(),
+      unidadeRotulo: rotuloUnidade(materiaPrima?.itemCatalogo.unidade ?? null, materiaPrima?.itemCatalogo.unidadeOutro ?? null),
+      precoCompra: variante ? variante.precoCompra.toString() : (materiaPrima?.precoCompra?.toString() ?? null),
+      estoqueAtual: variante
+        ? (variante.estoqueAtual?.toString() ?? null)
+        : (materiaPrima?.estoqueAtual?.toString() ?? null),
+    };
+  });
 
   return (
     <div className="flex flex-1 flex-col">
@@ -357,6 +468,25 @@ export default async function ConfiguracaoItemPage({
                 quantidadePorUnidade: f.quantidadePorUnidade.toString(),
               }))}
             />
+
+            {/* Estoque de produto pré-produzido (2026-09-08) —
+                ItemGrafica.estoqueAtual reaproveitado pro papel de "quantas
+                unidades prontas tem em estoque" quando tipo=PRODUTO (antes,
+                inerte pra esse tipo). Ver src/lib/pre-producao-estoque.ts. */}
+            <PreProducaoForm
+              itemGraficaId={itemGrafica.id}
+              nomeItem={itemGrafica.itemCatalogo.nome}
+              unidadeRotulo={unidadeRotulo}
+              estoqueAtual={itemGrafica.estoqueAtual?.toString() ?? ""}
+              fichaTecnica={fichaTecnicaPreProducao}
+            />
+
+            <HistoricoMovimentacaoCard
+              movimentacoes={itemGrafica.movimentacoes}
+              nomePorCriadorId={nomePorCriadorId}
+              titulo="Histórico de estoque pronto"
+              descricao={`Últimas ${LIMITE_HISTORICO_MOVIMENTACAO} movimentações de estoque pronto deste produto, mais recente primeiro.`}
+            />
           </div>
         ) : itemGrafica.itemCatalogo.tipo === "MATERIA_PRIMA" ? (
           <div className="flex flex-col gap-6">
@@ -430,59 +560,12 @@ export default async function ConfiguracaoItemPage({
               controlaLote={itemGrafica.controlaLote}
             />
 
-            <Card className="flex flex-col gap-1 p-6">
-              <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-                Histórico de movimentação
-              </h2>
-              <p className="mb-3 text-sm text-slate-500">
-                Últimas {LIMITE_HISTORICO_MOVIMENTACAO} movimentações deste material, mais recente
-                primeiro.
-              </p>
-              {itemGrafica.movimentacoes.length === 0 ? (
-                <p className="py-6 text-center text-sm text-slate-500">
-                  Nenhuma movimentação registrada ainda.
-                </p>
-              ) : (
-                <div className="-mx-6 divide-y divide-slate-100 dark:divide-slate-800">
-                  {itemGrafica.movimentacoes.map((m) => (
-                    <div key={m.id} className="flex items-start justify-between gap-4 px-6 py-4">
-                      <div>
-                        <p className="text-sm text-slate-900 dark:text-white">
-                          {ROTULOS_TIPO_MOVIMENTACAO[m.tipo]}
-                          {m.variante ? ` · ${m.variante.rotulo}` : ""}
-                          {m.fornecedor ? ` · ${m.fornecedor.nome}` : ""}
-                          {m.motivo ? ` — ${m.motivo}` : ""}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {formatoInstanteRealComHora.format(m.createdAt)} ·{" "}
-                          {m.criadoPorId ? (nomePorCriadorId.get(m.criadoPorId) ?? "Usuário removido") : "Sistema"}
-                          {m.documento ? ` · NF ${m.documento}` : ""}
-                          {/* Achado F4 — lote/validade só aparecem quando preenchidos
-                              (ENTRADA_COMPRA com controlaLote ativo, ou SAIDA_PRODUCAO
-                              que copiou o snapshot, ver snapshotLoteFicha). */}
-                          {m.lote ? ` · Lote ${m.lote}` : ""}
-                          {m.validade ? ` · Val. ${formatoData.format(m.validade)}` : ""}
-                          {m.pedidoId && (
-                            <>
-                              {" · "}
-                              <Link href="/producao" className="underline">
-                                Ver pedido
-                              </Link>
-                            </>
-                          )}
-                        </p>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <p className="text-sm font-medium text-slate-900 dark:text-white">
-                          {formatarQuantidadeMovimentacao(m.tipo, m.quantidade)}
-                        </p>
-                        <p className="text-xs text-slate-500">{formatarCustoUnitario(m.custoUnitario)}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
+            <HistoricoMovimentacaoCard
+              movimentacoes={itemGrafica.movimentacoes}
+              nomePorCriadorId={nomePorCriadorId}
+              titulo="Histórico de movimentação"
+              descricao={`Últimas ${LIMITE_HISTORICO_MOVIMENTACAO} movimentações deste material, mais recente primeiro.`}
+            />
           </div>
         ) : (
           <div className="flex flex-col gap-6">

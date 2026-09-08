@@ -25,6 +25,10 @@ import {
   type TipoColagem,
 } from "@/lib/acabamento-estrutural";
 import { CERTIFICACOES_MATERIAL, type CertificacaoMaterial } from "@/lib/certificacao-material";
+import {
+  producirEstoqueEspeculativo,
+  ErroEstoqueInsuficientePreProducao,
+} from "@/lib/pre-producao-estoque";
 
 const formatoQuantidade = new Intl.NumberFormat("pt-BR");
 
@@ -2079,4 +2083,100 @@ export async function lancarAjusteInventario(
   revalidatePath("/catalogo");
   revalidatePath("/meu-negocio");
   return { ok: true, mensagem: "Ajuste de inventário registrado." };
+}
+
+// Estoque de produto pré-produzido (pedido direto do dono, 2026-09-08 — ver
+// deep-zooming-parasol.md): fabricar um PRODUTO especulativamente, ANTES de
+// qualquer pedido existir, consumindo matéria-prima pela ficha técnica na
+// hora e guardando o resultado como estoque pronto
+// (ItemGrafica.estoqueAtual do PRODUTO). Toda a lógica de consumo/CAS/
+// snapshot mora em producirEstoqueEspeculativo (src/lib/pre-producao-estoque.ts)
+// — esta action é só a casca de autenticação/validação/transação, mesmo
+// formato de lancarEntradaCompra acima.
+const producaoEspeculativaSchema = z.object({
+  itemGraficaId: z.string().min(1),
+  quantidade: z.coerce.number().positive("Quantidade deve ser maior que zero."),
+});
+
+export async function lancarProducaoEspeculativa(
+  _estadoAnterior: LancarMovimentacaoResult | null,
+  formData: FormData
+): Promise<LancarMovimentacaoResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CATALOGO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar o catálogo." };
+  }
+
+  const parsed = producaoEspeculativaSchema.safeParse({
+    itemGraficaId: formData.get("itemGraficaId"),
+    quantidade: formData.get("quantidade"),
+  });
+  if (!parsed.success) {
+    return { ok: false, mensagem: parsed.error.issues[0].message };
+  }
+  const { itemGraficaId, quantidade } = parsed.data;
+
+  // Tenant + tipo=PRODUTO — mesma dupla checagem de tenant do resto deste
+  // arquivo (resolverItemMateriaPrima acima faz o equivalente pro lado
+  // MATERIA_PRIMA). Um itemGraficaId de matéria-prima ou de outra gráfica
+  // nunca resolve aqui, mesmo que forjado direto no form.
+  const itemGrafica = await prisma.itemGrafica.findFirst({
+    where: { id: itemGraficaId, graficaId: usuario.graficaId, itemCatalogo: { tipo: "PRODUTO" } },
+    include: {
+      itemCatalogo: true,
+      fichaTecnica: {
+        include: {
+          materiaPrima: { include: { itemCatalogo: true } },
+          variante: true,
+        },
+      },
+    },
+  });
+  if (!itemGrafica) {
+    return { ok: false, mensagem: "Produto não encontrado." };
+  }
+
+  let resultado: { custoUnitario: string | null; custoTotal: string | null };
+  try {
+    resultado = await prisma.$transaction(
+      (tx) =>
+        producirEstoqueEspeculativo(tx, {
+          itemGrafica: {
+            id: itemGrafica.id,
+            modeloCalculo: itemGrafica.modeloCalculo,
+            papelId: itemGrafica.papelId,
+            nome: itemGrafica.itemCatalogo.nome,
+            fichaTecnica: itemGrafica.fichaTecnica,
+          },
+          quantidade,
+          criadoPorId: usuario.id,
+        }),
+      // Serializable — mesmo motivo de avancarStatusPedido (status-transicao.ts):
+      // protege contra outra transação concorrente (outra pré-produção, ou um
+      // pedido avançando pra PRODUCAO) mexendo no saldo do MESMO material
+      // físico ao mesmo tempo, além do CAS por linha já dentro da função.
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    );
+  } catch (erro) {
+    if (erro instanceof ErroEstoqueInsuficientePreProducao) {
+      return {
+        ok: false,
+        mensagem: `Estoque insuficiente de "${erro.materiaPrimaNome}" pra pré-produzir ${formatarQuantidade(quantidade)} unidade(s). Nada foi descontado.`,
+      };
+    }
+    throw erro;
+  }
+
+  revalidatePath(`/catalogo/${itemGraficaId}`);
+  revalidatePath("/catalogo");
+  revalidatePath("/meu-negocio");
+  return {
+    ok: true,
+    mensagem:
+      resultado.custoTotal !== null
+        ? `Produção especulativa registrada — estoque pronto atualizado. Custo de matéria-prima: ${formatarPreco(resultado.custoTotal)}.`
+        : "Produção especulativa registrada — estoque pronto atualizado.",
+  };
 }

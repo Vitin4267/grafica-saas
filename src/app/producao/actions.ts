@@ -42,6 +42,13 @@ export type AvancarPedidoResult = { ok: boolean; mensagem: string };
 
 type ItemPrevisaoBaixa = {
   chave: string;
+  // Estoque de produto pré-produzido (2026-09-08) — id do OrcamentoItem
+  // "dono" desta linha (o produto, quando a linha é da ficha técnica dele;
+  // o produto PAI do acabamento, quando a linha vem de um acabamento
+  // anexado). Permite ao painel de confirmação agrupar/esconder as linhas
+  // de um item que acabou de ser marcado "atender do estoque pré-produzido"
+  // — ver itensElegiveisEstoque abaixo.
+  orcamentoItemId: string;
   materiaPrimaNome: string;
   varianteRotulo: string | null;
   quantidadeConsumida: number;
@@ -55,9 +62,21 @@ type ItemPrevisaoBaixa = {
   custoEstimado: number | null;
 };
 
+// Estoque de produto pré-produzido (2026-09-08) — item do orçamento cujo
+// PRODUTO tem estoque pré-produzido suficiente pra atender a quantidade
+// pedida (ItemGrafica.estoqueAtual >= item.quantidade). Só produtos
+// elegíveis aparecem aqui — o painel de confirmação (PainelConfirmacaoImpressao)
+// só oferece o checkbox "atender do estoque" pra estes.
+type ItemElegivelEstoque = {
+  orcamentoItemId: string;
+  nomeProduto: string;
+  quantidadePedida: number;
+  estoqueDisponivel: number;
+};
+
 export type PrevisaoBaixaEstoqueResult =
   | { ok: false; mensagem: string }
-  | { ok: true; itens: ItemPrevisaoBaixa[] };
+  | { ok: true; itens: ItemPrevisaoBaixa[]; itensElegiveisEstoque: ItemElegivelEstoque[] };
 
 // Leitura pura pra alimentar a tela de confirmação de "Iniciar impressão"
 // (IniciarImpressaoConfirm.tsx) — replica os mesmos gates de avancarPedido
@@ -116,6 +135,7 @@ export async function previsaoBaixaEstoque(pedidoId: string): Promise<PrevisaoBa
       const precoCompra = ficha.varianteId ? (ficha.variante?.precoCompra ?? null) : ficha.materiaPrima.precoCompra;
       itens.push({
         chave: montarChavePerda(item.id, ficha.id),
+        orcamentoItemId: item.id,
         materiaPrimaNome: ficha.materiaPrima.itemCatalogo.nome,
         varianteRotulo: ficha.variante?.rotulo ?? null,
         quantidadeConsumida,
@@ -145,6 +165,7 @@ export async function previsaoBaixaEstoque(pedidoId: string): Promise<PrevisaoBa
         const precoCompra = ficha.varianteId ? (ficha.variante?.precoCompra ?? null) : ficha.materiaPrima.precoCompra;
         itens.push({
           chave: montarChavePerda(acabamento.id, ficha.id),
+          orcamentoItemId: item.id,
           materiaPrimaNome: ficha.materiaPrima.itemCatalogo.nome,
           varianteRotulo: ficha.variante?.rotulo ?? null,
           quantidadeConsumida,
@@ -158,7 +179,25 @@ export async function previsaoBaixaEstoque(pedidoId: string): Promise<PrevisaoBa
     }
   }
 
-  return { ok: true, itens };
+  // Estoque de produto pré-produzido (2026-09-08) — elegível quando o
+  // PRODUTO deste item tem estoque pronto suficiente pra cobrir a
+  // quantidade pedida (mesma leitura de estoqueAtual já trazida por
+  // buscarOrcamentoParaBaixa, sem query extra). Item sem elegibilidade
+  // nenhuma (produto nunca pré-produzido, ou pré-produzido mas insuficiente)
+  // simplesmente não aparece aqui — o painel de confirmação só oferece o
+  // checkbox pra quem está nesta lista.
+  const itensElegiveisEstoque: ItemElegivelEstoque[] = (orcamentoComItens?.itens ?? [])
+    .filter(
+      (item) => item.itemGrafica.estoqueAtual !== null && Number(item.itemGrafica.estoqueAtual) >= item.quantidade
+    )
+    .map((item) => ({
+      orcamentoItemId: item.id,
+      nomeProduto: item.itemGrafica.itemCatalogo.nome,
+      quantidadePedida: item.quantidade,
+      estoqueDisponivel: Number(item.itemGrafica.estoqueAtual),
+    }));
+
+  return { ok: true, itens, itensElegiveisEstoque };
 }
 
 // Autorização OR: PRODUCAO.podeEditar completo OU responsável atribuído
@@ -217,6 +256,14 @@ export async function avancarPedido(
     return { ok: false, mensagem: resolucaoRefugo.mensagem };
   }
 
+  // Estoque de produto pré-produzido (2026-09-08) — checkboxes multi-valor
+  // nativas (name="atenderEstoque", um <input> por item elegível, ver
+  // PainelConfirmacaoImpressao.tsx), não JSON — mais simples que perdasJson
+  // porque é só um opt-in booleano por item, sem quantidade a digitar.
+  // Revalidado contra os itens REAIS do pedido dentro de avancarStatusPedido
+  // (nunca confia num id vindo direto do form sem checar).
+  const atenderEstoqueOrcamentoItemIds = formData.getAll("atenderEstoque").map(String);
+
   return avancarStatusPedido(
     pedido,
     formData.get("perdasJson"),
@@ -225,7 +272,8 @@ export async function avancarPedido(
       operadorId: usuario.id,
       selecaoMaquina: selecaoMaquina.selecao,
     },
-    resolucaoRefugo.refugo
+    resolucaoRefugo.refugo,
+    atenderEstoqueOrcamentoItemIds
   );
 }
 

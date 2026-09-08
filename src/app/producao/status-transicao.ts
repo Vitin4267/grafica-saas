@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
-import type { MotivoRefugo, StatusPedido } from "@/generated/prisma/enums";
+import type { MotivoRefugo, StatusPedido, OrigemCusto } from "@/generated/prisma/enums";
 import { D } from "@/lib/pricing/decimal";
 import { buscarAutomacaoGrafica, dispararEventoAutomacao } from "@/lib/webhook-automacao";
 import { normalizarTelefone } from "@/lib/telefone";
@@ -115,6 +115,12 @@ export function buscarOrcamentoParaBaixa(orcamentoId: string) {
         include: {
           itemGrafica: {
             include: {
+              // Estoque de produto pré-produzido (2026-09-08) — nome do
+              // PRODUTO pra tela de confirmação ("Cartão de Visita — tem N
+              // pré-produzido, atender do estoque?") e pro motivo da
+              // movimentação de atendimento. Join extra barato (já dentro do
+              // mesmo include de itemGrafica), sem custo extra de query.
+              itemCatalogo: true,
               fichaTecnica: {
                 include: {
                   materiaPrima: { include: { itemCatalogo: true } },
@@ -171,7 +177,12 @@ const PERDA_MAXIMA = 1_000_000;
 // mentiria que o custo foi apurado como zero). VarianteMateriaPrima não tem
 // `updatedAt` no schema, então precoReferenciaEm só é preenchido pro caminho
 // sem variante.
-function snapshotCustoFicha(
+// Exportada (além de usada internamente neste arquivo) — estoque de produto
+// pré-produzido (2026-09-08) reaproveita literalmente a mesma função em
+// src/lib/pre-producao-estoque.ts, em vez de duplicar a lógica de snapshot
+// de custo (mesmo princípio de calcularQuantidadeConsumidaFichaProduto,
+// já compartilhada entre vários call-sites).
+export function snapshotCustoFicha(
   ficha: {
     varianteId: string | null;
     materiaPrima: { precoCompra: Prisma.Decimal | null; updatedAt: Date };
@@ -210,7 +221,8 @@ function snapshotCustoFicha(
 // não rastreabilidade FEFO de verdade. Uma gráfica que de fato precisa de
 // FEFO (apropriação exata por lote com saldo restante por lote) precisa de
 // um model novo — fora do escopo deste achado.
-async function snapshotLoteFicha(
+// Exportada pelo mesmo motivo de snapshotCustoFicha acima.
+export async function snapshotLoteFicha(
   tx: Prisma.TransactionClient,
   ficha: { varianteId: string | null; materiaPrimaId: string; materiaPrima: { controlaLote: boolean } }
 ): Promise<{ lote: string | null; validade: Date | null }> {
@@ -255,6 +267,11 @@ async function criarCustoAutomaticoConsumo(
     categoriaCustoIdMaterial: string | null;
     categoriaCustoConsumoPadraoId: string | null;
     categoriaFallbackCache: { valor: string | null | undefined };
+    // Estoque de produto pré-produzido (2026-09-08) — aplicarAtendimentoEstoquePronto
+    // abaixo reaproveita esta MESMA função (categoria em cascata + dedup de
+    // possivelDuplicidade), só trocando a origem pra PRODUTO_PRE_PRODUZIDO.
+    // Default preserva 100% o comportamento de todo call-site existente.
+    origem?: OrigemCusto;
   }
 ): Promise<void> {
   // Movimentação sem preço de custo cadastrado (precoCompra null na
@@ -293,7 +310,7 @@ async function criarCustoAutomaticoConsumo(
       graficaId: params.graficaId,
       pedidoId: params.pedidoId,
       categoriaCustoId,
-      origem: "CONSUMO_ESTOQUE",
+      origem: params.origem ?? "CONSUMO_ESTOQUE",
       movimentacaoEstoqueId: params.movimentacaoId,
       valor: params.custoTotal,
       valorCalculado: params.custoTotal,
@@ -406,6 +423,93 @@ async function aplicarBaixaRefugo(
   }
 }
 
+// Estoque de produto pré-produzido (pedido direto do dono, 2026-09-08) —
+// sinaliza, de dentro da transação, que o estoque PRONTO do PRODUTO
+// (ItemGrafica.estoqueAtual, papel reaproveitado do lado do PRODUTO — ver
+// src/lib/pre-producao-estoque.ts) não comporta mais a quantidade pedida
+// (concorrência: dois pedidos disputando o mesmo lote pré-produzido, ou o
+// estoque mudou entre a tela de confirmação e o submit). Mesmo espírito de
+// ErroEstoqueInsuficienteRefugo acima — aborta a transação inteira, o
+// operador pode desmarcar "atender do estoque" pra este item e tentar de
+// novo (cai no fluxo normal de produção).
+class ErroEstoqueInsuficienteAtendimento extends Error {}
+
+// Item do orçamento marcado (opt-in, checkbox desmarcado por padrão — ver
+// PainelConfirmacaoImpressao.tsx) pra ser atendido do estoque de produto
+// PRÉ-PRODUZIDO em vez de rodar produção agora. Chamada UMA VEZ por item
+// marcado, dentro do MESMO loop que já existe por item de ficha técnica
+// (ver comentário no branch `proximoStatus === "PRODUCAO"` abaixo) — não
+// consome NENHUMA matéria-prima pra este item (nem da ficha técnica do
+// produto, nem dos acabamentos anexados): o produto já saiu pronto do
+// estoque, então tudo que ele consumiria já foi consumido lá atrás, na
+// pré-produção (ver producirEstoqueEspeculativo).
+//
+// Critério de custo — "última entrada não esgotada" (v1, documentado no
+// plano): usa o custoUnitario da ENTRADA_PRODUCAO mais recente deste
+// PRODUTO, sem apropriação FIFO/FEFO rigorosa de qual leva específica foi
+// fisicamente consumida (mesma limitação deliberada que o rastro de lote/
+// validade de matéria-prima já documenta em snapshotLoteFicha acima — "é
+// rastro documentado, não rastreabilidade exata"). null quando não há
+// nenhuma ENTRADA_PRODUCAO com custo apurado pra este produto (nunca foi
+// pré-produzido com o motor novo, ou toda leva ficou sem preço de matéria-
+// prima cadastrado) — a UI mostra "—", nunca inventa R$0,00.
+async function aplicarAtendimentoEstoquePronto(
+  tx: Prisma.TransactionClient,
+  params: {
+    graficaId: string;
+    pedidoId: string;
+    orcamentoId: string;
+    itemGraficaId: string; // o PRODUTO
+    categoriaCustoIdProduto: string | null;
+    quantidade: number;
+    custoAutomaticoConsumo: boolean;
+    categoriaCustoConsumoPadraoId: string | null;
+    categoriaFallbackCache: { valor: string | null | undefined };
+  }
+): Promise<void> {
+  // CAS: só decrementa se o saldo ATUAL (já refletindo qualquer decremento
+  // anterior nesta mesma transação) ainda comporta a saída — mesmo padrão
+  // de updateMany condicional usado em toda baixa de estoque deste arquivo.
+  const cas = await tx.itemGrafica.updateMany({
+    where: { id: params.itemGraficaId, estoqueAtual: { gte: params.quantidade } },
+    data: { estoqueAtual: { decrement: params.quantidade } },
+  });
+  if (cas.count === 0) throw new ErroEstoqueInsuficienteAtendimento();
+
+  const ultimaEntrada = await tx.movimentacaoEstoque.findFirst({
+    where: { itemGraficaId: params.itemGraficaId, tipo: "ENTRADA_PRODUCAO" },
+    orderBy: { createdAt: "desc" },
+    select: { custoUnitario: true },
+  });
+  const custoUnitario = ultimaEntrada?.custoUnitario ?? null;
+  const custoTotal = custoUnitario !== null ? new D(custoUnitario.toString()).times(params.quantidade).toFixed(2) : null;
+
+  const movimentacao = await tx.movimentacaoEstoque.create({
+    data: {
+      itemGraficaId: params.itemGraficaId,
+      pedidoId: params.pedidoId,
+      tipo: "SAIDA_ATENDIMENTO_PEDIDO",
+      quantidade: params.quantidade,
+      motivo: `Atendido do estoque pré-produzido — pedido ${params.pedidoId} (orçamento ${params.orcamentoId})`,
+      custoUnitario: custoUnitario?.toFixed(4) ?? null,
+      custoTotal,
+    },
+  });
+
+  if (params.custoAutomaticoConsumo) {
+    await criarCustoAutomaticoConsumo(tx, {
+      graficaId: params.graficaId,
+      pedidoId: params.pedidoId,
+      movimentacaoId: movimentacao.id,
+      custoTotal: movimentacao.custoTotal,
+      categoriaCustoIdMaterial: params.categoriaCustoIdProduto,
+      categoriaCustoConsumoPadraoId: params.categoriaCustoConsumoPadraoId,
+      categoriaFallbackCache: params.categoriaFallbackCache,
+      origem: "PRODUTO_PRE_PRODUZIDO",
+    });
+  }
+}
+
 const linhaPerdaSchema = z.object({
   chave: z.string().min(1),
   perdaAplicada: z.coerce
@@ -433,7 +537,19 @@ export async function avancarStatusPedido(
   // QR_ETIQUETA que não coletam refugo — mesma decisão de escopo de B2 pra
   // máquina) é tratado como "nada a reportar", zero mudança de
   // comportamento.
-  refugo?: RefugoInput | null
+  refugo?: RefugoInput | null,
+  // Estoque de produto pré-produzido (2026-09-08) — ids de OrcamentoItem
+  // marcados (checkbox opt-in, desmarcado por padrão) pra atender do
+  // estoque pré-produzido em vez de rodar produção agora. Já validado/
+  // extraído do form em avancarPedido (producao/actions.ts) — mesmo
+  // precedente de `refugo` acima (pré-parseado pelo chamador, não FormData
+  // cru). Default `[]` preserva 100% o comportamento de hoje pros outros 2
+  // canais (LINK_PUBLICO/QR_ETIQUETA) e de todo teste antigo, que não
+  // passam este argumento. Re-derivado contra os itens REAIS deste pedido
+  // dentro do branch PRODUCAO abaixo — um id forjado que não bate com
+  // nenhum item deste orçamento é simplesmente ignorado (nunca confia no
+  // que vem do form sem checar contra o que o servidor já buscou).
+  atenderEstoqueOrcamentoItemIds: string[] = []
 ): Promise<AvancarStatusResult> {
   // Gate opt-in: só bloqueia se ESTA gráfica enviou uma arte pra este
   // pedido (arteUrl preenchido) — pedidos sem arte enviada avançam
@@ -560,11 +676,24 @@ export async function avancarStatusPedido(
       // gráfica têm categoria configurada.
       const categoriaFallbackCache: { valor: string | null | undefined } = { valor: undefined };
 
+      // Estoque de produto pré-produzido (2026-09-08) — Set pra lookup O(1)
+      // dentro dos dois flatMap abaixo E do loop de baixa de verdade, mais
+      // longe neste mesmo branch. Re-derivado contra os itens REAIS deste
+      // pedido (nunca contra o que o form alega): um id que não corresponde
+      // a nenhum `item.id` de `orcamentoComItens.itens` simplesmente nunca
+      // bate no `.has()` abaixo, e esse item segue o fluxo normal de
+      // produção — não há necessidade de validação extra.
+      const atenderEstoqueSet = new Set(atenderEstoqueOrcamentoItemIds);
+
       // Mesma granularidade (item do orçamento × item da ficha técnica) que
       // previsaoBaixaEstoque mostra na tela de confirmação — precisa bater
       // exatamente pra validar que a confirmação enviada cobre tudo que vai
-      // ser descontado.
-      const itensParaBaixaProduto = (orcamentoComItens?.itens ?? []).flatMap((item) =>
+      // ser descontado. Item marcado "atender do estoque" não entra aqui —
+      // não vai consumir nenhuma matéria-prima, então não há perda a
+      // confirmar pra ele (ver aplicarAtendimentoEstoquePronto acima).
+      const itensParaBaixaProduto = (orcamentoComItens?.itens ?? [])
+        .filter((item) => !atenderEstoqueSet.has(item.id))
+        .flatMap((item) =>
         item.itemGrafica.fichaTecnica
           .filter(
             (ficha) =>
@@ -606,8 +735,13 @@ export async function avancarStatusPedido(
       // multiplicador é `acabamento.qtdBase` (o snapshot da base de cobrança
       // do acabamento, ex: folhas impressas que passaram pela laminação),
       // não `item.quantidade`. Aditivo: acabamento sem ficha técnica
-      // cadastrada gera `[]` e não entra aqui.
-      const itensParaBaixaAcabamento = (orcamentoComItens?.itens ?? []).flatMap((item) =>
+      // cadastrada gera `[]` e não entra aqui. Item marcado "atender do
+      // estoque" também não entra aqui — mesmo motivo de itensParaBaixaProduto
+      // acima: o produto pronto já inclui os acabamentos aplicados na
+      // pré-produção, nenhum acabamento roda de novo pra este item.
+      const itensParaBaixaAcabamento = (orcamentoComItens?.itens ?? [])
+        .filter((item) => !atenderEstoqueSet.has(item.id))
+        .flatMap((item) =>
         item.acabamentos.flatMap((acabamento) =>
           acabamento.itemGrafica.fichaTecnica
             .filter(
@@ -728,6 +862,29 @@ export async function avancarStatusPedido(
           >();
 
           for (const item of orcamentoComItens?.itens ?? []) {
+            // Estoque de produto pré-produzido (2026-09-08) — branch
+            // condicional adicionado a este loop já existente (mesmo
+            // precedente do achado B3/refugo: função nova adjacente,
+            // aplicarAtendimentoEstoquePronto acima, em vez de reestruturar
+            // este corpo). Item marcado "atender do estoque" PULA o
+            // consumo de matéria-prima inteiro (ficha técnica do produto E
+            // acabamentos anexados, ver comentário em itensParaBaixaAcabamento
+            // acima) — nada aqui embaixo roda pra ele, `continue` pro
+            // próximo item do orçamento.
+            if (atenderEstoqueSet.has(item.id)) {
+              await aplicarAtendimentoEstoquePronto(tx, {
+                graficaId: pedido.graficaId,
+                pedidoId: pedido.id,
+                orcamentoId: pedido.orcamentoId,
+                itemGraficaId: item.itemGrafica.id,
+                categoriaCustoIdProduto: item.itemGrafica.categoriaCustoId,
+                quantidade: item.quantidade,
+                custoAutomaticoConsumo,
+                categoriaCustoConsumoPadraoId,
+                categoriaFallbackCache,
+              });
+              continue;
+            }
             for (const ficha of item.itemGrafica.fichaTecnica) {
               // Com variante (ex: espessura de chapa), o saldo de estoque é o da
               // variante, não o do ItemGrafica "pai" — cada variante é fisicamente
@@ -1074,6 +1231,13 @@ export async function avancarStatusPedido(
         ok: false,
         mensagem:
           'Estoque insuficiente para dar baixa do refugo reportado. Desmarque "dar baixa de estoque" pra só registrar o refugo, ou confira a quantidade.',
+      };
+    }
+    if (erro instanceof ErroEstoqueInsuficienteAtendimento) {
+      return {
+        ok: false,
+        mensagem:
+          'Estoque pré-produzido insuficiente pra atender este item — provavelmente outro pedido consumiu o saldo nesse meio tempo. Desmarque "atender do estoque pré-produzido" pra rodar produção normal, ou confira a quantidade disponível.',
       };
     }
     if (ehConflitoDeSerializacao(erro)) {

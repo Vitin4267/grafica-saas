@@ -417,6 +417,7 @@ export function PedidoLinha({
         <PainelConfirmacaoImpressao
           pedidoId={pedidoId}
           itens={iniciarImpressao.estado.itens}
+          itensElegiveisEstoque={iniciarImpressao.estado.itensElegiveisEstoque}
           formAction={avancarFormAction}
           isPending={avancarPending}
           erroSubmit={avancarState && !avancarState.ok ? avancarState.mensagem : undefined}

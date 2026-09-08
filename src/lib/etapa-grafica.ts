@@ -53,12 +53,25 @@ export async function garantirEtapasGraficaPadrao(graficaId: string): Promise<vo
   const existentes = await prisma.etapaGrafica.count({ where: { graficaId } });
   if (existentes > 0) return;
 
+  // skipDuplicates (achado do estoque pré-produzido, 2026-09-08): esta
+  // função roda FORA de transação, chamada por avancarStatusPedido antes de
+  // abrir a dele — duas chamadas concorrentes pra uma gráfica que ainda não
+  // tem nenhuma EtapaGrafica (ex: dois pedidos avançando de status ao mesmo
+  // tempo, a primeira vez que isso acontece pra esta gráfica) passam as
+  // duas pelo `count() === 0` acima antes de qualquer uma commitar o
+  // createMany, e sem skipDuplicates a segunda batia na constraint única
+  // (graficaId, status) e derrubava a transação inteira dela — sem relação
+  // com o que essa segunda chamada estava de fato tentando fazer. Com
+  // skipDuplicates, a que perder a corrida só não re-insere o que a outra
+  // já gravou; o resultado final (8 linhas, uma por status) é o mesmo dos
+  // dois jeitos.
   await prisma.etapaGrafica.createMany({
     data: SEQUENCIA_STATUS_PEDIDO.map((status, indice) => ({
       graficaId,
       status,
       ordem: indice,
     })),
+    skipDuplicates: true,
   });
 }
 

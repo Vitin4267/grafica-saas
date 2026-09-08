@@ -10,6 +10,19 @@ enum TipoMovimentacao {
   ENTRADA_COMPRA
   SAIDA_MANUAL
   AJUSTE_INVENTARIO
+  // Estoque de produto pré-produzido (pedido direto do dono, 2026-09-08):
+  // ENTRADA_PRODUCAO é o PRODUTO (não matéria-prima) sendo fabricado
+  // especulativamente, ANTES de qualquer pedido existir — ver
+  // producirEstoqueEspeculativo em src/lib/pre-producao-estoque.ts.
+  // Distinta de ENTRADA_COMPRA (que é compra de matéria-prima de terceiro,
+  // não fabricação própria).
+  ENTRADA_PRODUCAO
+  // SAIDA_ATENDIMENTO_PEDIDO é o PRODUTO saindo do estoque pré-produzido
+  // pra atender um pedido de verdade, SEM rodar produção agora — ver o
+  // branch condicional em avancarStatusPedido (src/app/producao/
+  // status-transicao.ts). Distinta de SAIDA_PRODUCAO, que continua
+  // significando "matéria-prima consumida numa produção de verdade".
+  SAIDA_ATENDIMENTO_PEDIDO
 }
 
 // Como o custo unitário snapshotado numa MovimentacaoEstoque foi obtido —

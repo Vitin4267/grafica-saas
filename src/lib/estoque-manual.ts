@@ -14,6 +14,11 @@ export const ROTULOS_TIPO_MOVIMENTACAO: Record<TipoMovimentacao, string> = {
   ENTRADA_COMPRA: "Entrada de compra",
   SAIDA_MANUAL: "Saída manual",
   AJUSTE_INVENTARIO: "Ajuste de inventário",
+  // Estoque de produto pré-produzido (2026-09-08) — ver
+  // src/lib/pre-producao-estoque.ts e o branch condicional em
+  // avancarStatusPedido (src/app/producao/status-transicao.ts).
+  ENTRADA_PRODUCAO: "Produção especulativa",
+  SAIDA_ATENDIMENTO_PEDIDO: "Atendimento do estoque pronto",
 };
 
 // Delta a gravar como `quantidade` de uma MovimentacaoEstoque tipo
