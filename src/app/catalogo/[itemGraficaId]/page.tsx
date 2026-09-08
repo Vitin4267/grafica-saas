@@ -30,6 +30,7 @@ import { rotuloUnidade } from "@/lib/unidade";
 import { formatoMoeda } from "@/lib/moeda";
 import { formatoInstanteRealComHora, formatoData } from "@/lib/data";
 import { indexarManutencoesAtivasPorMaquina } from "@/lib/manutencao-maquina";
+import { buscarManutencoesAtivas } from "@/lib/manutencao-maquina-db";
 import type { TipoMovimentacao } from "@/generated/prisma/enums";
 
 const LIMITE_HISTORICO_MOVIMENTACAO = 100;
@@ -143,16 +144,7 @@ export default async function ConfiguracaoItemPage({
       // Só pra avisar (não bloquear) na seleção de prensa/máquina abaixo se a
       // escolhida está com uma parada em andamento agora — ver
       // ManutencaoMaquinaAlerta em ConfiguracaoProdutoForm.
-      prisma.registroManutencao.findMany({
-        where: { graficaId: usuario.graficaId, dataFim: null },
-        select: {
-          prensaId: true,
-          maquinaFlexografiaId: true,
-          equipamentoId: true,
-          impressoraDigitalId: true,
-          maquinaSetupPorPecaId: true,
-        },
-      }),
+      buscarManutencoesAtivas(usuario.graficaId),
     ]);
 
   if (!itemGrafica) {

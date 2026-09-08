@@ -13,11 +13,14 @@ import {
 import { verificarEDispararAlertasAtraso } from "@/lib/alerta-atraso";
 import { dataEhPassado, limitesDiaBrasilia, dataParaInputValue } from "@/lib/data";
 import { resolverOrigemPublica } from "@/lib/url-publica";
-import { listarMaquinasSelecionaveis, sugerirMaquinaPedido } from "@/lib/apontamento-etapa";
+import { listarMaquinasSelecionaveis, sugerirMaquinaPedido, resolverMaquinaAtualPedido } from "@/lib/apontamento-etapa";
 import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
 import { fornecedorProntoParaNfe } from "@/lib/nota-fiscal";
 import { rotuloMotivoParada } from "@/lib/parada-pedido-status";
 import { ROTULOS_STATUS_SOLICITACAO_COMPRA } from "@/lib/compras-status";
+import { indexarManutencoesAtivasPorMaquina } from "@/lib/manutencao-maquina";
+import { buscarManutencoesAtivas } from "@/lib/manutencao-maquina-db";
+import { compararPrioridadePedido } from "@/lib/prioridade-pedido";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -244,7 +247,7 @@ export default async function ProducaoPage({
   await verificarEDispararAlertasAtraso(usuario.graficaId, usuario.grafica.nome);
   const origem = await resolverOrigemPublica();
 
-  const [todosPedidos, clientes, responsaveisEstagio, maquinasSelecionaveis, fornecedoresAtivos, solicitacoesCompraAtivas, etapas, dadosFiscaisGrafica] = await Promise.all([
+  const [todosPedidos, clientes, responsaveisEstagio, maquinasSelecionaveis, fornecedoresAtivos, solicitacoesCompraAtivas, etapas, dadosFiscaisGrafica, registrosManutencaoAtivos] = await Promise.all([
     prisma.pedido.findMany({
       where: {
         graficaId: usuario.graficaId,
@@ -265,6 +268,24 @@ export default async function ProducaoPage({
           orderBy: { createdAt: "desc" },
         },
         entrega: true,
+        // Achado C1 da auditoria de abrangência (Parte 2/Produção) — só o
+        // apontamento ABERTO (finalizadoEm null) da etapa atual, com os 5
+        // campos de máquina — sinal PRIMÁRIO de "a máquina deste card" pras
+        // sub-raias do Kanban (ver resolverMaquinaAtualPedido em
+        // src/lib/apontamento-etapa.ts). take:1 porque só pode haver um
+        // apontamento aberto por vez (a mesma invariante que
+        // fecharEAbrirApontamento garante).
+        apontamentos: {
+          where: { finalizadoEm: null },
+          select: {
+            prensaId: true,
+            maquinaFlexografiaId: true,
+            equipamentoId: true,
+            impressoraDigitalId: true,
+            maquinaSetupPorPecaId: true,
+          },
+          take: 1,
+        },
         // Achado E1 da auditoria de abrangência (Parte 2/Produção) — todas
         // as terceirizações deste pedido (não só a ativa, ver
         // TerceirizacaoPedidoSecao.tsx), mais recente primeiro.
@@ -378,8 +399,19 @@ export default async function ProducaoPage({
       where: { graficaId: usuario.graficaId },
       select: { focusNfeToken: true },
     }),
+    // Achado C1 — mesma query reaproveitada de Máquinas/cadastro de produto
+    // (ver buscarManutencoesAtivas, src/lib/manutencao-maquina-db.ts),
+    // buscada UMA VEZ (grafica-wide) pro badge "Máquina parada" das
+    // sub-raias do Kanban.
+    buscarManutencoesAtivas(usuario.graficaId),
   ]);
   const focusNfeConfigurado = Boolean(dadosFiscaisGrafica?.focusNfeToken);
+  // Achado C1 — Set de ids de máquina com manutenção ativa AGORA, pra
+  // decidir o badge de cada raia do Kanban; Map id->nome (a partir das
+  // máquinas ATIVAS já buscadas em maquinasSelecionaveis) pra dar nome
+  // legível ao id resolvido por resolverMaquinaAtualPedido.
+  const idsMaquinasEmManutencao = new Set(indexarManutencoesAtivasPorMaquina(registrosManutencaoAtivos).keys());
+  const nomePorMaquinaId = new Map(maquinasSelecionaveis.map((m) => [m.id, m.nome]));
 
   // Achado C2 — rótulo pronto ("Papel Couché 150g (Aprovado)") pro select de
   // ParadaPedidoSecao.tsx, resolvido aqui (não no client) porque exige o
@@ -447,19 +479,46 @@ export default async function ProducaoPage({
   // acima), então nada de recalcular o filtro. valor/lucro seguem a mesma
   // regra de podeVerCustos da lista: nunca viajam pro client sem permissão,
   // nem escondidos por CSS.
-  const pedidosKanban: PedidoKanban[] = pedidosAtivos.map((pedido) => ({
-    id: pedido.id,
-    orcamentoId: pedido.orcamentoId,
-    clienteNome: pedido.orcamento.cliente.nome,
-    itensResumo: pedido.orcamento.itens.map((i) => i.itemGrafica.itemCatalogo.nome).join(", "),
-    status: pedido.status,
-    chipAtraso: chipAtraso(pedido.prazoEntrega, pedido.status),
-    chipTerceirizacao: chipTerceirizacao(pedido.etapasTerceirizadas),
-    chipParada: chipParada(pedido.paradas),
-    valorTotal: podeVerCustos ? Number(pedido.orcamento.total) : null,
-    lucro: podeVerCustos ? lucroDoPedidoListado(pedido) : null,
-    souResponsavelDesteStatus: etapasResponsavel.has(pedido.status),
-  }));
+  //
+  // Achado C1 — cópia ORDENADA (não muta pedidosAtivos, que a lista abaixo
+  // ainda usa na ordem de createdAt de sempre) por prioridade desc/
+  // prazoEntrega asc/createdAt asc (ver compararPrioridadePedido). É essa
+  // ordem que decide tanto a posição de cada card dentro da coluna quanto,
+  // dentro de PRODUCAO, a ordem de aparição dos GRUPOS de máquina (ver
+  // agruparPorMaquina em KanbanBoard.tsx).
+  const pedidosKanban: PedidoKanban[] = [...pedidosAtivos]
+    .sort(compararPrioridadePedido)
+    .map((pedido) => {
+      // Achado C1 — 1º sinal: ApontamentoEtapa aberto da etapa atual (mais
+      // preciso, é onde o operador de fato registrou); 2º sinal (fallback):
+      // a máquina que os ITENS do pedido usaram na precificação (achado B2).
+      const idMaquina = resolverMaquinaAtualPedido(
+        pedido.apontamentos[0] ?? null,
+        pedido.orcamento.itens
+      );
+      const maquina = idMaquina
+        ? {
+            nome: nomePorMaquinaId.get(idMaquina) ?? "Máquina removida",
+            parada: idsMaquinasEmManutencao.has(idMaquina),
+          }
+        : null;
+
+      return {
+        id: pedido.id,
+        orcamentoId: pedido.orcamentoId,
+        clienteNome: pedido.orcamento.cliente.nome,
+        itensResumo: pedido.orcamento.itens.map((i) => i.itemGrafica.itemCatalogo.nome).join(", "),
+        status: pedido.status,
+        chipAtraso: chipAtraso(pedido.prazoEntrega, pedido.status),
+        chipTerceirizacao: chipTerceirizacao(pedido.etapasTerceirizadas),
+        chipParada: chipParada(pedido.paradas),
+        valorTotal: podeVerCustos ? Number(pedido.orcamento.total) : null,
+        lucro: podeVerCustos ? lucroDoPedidoListado(pedido) : null,
+        souResponsavelDesteStatus: etapasResponsavel.has(pedido.status),
+        prioridade: pedido.prioridade,
+        maquina,
+      };
+    });
 
   // Construído aqui (fora do JSX final) pra poder ser passado pronto —
   // já renderizado pelo servidor — como children de ProducaoVisualizacao
@@ -543,6 +602,7 @@ export default async function ProducaoPage({
                 // AvancarPedidoButton/RefugoEtapaCampos. pedido.orcamento.itens
                 // já veio no `include` de cima (nenhuma query extra).
                 quantidadePedido={pedido.orcamento.itens.reduce((soma, i) => soma + i.quantidade, 0)}
+                prioridade={pedido.prioridade}
                 sequencia={etapas.sequencia}
                 rotulos={etapas.rotulos}
                 entrega={

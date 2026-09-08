@@ -266,6 +266,19 @@ model Pedido {
   fechadoEm    DateTime?
   fechadoPorId String?
 
+  // Achado C1 da Parte 2 (Produção) da auditoria de abrangência
+  // (pesquisa-abrangencia-modulos.md, 2026-09-07): quanto MAIOR, mais
+  // prioritário — ordena o Kanban (prioridade desc, prazoEntrega asc,
+  // createdAt asc, ver compararPrioridadePedido em
+  // src/lib/prioridade-pedido.ts) junto com as demais colunas que decidem a
+  // fila hoje. @default(0) = "Normal" (ver NIVEIS_PRIORIDADE_PEDIDO no
+  // mesmo arquivo) — TODO pedido existente nasce com este valor, então a
+  // ordenação atual (por prazo/data) não muda pra ninguém até alguém de
+  // fato marcar um pedido como Baixa/Alta/Urgente. Editado pela Server
+  // Action alterarPrioridadePedido (src/app/producao/actions.ts), validada
+  // contra os 4 valores fixos — nunca um número livre vindo do form.
+  prioridade Int @default(0)
+
   grafica   Grafica   @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   orcamento Orcamento @relation(fields: [orcamentoId], references: [id])
 

@@ -323,9 +323,11 @@ enum TipoRegistroManutencao {
 // quanto QUEBRA/parada reativa (o `tipo` só existe pra segmentar isso em
 // relatórios; o comportamento de "está parada agora" é sempre baseado em
 // dataFim, nunca em tipo). dataFim null = parada ainda em andamento; é o
-// que buscarManutencoesAtivas (src/lib/manutencao-maquina.ts) usa pra
-// decidir exibir o aviso "essa máquina está parada" na tela de Máquinas e
-// no cadastro de produto Offset/Flexografia. Três FKs opcionais, nunca mais
+// que buscarManutencoesAtivas (src/lib/manutencao-maquina-db.ts) usa pra
+// decidir exibir o aviso "essa máquina está parada" na tela de Máquinas, no
+// cadastro de produto Offset/Flexografia e nas sub-raias por máquina do
+// Kanban de produção (achado C1 da auditoria de abrangência, Parte 2/
+// Produção, 2026-09-07). Três FKs opcionais, nunca mais
 // de uma preenchida na mesma linha (validado na Server Action, não há
 // CHECK no banco — mesmo padrão de validação em app do resto do schema) —
 // mesmo princípio de ItemGrafica.prensaId/maquinaFlexografiaId: Prensa,

@@ -17,6 +17,8 @@ import {
 import type { StatusPedido } from "@/generated/prisma/enums";
 import { formatoMoeda } from "@/lib/moeda";
 import { useAoMudar } from "@/lib/hooks/useAoMudar";
+import { rotuloPrioridadePedido } from "@/lib/prioridade-pedido";
+import { agruparPorMaquina } from "@/lib/producao-kanban-maquina";
 import { avancarPedido } from "./actions";
 import { ModalConfirmarImpressao } from "./KanbanConfirmarImpressao";
 
@@ -49,6 +51,21 @@ export type PedidoKanban = {
   // pedido — mesmo campo que libera AvancarPedidoButton em PedidoLinha.tsx
   // sem PRODUCAO.podeEditar completo. Nunca relevante pra ARTE/CLICHE_FACA.
   souResponsavelDesteStatus: boolean;
+  // Achado C1 da auditoria de abrangência (Parte 2/Produção, 2026-09-07) —
+  // quanto MAIOR, mais prioritário (ver Pedido.prioridade no schema). Os
+  // cards já chegam ORDENADOS por prioridade (ver compararPrioridadePedido
+  // em src/lib/prioridade-pedido.ts, aplicado em producao/page.tsx antes de
+  // montar este array) — este campo aqui só alimenta o crachá visual.
+  prioridade: number;
+  // Achado C1 — "a máquina deste card", só relevante dentro da coluna
+  // PRODUCAO (ver KanbanColuna abaixo, que agrupa os cards em sub-raias por
+  // máquina só nessa coluna). null quando não há nenhum sinal de máquina
+  // (nem ApontamentoEtapa aberto, nem sugestão dos itens do pedido — ver
+  // resolverMaquinaAtualPedido em src/lib/apontamento-etapa.ts) — esses
+  // cards caem na raia "Sem máquina definida". `parada` reaproveita
+  // buscarManutencoesAtivas (src/lib/manutencao-maquina-db.ts), já usada em
+  // Máquinas e no cadastro de produto.
+  maquina: { nome: string; parada: boolean } | null;
 };
 
 // Mesma regra de permissão que já decide se PedidoLinha.tsx mostra
@@ -288,6 +305,10 @@ function KanbanColuna({
   erros: Record<string, string>;
   responsaveis: string[];
 }) {
+  // Sub-raias só dentro de PRODUCAO (achado C1, proposta MVP) — é onde a
+  // dor de "duas prensas, um balde só" existe de verdade; nas outras
+  // colunas o agrupamento não ajudaria em nada e só adicionaria ruído.
+  const gruposPorMaquina = status === "PRODUCAO" ? agruparPorMaquina(pedidos) : null;
   // disabled=true faz esta coluna nunca virar um alvo de colisão válido
   // durante o arraste — é isso que impede soltar um card em qualquer coluna
   // que não seja exatamente a próxima etapa dele (a "não deixar soltar" da
@@ -319,11 +340,36 @@ function KanbanColuna({
           </p>
         )}
       </div>
-      <div className="flex flex-1 flex-col gap-2">
+      <div className="flex flex-1 flex-col gap-3">
         {pedidos.length === 0 ? (
           <p className="rounded-xl border border-dashed border-slate-200 p-3 text-center text-xs text-slate-400 dark:border-slate-800 dark:text-slate-600">
             Nenhum pedido aqui
           </p>
+        ) : gruposPorMaquina ? (
+          gruposPorMaquina.map((grupo) => (
+            <div key={grupo.nome} className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center gap-1.5 px-1">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                  {grupo.nome}
+                </p>
+                {grupo.parada && (
+                  <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-700 dark:bg-rose-950/50 dark:text-rose-300">
+                    Máquina parada
+                  </span>
+                )}
+              </div>
+              {grupo.pedidos.map((pedido) => (
+                <KanbanCard
+                  key={pedido.id}
+                  pedido={pedido}
+                  podeVerCustos={podeVerCustos}
+                  arrastavel={podeArrastar(pedido, podeEditar) && !pendentes.has(pedido.id)}
+                  pendente={pendentes.has(pedido.id)}
+                  erro={erros[pedido.id]}
+                />
+              ))}
+            </div>
+          ))
         ) : (
           pedidos.map((pedido) => (
             <KanbanCard
@@ -401,6 +447,14 @@ function KanbanCardConteudo({
       {pedido.chipAtraso}
       {pedido.chipTerceirizacao}
       {pedido.chipParada}
+      {/* Achado C1 — crachá read-only (a edição de verdade fica na lista,
+          ver PrioridadePedidoSeletor em PedidoLinha.tsx); só aparece quando
+          já saiu do padrão "Normal" (0), pra não poluir todo card. */}
+      {pedido.prioridade !== 0 && (
+        <span className="w-fit rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
+          {rotuloPrioridadePedido(pedido.prioridade)}
+        </span>
+      )}
       {podeVerCustos && pedido.valorTotal !== null && (
         <p className="text-xs text-slate-600 dark:text-slate-300">
           {formatoMoeda.format(pedido.valorTotal)}

@@ -21,6 +21,7 @@ import { analisarPreflight } from "@/lib/preflight";
 import { cancelarCandidatosDoPedido } from "@/lib/gang-run-servico";
 import { extrairEValidarSelecaoMaquina } from "@/lib/apontamento-etapa";
 import { parseRefugoFormData } from "@/lib/refugo-producao";
+import { ehNivelPrioridadeValido } from "@/lib/prioridade-pedido";
 import { avancarStatusPedido, buscarOrcamentoParaBaixa } from "./status-transicao";
 import { calcularQuantidadeConsumidaFichaProduto } from "@/lib/baixa-estoque-substrato";
 import {
@@ -850,4 +851,46 @@ export async function removerArte(
 
   revalidatePath("/producao");
   return { ok: true, mensagem: "Arte removida." };
+}
+
+export type AlterarPrioridadeResult = { ok: boolean; mensagem: string };
+
+// Achado C1 da Parte 2 (Produção) da auditoria de abrangência (2026-09-07)
+// — muda Pedido.prioridade, o campo que passou a ordenar o Kanban (ver
+// compararPrioridadePedido em src/lib/prioridade-pedido.ts). Gate
+// PRODUCAO.podeEditar puro (diferente de avancarPedido): decidir "o que
+// roda primeiro" na fila inteira é responsabilidade de quem administra a
+// produção, não do responsável por uma etapa específica (podeConfirmarEstagio
+// nunca entra aqui). Só aceita um dos 4 valores fixos da UI (Baixa/Normal/
+// Alta/Urgente) — nunca um número livre vindo direto de um POST sem passar
+// pelo <select>.
+export async function alterarPrioridadePedido(
+  _estadoAnterior: AlterarPrioridadeResult | null,
+  formData: FormData
+): Promise<AlterarPrioridadeResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "PRODUCAO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar a produção." };
+  }
+
+  const pedidoId = String(formData.get("pedidoId"));
+  const prioridade = Number(formData.get("prioridade"));
+  if (!Number.isFinite(prioridade) || !ehNivelPrioridadeValido(prioridade)) {
+    return { ok: false, mensagem: "Prioridade inválida." };
+  }
+
+  const pedido = await prisma.pedido.findFirst({
+    where: { id: pedidoId, graficaId: usuario.graficaId },
+    select: { id: true },
+  });
+  if (!pedido) {
+    return { ok: false, mensagem: "Pedido não encontrado." };
+  }
+
+  await prisma.pedido.update({ where: { id: pedidoId }, data: { prioridade } });
+
+  revalidatePath("/producao");
+  return { ok: true, mensagem: "Prioridade atualizada." };
 }

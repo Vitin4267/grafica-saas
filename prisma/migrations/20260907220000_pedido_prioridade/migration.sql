@@ -1,0 +1,21 @@
+-- Migração escrita à mão (ver instrução no schema — NÃO rodar
+-- `prisma migrate dev`/`migrate reset` neste projeto, o banco de dev tem
+-- dados reais de cliente).
+--
+-- Achado C1 da auditoria de abrangência (Parte 2/Produção,
+-- pesquisa-abrangencia-modulos.md, 2026-09-07): o Kanban de produção não
+-- tinha nenhuma noção de "isso é mais urgente que aquilo" — os cards
+-- apareciam só na ordem de createdAt.
+--
+-- Adiciona:
+-- - coluna "prioridade" (Int NOT NULL DEFAULT 0) em "pedidos".
+--
+-- Migração 100% aditiva: NOT NULL com DEFAULT 0 não reescreve/bloqueia a
+-- tabela (Postgres >= 11 aplica o default como metadado, não linha-a-linha)
+-- e todo pedido existente passa a ter prioridade=0 ("Normal", ver
+-- NIVEIS_PRIORIDADE_PEDIDO em src/lib/prioridade-pedido.ts) — equivalente
+-- exato ao comportamento de ordenação de antes desta feature (só
+-- prazo/data decidiam a fila), nenhum pedido muda de posição sozinho.
+
+-- AlterTable
+ALTER TABLE "pedidos" ADD COLUMN "prioridade" INTEGER NOT NULL DEFAULT 0;

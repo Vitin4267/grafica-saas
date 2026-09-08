@@ -248,6 +248,36 @@ export async function listarMaquinasSelecionaveis(graficaId: string): Promise<Ma
   ];
 }
 
+// Achado C1 da Parte 2 (Produção) da auditoria de abrangência (2026-09-07)
+// — "a máquina deste card" pro sub-agrupamento do Kanban dentro da coluna
+// PRODUCAO (ver KanbanBoard.tsx). Dois sinais, em ordem de preferência: 1º
+// o ApontamentoEtapa ABERTO (finalizadoEm null) da etapa atual — é onde o
+// operador de fato registrou onde o job está rodando (achado B1/B2, mais
+// preciso que uma previsão); só quando não há apontamento nenhum ainda
+// (etapa recém-aberta sem confirmação, ou canal público/QR que não coleta
+// máquina) cai pro 2º sinal, sugerirMaquinaPedido (achado B2) — a máquina
+// que os ITENS do pedido usaram na precificação. Retorna só o id (não o
+// campo/tabela) porque quem chama só precisa cruzar com MaquinaOpcao.id
+// pra achar o nome — os 5 espaços de id (Prensa/MaquinaFlexografia/
+// Equipamento/ImpressoraDigital/MaquinaSetupPorPeca) nunca colidem na
+// prática (cuid), mesma simplificação que
+// indexarManutencoesAtivasPorMaquina (manutencao-maquina.ts) já faz.
+export function resolverMaquinaAtualPedido(
+  apontamentoAberto: SelecaoMaquina | null,
+  itens: { itemGrafica: Record<CampoMaquinaItem, string | null> }[]
+): string | null {
+  if (apontamentoAberto) {
+    const idApontamento =
+      apontamentoAberto.prensaId ??
+      apontamentoAberto.maquinaFlexografiaId ??
+      apontamentoAberto.equipamentoId ??
+      apontamentoAberto.impressoraDigitalId ??
+      apontamentoAberto.maquinaSetupPorPecaId;
+    if (idApontamento) return idApontamento;
+  }
+  return sugerirMaquinaPedido(itens)?.id ?? null;
+}
+
 // Divergência entre a máquina que o operador de fato selecionou num
 // ApontamentoEtapa e a sugestão calculada a partir dos itens do pedido (ver
 // sugerirMaquinaPedido) — usado no aviso da tela de custos/fechamento

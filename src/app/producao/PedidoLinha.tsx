@@ -33,6 +33,8 @@ import {
 } from "./ParadaPedidoSecao";
 import type { MaquinaOpcaoUI } from "./SeletorMaquina";
 import { cancelarPedido, avancarPedido } from "./actions";
+import { PrioridadePedidoSeletor } from "./PrioridadePedidoSeletor";
+import { rotuloPrioridadePedido } from "@/lib/prioridade-pedido";
 
 type Custo = {
   id: string;
@@ -80,6 +82,7 @@ export function PedidoLinha({
   maquinas = [],
   sugestaoMaquinaValor = "",
   quantidadePedido = 0,
+  prioridade = 0,
   sequencia,
   rotulos,
 }: {
@@ -173,6 +176,11 @@ export function PedidoLinha({
   // qualquer chamador que ainda não passe esta prop (deixa o campo vazio,
   // nunca "0" fixo).
   quantidadePedido?: number;
+  // Achado C1 — quanto MAIOR, mais prioritário (ver Pedido.prioridade no
+  // schema e compararPrioridadePedido em src/lib/prioridade-pedido.ts, que
+  // ordena o Kanban). Default 0 ("Normal") pra qualquer chamador que ainda
+  // não passe esta prop, mesmo critério de quantidadePedido acima.
+  prioridade?: number;
   // Achado A1 (Fase 1) — sequência/rótulos resolvidos DESTA gráfica (ver
   // resolverEtapasGrafica em src/lib/etapa-grafica.ts), buscados uma vez em
   // producao/page.tsx e repassados aqui. Substituem os antigos imports
@@ -277,6 +285,19 @@ export function PedidoLinha({
           {chipAtraso}
           {chipTerceirizacao}
           {chipParada}
+          {/* Achado C1 — editável por quem pode editar a produção; quem só
+              tem leitura (ou responsável de etapa) vê um crachá read-only,
+              e só quando a prioridade já saiu do padrão "Normal" (0) —
+              não polui a linha do dia a dia comum. */}
+          {podeEditar ? (
+            <PrioridadePedidoSeletor pedidoId={pedidoId} prioridade={prioridade} />
+          ) : (
+            prioridade !== 0 && (
+              <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
+                Prioridade: {rotuloPrioridadePedido(prioridade)}
+              </span>
+            )
+          )}
           <StatusBadge status={status} tipo="pedido" rotulo={rotulos[status as StatusPedido]} />
           {baixaEstoqueAoAvancar
             ? podeEditar && (

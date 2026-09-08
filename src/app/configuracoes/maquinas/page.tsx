@@ -20,6 +20,7 @@ import { NovaMaquinaSetupPorPecaForm } from "./setup-por-peca/NovaMaquinaSetupPo
 import { NovaMaquinaBordadoForm } from "./bordado/NovaMaquinaBordadoForm";
 import { NovaMaquinaTempoForm } from "./tempo-maquina/NovaMaquinaTempoForm";
 import { indexarManutencoesAtivasPorMaquina } from "@/lib/manutencao-maquina";
+import { buscarManutencoesAtivas } from "@/lib/manutencao-maquina-db";
 import { ROTULO_CATEGORIA_EQUIPAMENTO, ROTULO_PROCESSO_SETUP_POR_PECA } from "@/lib/tipos-equipamento";
 
 export default async function MaquinasPage() {
@@ -67,16 +68,7 @@ export default async function MaquinasPage() {
       where: { graficaId: usuario.graficaId },
       orderBy: { nome: "asc" },
     }),
-    prisma.registroManutencao.findMany({
-      where: { graficaId: usuario.graficaId, dataFim: null },
-      select: {
-        prensaId: true,
-        maquinaFlexografiaId: true,
-        equipamentoId: true,
-        impressoraDigitalId: true,
-        maquinaSetupPorPecaId: true,
-      },
-    }),
+    buscarManutencoesAtivas(usuario.graficaId),
   ]);
   // Só pra saber QUAIS máquinas estão paradas agora (badge de aviso) — o
   // registro completo (motivo, tipo, desde quando) fica na tela dedicada de
