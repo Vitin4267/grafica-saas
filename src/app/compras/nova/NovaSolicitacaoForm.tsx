@@ -11,6 +11,7 @@ import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { formatoMoeda } from "@/lib/moeda";
 import { formatoInstanteReal, formatoData } from "@/lib/data";
 import { chaveComparativo } from "@/lib/comparativo-fornecedores";
+import { AMOSTRA_MINIMA_DESEMPENHO, type DesempenhoFornecedor } from "@/lib/desempenho-fornecedor";
 import { contratosAplicaveis, type ContratoAtivoResumo } from "@/lib/contrato-fornecimento";
 import { rotuloUnidadeCompra } from "@/lib/unidade-compra";
 import { criarSolicitacaoCompra } from "../actions";
@@ -61,6 +62,7 @@ export function NovaSolicitacaoForm({
   itemGraficaIdInicial,
   varianteIdInicial,
   comparativoPorChave,
+  desempenhoPorFornecedor,
   pedidos,
   contratosAtivos,
 }: {
@@ -77,6 +79,14 @@ export function NovaSolicitacaoForm({
   // chaveComparativo). Trocar a seleção no formulário só troca qual entrada
   // deste objeto é exibida, sem round-trip ao servidor.
   comparativoPorChave: Record<string, LinhaComparativo[]>;
+  // Achado A11 da auditoria de abrangência (Parte 3/Compras) — desempenho
+  // (OTIF) de CADA fornecedor da gráfica, agregado sobre TODAS as compras
+  // já fechadas (não só deste item — diferente de comparativoPorChave, que
+  // é por matéria-prima). Chaveado por fornecedorId; ausência de chave =
+  // fornecedor sem nenhuma compra fechada ainda (ver
+  // desempenho-fornecedor-db.ts). Já vem pronto do servidor (nenhuma Date
+  // aqui pra serializar — DesempenhoFornecedor só tem número/string/null).
+  desempenhoPorFornecedor: Record<string, DesempenhoFornecedor>;
   // Pedidos elegíveis pra origem=PEDIDO_ESPECIFICO (achado A3 da auditoria
   // de abrangência, Parte 3/Compras) — só aparece quando essa origem é
   // escolhida.
@@ -348,6 +358,7 @@ export function NovaSolicitacaoForm({
             unidade={materialSelecionado.unidade}
             linhas={comparativo}
             aindaSemHistorico={comparativo.length === 0}
+            desempenhoPorFornecedor={desempenhoPorFornecedor}
           />
         )}
 
@@ -528,10 +539,14 @@ function ComparativoFornecedoresCard({
   unidade,
   linhas,
   aindaSemHistorico,
+  desempenhoPorFornecedor,
 }: {
   unidade: string;
   linhas: LinhaComparativo[];
   aindaSemHistorico: boolean;
+  // Achado A11 da auditoria de abrangência (Parte 3/Compras) — ver comentário
+  // da prop de mesmo nome em NovaSolicitacaoForm.
+  desempenhoPorFornecedor: Record<string, DesempenhoFornecedor>;
 }) {
   return (
     <div className="rounded-xl border border-slate-200 dark:border-slate-800">
@@ -552,6 +567,19 @@ function ComparativoFornecedoresCard({
                 <th className="px-4 py-2 text-right">Último preço</th>
                 <th className="px-4 py-2">Última compra</th>
                 <th className="px-4 py-2">Histórico</th>
+                <th className="px-4 py-2 text-right">
+                  No prazo
+                  <CampoAjuda texto="Percentual de compras (de QUALQUER item, não só este) recebidas até a data prometida na cotação vencedora. Compra sem cotação vinculada (sem prazo prometido) não entra nessa conta. Considera todas as compras já fechadas deste fornecedor." />
+                </th>
+                <th className="px-4 py-2 text-right">
+                  Completo
+                  <CampoAjuda texto="Percentual de compras (de QUALQUER item) que chegaram sem nenhuma divergência de quantidade registrada no recebimento. Considera todas as compras já fechadas deste fornecedor." />
+                </th>
+                <th className="px-4 py-2 text-right">
+                  OTIF
+                  <CampoAjuda texto="On Time In Full — no prazo E completo ao mesmo tempo. O KPI padrão de gestão de fornecedores." />
+                </th>
+                <th className="px-4 py-2 text-right">Divergências</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -574,6 +602,7 @@ function ComparativoFornecedoresCard({
                   <td className="px-4 py-2 text-slate-500">
                     {linha.historico.map((h) => formatoMoeda.format(h.preco)).join(" · ")}
                   </td>
+                  <DesempenhoFornecedorCelulas desempenho={desempenhoPorFornecedor[linha.fornecedorId]} />
                 </tr>
               ))}
             </tbody>
@@ -581,5 +610,64 @@ function ComparativoFornecedoresCard({
         </div>
       )}
     </div>
+  );
+}
+
+// Formata uma métrica isolada (achado A11) — mesmas 3 situações em toda
+// célula: sem nenhuma compra elegível ("—"/"sem cotação" pras que dependem
+// de prazo prometido), amostra abaixo de AMOSTRA_MINIMA_DESEMPENHO ("dado
+// insuficiente", sem mostrar um percentual enganoso tipo 100% com 1
+// compra), ou percentual de fato (com o tamanho da amostra ao lado, pra
+// quem quiser julgar a confiança por conta própria mesmo acima do mínimo).
+function celulaMetrica(metrica: { amostra: number; percentual: number | null }, semAmostraTexto: string) {
+  if (metrica.amostra === 0) {
+    return (
+      <span className="text-slate-400" title="Nenhuma compra fechada deste fornecedor é elegível pra esta métrica.">
+        {semAmostraTexto}
+      </span>
+    );
+  }
+  if (metrica.amostra < AMOSTRA_MINIMA_DESEMPENHO) {
+    return (
+      <span
+        className="text-slate-400"
+        title={`Só ${metrica.amostra} compra(s) — dado insuficiente pra confiar no percentual (mínimo ${AMOSTRA_MINIMA_DESEMPENHO}).`}
+      >
+        dado insuficiente
+      </span>
+    );
+  }
+  return `${metrica.percentual!.toFixed(0)}% (${metrica.amostra})`;
+}
+
+// Colunas de desempenho (achado A11) — célula própria pra isolar o
+// tratamento de "sem dado nenhum" (fornecedor sem nenhuma compra fechada
+// ainda, ver comentário de desempenhoPorFornecedor) e "amostra pequena"
+// (AMOSTRA_MINIMA_DESEMPENHO) do resto da tabela.
+function DesempenhoFornecedorCelulas({ desempenho }: { desempenho: DesempenhoFornecedor | undefined }) {
+  if (!desempenho || desempenho.totalCompras === 0) {
+    return (
+      <>
+        <td className="px-4 py-2 text-right text-slate-400">—</td>
+        <td className="px-4 py-2 text-right text-slate-400">—</td>
+        <td className="px-4 py-2 text-right text-slate-400">—</td>
+        <td className="px-4 py-2 text-right text-slate-400">—</td>
+      </>
+    );
+  }
+
+  const { noPrazo, completo, otif, comDivergencia } = desempenho;
+
+  return (
+    <>
+      <td className="px-4 py-2 text-right text-slate-600 dark:text-slate-300">
+        {celulaMetrica(noPrazo, "sem cotação")}
+      </td>
+      <td className="px-4 py-2 text-right text-slate-600 dark:text-slate-300">{celulaMetrica(completo, "—")}</td>
+      <td className="px-4 py-2 text-right font-medium text-slate-700 dark:text-slate-200">
+        {celulaMetrica(otif, "sem cotação")}
+      </td>
+      <td className="px-4 py-2 text-right text-slate-500">{comDivergencia > 0 ? comDivergencia : "—"}</td>
+    </>
   );
 }

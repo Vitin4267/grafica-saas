@@ -9,6 +9,7 @@ import { UserNav } from "@/components/UserNav";
 import { ArrowLeftIcon } from "@/components/icons";
 import { rotuloUnidade } from "@/lib/unidade";
 import { buscarComparativoFornecedores } from "@/lib/comparativo-fornecedores-db";
+import { buscarDesempenhoFornecedores } from "@/lib/desempenho-fornecedor-db";
 import type { ContratoAtivoResumo } from "@/lib/contrato-fornecimento";
 import { NovaSolicitacaoForm } from "./NovaSolicitacaoForm";
 
@@ -54,7 +55,7 @@ export default async function NovaSolicitacaoCompraPage({
   const { alvoId } = await searchParams;
   const agora = new Date();
 
-  const [materiais, fornecedores, alvoPreSelecionado, comparativoPorChave, pedidos, contratosAtivos] =
+  const [materiais, fornecedores, alvoPreSelecionado, comparativoPorChave, desempenhoPorFornecedor, pedidos, contratosAtivos] =
     await Promise.all([
       prisma.itemGrafica.findMany({
         where: { graficaId: usuario.graficaId, ativo: true, itemCatalogo: { tipo: "MATERIA_PRIMA" } },
@@ -68,6 +69,11 @@ export default async function NovaSolicitacaoCompraPage({
       }),
       resolverAlvoPreSelecionado(alvoId, usuario.graficaId),
       buscarComparativoFornecedores(usuario.graficaId),
+      // Achado A11 da auditoria de abrangência (Parte 3/Compras) — desempenho
+      // (OTIF) de TODOS os fornecedores da gráfica, agregado sobre toda
+      // compra já fechada (não escopado a este item, diferente do
+      // comparativo de preço acima).
+      buscarDesempenhoFornecedores(usuario.graficaId),
       // Pedidos elegíveis pra origem=PEDIDO_ESPECIFICO (achado A3 da auditoria
       // de abrangência, Parte 3/Compras) — CANCELADO fica de fora, não faz
       // sentido comprar material especificamente pra um pedido cancelado.
@@ -105,6 +111,12 @@ export default async function NovaSolicitacaoCompraPage({
       })),
     ])
   );
+
+  // Achado A11 — DesempenhoFornecedor só tem número/string/null (sem Date),
+  // então serializar é só trocar o Map por um objeto simples chaveado por
+  // fornecedorId, sem transformar nenhum campo (ver comentário do tipo em
+  // desempenho-fornecedor.ts).
+  const desempenhoSerializado = Object.fromEntries(desempenhoPorFornecedor.entries());
 
   const contratosAtivosSerializados: ContratoAtivoResumo[] = contratosAtivos.map((c) => ({
     id: c.id,
@@ -173,6 +185,7 @@ export default async function NovaSolicitacaoCompraPage({
             itemGraficaIdInicial={alvoPreSelecionado.itemGraficaId}
             varianteIdInicial={alvoPreSelecionado.varianteId}
             comparativoPorChave={comparativoSerializado}
+            desempenhoPorFornecedor={desempenhoSerializado}
             pedidos={pedidos.map((p) => ({ id: p.id, clienteNome: p.orcamento.cliente.nome }))}
             contratosAtivos={contratosAtivosSerializados}
           />
