@@ -10,7 +10,13 @@ import {
   obterModulosVisiveis,
 } from "@/lib/auth/permissoes";
 import { formatoMoeda } from "@/lib/moeda";
-import { formatoData, dataEhPassado } from "@/lib/data";
+import {
+  formatoData,
+  dataEhPassado,
+  dataParaInputValue,
+  inicioMesAtualBrasilia,
+  hojeBrasiliaInputValue,
+} from "@/lib/data";
 import { gerarDespesasRecorrentesPendentes } from "@/lib/despesa-recorrente";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
@@ -96,7 +102,12 @@ export default async function FinanceiroPage() {
       })
   );
 
-  const mesAtual = new Date().toISOString().slice(0, 7);
+  // Achado A16 da Parte 4 (2026-09-07): a exportação deixou de ser "foto
+  // mensal fixa" — o form agora manda intervalo livre de/até (mesmo padrão
+  // de src/app/meu-negocio/relatorios/page.tsx), com o mês corrente até
+  // hoje como sugestão inicial.
+  const deExportacaoDefault = dataParaInputValue(inicioMesAtualBrasilia());
+  const ateExportacaoDefault = hojeBrasiliaInputValue();
 
   return (
     <div className="flex flex-1 flex-col">
@@ -123,13 +134,20 @@ export default async function FinanceiroPage() {
         <Card className="mb-8 flex flex-col gap-4 p-6 sm:flex-row sm:items-end sm:justify-between">
           <form action="/financeiro/exportar" className="flex flex-wrap items-end gap-3">
             <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-slate-700 dark:text-slate-200">
-                Relatório do mês
-              </span>
+              <span className="font-medium text-slate-700 dark:text-slate-200">De</span>
               <input
-                type="month"
-                name="mes"
-                defaultValue={mesAtual}
+                type="date"
+                name="de"
+                defaultValue={deExportacaoDefault}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+              />
+            </label>
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="font-medium text-slate-700 dark:text-slate-200">Até</span>
+              <input
+                type="date"
+                name="ate"
+                defaultValue={ateExportacaoDefault}
                 className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-white"
               />
             </label>
