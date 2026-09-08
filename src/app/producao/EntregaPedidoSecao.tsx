@@ -15,10 +15,20 @@ export type EntregaResumo = {
   id: string;
   status: StatusEntrega;
   motorista: string | null;
+  // Achado D1 da auditoria de abrangência (Parte 4/Qualidade-pessoas) —
+  // vínculo INFORMATIVO opcional com Colaborador (tipo=MOTORISTA), convive
+  // com `motorista` acima (snapshot em texto, o que de fato é lido em
+  // qualquer tela) — mesmo padrão de contatoClienteId/transportadoraId. Só
+  // usado aqui pra pré-selecionar o <select> abaixo ao reabrir o form.
+  motoristaColaboradorId: string | null;
   dataSaida: string | null; // ISO
   dataEntrega: string | null; // ISO
   observacoes: string | null;
 };
+
+// Achado D1 — Colaborador ATIVO tipo=MOTORISTA, pra popular o <select>
+// opcional abaixo (ver comentário completo em producao/page.tsx).
+export type ColaboradorMotoristaOpcao = { id: string; nome: string };
 
 // Formulário de avanço/desvio — só renderizado quando existe entrega e ela
 // não está em status terminal (ENTREGUE). Mesma separação de
@@ -26,7 +36,13 @@ export type EntregaResumo = {
 // caminho "normal" (select + botão) e caminho lateral (PROBLEMA) como um
 // formulário próprio, nunca escondido dentro do mesmo select — um desvio
 // pra PROBLEMA é uma ação bem diferente de avançar a etapa.
-function FormularioAvancoEntrega({ entrega }: { entrega: EntregaResumo }) {
+function FormularioAvancoEntrega({
+  entrega,
+  colaboradoresMotoristas,
+}: {
+  entrega: EntregaResumo;
+  colaboradoresMotoristas: ColaboradorMotoristaOpcao[];
+}) {
   const [state, formAction, pending] = useActionState(avancarEntrega, null);
   const [stateProblema, formActionProblema, pendingProblema] = useActionState(avancarEntrega, null);
 
@@ -34,6 +50,21 @@ function FormularioAvancoEntrega({ entrega }: { entrega: EntregaResumo }) {
   const podeMarcarProblema = TRANSICOES_VALIDAS[entrega.status].includes("PROBLEMA");
   const [proximoStatus, setProximoStatus] = useState<StatusEntrega | null>(proximosStatus[0] ?? null);
   const [observacaoProblema, setObservacaoProblema] = useState("");
+  // Achado D1 — mesmo padrão de aoEscolherTransportadora em
+  // EditarDadosGeraisOrcamentoForm.tsx: escolher no <select> só PRÉ-PREENCHE
+  // o texto livre abaixo, que continua editável e é o que de fato é gravado.
+  const [motorista, setMotorista] = useState(entrega.motorista ?? "");
+  const [motoristaColaboradorId, setMotoristaColaboradorId] = useState(
+    entrega.motoristaColaboradorId ?? ""
+  );
+
+  function aoEscolherColaborador(id: string) {
+    setMotoristaColaboradorId(id);
+    const colaborador = colaboradoresMotoristas.find((c) => c.id === id);
+    if (colaborador) {
+      setMotorista(colaborador.nome);
+    }
+  }
 
   const mostraMotorista = proximoStatus === "EM_TRANSITO";
 
@@ -61,13 +92,32 @@ function FormularioAvancoEntrega({ entrega }: { entrega: EntregaResumo }) {
           )}
 
           {mostraMotorista && (
-            <Input
-              label="Motorista (opcional)"
-              name="motorista"
-              maxLength={120}
-              defaultValue={entrega.motorista ?? ""}
-              placeholder="Nome de quem vai levar"
-            />
+            <>
+              {colaboradoresMotoristas.length > 0 && (
+                <Select
+                  label="Motorista cadastrado"
+                  name="motoristaColaboradorId"
+                  value={motoristaColaboradorId}
+                  onChange={(e) => aoEscolherColaborador(e.target.value)}
+                  hint="Escolher preenche o campo abaixo — que continua editável"
+                >
+                  <option value="">digitar manualmente</option>
+                  {colaboradoresMotoristas.map((colaborador) => (
+                    <option key={colaborador.id} value={colaborador.id}>
+                      {colaborador.nome}
+                    </option>
+                  ))}
+                </Select>
+              )}
+              <Input
+                label="Motorista (opcional)"
+                name="motorista"
+                maxLength={120}
+                value={motorista}
+                onChange={(e) => setMotorista(e.target.value)}
+                placeholder="Nome de quem vai levar"
+              />
+            </>
           )}
 
           {state && !state.ok && <Alert variant="error">{state.mensagem}</Alert>}
@@ -123,12 +173,28 @@ export function EntregaPedidoSecao({
   pedidoId,
   entrega,
   podeEditar,
+  colaboradoresMotoristas,
 }: {
   pedidoId: string;
   entrega: EntregaResumo | null;
   podeEditar: boolean;
+  // Achado D1 da auditoria de abrangência (Parte 4/Qualidade-pessoas) —
+  // Colaboradores ATIVOS tipo=MOTORISTA da gráfica (grafica-wide, buscados
+  // uma vez em producao/page.tsx). [] é o comportamento de sempre: o
+  // <select> opcional simplesmente não aparece, só o texto livre de sempre.
+  colaboradoresMotoristas: ColaboradorMotoristaOpcao[];
 }) {
   const [state, formAction, isPending] = useActionState(criarEntrega, null);
+  const [motoristaCriacao, setMotoristaCriacao] = useState("");
+  const [motoristaColaboradorIdCriacao, setMotoristaColaboradorIdCriacao] = useState("");
+
+  function aoEscolherColaboradorCriacao(id: string) {
+    setMotoristaColaboradorIdCriacao(id);
+    const colaborador = colaboradoresMotoristas.find((c) => c.id === id);
+    if (colaborador) {
+      setMotoristaCriacao(colaborador.nome);
+    }
+  }
 
   return (
     <details className="group rounded-xl border border-slate-200 dark:border-slate-800">
@@ -174,7 +240,11 @@ export function EntregaPedidoSecao({
                 texto do botão usava entrega.status direto — o campo hidden
                 usava o state velho). Bug real encontrado testando na mão. */}
             {podeEditar && entrega.status !== "ENTREGUE" && (
-              <FormularioAvancoEntrega key={entrega.status} entrega={entrega} />
+              <FormularioAvancoEntrega
+                key={entrega.status}
+                entrega={entrega}
+                colaboradoresMotoristas={colaboradoresMotoristas}
+              />
             )}
             {entrega.status === "ENTREGUE" && (
               <p className="text-xs text-slate-500">Entregue — nenhuma ação disponível.</p>
@@ -183,7 +253,30 @@ export function EntregaPedidoSecao({
         ) : podeEditar ? (
           <form action={formAction} className="flex flex-col gap-3">
             <input type="hidden" name="pedidoId" value={pedidoId} />
-            <Input label="Motorista (opcional)" name="motorista" maxLength={120} placeholder="Nome de quem vai levar" />
+            {colaboradoresMotoristas.length > 0 && (
+              <Select
+                label="Motorista cadastrado"
+                name="motoristaColaboradorId"
+                value={motoristaColaboradorIdCriacao}
+                onChange={(e) => aoEscolherColaboradorCriacao(e.target.value)}
+                hint="Escolher preenche o campo abaixo — que continua editável"
+              >
+                <option value="">digitar manualmente</option>
+                {colaboradoresMotoristas.map((colaborador) => (
+                  <option key={colaborador.id} value={colaborador.id}>
+                    {colaborador.nome}
+                  </option>
+                ))}
+              </Select>
+            )}
+            <Input
+              label="Motorista (opcional)"
+              name="motorista"
+              maxLength={120}
+              value={motoristaCriacao}
+              onChange={(e) => setMotoristaCriacao(e.target.value)}
+              placeholder="Nome de quem vai levar"
+            />
             {state && !state.ok && <Alert variant="error">{state.mensagem}</Alert>}
             <Button type="submit" variant="outline" loading={isPending} className="self-start">
               {isPending ? "Criando..." : "Registrar entrega"}

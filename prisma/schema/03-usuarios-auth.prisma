@@ -441,3 +441,62 @@ model ResponsavelAdministrativo {
   @@index([area])
   @@map("responsaveis_administrativo")
 }
+
+// Achado D1 da auditoria de abrangência (Parte 4/Qualidade-pessoas,
+// pesquisa-abrangencia-modulos.md) — "colaborador sem login": motorista
+// terceirizado, operador de chão de fábrica ou qualquer pessoa que a gráfica
+// precisa referenciar por nome mas que NUNCA loga no sistema. Hoje esse
+// conceito só existe como texto livre solto (Entrega.motorista,
+// ApontamentoEtapa.operadorNomeDeclarado) — este model dá um cadastro
+// reaproveitável (nome + telefone + tipo) pra não repetir o nome à mão toda
+// vez, sem tocar em Usuario.
+//
+// DECISÃO DE DESIGN (proposta antiga do achado, "relaxar email/senhaHash de
+// Usuario", foi REJEITADA numa revisão posterior — contaminaria toda a
+// cadeia de auth/sessão/billing, que depende de Usuario.email/senhaHash
+// sempre preenchidos): model NOVO, simples, INTENCIONALMENTE fora do sistema
+// de auth — sem email, sem senhaHash, sem PapelUsuario/PermissaoUsuario, sem
+// Sessao. Mora neste arquivo (não em 01-grafica.prisma nem
+// 10-producao.prisma) por ser conceitualmente "gente", mesmo raciocínio de
+// domínio que já mantém Usuario aqui — mesmo sem nenhum vínculo direto de
+// auth com ele.
+// SEM @@unique([graficaId, nome]) de propósito, diferente de
+// Transportadora/Fornecedor/PrestadorServico: aqueles são nome de EMPRESA
+// (raro colidir); aqui é nome de PESSOA, onde duas pessoas com o mesmo nome
+// (ex: dois motoristas chamados "José") são um caso real, não erro de
+// digitação.
+model Colaborador {
+  id        String          @id @default(cuid())
+  graficaId String
+  nome      String
+  tipo      TipoColaborador @default(OUTRO)
+  // Preenchido só quando tipo=OUTRO — mesmo padrão enum-fechado+OUTRO usado
+  // em dezenas de outros models deste repo (ver comentário de padrão #1 em
+  // arquitetura-resumo.md), validado na Server Action, nunca CHECK no banco.
+  tipoOutro String?
+  telefone  String?
+  // Soft-delete — mesmo princípio de Transportadora.ativa/Fornecedor.ativo:
+  // um colaborador referenciado em Entrega.motoristaColaboradorId não pode
+  // ser removido de verdade sem quebrar o histórico, só sai da lista de
+  // seleção pra novo uso (ver onDelete: SetNull em Entrega).
+  ativo     Boolean         @default(true)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  grafica  Grafica   @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  entregas Entrega[] @relation("EntregaMotoristaColaborador")
+
+  @@index([graficaId])
+  @@index([graficaId, tipo])
+  @@map("colaboradores")
+}
+
+// Fechado + OUTRO (ver padrão #1 do repo) — os dois papéis reais levantados
+// na pesquisa de mercado do achado D1 (motorista terceirizado/freelancer e
+// operador de chão de fábrica sem login), mais o escape de sempre pra
+// qualquer outro papel que apareça na prática.
+enum TipoColaborador {
+  MOTORISTA
+  OPERADOR_CHAO_FABRICA
+  OUTRO
+}

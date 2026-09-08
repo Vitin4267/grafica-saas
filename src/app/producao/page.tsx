@@ -247,7 +247,7 @@ export default async function ProducaoPage({
   await verificarEDispararAlertasAtraso(usuario.graficaId, usuario.grafica.nome);
   const origem = await resolverOrigemPublica();
 
-  const [todosPedidos, clientes, responsaveisEstagio, maquinasSelecionaveis, fornecedoresAtivos, solicitacoesCompraAtivas, etapas, dadosFiscaisGrafica, registrosManutencaoAtivos] = await Promise.all([
+  const [todosPedidos, clientes, responsaveisEstagio, maquinasSelecionaveis, fornecedoresAtivos, colaboradoresMotoristas, solicitacoesCompraAtivas, etapas, dadosFiscaisGrafica, registrosManutencaoAtivos] = await Promise.all([
     prisma.pedido.findMany({
       where: {
         graficaId: usuario.graficaId,
@@ -362,6 +362,17 @@ export default async function ProducaoPage({
     // TerceirizacaoPedidoSecao em toda linha, sem N+1.
     prisma.fornecedor.findMany({
       where: { graficaId: usuario.graficaId, ativo: true },
+      select: { id: true, nome: true },
+      orderBy: { nome: "asc" },
+    }),
+    // Achado D1 da auditoria de abrangência (Parte 4/Qualidade-pessoas) —
+    // mesmo espírito de fornecedoresAtivos acima: buscada UMA VEZ
+    // (grafica-wide, não por pedido) pra alimentar o <select> opcional de
+    // motorista dentro de EntregaPedidoSecao. Só tipo=MOTORISTA (não lista
+    // OPERADOR_CHAO_FABRICA/OUTRO aqui — sem sentido pra "quem leva a
+    // entrega") e só ATIVOS.
+    prisma.colaborador.findMany({
+      where: { graficaId: usuario.graficaId, ativo: true, tipo: "MOTORISTA" },
       select: { id: true, nome: true },
       orderBy: { nome: "asc" },
     }),
@@ -611,12 +622,14 @@ export default async function ProducaoPage({
                         id: pedido.entrega.id,
                         status: pedido.entrega.status,
                         motorista: pedido.entrega.motorista,
+                        motoristaColaboradorId: pedido.entrega.motoristaColaboradorId,
                         dataSaida: pedido.entrega.dataSaida ? pedido.entrega.dataSaida.toISOString() : null,
                         dataEntrega: pedido.entrega.dataEntrega ? pedido.entrega.dataEntrega.toISOString() : null,
                         observacoes: pedido.entrega.observacoes,
                       }
                     : null
                 }
+                colaboradoresMotoristas={colaboradoresMotoristas}
                 terceirizacoes={mapearTerceirizacoes(pedido.etapasTerceirizadas, podeVerCustos)}
                 fornecedores={fornecedoresAtivos}
                 focusNfeConfigurado={focusNfeConfigurado}

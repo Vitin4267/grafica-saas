@@ -167,6 +167,10 @@ model Grafica {
   // Achado F8 da Parte 7 da auditoria de abrangência — ver model
   // CorEspecialCliente (05-clientes.prisma).
   coresEspeciaisCliente CorEspecialCliente[]
+  // Achado D1 da auditoria de abrangência (Parte 4/pessoas,
+  // pesquisa-abrangencia-modulos.md) — ver model Colaborador
+  // (03-usuarios-auth.prisma).
+  colaboradores         Colaborador[]
 
   @@map("graficas")
 }
