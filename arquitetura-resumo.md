@@ -163,6 +163,54 @@ comportamento.
   papel/gramatura/páginas (mesmo gap já aceito em N8/Offset); capa não soma
   lombada.
 
+## Atualização 2026-09-06/07 — Compras A1+A2, A8/Filial, 2 campos órfãos, multi-cargo
+
+- **Compras — comprar fora do catálogo + custo de aquisição real (achados
+  A1+A2):** `SolicitacaoCompra.itemGraficaId` agora nullable +
+  `descricaoLivre` (compra sem alvo estruturado — clichê terceirizado, peça
+  de manutenção, EPI) + enum `TipoCompra` (MATERIA_PRIMA/
+  SERVICO_TERCEIRIZADO/PECA_MANUTENCAO/EQUIPAMENTO/CONSUMO_INTERNO/OUTRO).
+  `avancarStatusCompra`: `MovimentacaoEstoque` em RECEBIDO só quando
+  `tipoCompra=MATERIA_PRIMA` E `itemGraficaId` preenchido. Novos
+  `valorFrete`/`valorIpi`/`valorIcmsCreditavel`/`valorDesconto` (Decimal?) +
+  `calcularCustoAquisicaoTotal` (`src/lib/custo-aquisicao-compra.ts`, pura,
+  não persistida) — substitui `valorFinal` em TODA derivação de
+  `custoUnitario` (inclui `MovimentacaoEstoque` E `CustoPedido` origem
+  COMPRA).
+- **Clientes/Fiscal — identidade visual por filial (achado A8, restante):**
+  `Filial.telefone`/`emailContato`/`logoUrl`/`corPrimaria` (opcionais,
+  sobrepõem o da Grafica só quando preenchidos) — `resolverIdentidadeVisual`
+  (`src/lib/pdf/mapear-dados.ts`). PDF (autenticado + link público) inclui
+  filial via `select` (nunca `include` — não vaza dado fiscal/endereço da
+  filial pro PDF).
+- **Configurações — 2 campos órfãos destravados:**
+  `ParametrosGrafica.comissaoSegueVendedorDoCliente` e
+  `paginasPorCadernoPadrao` existiam no schema e eram lidos de verdade, mas
+  não tinham NENHUMA tela — agora em `/configuracoes`. Verificação pontual
+  (não achado formal da auditoria) depois de feedback do cliente-piloto
+  ("faltam configurações") — zero campo órfão em `ParametrosGrafica` agora.
+- **Auth — cargos com permissão pré-configurada, multi-cargo por usuário
+  (feature de produto, não achado da auditoria):** `Usuario.perfilAcessoId`
+  (FK única) removido, substituído por `PerfilUsuario` (N:N) — um usuário
+  pode ter VÁRIOS cargos ao mesmo tempo (ex: Vendedor E Financeiro, 1 login
+  só), permissão somada por UNIÃO (OR) entre todos os cargos pro mesmo
+  módulo (`resolverPermissaoOperador`/`obterModulosVisiveis` em
+  `src/lib/auth/permissoes.ts`) — override individual (`PermissaoUsuario`)
+  continua vencendo sempre. `PerfilAcesso.funcaoBase` (enum `FuncaoPerfil`
+  novo, nullable) marca os 6 cargos PRÉ-SEMEADOS (Vendedor/Financeiro/
+  Produção/Compras/Administrativo/Atendimento —
+  `garantirPerfisAcessoPadrao` em `src/lib/perfis-acesso-padrao.ts`, mesmo
+  padrão lazy-bootstrap de `garantirCategoriasCustoPadrao`; só semeia se a
+  gráfica tiver ZERO `PerfilAcesso`) — distinto do `nome`, que o DONO
+  renomeia livremente. Cadastro de usuário ganhou checkbox múltiplo de
+  cargos na criação (antes exigia um passo separado depois).
+  `Orcamento.vendedorUsuarioId` (FK opcional, mesmo padrão de
+  `condicaoPagamentoId`) substitui o texto livre `vendedor` (que continua
+  como snapshot editável) — `buscarUsuariosVendedores` (`src/lib/usuarios-
+  vendedores.ts`) lista quem tem cargo Vendedor + DONO/ADMIN; mesmo helper
+  corrigiu `Cliente.vendedorId` (achado A8/Clientes), que antes listava
+  TODOS os usuários ativos por falta desse sinal.
+
 ---
 
 ## Índice
