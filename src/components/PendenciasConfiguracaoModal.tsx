@@ -7,10 +7,19 @@ import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import type { PendenciaConfiguracao } from "@/lib/pendencias-configuracao";
+import { formatoMoeda } from "@/lib/moeda";
 import { obterPendenciasConfiguracao, responderPendenciaBobina } from "./PendenciasConfiguracaoModal.actions";
 
 const SELETOR_FOCAVEL =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
+
+// Só pra exibir o percentual decimal (0.09972) como "9,97%" na pendência de
+// alíquota do Simples — mesmo raciocínio de arredondamento de qualquer
+// exibição de percentual no sistema, sem virar um helper compartilhado por
+// um único uso.
+function formatarPercentual(decimal: number): string {
+  return `${(decimal * 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+}
 
 // Widget autossuficiente, sem props — mesmo padrão de ChatAssistente.tsx:
 // evita ter que passar prop nova em ~40 páginas que já renderizam <UserNav>.
@@ -154,6 +163,43 @@ export function PendenciasConfiguracaoModal() {
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm shadow-teal-600/20 transition-colors hover:bg-teal-700"
               >
                 Ir pro Catálogo
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {pendencia.tipo === "ALIQUOTA_SIMPLES_ACIMA_DO_CONFIGURADO" && (
+          <div className="flex flex-col gap-4">
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+              Imposto configurado abaixo da alíquota real do Simples
+            </h2>
+            <p className="text-sm text-slate-500">
+              Com o faturamento apurado dos últimos 12 meses ({formatoMoeda.format(pendencia.rbt12)}), a
+              faixa do Simples Nacional (Anexo III) aponta uma alíquota efetiva de{" "}
+              <strong>{formatarPercentual(pendencia.aliquotaEfetiva)}</strong> — acima do{" "}
+              <strong>{formatarPercentual(pendencia.impostoConfigurado)}</strong> configurado hoje em
+              Imposto (%). Seus orçamentos podem estar sendo precificados reservando menos imposto do
+              que sua gráfica paga de verdade, comendo a margem sem aviso.
+            </p>
+            <p className="text-xs text-slate-500">
+              Isso não é um erro nem trava nada — é só um cálculo de referência (Anexo III, o mais comum
+              pra gráfica). Se sua gráfica está em outro anexo do Simples, o número pode não bater
+              exatamente. Ajuste o campo Imposto (%) em Configurações se fizer sentido.
+            </p>
+            <div className="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={aoFechar}
+                className="text-xs font-medium text-slate-500 hover:text-slate-700 hover:underline dark:text-slate-400 dark:hover:text-slate-200"
+              >
+                Depois
+              </button>
+              <Link
+                href="/configuracoes"
+                onClick={aoFechar}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm shadow-teal-600/20 transition-colors hover:bg-teal-700"
+              >
+                Ir pra Configurações
               </Link>
             </div>
           </div>

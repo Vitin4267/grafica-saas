@@ -9,6 +9,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // mockResolvedValueOnce em sequência.
 const findManyMock = vi.fn();
 const countMock = vi.fn();
+// Achado A10 — mockado à parte (não via prisma direto) porque
+// calcularSituacaoAliquotaSimples mora em simples-nacional-db.ts, testado
+// isoladamente em simples-nacional.test.ts (a matemática) e por mock aqui
+// (a integração). Default null em todo teste que não é sobre A10 — "não se
+// aplica" (regime != SIMPLES_NACIONAL ou fiscal não cadastrado), sem
+// pendência.
+const situacaoAliquotaSimplesMock = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -19,12 +26,18 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
+vi.mock("@/lib/simples-nacional-db", () => ({
+  calcularSituacaoAliquotaSimples: (...args: unknown[]) => situacaoAliquotaSimplesMock(...args),
+}));
+
 import { listarPendenciasConfiguracao } from "./pendencias-configuracao";
 
 describe("listarPendenciasConfiguracao", () => {
   beforeEach(() => {
     findManyMock.mockReset();
     countMock.mockReset();
+    situacaoAliquotaSimplesMock.mockReset();
+    situacaoAliquotaSimplesMock.mockResolvedValue(null);
   });
 
   it("retorna array vazio quando não há pendência nenhuma", async () => {
@@ -126,5 +139,66 @@ describe("listarPendenciasConfiguracao", () => {
         nomeProduto: "Camiseta Estampada",
       },
     ]);
+  });
+
+  // Achado A10 (Parte 4/Financeiro) — impostoPercent desatualizado em
+  // relação à alíquota efetiva real do Simples Nacional.
+  it("RBT12 baixo (alíquota efetiva dentro do impostoPercent configurado): sem pendência", async () => {
+    findManyMock.mockResolvedValueOnce([]); // bobina: ok
+    countMock.mockResolvedValueOnce(1); // early-out do check de papel
+    findManyMock.mockResolvedValueOnce([]); // máquina: ok
+    // RBT12 baixo, 1ª faixa (6% nominal == efetiva), igual ao default de
+    // impostoPercent — não supera, sem pendência.
+    situacaoAliquotaSimplesMock.mockResolvedValueOnce({
+      faixaIndice: 0,
+      aliquotaNominal: 0.06,
+      parcelaDedutivel: 0,
+      aliquotaEfetiva: 0.06,
+      rbt12: 100_000,
+      impostoConfigurado: 0.06,
+    });
+
+    const pendencias = await listarPendenciasConfiguracao("grafica-1");
+
+    expect(pendencias).toEqual([]);
+  });
+
+  it("RBT12 alto (alíquota efetiva acima do impostoPercent configurado): gera pendência", async () => {
+    findManyMock.mockResolvedValueOnce([]); // bobina: ok
+    countMock.mockResolvedValueOnce(1); // early-out do check de papel
+    findManyMock.mockResolvedValueOnce([]); // máquina: ok
+    // RBT12 de R$500.000 (3ª faixa do Anexo III) ~9,972% efetivo, gráfica
+    // ainda configurada com o default de 6% — dispara a pendência.
+    situacaoAliquotaSimplesMock.mockResolvedValueOnce({
+      faixaIndice: 2,
+      aliquotaNominal: 0.135,
+      parcelaDedutivel: 17_640,
+      aliquotaEfetiva: 0.09972,
+      rbt12: 500_000,
+      impostoConfigurado: 0.06,
+    });
+
+    const pendencias = await listarPendenciasConfiguracao("grafica-1");
+
+    expect(pendencias).toEqual([
+      {
+        tipo: "ALIQUOTA_SIMPLES_ACIMA_DO_CONFIGURADO",
+        rbt12: 500_000,
+        aliquotaEfetiva: 0.09972,
+        impostoConfigurado: 0.06,
+        faixaIndice: 2,
+      },
+    ]);
+  });
+
+  it("calcularSituacaoAliquotaSimples devolve null (regime != Simples ou fiscal não cadastrado): sem pendência", async () => {
+    findManyMock.mockResolvedValueOnce([]);
+    countMock.mockResolvedValueOnce(1);
+    findManyMock.mockResolvedValueOnce([]);
+    situacaoAliquotaSimplesMock.mockResolvedValueOnce(null);
+
+    const pendencias = await listarPendenciasConfiguracao("grafica-1");
+
+    expect(pendencias).toEqual([]);
   });
 });

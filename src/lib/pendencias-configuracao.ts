@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
+import { calcularSituacaoAliquotaSimples } from "@/lib/simples-nacional-db";
 
 // Registro de pendências de configuração que o DONO precisa resolver pra
 // deixar o sistema pronto pra usar — mostrado como um "questionário" assim
@@ -27,6 +28,20 @@ export type PendenciaConfiguracao =
       tipo: "MAQUINA_NAO_VINCULADA";
       itemGraficaId: string;
       nomeProduto: string;
+    }
+  | {
+      // Achado A10 da Parte 4 da auditoria de abrangência (2026-09-07) —
+      // ParametrosGrafica.impostoPercent é fixo, mas no Simples Nacional a
+      // alíquota efetiva CRESCE com o RBT12 (faturamento acumulado nos
+      // últimos 12 meses). Dispara quando a alíquota efetiva apurada pra
+      // faixa atual do Anexo III supera o que está configurado — a gráfica
+      // continua precificando com o percentual antigo enquanto paga mais
+      // imposto de verdade. Ver src/lib/simples-nacional(-db).ts.
+      tipo: "ALIQUOTA_SIMPLES_ACIMA_DO_CONFIGURADO";
+      rbt12: number;
+      aliquotaEfetiva: number;
+      impostoConfigurado: number;
+      faixaIndice: number;
     };
 
 export async function listarPendenciasConfiguracao(
@@ -116,5 +131,23 @@ export async function listarPendenciasConfiguracao(
     nomeProduto: item.itemCatalogo.nome,
   }));
 
-  return [...pendenciasBobina, ...pendenciasPapel, ...pendenciasMaquina];
+  // Achado A10 — só se aplica no Simples Nacional (calcularSituacaoAliquotaSimples
+  // devolve null pra Presumido/Real ou fiscal ainda não cadastrado). Sem
+  // motor tributário completo: só avisa quando a alíquota efetiva apurada
+  // supera o que está configurado, nunca ajusta nada sozinho.
+  const situacaoSimples = await calcularSituacaoAliquotaSimples(graficaId);
+  const pendenciasImposto: PendenciaConfiguracao[] =
+    situacaoSimples && situacaoSimples.aliquotaEfetiva > situacaoSimples.impostoConfigurado
+      ? [
+          {
+            tipo: "ALIQUOTA_SIMPLES_ACIMA_DO_CONFIGURADO" as const,
+            rbt12: situacaoSimples.rbt12,
+            aliquotaEfetiva: situacaoSimples.aliquotaEfetiva,
+            impostoConfigurado: situacaoSimples.impostoConfigurado,
+            faixaIndice: situacaoSimples.faixaIndice,
+          },
+        ]
+      : [];
+
+  return [...pendenciasBobina, ...pendenciasPapel, ...pendenciasMaquina, ...pendenciasImposto];
 }

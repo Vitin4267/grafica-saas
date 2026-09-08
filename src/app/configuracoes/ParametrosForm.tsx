@@ -18,6 +18,64 @@ import {
   type UnidadeDimensao,
 } from "@/lib/unidade-dimensao";
 import { TERMOS_CONDICOES_PDF_PADRAO } from "@/lib/pdf/termos-padrao";
+import type { SituacaoAliquotaSimples } from "@/lib/simples-nacional-db";
+import { formatoMoeda } from "@/lib/moeda";
+
+function formatarPercentual(decimal: number): string {
+  return `${(decimal * 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+}
+
+// Achado A10 da Parte 4 da auditoria de abrangência (2026-09-07) — contexto
+// informativo ao lado do campo Imposto (%): faixa de referência do Simples
+// Nacional (Anexo III) pro RBT12 apurado da própria gráfica, pra quem
+// configura o percentual não fazer isso "no escuro". Não bloqueia nem
+// ajusta nada sozinho — só mostra o número de referência (a pendência de
+// configuração, quando a efetiva supera o configurado, é o aviso ativo, ver
+// PendenciasConfiguracaoModal.tsx).
+function ReferenciaSimplesNacional({
+  situacao,
+}: {
+  situacao: SituacaoAliquotaSimples | null;
+}) {
+  if (!situacao) {
+    return (
+      <p className="text-xs text-slate-500">
+        Referência de alíquota do Simples Nacional só aparece aqui quando o regime tributário
+        (Configurações {"›"} Fiscal) está definido como Simples Nacional.
+      </p>
+    );
+  }
+
+  const acimaDoConfigurado = situacao.aliquotaEfetiva > situacao.impostoConfigurado;
+
+  return (
+    <div
+      className={`flex flex-col gap-1 rounded-xl border p-3 text-xs ${
+        acimaDoConfigurado
+          ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+          : "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-300"
+      }`}
+    >
+      <p>
+        Faturamento apurado (RBT12, últimos 12 meses): <strong>{formatoMoeda.format(situacao.rbt12)}</strong>
+        {" — "}faixa {situacao.faixaIndice + 1} do Anexo III (Simples Nacional), alíquota nominal{" "}
+        {formatarPercentual(situacao.aliquotaNominal)}.
+      </p>
+      <p>
+        Alíquota efetiva calculada: <strong>{formatarPercentual(situacao.aliquotaEfetiva)}</strong>
+        {acimaDoConfigurado ? (
+          <> — acima do {formatarPercentual(situacao.impostoConfigurado)} configurado ao lado.</>
+        ) : (
+          <> — dentro do {formatarPercentual(situacao.impostoConfigurado)} configurado ao lado.</>
+        )}
+      </p>
+      <p className="text-[11px] opacity-80">
+        Referência do Anexo III (o mais comum pra serviço/indústria gráfica) — se sua gráfica está em
+        outro anexo do Simples, o número pode não bater exatamente.
+      </p>
+    </div>
+  );
+}
 
 // Convenção do bitmask de ParametrosGrafica.diasFuncionamento (ver comentário
 // no schema): bit0=segunda...bit6=domingo.
@@ -96,6 +154,7 @@ export function ParametrosForm({
   diasAlertaValidadeEstoque,
   comissaoSegueVendedorDoCliente,
   paginasPorCadernoPadrao,
+  situacaoAliquotaSimples,
 }: {
   parametros: ParametrosTenant;
   comissaoVendedorBase: BaseComissao;
@@ -128,6 +187,7 @@ export function ParametrosForm({
   diasAlertaValidadeEstoque: number;
   comissaoSegueVendedorDoCliente: boolean;
   paginasPorCadernoPadrao: number;
+  situacaoAliquotaSimples: SituacaoAliquotaSimples | null;
 }) {
   const [state, formAction, isPending] = useActionState(salvarParametros, null);
 
@@ -183,6 +243,9 @@ export function ParametrosForm({
               min="0"
               defaultValue={parametros.impostoPercent}
             />
+            <div className="sm:col-span-2">
+              <ReferenciaSimplesNacional situacao={situacaoAliquotaSimples} />
+            </div>
             <Input
               label={
                 <>

@@ -12,6 +12,7 @@ import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { MailIcon } from "@/components/icons";
 import { montarUrlSuporte } from "@/lib/suporte";
+import { calcularSituacaoAliquotaSimples } from "@/lib/simples-nacional-db";
 import { ParametrosForm } from "./ParametrosForm";
 
 export default async function ConfiguracoesPage() {
@@ -99,6 +100,12 @@ export default async function ConfiguracoesPage() {
   // carregado por exigirUsuarioAutenticado (include: usuario.grafica), então
   // não precisa de outra query.
   const unidadePadraoDimensao = usuario.grafica.unidadePadraoDimensao;
+
+  // Achado A10 da Parte 4 da auditoria de abrangência (2026-09-07) —
+  // contexto informativo ao lado do campo Imposto (%), ver
+  // ReferenciaSimplesNacional em ParametrosForm.tsx. null quando o regime
+  // não é Simples Nacional ou fiscal ainda não foi cadastrado.
+  const situacaoAliquotaSimples = await calcularSituacaoAliquotaSimples(usuario.graficaId);
 
   const urlSuporte = montarUrlSuporte({
     nome: usuario.nome,
@@ -188,6 +195,7 @@ export default async function ConfiguracoesPage() {
           diasAlertaValidadeEstoque={diasAlertaValidadeEstoque}
           comissaoSegueVendedorDoCliente={comissaoSegueVendedorDoCliente}
           paginasPorCadernoPadrao={paginasPorCadernoPadrao}
+          situacaoAliquotaSimples={situacaoAliquotaSimples}
         />
       </main>
     </div>

@@ -49,7 +49,15 @@ export default async function CatalogoPage() {
   const pendenciasConfiguracao = statusOnboarding.completo
     ? await listarPendenciasConfiguracao(usuario.graficaId)
     : [];
-  const itemGraficaIdsComPendencia = pendenciasConfiguracao.map((p) => p.itemGraficaId);
+  // Achado A10 (Parte 4/Financeiro) acrescentou um tipo de pendência que não
+  // é sobre um item de catálogo específico (ALIQUOTA_SIMPLES_ACIMA_DO_CONFIGURADO,
+  // sem itemGraficaId) — filtra antes de mapear pro badge desta tela, que só
+  // faz sentido pras pendências por produto.
+  const itemGraficaIdsComPendencia = pendenciasConfiguracao
+    .filter(
+      (p): p is Extract<typeof p, { itemGraficaId: string }> => "itemGraficaId" in p
+    )
+    .map((p) => p.itemGraficaId);
   // Mesmo gate acima — aviso de preço parado não faz sentido no meio do
   // cadastro inicial (achado A1-Parte6 da auditoria de abrangência,
   // 2026-08-24).
