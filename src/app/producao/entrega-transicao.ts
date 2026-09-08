@@ -27,6 +27,11 @@ export type EntregaParaTransicao = {
 // DadosTransicaoCompra em src/app/compras/status-transicao.ts.
 export type DadosTransicaoEntrega = {
   motorista?: string | null;
+  // Achado D1 da auditoria de abrangência (Parte 4/Qualidade-pessoas) —
+  // vínculo INFORMATIVO opcional com Colaborador, ADITIVO a `motorista`
+  // acima (mesmo contrato — undefined = não mexer, null = limpar). Validado
+  // (existe/graficaId bate) em quem chama (./entrega-actions.ts), não aqui.
+  motoristaColaboradorId?: string | null;
   observacoes?: string | null;
 };
 
@@ -65,8 +70,18 @@ export async function avancarStatusEntrega(
     return { ok: false, mensagem: "Descreva o problema antes de marcar a entrega como Problema." };
   }
 
-  const dadosUpdate: Prisma.EntregaUpdateManyMutationInput = { status: proximoStatus };
+  // Record<string, unknown> (não Prisma.EntregaUpdateManyMutationInput
+  // direto) pro campo motoristaColaboradorId — mesmo contorno de
+  // avancarStatusCompra/avancarSituacaoTerceirizacao
+  // (src/app/compras/status-transicao.ts, terceirizacao-transicao.ts): o
+  // campo escalar de uma FK opcional (motoristaColaboradorId, ligada a
+  // Colaborador) não aparece no tipo "checked" gerado pra updateMany, só no
+  // "Unchecked". Casteado só no ponto de uso, abaixo.
+  const dadosUpdate: Record<string, unknown> = { status: proximoStatus };
   if (dados.motorista !== undefined) dadosUpdate.motorista = dados.motorista;
+  if (dados.motoristaColaboradorId !== undefined) {
+    dadosUpdate.motoristaColaboradorId = dados.motoristaColaboradorId;
+  }
   if (dados.observacoes !== undefined) dadosUpdate.observacoes = dados.observacoes;
 
   // dataSaida/dataEntrega só são preenchidas na PRIMEIRA vez que a entrega
@@ -84,7 +99,7 @@ export async function avancarStatusEntrega(
 
   const resultado = await prisma.entrega.updateMany({
     where: { id: entrega.id, status: statusAnterior },
-    data: dadosUpdate,
+    data: dadosUpdate as Prisma.EntregaUncheckedUpdateManyInput,
   });
   if (resultado.count === 0) {
     return { ok: false, mensagem: MENSAGEM_CONFLITO };

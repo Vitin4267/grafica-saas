@@ -14,6 +14,28 @@ const MENSAGEM_SEM_PERMISSAO = "Você não tem permissão pra editar a produçã
 
 export type CriarEntregaResult = { ok: boolean; mensagem: string };
 
+// Achado D1 da auditoria de abrangência (Parte 4/Qualidade-pessoas) — lê o
+// motoristaColaboradorId opcional da FormData e confirma que pertence à
+// MESMA gráfica (nunca confia no id vindo do client — padrão #1 do repo).
+// String vazia (opção "digitar manualmente" do <select>) = sem vínculo.
+async function resolverMotoristaColaboradorId(
+  formData: FormData,
+  graficaId: string
+): Promise<{ ok: true; id: string | null } | { ok: false; mensagem: string }> {
+  const motoristaColaboradorId = String(formData.get("motoristaColaboradorId") ?? "").trim();
+  if (!motoristaColaboradorId) {
+    return { ok: true, id: null };
+  }
+  const colaborador = await prisma.colaborador.findFirst({
+    where: { id: motoristaColaboradorId, graficaId },
+    select: { id: true },
+  });
+  if (!colaborador) {
+    return { ok: false, mensagem: "Colaborador selecionado não encontrado." };
+  }
+  return { ok: true, id: colaborador.id };
+}
+
 // Cria a Entrega (1:1, sempre nasce em AGUARDANDO — ver default do schema)
 // de um pedido que ainda não tem uma. Gate PRODUCAO (não um módulo novo, ver
 // tarefa) — mesmo módulo que já controla o resto da fila em
@@ -32,6 +54,10 @@ export async function criarEntrega(
 
   const pedidoId = String(formData.get("pedidoId") ?? "");
   const motorista = String(formData.get("motorista") ?? "").trim().slice(0, 120) || null;
+  const resolucaoColaborador = await resolverMotoristaColaboradorId(formData, usuario.graficaId);
+  if (!resolucaoColaborador.ok) {
+    return resolucaoColaborador;
+  }
 
   const pedido = await prisma.pedido.findFirst({
     where: { id: pedidoId, graficaId: usuario.graficaId },
@@ -48,7 +74,12 @@ export async function criarEntrega(
   }
 
   const entrega = await prisma.entrega.create({
-    data: { graficaId: usuario.graficaId, pedidoId, motorista },
+    data: {
+      graficaId: usuario.graficaId,
+      pedidoId,
+      motorista,
+      motoristaColaboradorId: resolucaoColaborador.id,
+    },
   });
 
   await registrarAuditoria({
@@ -116,6 +147,18 @@ export async function avancarEntrega(
 
   const motoristaBruto = campoOpcionalTransicao(formData, "motorista");
   const observacoesBruto = campoOpcionalTransicao(formData, "observacoes");
+  // Achado D1 — mesmo contrato de campoOpcionalTransicao (campo AUSENTE =
+  // não mexer), mas presente-e-vazio aqui sempre significa "sem vínculo"
+  // (não existe "limpar só o vínculo, manter o texto" no form), então
+  // resolverMotoristaColaboradorId já cobre os dois casos de string vazia.
+  let motoristaColaboradorId: string | null | undefined;
+  if (formData.has("motoristaColaboradorId")) {
+    const resolucaoColaborador = await resolverMotoristaColaboradorId(formData, usuario.graficaId);
+    if (!resolucaoColaborador.ok) {
+      return resolucaoColaborador;
+    }
+    motoristaColaboradorId = resolucaoColaborador.id;
+  }
 
   const entregaParaTransicao: EntregaParaTransicao = {
     id: entrega.id,
@@ -129,6 +172,7 @@ export async function avancarEntrega(
 
   const resultado = await avancarStatusEntrega(entregaParaTransicao, proximoStatus, {
     motorista: motoristaBruto,
+    motoristaColaboradorId,
     observacoes: observacoesBruto,
   });
 

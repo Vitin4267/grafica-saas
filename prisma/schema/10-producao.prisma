@@ -487,6 +487,19 @@ model Entrega {
   // tabela própria.
   motorista String?
 
+  // Achado D1 da auditoria de abrangência (Parte 4/Qualidade-pessoas) —
+  // vínculo INFORMATIVO opcional com um Colaborador cadastrado
+  // (03-usuarios-auth.prisma, tipo=MOTORISTA), ADITIVO ao texto livre acima
+  // (mesmo padrão de FK-opcional-lado-a-lado-do-texto usado em
+  // contatoClienteId/transportadoraId/condicaoPagamentoId): escolher aqui só
+  // PRÉ-PREENCHE `motorista`, que continua existindo, editável e sendo o que
+  // de fato é lido em qualquer tela/PDF — nunca a FK direto (protege contra
+  // edição/desativação posterior do cadastro). Criar/editar uma entrega sem
+  // escolher colaborador continua funcionando exatamente como antes. SetNull
+  // (não Restrict): desativar/remover o colaborador não pode travar a
+  // entrega nem apagar o snapshot de texto já preenchido.
+  motoristaColaboradorId String?
+
   dataSaida   DateTime?
   dataEntrega DateTime?
 
@@ -513,12 +526,14 @@ model Entrega {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  grafica        Grafica         @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  pedido         Pedido          @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
-  transportadora Transportadora? @relation(fields: [transportadoraId], references: [id], onDelete: SetNull)
+  grafica             Grafica         @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  pedido              Pedido          @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  transportadora      Transportadora? @relation(fields: [transportadoraId], references: [id], onDelete: SetNull)
+  motoristaColaborador Colaborador?   @relation("EntregaMotoristaColaborador", fields: [motoristaColaboradorId], references: [id], onDelete: SetNull)
 
   @@index([graficaId])
   @@index([transportadoraId])
+  @@index([motoristaColaboradorId])
   @@map("entregas")
 }
 

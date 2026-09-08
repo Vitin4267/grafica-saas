@@ -1145,6 +1145,27 @@ export function ParametrosForm({
           </Link>
         </Card>
 
+        {/* Achado D1 da auditoria de abrangência (Parte 4/Qualidade-pessoas)
+            — colaborador sem login (motorista terceirizado, operador de
+            chão de fábrica). */}
+        <Card className="flex items-center justify-between gap-4 p-6">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+              Colaboradores
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Motorista terceirizado, operador de chão de fábrica — gente que
+              nunca loga no sistema, mas aparece como opção ao preencher o
+              motorista de uma entrega.
+            </p>
+          </div>
+          <Link href="/configuracoes/colaboradores">
+            <Button type="button" variant="outline">
+              Gerenciar colaboradores
+            </Button>
+          </Link>
+        </Card>
+
         {/* Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04) —
             cadastro de "onde o dinheiro está" pra vincular em Pagamento/
             Despesa; ver model ContaFinanceira no schema. */}

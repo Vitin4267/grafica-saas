@@ -20,7 +20,11 @@ import {
 } from "./IniciarImpressaoConfirm";
 import { EnviarArteForm } from "./EnviarArteForm";
 import { CustosPedidoSecao } from "./CustosPedidoSecao";
-import { EntregaPedidoSecao, type EntregaResumo } from "./EntregaPedidoSecao";
+import {
+  EntregaPedidoSecao,
+  type EntregaResumo,
+  type ColaboradorMotoristaOpcao,
+} from "./EntregaPedidoSecao";
 import {
   TerceirizacaoPedidoSecao,
   type TerceirizacaoResumo,
@@ -74,6 +78,7 @@ export function PedidoLinha({
   custos,
   lucro,
   entrega,
+  colaboradoresMotoristas,
   terceirizacoes,
   fornecedores,
   focusNfeConfigurado,
@@ -142,6 +147,11 @@ export function PedidoLinha({
   // não faz sentido) — a seção inteira nem é renderizada nesse caso, mesmo
   // critério de "ainda não construído" que o resto da tela usa.
   entrega: EntregaResumo | null;
+  // Achado D1 da auditoria de abrangência (Parte 4/Qualidade-pessoas) —
+  // Colaboradores ATIVOS tipo=MOTORISTA da gráfica (grafica-wide, buscados
+  // uma vez em producao/page.tsx, mesmo padrão de `fornecedores` abaixo) pra
+  // popular o seletor opcional de motorista dentro de EntregaPedidoSecao.
+  colaboradoresMotoristas: ColaboradorMotoristaOpcao[];
   // Achado E1 — terceirizações registradas pra este pedido (todas, não só a
   // ativa — ver TerceirizacaoPedidoSecao.tsx) e as opções de Fornecedor
   // ativas da gráfica (grafica-wide, buscadas uma vez em producao/page.tsx)
@@ -380,7 +390,12 @@ export function PedidoLinha({
           EtapaGrafica configurada (regressão zero) e generaliza pras
           demais. */}
       {!emPreProducao && (
-        <EntregaPedidoSecao pedidoId={pedidoId} entrega={entrega} podeEditar={podeEditar} />
+        <EntregaPedidoSecao
+          pedidoId={pedidoId}
+          entrega={entrega}
+          podeEditar={podeEditar}
+          colaboradoresMotoristas={colaboradoresMotoristas}
+        />
       )}
 
       {/* Terceirização (achado E1) — diferente de Entrega, não é gated por
