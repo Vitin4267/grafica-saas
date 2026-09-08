@@ -211,6 +211,33 @@ comportamento.
   corrigiu `Cliente.vendedorId` (achado A8/Clientes), que antes listava
   TODOS os usuários ativos por falta desse sinal.
 
+## Atualização 2026-09-07 (2) — B3/Produção (refugo) e A7/Compras (recebimento parcial)
+
+- **Produção — refugo pós-produção (achado B3):** `ApontamentoEtapa` ganhou
+  `quantidadeBoa`/`quantidadeRefugo`/`motivoRefugo` (enum `MotivoRefugo`, 9
+  valores) — gravados no apontamento que está sendo FECHADO (o refugo
+  aconteceu durante a etapa que o pedido está SAINDO). Baixa de estoque
+  adicional OPCIONAL reaproveita literalmente o motor da perda fixa de
+  calibragem (`snapshotCustoFicha`/`snapshotLoteFicha`/
+  `criarCustoAutomaticoConsumo`), quantidade proporcional (consumo-por-
+  unidade × refugo). `MATERIAL_DEFEITUOSO` nunca gera `CustoPedido`
+  automático (custo recuperável do fornecedor) mas sempre gera a
+  `MovimentacaoEstoque`. Só ficha técnica do PRODUTO, não de acabamentos.
+- **Compras — recebimento parcial e divergência (achado A7):** novo status
+  `RECEBIDO_PARCIAL` (entre COMPRADO e RECEBIDO).
+  `SolicitacaoCompra.quantidadeRecebida` é CUMULATIVO (soma de todas as
+  confirmações), `MovimentacaoEstoque.solicitacaoCompraId` deixou de ser
+  `@unique` (uma solicitação pode gerar N movimentações). A UI sempre
+  reabre a mesma ação "Confirmar recebimento" — `avancarStatusCompra`
+  decide o status real comparando acumulado × total solicitado.
+  `custoUnitario` fica CONSTANTE entre recebimentos parciais (custo total
+  da nota ÷ quantidade TOTAL solicitada); `CustoPedido`/
+  `ContratoFornecimento.quantidadeConsumida` só disparam na confirmação
+  que FECHA o total (evita fragmentar — `CustoPedido.solicitacaoCompraId`
+  é `@unique`). Interage com achados A1+A2 (ontem, mesmo arquivo): a
+  condição de gerar movimentação e o uso de `custoAquisicaoTotal`
+  continuam intactos, só a QUANTIDADE lançada por confirmação muda.
+
 ---
 
 ## Índice
