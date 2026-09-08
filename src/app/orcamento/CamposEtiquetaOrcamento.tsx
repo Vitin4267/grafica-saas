@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { gerarChave } from "@/lib/chave-local";
+import { ROTULO_REBOBINAMENTO } from "@/lib/orcamento-etiqueta";
 import type { CamposEtiqueta, CamposHotStamping } from "./etiqueta-campos";
 
 // Tipos e etiquetaInicial/etiquetaParaCampos moraram aqui antes — movidos pra
@@ -81,6 +82,9 @@ const OPCOES_TIPO_HOT_STAMPING: [string, string][] = [
   ["COLD", "Cold"],
   ["OUTRO", "Outro"],
 ];
+// Object.entries em chave numérica (1-8) sempre itera em ordem numérica
+// ascendente independente da ordem de inserção — não precisa reordenar.
+const OPCOES_REBOBINAMENTO: [string, string][] = Object.entries(ROTULO_REBOBINAMENTO);
 
 function SelectOpcional({
   label,
@@ -88,7 +92,7 @@ function SelectOpcional({
   opcoes,
   onChange,
 }: {
-  label: string;
+  label: ReactNode;
   valor: string;
   opcoes: [string, string][];
   onChange: (valor: string) => void;
@@ -350,13 +354,16 @@ export function CamposEtiquetaOrcamento({
             onChange={(e) => set("serrilhaOutro", e.target.value)}
           />
         )}
-        <Input
-          label="Rebobinamento (1-8)"
-          type="number"
-          min={1}
-          max={8}
-          value={valores.rebobinamento}
-          onChange={(e) => set("rebobinamento", e.target.value)}
+        <SelectOpcional
+          label={
+            <>
+              Rebobinamento
+              <CampoAjuda texto="Sentido de rebobinamento (winding direction) — como a etiqueta fica posicionada quando o rolo é desenrolado. A rotuladora automática do cliente final precisa da posição certa (1 a 8, padrão do formulário físico) pra aplicar sem reconfiguração." />
+            </>
+          }
+          valor={valores.rebobinamento}
+          opcoes={OPCOES_REBOBINAMENTO}
+          onChange={(v) => set("rebobinamento", v)}
         />
       </div>
 

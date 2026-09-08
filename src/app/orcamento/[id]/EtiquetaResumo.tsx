@@ -1,3 +1,5 @@
+import { ROTULO_REBOBINAMENTO } from "@/lib/orcamento-etiqueta";
+
 // Resumo somente-leitura dos ~18 campos de etiqueta de um item M2 —
 // compartilhado entre a tela interna (page.tsx) e a pública (o/[token]/page.tsx).
 // O PDF (OrcamentoDocumento.tsx, @react-pdf/renderer) não usa este componente
@@ -135,7 +137,9 @@ export function linhasEtiqueta(e: EtiquetaResumoDados): [string, string][] {
             : (ROTULO_SERRILHA[e.serrilha] ?? e.serrilha),
         ]
       : null,
-    e.rebobinamento !== null ? ["Rebobinamento", String(e.rebobinamento)] : null,
+    e.rebobinamento !== null
+      ? ["Rebobinamento", ROTULO_REBOBINAMENTO[e.rebobinamento] ?? String(e.rebobinamento)]
+      : null,
     e.vernizRotuloTotal || e.vernizRotuloReserva
       ? [
           "Verniz rótulo",

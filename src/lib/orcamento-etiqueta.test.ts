@@ -3,6 +3,8 @@ import {
   validarContagemCor,
   normalizarRebobinamento,
   validarMaterialSubstratoOutro,
+  ROTULO_REBOBINAMENTO,
+  rotuloRebobinamento,
 } from "./orcamento-etiqueta";
 
 describe("validarContagemCor", () => {
@@ -57,6 +59,33 @@ describe("normalizarRebobinamento", () => {
 
   it("rejeita não-numérico", () => {
     expect(normalizarRebobinamento("abc").ok).toBe(false);
+  });
+});
+
+describe("ROTULO_REBOBINAMENTO", () => {
+  it("cobre exatamente os valores 1-8, nenhum a mais/menos", () => {
+    const chaves = Object.keys(ROTULO_REBOBINAMENTO)
+      .map(Number)
+      .sort((a, b) => a - b);
+    expect(chaves).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  });
+
+  it("todo rótulo é uma string não-vazia", () => {
+    for (let n = 1; n <= 8; n++) {
+      expect(typeof ROTULO_REBOBINAMENTO[n]).toBe("string");
+      expect(ROTULO_REBOBINAMENTO[n].length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("rotuloRebobinamento", () => {
+  it("retorna o rótulo cadastrado pra 1-8", () => {
+    expect(rotuloRebobinamento(1)).toBe(ROTULO_REBOBINAMENTO[1]);
+    expect(rotuloRebobinamento(8)).toBe(ROTULO_REBOBINAMENTO[8]);
+  });
+
+  it("cai no fallback 'Posição N' pra um valor fora de 1-8 (dado legado/script)", () => {
+    expect(rotuloRebobinamento(99)).toBe("Posição 99");
   });
 });
 
