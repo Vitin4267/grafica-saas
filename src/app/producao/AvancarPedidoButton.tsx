@@ -5,6 +5,7 @@ import { useActionState } from "react";
 import { Button } from "@/components/ui/Button";
 import { avancarPedido } from "./actions";
 import { SeletorMaquina, type MaquinaOpcaoUI } from "./SeletorMaquina";
+import { RefugoEtapaCampos } from "./RefugoEtapaCampos";
 
 // Etapas de DESTINO com "motor" (ver comentário de ApontamentoEtapa no
 // schema): só ARTE→CLICHE_FACA e PRODUCAO→ACABAMENTO, entre as transições
@@ -20,6 +21,7 @@ export function AvancarPedidoButton({
   maquinas = [],
   sugestaoValor = "",
   rotuloProximo = null,
+  quantidadePedido = 0,
 }: {
   pedidoId: string;
   status: string;
@@ -38,6 +40,12 @@ export function AvancarPedidoButton({
   // cai no rótulo genérico "Avançar", mesmo comportamento de qualquer
   // chamador que ainda não passe esta prop.
   rotuloProximo?: string | null;
+  // Achado B3 — soma das quantidades de OrcamentoItem deste pedido, usada
+  // só como DEFAULT do campo "Boa" (ver RefugoEtapaCampos): o caso comum é
+  // "nada deu refugo", então já vem pré-preenchido pronto pra só clicar
+  // Avançar. 0 (default de quem ainda não passa esta prop) omite o
+  // defaultValue do input, deixando-o vazio em vez de "0".
+  quantidadePedido?: number;
 }) {
   const [state, formAction, isPending] = useActionState(avancarPedido, null);
   const [maquinaEscolhida, setMaquinaEscolhida] = useState(sugestaoValor);
@@ -49,11 +57,12 @@ export function AvancarPedidoButton({
   const mostrarSeletor = STATUS_COM_SELETOR_MAQUINA.has(status) && maquinas.length > 0;
 
   return (
-    <form action={formAction} className="flex flex-wrap items-center gap-2">
+    <form action={formAction} className="flex flex-wrap items-end gap-2">
       <input type="hidden" name="pedidoId" value={pedidoId} />
       {mostrarSeletor && (
         <SeletorMaquina maquinas={maquinas} valor={maquinaEscolhida} onChange={setMaquinaEscolhida} />
       )}
+      <RefugoEtapaCampos quantidadePedido={quantidadePedido} />
       <Button type="submit" variant="outline" loading={isPending}>
         {rotuloProximo ? `Avançar para ${rotuloProximo}` : "Avançar"}
       </Button>

@@ -20,8 +20,9 @@ enum OrigemConfirmacaoEtapa {
 // (finalizadoEm) no mesmo instante em que o PRÓXIMO apontamento é aberto.
 // Backfill: pedidos que já existiam antes desta migração não ganham
 // histórico retroativo (aceitável, ver achado B1) — a linha do tempo
-// começa a partir de agora. Sem quantidadeBoa/quantidadeRefugo (achado B3,
-// rastreio de refugo) — deliberadamente fora de escopo desta rodada.
+// começa a partir de agora. quantidadeBoa/quantidadeRefugo/motivoRefugo
+// (achado B3, 2026-09-07) vieram numa rodada posterior — ver comentário
+// nos campos abaixo.
 model ApontamentoEtapa {
   id        String @id @default(cuid())
   graficaId String
@@ -63,6 +64,27 @@ model ApontamentoEtapa {
   impressoraDigitalId   String?
   maquinaSetupPorPecaId String?
 
+  // Achado B3 da Parte 2 (Produção) da auditoria de abrangência
+  // (2026-09-07) — refugo de produção reportado MANUALMENTE pelo operador
+  // ao ENCERRAR uma etapa (avancarStatusPedido grava estes 4 campos no
+  // apontamento que está sendo FECHADO — statusAnterior —, não no que
+  // acaba de abrir: o refugo aconteceu DURANTE a etapa que o pedido está
+  // SAINDO, ver fecharEAbrirApontamento em src/lib/apontamento-etapa.ts).
+  // Distinto da perda de calibragem (ItemGrafica.perdaFixaPadrao +
+  // resolverPerdasConfirmadas, achado histórico, só na entrada
+  // CLICHE_FACA→PRODUCAO): aquela é um valor FIXO por entrada em produção;
+  // esta é VARIÁVEL, opcional, e cabe em qualquer etapa física (PRODUCAO,
+  // ACABAMENTO, CONFERENCIA...). Todos null em todo apontamento ANTIGO
+  // (migração 100% aditiva) e em qualquer apontamento cujo operador não
+  // reportou nada (não é obrigatório preencher).
+  quantidadeBoa    Int?
+  quantidadeRefugo Int?
+  motivoRefugo     MotivoRefugo?
+  // Obrigatório quando motivoRefugo=OUTRO (validado em app via
+  // parseRefugoFormData, src/lib/refugo-producao.ts — nunca CHECK no
+  // banco, mesmo padrão de todo xxxOutro do sistema).
+  motivoRefugoOutro String?
+
   createdAt DateTime @default(now())
 
   grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
@@ -85,6 +107,35 @@ model ApontamentoEtapa {
   @@index([impressoraDigitalId])
   @@index([maquinaSetupPorPecaId])
   @@map("apontamentos_etapa")
+}
+
+// Achado B3 da auditoria de abrangência (Parte 2/Produção,
+// pesquisa-abrangencia-modulos.md, 2026-09-07) — motivo do refugo reportado
+// num ApontamentoEtapa.quantidadeRefugo. Fechado + OUTRO, mesmo padrão de
+// MotivoParada acima.
+//
+// MATERIAL_DEFEITUOSO é separado de propósito: é o ÚNICO motivo cujo custo é
+// potencialmente recuperável do fornecedor (reclamação/estorno junto a
+// Fornecedor/SolicitacaoCompra — fluxo de reclamação em si fica fora de
+// escopo por ora). Por isso, quando o motivo é este, a baixa OPCIONAL de
+// matéria-prima (ver aplicarBaixaRefugo em src/app/producao/status-
+// transicao.ts) ainda cria a MovimentacaoEstoque normalmente — o material
+// saiu fisicamente do estoque, isso é fato — mas NUNCA gera o CustoPedido
+// automático que os outros motivos geram: até a gráfica resolver a
+// reclamação com o fornecedor, esse custo não é necessariamente definitivo
+// dela, e um CustoPedido automático inflaria o custo/lucro do pedido com
+// algo que pode vir a ser ressarcido. A gráfica pode lançar manualmente
+// depois se a reclamação não prosperar (lancarCustoPedido, já existente).
+enum MotivoRefugo {
+  ACERTO_MAQUINA // calibragem — mesmo caso que perdaFixaPadrao já cobre, disponível aqui também pra quem prefere reportar tudo no apontamento
+  ERRO_REGISTRO_COR
+  FALHA_IMPRESSAO // borrão, falha de tinta, riscos
+  ERRO_CORTE_REFILE
+  FALHA_ACABAMENTO // laminação bolhada, dobra torta, cola
+  MATERIAL_DEFEITUOSO // culpa do fornecedor — ver comentário acima
+  ERRO_ARTE_ARQUIVO
+  ERRO_OPERACIONAL
+  OUTRO
 }
 
 // FSM linear completa do Pedido (visão de produto 2026-08-21): Arte →

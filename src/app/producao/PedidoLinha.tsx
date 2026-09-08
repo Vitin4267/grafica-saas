@@ -79,6 +79,7 @@ export function PedidoLinha({
   solicitacoesCompra,
   maquinas = [],
   sugestaoMaquinaValor = "",
+  quantidadePedido = 0,
   sequencia,
   rotulos,
 }: {
@@ -165,6 +166,13 @@ export function PedidoLinha({
   // storybook que só monte o componente com o mínimo).
   maquinas?: MaquinaOpcaoUI[];
   sugestaoMaquinaValor?: string;
+  // Achado B3 — soma das quantidades de OrcamentoItem deste pedido (buscada
+  // uma vez em producao/page.tsx, os itens já vêm no `include` do
+  // orçamento) — só alimenta o default do campo "Boa" em
+  // AvancarPedidoButton/RefugoEtapaCampos. 0 é um default seguro pra
+  // qualquer chamador que ainda não passe esta prop (deixa o campo vazio,
+  // nunca "0" fixo).
+  quantidadePedido?: number;
   // Achado A1 (Fase 1) — sequência/rótulos resolvidos DESTA gráfica (ver
   // resolverEtapasGrafica em src/lib/etapa-grafica.ts), buscados uma vez em
   // producao/page.tsx e repassados aqui. Substituem os antigos imports
@@ -281,6 +289,7 @@ export function PedidoLinha({
                   maquinas={maquinas}
                   sugestaoValor={sugestaoMaquinaValor}
                   rotuloProximo={proximoStatus ? rotulos[proximoStatus] : null}
+                  quantidadePedido={quantidadePedido}
                 />
               )}
           {podeEditar && podeCancelar && (

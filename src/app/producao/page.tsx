@@ -538,6 +538,11 @@ export default async function ProducaoPage({
                 lucro={podeVerCustos ? lucroDoPedidoListado(pedido) : null}
                 maquinas={maquinasSelecionaveis}
                 sugestaoMaquinaValor={sugestaoMaquinaValor}
+                // Achado B3 — soma das quantidades de OrcamentoItem deste
+                // pedido, só pro DEFAULT do campo "Boa" em
+                // AvancarPedidoButton/RefugoEtapaCampos. pedido.orcamento.itens
+                // já veio no `include` de cima (nenhuma query extra).
+                quantidadePedido={pedido.orcamento.itens.reduce((soma, i) => soma + i.quantidade, 0)}
                 sequencia={etapas.sequencia}
                 rotulos={etapas.rotulos}
                 entrega={

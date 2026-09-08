@@ -20,6 +20,7 @@ import { montarChavePerda } from "@/lib/perda-fixa-producao";
 import { analisarPreflight } from "@/lib/preflight";
 import { cancelarCandidatosDoPedido } from "@/lib/gang-run-servico";
 import { extrairEValidarSelecaoMaquina } from "@/lib/apontamento-etapa";
+import { parseRefugoFormData } from "@/lib/refugo-producao";
 import { avancarStatusPedido, buscarOrcamentoParaBaixa } from "./status-transicao";
 import { calcularQuantidadeConsumidaFichaProduto } from "@/lib/baixa-estoque-substrato";
 import {
@@ -206,11 +207,25 @@ export async function avancarPedido(
     return { ok: false, mensagem: selecaoMaquina.mensagem };
   }
 
-  return avancarStatusPedido(pedido, formData.get("perdasJson"), {
-    origemConfirmacao: "APP",
-    operadorId: usuario.id,
-    selecaoMaquina: selecaoMaquina.selecao,
-  });
+  // Achado B3 — refugo reportado (opcional) sobre a etapa que este pedido
+  // está SAINDO. Validado ANTES de chamar avancarStatusPedido, mesmo
+  // cuidado de selecaoMaquina acima: nunca confia em nada vindo direto do
+  // form sem validar no servidor.
+  const resolucaoRefugo = parseRefugoFormData(formData);
+  if (!resolucaoRefugo.ok) {
+    return { ok: false, mensagem: resolucaoRefugo.mensagem };
+  }
+
+  return avancarStatusPedido(
+    pedido,
+    formData.get("perdasJson"),
+    {
+      origemConfirmacao: "APP",
+      operadorId: usuario.id,
+      selecaoMaquina: selecaoMaquina.selecao,
+    },
+    resolucaoRefugo.refugo
+  );
 }
 
 export type CancelarPedidoResult = { ok: boolean; mensagem: string };

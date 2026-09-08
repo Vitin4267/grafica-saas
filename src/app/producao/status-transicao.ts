@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
-import type { StatusPedido } from "@/generated/prisma/enums";
+import type { MotivoRefugo, StatusPedido } from "@/generated/prisma/enums";
 import { D } from "@/lib/pricing/decimal";
 import { buscarAutomacaoGrafica, dispararEventoAutomacao } from "@/lib/webhook-automacao";
 import { normalizarTelefone } from "@/lib/telefone";
@@ -18,7 +18,17 @@ import {
   validarEstoqueSuficiente,
   chaveFisicaMaterial,
 } from "@/lib/perda-fixa-producao";
-import { fecharEAbrirApontamento, type ContextoOrigemAvanco } from "@/lib/apontamento-etapa";
+import {
+  calcularBaixaRefugoLinha,
+  refugoGeraCustoAutomatico,
+  ROTULOS_MOTIVO_REFUGO,
+  type RefugoInput,
+} from "@/lib/refugo-producao";
+import {
+  fecharEAbrirApontamento,
+  type ContextoOrigemAvanco,
+  type RefugoParaFechamento,
+} from "@/lib/apontamento-etapa";
 import { gerarContasReceberDaEntrega } from "@/lib/condicao-pagamento";
 import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
 import { calcularQuantidadeConsumidaFichaProduto } from "@/lib/baixa-estoque-substrato";
@@ -80,6 +90,18 @@ const MENSAGEM_CONFLITO_MATERIAL_COMPARTILHADO =
 // inicial e a escrita (duplo clique, duas abas, retry de rede) — usado só
 // pra abortar com uma mensagem amigável. Não é um erro de banco de verdade.
 class ErroPedidoJaAvancado extends Error {}
+
+// Achado B3 — sinaliza, de dentro da transação, que a baixa OPCIONAL de
+// refugo deixaria algum material negativo. Ao contrário da perda fixa (que
+// valida `validarEstoqueSuficiente` ANTES da transação, agregando por
+// material físico), a baixa de refugo valida linha a linha DENTRO da
+// transação via updateMany condicional (`estoqueAtual: { gte: ... }`) — mais
+// simples de justificar aqui porque é sempre no máximo uma dezena de linhas
+// (a ficha técnica de um único pedido), nunca o volume que justificou a
+// agregação pré-transação da perda fixa. Aborta a transação inteira (a
+// própria transição de status é revertida junto) — o operador pode
+// desmarcar "dar baixa de estoque" e tentar de novo só reportando o refugo.
+class ErroEstoqueInsuficienteRefugo extends Error {}
 
 // Compartilhado entre previsaoBaixaEstoque (producao/actions.ts, só leitura,
 // pra montar a tela de confirmação) e a baixa de verdade abaixo — mantém os
@@ -280,6 +302,110 @@ async function criarCustoAutomaticoConsumo(
   });
 }
 
+// Achado B3 da auditoria de abrangência (Parte 2/Produção, 2026-09-07) —
+// baixa de matéria-prima OPCIONAL (o operador decide, nunca imposta) quando
+// um apontamento reporta quantidadeRefugo > 0. Reaproveita literalmente o
+// MESMO motor da perda fixa de calibragem acima (snapshotCustoFicha,
+// snapshotLoteFicha, criarCustoAutomaticoConsumo) — a diferença é só a
+// origem do gatilho (apontamento manual do operador, não a transição
+// automática CLICHE_FACA→PRODUCAO) e a quantidade (proporcional ao refugo
+// reportado, ver calcularBaixaRefugoLinha, não um valor fixo cadastrado).
+//
+// Só a ficha técnica do PRODUTO entra aqui, não a de acabamentos anexados —
+// decisão de escopo desta rodada (mesmo espírito de simplificação aceito em
+// outras partes do sistema, ex: achado A10/Editorial): o substrato principal
+// já cobre a maior parte do custo real de refazer peças refugadas, e
+// estender pra acabamento seria duplicar quase todo este bloco de novo.
+//
+// Mesmo shape de item/ficha que buscarOrcamentoParaBaixa devolve — derivado
+// do próprio tipo de retorno em vez de redeclarado à mão, pra nunca divergir
+// da forma real da query (mesma técnica usada pelos loops de perda fixa
+// acima, que também recebem exatamente `orcamentoComItens?.itens`).
+type OrcamentoParaBaixa = NonNullable<Awaited<ReturnType<typeof buscarOrcamentoParaBaixa>>>;
+type ItemParaBaixaRefugo = OrcamentoParaBaixa["itens"][number];
+
+// Validação de estoque linha a linha, DENTRO da transação (não agregada
+// antes dela como a perda fixa faz) — ver comentário de
+// ErroEstoqueInsuficienteRefugo acima.
+async function aplicarBaixaRefugo(
+  tx: Prisma.TransactionClient,
+  params: {
+    graficaId: string;
+    pedidoId: string;
+    orcamentoId: string;
+    quantidadeRefugo: number;
+    motivoRefugo: MotivoRefugo | null;
+    motivoRefugoOutro: string | null;
+    itens: ItemParaBaixaRefugo[];
+    custoAutomaticoConsumo: boolean;
+    categoriaCustoConsumoPadraoId: string | null;
+    categoriaFallbackCache: { valor: string | null | undefined };
+  }
+): Promise<void> {
+  const gerarCustoPedido = params.custoAutomaticoConsumo && refugoGeraCustoAutomatico(params.motivoRefugo);
+  const rotulo =
+    params.motivoRefugo === "OUTRO" && params.motivoRefugoOutro
+      ? params.motivoRefugoOutro
+      : ROTULOS_MOTIVO_REFUGO[params.motivoRefugo ?? "OUTRO"];
+
+  for (const item of params.itens) {
+    for (const ficha of item.itemGrafica.fichaTecnica) {
+      const estoqueAtual = ficha.variante ? ficha.variante.estoqueAtual : ficha.materiaPrima.estoqueAtual;
+      if (estoqueAtual === null) continue; // sem controle de estoque
+
+      const quantidadeConsumidaTotal = calcularQuantidadeConsumidaFichaProduto(item, ficha);
+      const quantidadeBaixa = calcularBaixaRefugoLinha(
+        { quantidadeConsumidaTotal, quantidadeItemPedido: item.quantidade },
+        params.quantidadeRefugo
+      );
+      if (quantidadeBaixa <= 0) continue;
+
+      // updateMany condicional (não update por id) — CAS por linha: só
+      // decrementa se o saldo ATUAL (já refletindo qualquer decremento
+      // anterior nesta MESMA transação, ex: consumo normal + perda fixa
+      // acima, ou outra linha deste próprio loop no mesmo material) ainda
+      // comporta a baixa. count===0 aborta a transação inteira.
+      if (ficha.varianteId) {
+        const resultado = await tx.varianteMateriaPrima.updateMany({
+          where: { id: ficha.varianteId, estoqueAtual: { gte: quantidadeBaixa } },
+          data: { estoqueAtual: { decrement: quantidadeBaixa } },
+        });
+        if (resultado.count === 0) throw new ErroEstoqueInsuficienteRefugo();
+      } else {
+        const resultado = await tx.itemGrafica.updateMany({
+          where: { id: ficha.materiaPrimaId, estoqueAtual: { gte: quantidadeBaixa } },
+          data: { estoqueAtual: { decrement: quantidadeBaixa } },
+        });
+        if (resultado.count === 0) throw new ErroEstoqueInsuficienteRefugo();
+      }
+
+      const movimentacaoRefugo = await tx.movimentacaoEstoque.create({
+        data: {
+          itemGraficaId: ficha.materiaPrimaId,
+          varianteId: ficha.varianteId,
+          pedidoId: params.pedidoId,
+          tipo: "SAIDA_PRODUCAO",
+          quantidade: quantidadeBaixa,
+          motivo: `Refugo de produção (${rotulo}) — pedido ${params.pedidoId} (orçamento ${params.orcamentoId})`,
+          ...snapshotCustoFicha(ficha, quantidadeBaixa),
+          ...(await snapshotLoteFicha(tx, ficha)),
+        },
+      });
+      if (gerarCustoPedido) {
+        await criarCustoAutomaticoConsumo(tx, {
+          graficaId: params.graficaId,
+          pedidoId: params.pedidoId,
+          movimentacaoId: movimentacaoRefugo.id,
+          custoTotal: movimentacaoRefugo.custoTotal,
+          categoriaCustoIdMaterial: ficha.materiaPrima.categoriaCustoId,
+          categoriaCustoConsumoPadraoId: params.categoriaCustoConsumoPadraoId,
+          categoriaFallbackCache: params.categoriaFallbackCache,
+        });
+      }
+    }
+  }
+}
+
 const linhaPerdaSchema = z.object({
   chave: z.string().min(1),
   perdaAplicada: z.coerce
@@ -299,7 +425,15 @@ const CONTEXTO_PADRAO: ContextoOrigemAvanco = { origemConfirmacao: "APP", operad
 export async function avancarStatusPedido(
   pedido: PedidoParaAvanco,
   perdasJsonBruto: FormDataEntryValue | null,
-  contexto: ContextoOrigemAvanco = CONTEXTO_PADRAO
+  contexto: ContextoOrigemAvanco = CONTEXTO_PADRAO,
+  // Achado B3 — refugo reportado pelo operador SOBRE a etapa que o pedido
+  // está SAINDO (statusAnterior), já validado por parseRefugoFormData
+  // (src/app/producao/actions.ts). `undefined`/`null` (nenhum dos 3
+  // canais de teste antigos passa isso, nem os canais LINK_PUBLICO/
+  // QR_ETIQUETA que não coletam refugo — mesma decisão de escopo de B2 pra
+  // máquina) é tratado como "nada a reportar", zero mudança de
+  // comportamento.
+  refugo?: RefugoInput | null
 ): Promise<AvancarStatusResult> {
   // Gate opt-in: só bloqueia se ESTA gráfica enviou uma arte pra este
   // pedido (arteUrl preenchido) — pedidos sem arte enviada avançam
@@ -360,6 +494,22 @@ export async function avancarStatusPedido(
 
   const proximoStatus = etapas.sequencia[indiceAtual + 1];
   const statusAnterior = pedido.status;
+
+  // Achado B3 — normaliza o refugo recebido: só há baixa a aplicar quando o
+  // operador de fato reportou quantidadeRefugo > 0 (quantidadeRefugo=0 ou
+  // não informado nunca dispara nada, mesmo que gerarBaixaEstoque venha
+  // marcado por engano). O snapshot gravado no ApontamentoEtapa fechado
+  // (refugoParaFechamento) é mais permissivo: grava quantidadeBoa mesmo sem
+  // refugo nenhum, é só "o que o operador reportou produzir nesta etapa".
+  const refugoParaAplicar = refugo && refugo.quantidadeRefugo && refugo.quantidadeRefugo > 0 ? refugo : null;
+  const refugoParaFechamento: RefugoParaFechamento | undefined = refugo
+    ? {
+        quantidadeBoa: refugo.quantidadeBoa,
+        quantidadeRefugo: refugo.quantidadeRefugo,
+        motivoRefugo: refugo.motivoRefugo,
+        motivoRefugoOutro: refugo.motivoRefugoOutro,
+      }
+    : undefined;
 
   // Buscado uma única vez e reaproveitado pros eventos estoque_critico e
   // pedido_status_mudou abaixo.
@@ -540,8 +690,29 @@ export async function avancarStatusPedido(
             graficaId: pedido.graficaId,
             pedidoId: pedido.id,
             proximoStatus,
+            refugo: refugoParaFechamento,
             ...contexto,
           });
+
+          // Achado B3 — baixa OPCIONAL de refugo reportado pelo operador
+          // sobre a etapa que o pedido está SAINDO. Reaproveita
+          // orcamentoComItens/custoAutomaticoConsumo/
+          // categoriaCustoConsumoPadraoId/categoriaFallbackCache já lidos
+          // acima pra perda fixa — nenhuma query extra só por causa disto.
+          if (refugoParaAplicar?.gerarBaixaEstoque) {
+            await aplicarBaixaRefugo(tx, {
+              graficaId: pedido.graficaId,
+              pedidoId: pedido.id,
+              orcamentoId: pedido.orcamentoId,
+              quantidadeRefugo: refugoParaAplicar.quantidadeRefugo!,
+              motivoRefugo: refugoParaAplicar.motivoRefugo,
+              motivoRefugoOutro: refugoParaAplicar.motivoRefugoOutro,
+              itens: orcamentoComItens?.itens ?? [],
+              custoAutomaticoConsumo,
+              categoriaCustoConsumoPadraoId,
+              categoriaFallbackCache,
+            });
+          }
 
           // Acumula o decremento TOTAL por material FÍSICO (varianteId ??
           // materiaPrimaId, ver chaveFisicaMaterial) enquanto o loop roda —
@@ -823,6 +994,28 @@ export async function avancarStatusPedido(
       // de ApontamentoEtapa sejam atômicos — nível de isolamento padrão
       // basta aqui, não há leitura prévia de estoque compartilhado como no
       // branch acima que justificasse Serializable.
+      //
+      // Achado B3 — este é o branch que de fato cobre a maioria das
+      // transições que reportam refugo (o pedido já ENTROU em produção antes
+      // — o branch de cima só cobre a transição de ENTRADA). Leitura
+      // condicional, FORA da transação (mesmo motivo do branch acima: mantém
+      // a transação curta) — só paga a query quando o operador de fato pediu
+      // baixa de estoque; a maioria das transições (sem refugo, ou refugo
+      // sem baixa) não paga nada extra.
+      let orcamentoParaRefugo: Awaited<ReturnType<typeof buscarOrcamentoParaBaixa>> = null;
+      let custoAutomaticoConsumoRefugo = true;
+      let categoriaCustoConsumoPadraoIdRefugo: string | null = null;
+      if (refugoParaAplicar?.gerarBaixaEstoque) {
+        const [orcamento, parametrosGrafica] = await Promise.all([
+          buscarOrcamentoParaBaixa(pedido.orcamentoId),
+          prisma.parametrosGrafica.findUnique({ where: { graficaId: pedido.graficaId } }),
+        ]);
+        orcamentoParaRefugo = orcamento;
+        custoAutomaticoConsumoRefugo = parametrosGrafica?.custoAutomaticoConsumo ?? true;
+        categoriaCustoConsumoPadraoIdRefugo = parametrosGrafica?.categoriaCustoConsumoPadraoId ?? null;
+      }
+      const categoriaFallbackCacheRefugo: { valor: string | null | undefined } = { valor: undefined };
+
       await prisma.$transaction(async (tx) => {
         const resultado = await tx.pedido.updateMany({
           where: { id: pedido.id, status: statusAnterior },
@@ -835,8 +1028,24 @@ export async function avancarStatusPedido(
           graficaId: pedido.graficaId,
           pedidoId: pedido.id,
           proximoStatus,
+          refugo: refugoParaFechamento,
           ...contexto,
         });
+
+        if (refugoParaAplicar?.gerarBaixaEstoque) {
+          await aplicarBaixaRefugo(tx, {
+            graficaId: pedido.graficaId,
+            pedidoId: pedido.id,
+            orcamentoId: pedido.orcamentoId,
+            quantidadeRefugo: refugoParaAplicar.quantidadeRefugo!,
+            motivoRefugo: refugoParaAplicar.motivoRefugo,
+            motivoRefugoOutro: refugoParaAplicar.motivoRefugoOutro,
+            itens: orcamentoParaRefugo?.itens ?? [],
+            custoAutomaticoConsumo: custoAutomaticoConsumoRefugo,
+            categoriaCustoConsumoPadraoId: categoriaCustoConsumoPadraoIdRefugo,
+            categoriaFallbackCache: categoriaFallbackCacheRefugo,
+          });
+        }
 
         // Achado R1 da auditoria de abrangência (Parte 7, 2026-09-03) —
         // gatilho ENTREGA: gera as ContaReceber da condição de pagamento
@@ -859,6 +1068,13 @@ export async function avancarStatusPedido(
   } catch (erro) {
     if (erro instanceof ErroPedidoJaAvancado) {
       return { ok: false, mensagem: MENSAGEM_CONFLITO_CONCORRENTE };
+    }
+    if (erro instanceof ErroEstoqueInsuficienteRefugo) {
+      return {
+        ok: false,
+        mensagem:
+          'Estoque insuficiente para dar baixa do refugo reportado. Desmarque "dar baixa de estoque" pra só registrar o refugo, ou confira a quantidade.',
+      };
     }
     if (ehConflitoDeSerializacao(erro)) {
       return { ok: false, mensagem: MENSAGEM_CONFLITO_MATERIAL_COMPARTILHADO };

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
-import type { OrigemConfirmacaoEtapa, StatusPedido } from "@/generated/prisma/enums";
+import type { MotivoRefugo, OrigemConfirmacaoEtapa, StatusPedido } from "@/generated/prisma/enums";
 import { validarSelecaoMaquinaOpcional } from "@/lib/manutencao-maquina";
 
 // Achado B1/B2 da Parte 2 (Produção) da auditoria de abrangência: histórico
@@ -173,6 +173,21 @@ export type ContextoOrigemAvanco = {
   selecaoMaquina?: SelecaoMaquina;
 };
 
+// Refugo reportado pelo operador SOBRE a etapa que está sendo FECHADA
+// (achado B3 da Parte 2/Produção, 2026-09-07) — o refugo aconteceu DURANTE
+// a etapa que o pedido está SAINDO, não a que está entrando, por isso estes
+// campos são gravados no apontamento FECHADO abaixo (o `updateMany` que já
+// seta `finalizadoEm`), nunca no que é aberto em seguida. Todos os campos
+// são opcionais — `undefined` (nenhum refugo reportado nesta transição, o
+// caso comum) não escreve nada além de `finalizadoEm`, exatamente o
+// comportamento de antes desta feature.
+export type RefugoParaFechamento = {
+  quantidadeBoa: number | null;
+  quantidadeRefugo: number | null;
+  motivoRefugo: MotivoRefugo | null;
+  motivoRefugoOutro: string | null;
+};
+
 // Fecha o apontamento aberto (finalizadoEm=null) do pedido e abre o da etapa
 // que ele acabou de ENTRAR — chamado de DENTRO da mesma transação do CAS de
 // avancarStatusPedido, nunca fora dela (ver comentário em ApontamentoEtapa
@@ -186,11 +201,15 @@ export async function fecharEAbrirApontamento(
     graficaId: string;
     pedidoId: string;
     proximoStatus: StatusPedido;
+    refugo?: RefugoParaFechamento;
   } & ContextoOrigemAvanco
 ): Promise<void> {
   await tx.apontamentoEtapa.updateMany({
     where: { pedidoId: params.pedidoId, finalizadoEm: null },
-    data: { finalizadoEm: new Date() },
+    data: {
+      finalizadoEm: new Date(),
+      ...(params.refugo ?? {}),
+    },
   });
   await tx.apontamentoEtapa.create({
     data: {
