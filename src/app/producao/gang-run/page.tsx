@@ -9,13 +9,16 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { LayersIcon, ArrowLeftIcon } from "@/components/icons";
 import { GrupoGangRunSelecao } from "./GrupoGangRunSelecao";
 
-// Fila de candidatos a gang run: itens Offset que sozinhos não enchem uma
-// chapa (ver ehCandidatoGangRun em src/lib/gang-run.ts), agrupados por
-// compatibilidade física (papel+gramatura+prensa+folha+cores), esperando o
-// operador decidir combinar com outros pedidos da MESMA gráfica pra dividir
-// o custo fixo de chapa+acerto. Candidatura acontece sozinha na aprovação do
-// orçamento (registrarCandidatosGangRun); combinar é sempre ação manual
-// aqui — MVP não escolhe automaticamente quais/quantos itens juntar.
+// Fila de candidatos a gang run: itens Offset (chapa/folha) OU Flexografia/
+// grande formato (bobina, achado F1) que sozinhos não enchem uma peça
+// física (ver ehCandidatoGangRun em src/lib/gang-run.ts), agrupados por
+// compatibilidade física (papel+gramatura+prensa+folha+cores no Offset;
+// material+bobina+máquina na Flexografia — cada tipoAgrupamento com sua
+// própria lógica, ver chaveGrupoGangRun), esperando o operador decidir
+// combinar com outros pedidos da MESMA gráfica pra dividir o custo fixo
+// compartilhado. Candidatura acontece sozinha na aprovação do orçamento
+// (registrarCandidatosGangRun); combinar é sempre ação manual aqui — MVP
+// não escolhe automaticamente quais/quantos itens juntar.
 export default async function GangRunPage() {
   const usuario = await exigirUsuarioAutenticado();
   await exigirEmailVerificado(usuario);
@@ -49,16 +52,17 @@ export default async function GangRunPage() {
             Fila de gang run
           </h1>
           <p className="mt-1 text-slate-500">
-            Itens Offset pequenos demais pra encher uma chapa sozinhos, esperando
-            pedidos compatíveis (mesmo papel, gramatura, prensa e folha) pra
-            dividir o custo de chapa + acerto de máquina.
+            Itens Offset ou Flexografia/grande formato pequenos demais pra
+            encher uma chapa ou bobina sozinhos, esperando pedidos
+            fisicamente compatíveis pra dividir o custo de chapa/acerto de
+            máquina.
           </p>
         </div>
 
         {grupos.length === 0 ? (
           <EmptyState
             icone={<LayersIcon className="h-6 w-6" />}
-            texto="Nenhum candidato a gang run no momento. Itens Offset que não enchem uma chapa sozinhos aparecem aqui automaticamente quando o orçamento é aprovado."
+            texto="Nenhum candidato a gang run no momento. Itens Offset ou Flexografia que não enchem uma chapa/bobina sozinhos aparecem aqui automaticamente quando o orçamento é aprovado."
             href="/producao"
             rotuloCta="Ir para Produção"
           />

@@ -38,10 +38,21 @@ export function calcularFracaoFolha(quantidade: number, nUpPeca: number): Dec {
 }
 
 // ---------------------------------------------------------------------------
-// Agrupamento: só itens com a MESMA chave física podem compartilhar chapa.
+// Agrupamento: só itens com a MESMA chave física podem compartilhar a peça
+// compartilhada (chapa, no FOLHA_2D; revolução de bobina, no BOBINA_1D).
+//
+// Achado F1 (auditoria de abrangência, "Gang run só existe para OFFSET") —
+// cada tipoAgrupamento tem sua PRÓPRIA lógica de compatibilidade, modelada
+// como membros distintos de uma union discriminada por tipoAgrupamento (em
+// vez de um shape único com campos opcionais) — mesmo raciocínio de
+// PedidoPrecificacao em src/lib/pricing/precificar.ts: o discriminante
+// literal garante que o TypeScript recusa passar campos de um tipo pro
+// outro. TELA_MATRIZ/MESA_PLANA (enum já reserva os rótulos, ver schema)
+// NÃO têm branch aqui ainda — próximo passo, fora de escopo desta rodada.
 // ---------------------------------------------------------------------------
 
-export type ChaveGrupoGangRunInput = {
+export type ChaveGrupoGangRunInputFolha2D = {
+  tipoAgrupamento: "FOLHA_2D";
   papelId: string;
   gramaturaGm2: number;
   prensaId: string;
@@ -50,22 +61,115 @@ export type ChaveGrupoGangRunInput = {
   corVerso: number;
 };
 
-// Papel + gramatura + prensa + folha (formato físico que o motor de nesting
-// ESCOLHEU pra este item) + cores — os seis eixos que precisam bater pra
-// duas peças poderem sair na mesma chapa impressa. corFrente/corVerso entram
-// na chave porque as torres de tinta da prensa são montadas pro jogo de
-// cores da rodada inteira: misturar um item 4x0 com um 1x0 na mesma chapa
-// obrigaria a prensa a rodar como 4x0 pros dois, o que já deixou de ser uma
-// divisão "justa" de custo — fora do MVP (ver resumo da feature).
+// Flexografia/grande formato — nesting 1D na largura da bobina (achado F1).
+// material = identidade do PRODUTO flexo (ItemGrafica.id): BobinaMaterial é
+// cadastrada direto no produto (sem uma matéria-prima separada como o
+// papelId do Offset — ver comentário no schema), então dois candidatos só
+// são compatíveis se vieram do MESMO produto — a mesma bobina física só
+// existe cadastrada uma vez, no produto que a usa.
+export type ChaveGrupoGangRunInputBobina1D = {
+  tipoAgrupamento: "BOBINA_1D";
+  itemGraficaMaterialId: string;
+  larguraBobinaNominal: number;
+  maquinaFlexografiaId: string;
+};
+
+export type ChaveGrupoGangRunInput =
+  | ChaveGrupoGangRunInputFolha2D
+  | ChaveGrupoGangRunInputBobina1D;
+
+// FOLHA_2D: papel + gramatura + prensa + folha (formato físico que o motor
+// de nesting ESCOLHEU pra este item) + cores — os seis eixos que precisam
+// bater pra duas peças poderem sair na mesma chapa impressa. corFrente/
+// corVerso entram na chave porque as torres de tinta da prensa são
+// montadas pro jogo de cores da rodada inteira: misturar um item 4x0 com um
+// 1x0 na mesma chapa obrigaria a prensa a rodar como 4x0 pros dois, o que
+// já deixou de ser uma divisão "justa" de custo — fora do MVP (ver resumo
+// da feature).
+//
+// BOBINA_1D: material (produto) + largura nominal da bobina escolhida pelo
+// nesting 1D + máquina flexográfica — os três eixos que precisam bater pra
+// duas peças poderem sair na mesma revolução de bobina (ver
+// calcularFlexografia em src/lib/pricing/flexografia.ts).
 export function chaveGrupoGangRun(item: ChaveGrupoGangRunInput): string {
+  if (item.tipoAgrupamento === "FOLHA_2D") {
+    return [
+      "FOLHA_2D",
+      item.papelId,
+      item.gramaturaGm2,
+      item.prensaId,
+      item.folhaId,
+      item.corFrente,
+      item.corVerso,
+    ].join("::");
+  }
   return [
-    item.papelId,
-    item.gramaturaGm2,
-    item.prensaId,
-    item.folhaId,
-    item.corFrente,
-    item.corVerso,
+    "BOBINA_1D",
+    item.itemGraficaMaterialId,
+    item.larguraBobinaNominal,
+    item.maquinaFlexografiaId,
   ].join("::");
+}
+
+// Reconstrói o ChaveGrupoGangRunInput a partir de uma linha FilaGangRun/
+// GrupoGangRun já persistida (campos agora todos opcionais no schema, ver
+// achado F1) — usado por gang-run-servico.ts (combinarGrupoGangRun,
+// listarFilaGangRunAgrupada) em vez de cada chamador remontar o shape à
+// mão. Retorna null pra tipoAgrupamento sem branch implementado ainda
+// (TELA_MATRIZ/MESA_PLANA/OUTRO) ou pra linha com campo obrigatório do seu
+// próprio tipo faltando (defensivo — não deveria acontecer, candidatura já
+// garante os campos certos por tipo em registrarCandidatosGangRun).
+export type RegistroGangRunParaChave = {
+  tipoAgrupamento: string;
+  papelId: string | null;
+  gramaturaGm2: number | null;
+  prensaId: string | null;
+  folhaId: string | null;
+  corFrente: number | null;
+  corVerso: number | null;
+  itemGraficaMaterialId: string | null;
+  larguraBobinaNominal: number | null;
+  maquinaFlexografiaId: string | null;
+};
+
+export function montarChaveGrupoGangRunDeRegistro(
+  item: RegistroGangRunParaChave
+): ChaveGrupoGangRunInput | null {
+  if (item.tipoAgrupamento === "FOLHA_2D") {
+    if (
+      !item.papelId ||
+      item.gramaturaGm2 === null ||
+      !item.prensaId ||
+      !item.folhaId ||
+      item.corFrente === null ||
+      item.corVerso === null
+    ) {
+      return null;
+    }
+    return {
+      tipoAgrupamento: "FOLHA_2D",
+      papelId: item.papelId,
+      gramaturaGm2: item.gramaturaGm2,
+      prensaId: item.prensaId,
+      folhaId: item.folhaId,
+      corFrente: item.corFrente,
+      corVerso: item.corVerso,
+    };
+  }
+  if (item.tipoAgrupamento === "BOBINA_1D") {
+    if (!item.itemGraficaMaterialId || item.larguraBobinaNominal === null || !item.maquinaFlexografiaId) {
+      return null;
+    }
+    return {
+      tipoAgrupamento: "BOBINA_1D",
+      itemGraficaMaterialId: item.itemGraficaMaterialId,
+      larguraBobinaNominal: item.larguraBobinaNominal,
+      maquinaFlexografiaId: item.maquinaFlexografiaId,
+    };
+  }
+  // TELA_MATRIZ/MESA_PLANA/OUTRO — sem branch de compatibilidade ainda,
+  // fora de escopo desta rodada (ver comentário do enum no schema).
+  return null;
 }
 
 export function agruparPorChave<T>(itens: T[], chave: (item: T) => string): Map<string, T[]> {
@@ -190,6 +294,69 @@ export function lerDadosOffsetDoBreakdown(breakdown: unknown): DadosOffsetDoBrea
     folhaId: folhaEscolhida.id,
     folhaNome: typeof folhaEscolhida.nome === "string" ? folhaEscolhida.nome : "",
     custoChapas,
+    custoSetup,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Leitura do breakdown salvo em OrcamentoItem.breakdown (motor Flexografia,
+// achado F1/BOBINA_1D) — espelho de lerDadosOffsetDoBreakdown acima, mesmo
+// shape { detalhes, metricas } (ver metricas em precificar.ts, branch
+// FLEXOGRAFIA: nUp/bobinaEscolhida/maquinaFlexoUsada; detalhes.setup vem de
+// detalhesExtras, mesma chave "setup" que Offset usa — ver compor.ts).
+// Flexografia não tem "chapas" (só uma bobina contínua, sem chapa por
+// posição) — só custoSetup entra no gang run BOBINA_1D.
+// ---------------------------------------------------------------------------
+
+export type DadosFlexoDoBreakdown = {
+  nUp: number;
+  bobinaId: string;
+  larguraBobinaNominal: number;
+  maquinaFlexografiaId: string;
+  custoSetup: Dec;
+};
+
+export function lerDadosFlexoDoBreakdown(breakdown: unknown): DadosFlexoDoBreakdown | null {
+  if (!breakdown || typeof breakdown !== "object" || Array.isArray(breakdown)) return null;
+  const raiz = breakdown as Record<string, unknown>;
+
+  const detalhesRaw = raiz.detalhes;
+  const metricasRaw = raiz.metricas;
+  if (!detalhesRaw || typeof detalhesRaw !== "object") return null;
+  if (!metricasRaw || typeof metricasRaw !== "object") return null;
+  const detalhes = detalhesRaw as Record<string, unknown>;
+  const metricas = metricasRaw as Record<string, unknown>;
+
+  const nUp = metricas.nUp;
+  if (typeof nUp !== "number" || !Number.isFinite(nUp) || nUp <= 0) return null;
+
+  const bobinaEscolhidaRaw = metricas.bobinaEscolhida;
+  if (!bobinaEscolhidaRaw || typeof bobinaEscolhidaRaw !== "object") return null;
+  const bobinaEscolhida = bobinaEscolhidaRaw as Record<string, unknown>;
+  if (typeof bobinaEscolhida.id !== "string") return null;
+  if (typeof bobinaEscolhida.larguraNominal !== "number") return null;
+
+  const maquinaFlexoUsadaRaw = metricas.maquinaFlexoUsada;
+  if (!maquinaFlexoUsadaRaw || typeof maquinaFlexoUsadaRaw !== "object") return null;
+  const maquinaFlexoUsada = maquinaFlexoUsadaRaw as Record<string, unknown>;
+  if (typeof maquinaFlexoUsada.id !== "string") return null;
+
+  const setupRaw = detalhes.setup;
+  if (typeof setupRaw !== "string" && typeof setupRaw !== "number") return null;
+
+  let custoSetup: Dec;
+  try {
+    custoSetup = new D(setupRaw);
+  } catch {
+    return null;
+  }
+  if (!custoSetup.isFinite()) return null;
+
+  return {
+    nUp,
+    bobinaId: bobinaEscolhida.id,
+    larguraBobinaNominal: bobinaEscolhida.larguraNominal,
+    maquinaFlexografiaId: maquinaFlexoUsada.id,
     custoSetup,
   };
 }

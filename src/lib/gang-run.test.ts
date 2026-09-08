@@ -4,9 +4,11 @@ import {
   ehCandidatoGangRun,
   calcularFracaoFolha,
   chaveGrupoGangRun,
+  montarChaveGrupoGangRunDeRegistro,
   agruparPorChave,
   ratearCustoSetup,
   lerDadosOffsetDoBreakdown,
+  lerDadosFlexoDoBreakdown,
 } from "./gang-run";
 
 describe("ehCandidatoGangRun", () => {
@@ -37,8 +39,9 @@ describe("calcularFracaoFolha", () => {
   });
 });
 
-describe("chaveGrupoGangRun", () => {
+describe("chaveGrupoGangRun — FOLHA_2D (Offset, comportamento original)", () => {
   const base = {
+    tipoAgrupamento: "FOLHA_2D" as const,
     papelId: "papel1",
     gramaturaGm2: 300,
     prensaId: "prensa1",
@@ -61,6 +64,104 @@ describe("chaveGrupoGangRun", () => {
 
   it("gera chaves diferentes quando o formato de folha escolhido muda", () => {
     expect(chaveGrupoGangRun(base)).not.toBe(chaveGrupoGangRun({ ...base, folhaId: "folha2" }));
+  });
+
+  it("nunca colide com uma chave BOBINA_1D, mesmo com valores parecidos", () => {
+    const chaveFolha = chaveGrupoGangRun(base);
+    const chaveBobina = chaveGrupoGangRun({
+      tipoAgrupamento: "BOBINA_1D",
+      itemGraficaMaterialId: "papel1",
+      larguraBobinaNominal: 300,
+      maquinaFlexografiaId: "prensa1",
+    });
+    expect(chaveFolha).not.toBe(chaveBobina);
+  });
+});
+
+describe("chaveGrupoGangRun — BOBINA_1D (Flexografia/grande formato, achado F1)", () => {
+  const base = {
+    tipoAgrupamento: "BOBINA_1D" as const,
+    itemGraficaMaterialId: "produtoFlexo1",
+    larguraBobinaNominal: 0.33,
+    maquinaFlexografiaId: "maquina1",
+  };
+
+  it("gera a mesma chave para itens fisicamente compatíveis (mesmo material+largura+máquina)", () => {
+    expect(chaveGrupoGangRun(base)).toBe(chaveGrupoGangRun({ ...base }));
+  });
+
+  it("gera chaves diferentes quando o material (produto) muda", () => {
+    expect(chaveGrupoGangRun(base)).not.toBe(
+      chaveGrupoGangRun({ ...base, itemGraficaMaterialId: "produtoFlexo2" })
+    );
+  });
+
+  it("gera chaves diferentes quando a largura da bobina muda", () => {
+    expect(chaveGrupoGangRun(base)).not.toBe(chaveGrupoGangRun({ ...base, larguraBobinaNominal: 0.5 }));
+  });
+
+  it("gera chaves diferentes quando a máquina flexográfica muda", () => {
+    expect(chaveGrupoGangRun(base)).not.toBe(
+      chaveGrupoGangRun({ ...base, maquinaFlexografiaId: "maquina2" })
+    );
+  });
+});
+
+describe("montarChaveGrupoGangRunDeRegistro", () => {
+  const registroFolha2D = {
+    tipoAgrupamento: "FOLHA_2D",
+    papelId: "papel1",
+    gramaturaGm2: 300,
+    prensaId: "prensa1",
+    folhaId: "folha1",
+    corFrente: 4,
+    corVerso: 0,
+    itemGraficaMaterialId: null,
+    larguraBobinaNominal: null,
+    maquinaFlexografiaId: null,
+  };
+
+  const registroBobina1D = {
+    tipoAgrupamento: "BOBINA_1D",
+    papelId: null,
+    gramaturaGm2: null,
+    prensaId: null,
+    folhaId: null,
+    corFrente: null,
+    corVerso: null,
+    itemGraficaMaterialId: "produtoFlexo1",
+    larguraBobinaNominal: 0.33,
+    maquinaFlexografiaId: "maquina1",
+  };
+
+  it("monta a chave FOLHA_2D a partir de um registro persistido", () => {
+    const chaveInput = montarChaveGrupoGangRunDeRegistro(registroFolha2D);
+    expect(chaveInput).not.toBeNull();
+    expect(chaveGrupoGangRun(chaveInput!)).toBe(chaveGrupoGangRun({ ...registroFolha2D, tipoAgrupamento: "FOLHA_2D" }));
+  });
+
+  it("monta a chave BOBINA_1D a partir de um registro persistido", () => {
+    const chaveInput = montarChaveGrupoGangRunDeRegistro(registroBobina1D);
+    expect(chaveInput).not.toBeNull();
+    expect(chaveGrupoGangRun(chaveInput!)).toBe(
+      chaveGrupoGangRun({
+        tipoAgrupamento: "BOBINA_1D",
+        itemGraficaMaterialId: "produtoFlexo1",
+        larguraBobinaNominal: 0.33,
+        maquinaFlexografiaId: "maquina1",
+      })
+    );
+  });
+
+  it("retorna null quando falta um campo obrigatório do próprio tipo (defensivo)", () => {
+    expect(montarChaveGrupoGangRunDeRegistro({ ...registroFolha2D, prensaId: null })).toBeNull();
+    expect(montarChaveGrupoGangRunDeRegistro({ ...registroBobina1D, maquinaFlexografiaId: null })).toBeNull();
+  });
+
+  it("retorna null pra tipoAgrupamento sem branch implementado ainda (TELA_MATRIZ/MESA_PLANA/OUTRO)", () => {
+    expect(montarChaveGrupoGangRunDeRegistro({ ...registroFolha2D, tipoAgrupamento: "TELA_MATRIZ" })).toBeNull();
+    expect(montarChaveGrupoGangRunDeRegistro({ ...registroFolha2D, tipoAgrupamento: "MESA_PLANA" })).toBeNull();
+    expect(montarChaveGrupoGangRunDeRegistro({ ...registroFolha2D, tipoAgrupamento: "OUTRO" })).toBeNull();
   });
 });
 
@@ -186,5 +287,57 @@ describe("lerDadosOffsetDoBreakdown", () => {
       metricas: { nUp: 0, folhaEscolhida: { id: "x", nome: "y" } },
     };
     expect(lerDadosOffsetDoBreakdown(nUpInvalido)).toBeNull();
+  });
+});
+
+describe("lerDadosFlexoDoBreakdown (achado F1/BOBINA_1D)", () => {
+  const breakdownValido = {
+    detalhes: { rodagem: "22.50", setup: "18.00", material: "60.00" },
+    metricas: {
+      nUp: 3,
+      bobinaEscolhida: { id: "bobina1", larguraNominal: 0.33 },
+      maquinaFlexoUsada: { id: "maquina1", nome: "Flexo 1" },
+    },
+  };
+
+  it("extrai nUp, bobina, máquina e custo de setup de um breakdown Flexografia válido", () => {
+    const dados = lerDadosFlexoDoBreakdown(breakdownValido);
+    expect(dados).not.toBeNull();
+    expect(dados!.nUp).toBe(3);
+    expect(dados!.bobinaId).toBe("bobina1");
+    expect(dados!.larguraBobinaNominal).toBe(0.33);
+    expect(dados!.maquinaFlexografiaId).toBe("maquina1");
+    expect(dados!.custoSetup.toNumber()).toBe(18);
+  });
+
+  it("retorna null pra breakdown nulo ou não-objeto", () => {
+    expect(lerDadosFlexoDoBreakdown(null)).toBeNull();
+    expect(lerDadosFlexoDoBreakdown(undefined)).toBeNull();
+    expect(lerDadosFlexoDoBreakdown("string")).toBeNull();
+    expect(lerDadosFlexoDoBreakdown([1, 2, 3])).toBeNull();
+  });
+
+  it("retorna null quando falta metricas.bobinaEscolhida (breakdown de outro modelo, ex: Offset)", () => {
+    const breakdownOffset = {
+      detalhes: { chapas: "40.00", setup: "15.00" },
+      metricas: { nUp: 8, folhaEscolhida: { id: "folha1", nome: "Fechada 66x96" } },
+    };
+    expect(lerDadosFlexoDoBreakdown(breakdownOffset)).toBeNull();
+  });
+
+  it("retorna null quando nUp é zero ou negativo", () => {
+    const nUpInvalido = {
+      detalhes: breakdownValido.detalhes,
+      metricas: { ...breakdownValido.metricas, nUp: 0 },
+    };
+    expect(lerDadosFlexoDoBreakdown(nUpInvalido)).toBeNull();
+  });
+
+  it("retorna null quando falta detalhes.setup", () => {
+    const semSetup = {
+      detalhes: { rodagem: "22.50" },
+      metricas: breakdownValido.metricas,
+    };
+    expect(lerDadosFlexoDoBreakdown(semSetup)).toBeNull();
   });
 });

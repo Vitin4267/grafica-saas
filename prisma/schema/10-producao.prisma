@@ -702,38 +702,99 @@ enum StatusFilaGangRun {
   CANCELADO
 }
 
+// Achado F1 da auditoria de abrangência (pesquisa-abrangencia-modulos.md,
+// "F. Escopo travado no perfil da gráfica de referência", "Gang run só
+// existe para OFFSET") — generaliza gang run/agrupamento de jobs pra além
+// de Offset. Ganging (combinar jobs pequenos de pedidos diferentes numa
+// mesma peça física pra dividir custo fixo de setup) é uma técnica de
+// APROVEITAMENTO DE SUBSTRATO, não exclusiva de offset — cada processo tem
+// sua PRÓPRIA lógica de "o que é fisicamente compatível pra juntar" (ver
+// chaveGrupoGangRun em src/lib/gang-run.ts, um branch por tipoAgrupamento).
+// MVP desta rodada implementa 2 dos 5 rótulos: FOLHA_2D (Offset, já
+// existia) e BOBINA_1D (Flexografia/grande formato, novo — reaproveita o
+// nesting 1D que calcularFlexografia já calcula em
+// src/lib/pricing/flexografia.ts, mesmo espírito de BobinaMaterial/
+// MaquinaFlexografia.larguraMaquinaM/passoCilindroM já existentes).
+// TELA_MATRIZ (serigrafia — mesma matriz/tela pra várias artes) e
+// MESA_PLANA (digital grande formato/corte a laser) ficam
+// DELIBERADAMENTE fora de escopo nesta rodada — enum já reserva o rótulo
+// pra não recriar migration depois, documentado aqui como próximo passo,
+// mesmo espírito de outros achados desta auditoria que fazem MVP parcial
+// de propósito (ex: Rota 2 do achado A10/Editorial). OUTRO é o escape
+// padrão do repo pra processo de impressão ainda não coberto.
+enum TipoAgrupamentoGangRun {
+  FOLHA_2D // Offset — chapa/folha (comportamento original, único até esta rodada)
+  BOBINA_1D // Flexografia/grande formato — nesting 1D na largura da bobina
+  TELA_MATRIZ // Serigrafia — NÃO IMPLEMENTADO nesta rodada, ver comentário acima
+  MESA_PLANA // Digital grande formato / corte a laser — NÃO IMPLEMENTADO nesta rodada
+  OUTRO
+}
+
 // Um evento de "rodar junto" — quando um operador decide, na tela
-// /producao/gang-run, combinar um grupo de candidatos que compartilham
-// papel+gramatura+prensa+folha+cores numa mesma chapa física. Existe como
+// /producao/gang-run, combinar um grupo de candidatos fisicamente
+// compatíveis (chave definida pelo tipoAgrupamento, ver
+// TipoAgrupamentoGangRun acima) numa mesma peça física. Existe como
 // registro próprio (não só um campo em FilaGangRun) pra guardar o custo
-// TOTAL de chapa+acerto rateado entre os itens combinados — auditável depois
-// (ver combinarGrupoGangRun em src/lib/gang-run-servico.ts).
+// TOTAL do setup compartilhado rateado entre os itens combinados —
+// auditável depois (ver combinarGrupoGangRun em
+// src/lib/gang-run-servico.ts).
 //
 // MVP: não otimiza automaticamente QUAIS candidatos combinar nem em quantas
-// chapas físicas eles cabem juntos (bin-packing 2D é NP-difícil) — o
-// operador escolhe manualmente quando o grupo já tem candidatos suficientes
-// pra valer a pena rodar, e o sistema assume que 1 chapa é compartilhada
-// entre todos os itens do grupo (ver custoChapas/custoSetup abaixo, que já
-// são fixos por combo cor+prensa no motor Offset, independentes da
-// quantidade — ver src/lib/pricing/offset.ts).
+// peças físicas eles cabem juntos (bin-packing é NP-difícil) — o operador
+// escolhe manualmente quando o grupo já tem candidatos suficientes pra
+// valer a pena rodar, e o sistema assume que 1 peça física (chapa OU
+// revolução de bobina) é compartilhada entre todos os itens do grupo (ver
+// custoChapasTotal/custoSetupTotal abaixo, que já são fixos por rodada no
+// motor de precificação de cada processo, independentes da quantidade —
+// ver src/lib/pricing/offset.ts e flexografia.ts).
 model GrupoGangRun {
   id        String @id @default(cuid())
   graficaId String
 
-  // Chave de compatibilidade física — mesma folha/prensa/papel/cores, ver
-  // comentário de FilaGangRun abaixo.
-  papelId      String
-  gramaturaGm2 Decimal @db.Decimal(6, 1)
-  prensaId     String
-  folhaId      String
-  corFrente    Int
-  corVerso     Int
+  // Achado F1 — qual "sabor" de compatibilidade este grupo usa; decide
+  // quais dos dois blocos de campos abaixo estão preenchidos (validado em
+  // app, sem CHECK no banco — mesmo padrão do resto do schema). Default
+  // FOLHA_2D preserva 100% o comportamento de todo grupo já combinado antes
+  // desta migration.
+  tipoAgrupamento TipoAgrupamentoGangRun @default(FOLHA_2D)
 
-  // Custo TOTAL de chapa(s) + acerto de máquina da rodada compartilhada —
-  // pago UMA vez pelo grupo inteiro (não por item), rateado
-  // proporcionalmente ao espaço de cada item na folha (ver
+  // Chave de compatibilidade física FOLHA_2D (Offset) — mesma folha/
+  // prensa/papel/cores, ver comentário de FilaGangRun abaixo. Preenchidos
+  // só quando tipoAgrupamento=FOLHA_2D. Ficaram OPCIONAIS nesta migration
+  // (eram NOT NULL) só pra abrir espaço pra grupos BOBINA_1D, que não têm
+  // papel/prensa/folha/cores no sentido de Offset — relaxar NOT NULL é
+  // sempre seguro pra dado já existente (nenhum grupo FOLHA_2D perde
+  // valor).
+  papelId      String?
+  gramaturaGm2 Decimal? @db.Decimal(6, 1)
+  prensaId     String?
+  folhaId      String?
+  corFrente    Int?
+  corVerso     Int?
+
+  // Chave de compatibilidade física BOBINA_1D (Flexografia/grande formato)
+  // — material (aqui, o ItemGrafica do PRODUTO flexo em si: BobinaMaterial
+  // não tem uma matéria-prima separada como o papelId do Offset, a bobina é
+  // cadastrada direto no produto — ver model BobinaMaterial) + largura
+  // nominal da bobina escolhida pelo nesting 1D + máquina flexográfica.
+  // Preenchidos só quando tipoAgrupamento=BOBINA_1D — campos NOVOS,
+  // propositalmente separados dos de FOLHA_2D acima (cada tipoAgrupamento
+  // tem sua própria lógica de compatibilidade, sem forçar os dois a
+  // compartilhar campo).
+  itemGraficaMaterialId String?
+  larguraBobinaNominal  Decimal? @db.Decimal(6, 3)
+  maquinaFlexografiaId  String?
+
+  // Custo TOTAL compartilhado da rodada — pago UMA vez pelo grupo inteiro
+  // (não por item), rateado proporcionalmente ao espaço de cada item (ver
   // FilaGangRun.custoRateado). Snapshot de um dos itens do grupo no momento
   // da combinação (todos têm o mesmo valor, por construção da chave acima).
+  // Reaproveitados como estão pros dois tipos, sem coluna nova: FOLHA_2D
+  // usa os dois (chapa física + acerto de prensa); BOBINA_1D não tem custo
+  // de "chapa" individual neste MVP — custoChapasTotal fica sempre 0.00
+  // pra grupos BOBINA_1D, só custoSetupTotal (acerto de máquina
+  // compartilhado) é usado (ver registrarCandidatosGangRun/
+  // combinarGrupoGangRun em src/lib/gang-run-servico.ts).
   custoChapasTotal Decimal @db.Decimal(12, 2)
   custoSetupTotal  Decimal @db.Decimal(12, 2)
 
@@ -747,17 +808,19 @@ model GrupoGangRun {
   @@map("grupos_gang_run")
 }
 
-// Candidato a gang run: um OrcamentoItem com modeloCalculo=OFFSET cuja
-// quantidade sozinha não preenche uma chapa/folha inteira (fracaoFolha < 1,
-// ver ehCandidatoGangRun em src/lib/gang-run.ts) — em vez de rodar uma
-// chapa exclusiva só pra ele, fica esperando outros pedidos da MESMA
-// gráfica com o MESMO papel+gramatura+prensa+folha+cores (ver
-// chaveGrupoGangRun) pra dividir o custo fixo de chapa+acerto. Criado uma
+// Candidato a gang run: um item de orçamento cujo processo suporta
+// agrupamento/nesting (OFFSET via FOLHA_2D, FLEXOGRAFIA via BOBINA_1D —
+// achado F1, ver TipoAgrupamentoGangRun acima) cuja quantidade sozinha não
+// preenche uma peça física inteira (fracaoFolha < 1, ver
+// ehCandidatoGangRun em src/lib/gang-run.ts) — em vez de rodar uma peça
+// exclusiva só pra ele, fica esperando outros pedidos da MESMA gráfica com
+// a MESMA chave de compatibilidade do seu tipoAgrupamento (ver
+// chaveGrupoGangRun) pra dividir o custo fixo compartilhado. Criado uma
 // vez, na aprovação do orçamento (junto com o Pedido, ver
 // registrarCandidatosGangRun) — nunca recalculado depois, mesmo que o
 // motor de precificação mude.
 //
-// 1:1 com OrcamentoItem (um item Offset entra na fila no máximo uma vez).
+// 1:1 com OrcamentoItem (um item entra na fila no máximo uma vez).
 // pedidoId é denormalizado do Orcamento (Pedido.orcamentoId é @unique) só
 // pra não precisar de join toda vez que a fila lê/atualiza por pedido (ex:
 // cancelarPedido cancelando os candidatos deste pedido).
@@ -768,40 +831,77 @@ model FilaGangRun {
   pedidoId        String
   status          StatusFilaGangRun @default(AGUARDANDO)
 
-  // Chave de compatibilidade física: só itens com os MESMOS seis valores
-  // abaixo podem compartilhar uma chapa/folha (ver chaveGrupoGangRun em
-  // src/lib/gang-run.ts). papelId/prensaId vêm de ItemGrafica (matéria-prima
-  // e prensa do produto, ver schema de ItemGrafica); folhaId é o
-  // FormatoFolha que o motor de nesting ESCOLHEU pra este item específico
-  // (metricas.folhaEscolhida.id do breakdown salvo em OrcamentoItem —
-  // produtos com mais de um formato cadastrado podem escolher formatos
-  // diferentes conforme o tamanho da peça). Sem FK formal pra
-  // papel/prensa/folha de propósito: isto é um snapshot de agrupamento, não
-  // um vínculo que precise ser mantido consistente se o cadastro mudar
-  // depois (mesmo princípio de CategoriaCusto.nome livre em Despesa).
-  papelId      String
-  gramaturaGm2 Decimal @db.Decimal(6, 1)
-  prensaId     String
-  folhaId      String
-  corFrente    Int
-  corVerso     Int
+  // Achado F1 — qual "sabor" de compatibilidade este candidato usa; decide
+  // quais dos dois blocos de campos abaixo estão preenchidos (validado em
+  // app, sem CHECK no banco — mesmo padrão do resto do schema). Default
+  // FOLHA_2D preserva 100% o comportamento de todo candidato já criado
+  // antes desta migration.
+  tipoAgrupamento TipoAgrupamentoGangRun @default(FOLHA_2D)
 
-  // nUp = quantas peças deste item cabem numa folha (motor de nesting já
-  // existente, calcularImposicao em src/lib/pricing/offset.ts).
-  // fracaoFolha = quantidade/nUp — quanto da capacidade de UMA folha este
-  // item sozinho ocupa (< 1 é o que faz dele um candidato, ver
-  // ehCandidatoGangRun). Soma de fracaoFolha do grupo >= 1 é o sinal
-  // (informativo, não automático) de "já dá pra encher uma chapa juntando
-  // estes pedidos".
+  // Chave de compatibilidade física FOLHA_2D (Offset): só itens com os
+  // MESMOS seis valores abaixo podem compartilhar uma chapa/folha (ver
+  // chaveGrupoGangRun em src/lib/gang-run.ts). papelId/prensaId vêm de
+  // ItemGrafica (matéria-prima e prensa do produto, ver schema de
+  // ItemGrafica); folhaId é o FormatoFolha que o motor de nesting ESCOLHEU
+  // pra este item específico (metricas.folhaEscolhida.id do breakdown
+  // salvo em OrcamentoItem — produtos com mais de um formato cadastrado
+  // podem escolher formatos diferentes conforme o tamanho da peça). Sem FK
+  // formal pra papel/prensa/folha de propósito: isto é um snapshot de
+  // agrupamento, não um vínculo que precise ser mantido consistente se o
+  // cadastro mudar depois (mesmo princípio de CategoriaCusto.nome livre em
+  // Despesa). Preenchidos só quando tipoAgrupamento=FOLHA_2D — ficaram
+  // OPCIONAIS nesta migration (eram NOT NULL, prensaId inclusive — achado
+  // F1 pedia isso especificamente) só pra abrir espaço pra candidatos
+  // BOBINA_1D, que não têm papel/prensa/folha/cores no sentido de Offset;
+  // relaxar NOT NULL é sempre seguro pra dado já existente.
+  papelId      String?
+  gramaturaGm2 Decimal? @db.Decimal(6, 1)
+  prensaId     String?
+  folhaId      String?
+  corFrente    Int?
+  corVerso     Int?
+
+  // Chave de compatibilidade física BOBINA_1D (Flexografia/grande formato,
+  // achado F1) — material (o ItemGrafica do PRODUTO flexo em si:
+  // BobinaMaterial é cadastrada direto no produto, sem uma matéria-prima
+  // separada como o papelId do Offset — ver model BobinaMaterial) +
+  // largura nominal da bobina que o nesting 1D ESCOLHEU pra este item
+  // (metricas.bobinaEscolhida do breakdown, mesmo princípio de folhaId
+  // acima — ver calcularFlexografia em src/lib/pricing/flexografia.ts) +
+  // máquina flexográfica. Preenchidos só quando tipoAgrupamento=BOBINA_1D —
+  // campos NOVOS, propositalmente separados dos de FOLHA_2D acima (cada
+  // tipoAgrupamento tem sua própria lógica de compatibilidade, sem forçar
+  // os dois a compartilhar campo).
+  itemGraficaMaterialId String?
+  larguraBobinaNominal  Decimal? @db.Decimal(6, 3)
+  maquinaFlexografiaId  String?
+
+  // nUp = quantas peças deste item cabem numa "rodada" física — folha
+  // inteira (FOLHA_2D) ou uma volta do cilindro na largura da bobina
+  // (BOBINA_1D, ver numRevolucoes/nUp em calcularFlexografia). fracaoFolha
+  // = quantidade/nUp — quanto da capacidade de UMA rodada este item sozinho
+  // ocupa (< 1 é o que faz dele um candidato, ver ehCandidatoGangRun). Soma
+  // de fracaoFolha do grupo >= 1 é o sinal (informativo, não automático) de
+  // "já dá pra encher uma rodada juntando estes pedidos". Nome do campo
+  // mantido "Folha" por compatibilidade com o código/UI FOLHA_2D já
+  // existente — vale pra BOBINA_1D também (uma "revolução" no lugar de uma
+  // "folha").
   nUpPeca        Int
   quantidadePeca Int
   fracaoFolha    Decimal @db.Decimal(8, 4)
 
-  // Snapshot do que chapa+acerto custariam se este item rodasse SOZINHO
-  // (igual ao que já foi orçado em OrcamentoItem.breakdown.detalhes.chapas/
-  // setup) — usado só pra mostrar "quanto está economizando" na tela depois
-  // de combinado; nunca é o valor efetivamente cobrado (esse é
-  // custoRateado, abaixo).
+  // Snapshot do que o custo fixo compartilhado custaria se este item
+  // rodasse SOZINHO (igual ao que já foi orçado em
+  // OrcamentoItem.breakdown.detalhes) — usado só pra mostrar "quanto está
+  // economizando" na tela depois de combinado; nunca é o valor efetivamente
+  // cobrado (esse é custoRateado, abaixo). custoChapasIndividual é sempre
+  // 0.00 pra tipoAgrupamento=BOBINA_1D (flexografia não tem custo de chapa
+  // individual neste MVP — reaproveita os mesmos dois campos NOT NULL em
+  // vez de criar colunas novas só pra "zero sempre", ver
+  // registrarCandidatosGangRun em src/lib/gang-run-servico.ts);
+  // custoSetupIndividual carrega detalhes.setup nos dois tipos (chave
+  // compartilhada entre os breakdowns de Offset e Flexografia, ver
+  // compor.ts).
   custoChapasIndividual Decimal @db.Decimal(12, 2)
   custoSetupIndividual  Decimal @db.Decimal(12, 2)
 
@@ -823,6 +923,7 @@ model FilaGangRun {
 
   @@index([graficaId, status])
   @@index([graficaId, papelId, gramaturaGm2, prensaId, folhaId, corFrente, corVerso, status])
+  @@index([graficaId, itemGraficaMaterialId, larguraBobinaNominal, maquinaFlexografiaId, status])
   @@index([pedidoId])
   @@map("fila_gang_run")
 }

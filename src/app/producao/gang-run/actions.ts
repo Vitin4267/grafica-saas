@@ -31,7 +31,7 @@ export async function combinarGangRun(
 
   const filaGangRunIds = formData.getAll("filaGangRunIds").map(String).filter(Boolean);
   if (filaGangRunIds.length < 2) {
-    return { ok: false, mensagem: "Selecione ao menos dois itens pra combinar numa chapa." };
+    return { ok: false, mensagem: "Selecione ao menos dois itens pra combinar." };
   }
 
   const resultado = await combinarGrupoGangRun({
@@ -46,10 +46,15 @@ export async function combinarGangRun(
 
   revalidatePath("/producao/gang-run");
   revalidatePath("/producao");
+  // Achado F1 — mensagem varia por tipoAgrupamento: FOLHA_2D continua
+  // falando de "chapa" (comportamento original); BOBINA_1D fala de
+  // "rodada de bobina", que é a peça física compartilhada de verdade.
+  const rotuloPeca = resultado.tipoAgrupamento === "FOLHA_2D" ? "Chapa combinada" : "Bobina combinada";
+  const rotuloCusto = resultado.tipoAgrupamento === "FOLHA_2D" ? "chapa + acerto" : "acerto de máquina";
   return {
     ok: true,
-    mensagem: `Chapa combinada: ${resultado.itensCombinados} pedidos dividindo ${formatoMoeda.format(
+    mensagem: `${rotuloPeca}: ${resultado.itensCombinados} pedidos dividindo ${formatoMoeda.format(
       Number(resultado.custoTotal)
-    )} de chapa + acerto.`,
+    )} de ${rotuloCusto}.`,
   };
 }

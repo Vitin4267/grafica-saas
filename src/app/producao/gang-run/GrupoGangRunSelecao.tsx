@@ -6,11 +6,14 @@ import { Button } from "@/components/ui/Button";
 import { combinarGangRun } from "./actions";
 import type { GrupoGangRunListado } from "@/lib/gang-run-servico";
 
-// Uma chave física (papel+gramatura+prensa+folha+cores) = um card com
-// checkbox por candidato. O operador escolhe manualmente quais pedidos
-// combinar (MVP não decide isso sozinho, ver comentário de GrupoGangRun no
-// schema) — o botão só libera com 2+ marcados, mesmo mínimo exigido por
-// combinarGrupoGangRun.
+// Uma chave física (achado F1: papel+gramatura+prensa+folha+cores no
+// FOLHA_2D/Offset, ou material+bobina+máquina no BOBINA_1D/Flexografia) =
+// um card com checkbox por candidato — grupo.descricaoCompatibilidade já
+// vem formatada certa pro tipoAgrupamento (ver listarFilaGangRunAgrupada
+// em src/lib/gang-run-servico.ts). O operador escolhe manualmente quais
+// pedidos combinar (MVP não decide isso sozinho, ver comentário de
+// GrupoGangRun no schema) — o botão só libera com 2+ marcados, mesmo
+// mínimo exigido por combinarGrupoGangRun.
 export function GrupoGangRunSelecao({ grupo }: { grupo: GrupoGangRunListado }) {
   const [state, formAction, isPending] = useActionState(combinarGangRun, null);
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
@@ -35,15 +38,12 @@ export function GrupoGangRunSelecao({ grupo }: { grupo: GrupoGangRunListado }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="font-semibold text-slate-900 dark:text-white">
-            {grupo.papelNome} · {grupo.gramaturaGm2}g/m² · {grupo.prensaNome}
+            {grupo.descricaoCompatibilidade}
           </h3>
-          <p className="mt-0.5 text-sm text-slate-500">
-            Folha {grupo.folhaNome} · {grupo.corFrente}x{grupo.corVerso} cores
-          </p>
         </div>
         {pronto && (
           <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-            Já enche uma chapa
+            {grupo.tipoAgrupamento === "FOLHA_2D" ? "Já enche uma chapa" : "Já enche uma rodada de bobina"}
           </span>
         )}
       </div>
@@ -56,8 +56,9 @@ export function GrupoGangRunSelecao({ grupo }: { grupo: GrupoGangRunListado }) {
           />
         </div>
         <p className="mt-1 text-xs text-slate-500">
-          {(grupo.somaFracaoFolha * 100).toFixed(0)}% de uma folha preenchidos, somando os{" "}
-          {grupo.candidatos.length} candidatos abaixo.
+          {(grupo.somaFracaoFolha * 100).toFixed(0)}%{" "}
+          {grupo.tipoAgrupamento === "FOLHA_2D" ? "de uma folha preenchidos" : "de uma bobina preenchidos"},
+          somando os {grupo.candidatos.length} candidatos abaixo.
         </p>
       </div>
 
@@ -84,7 +85,10 @@ export function GrupoGangRunSelecao({ grupo }: { grupo: GrupoGangRunListado }) {
               </div>
               <div className="shrink-0 text-right text-xs text-slate-500">
                 <p>{candidato.quantidadePeca} un.</p>
-                <p>{(candidato.fracaoFolha * 100).toFixed(0)}% da folha</p>
+                <p>
+                  {(candidato.fracaoFolha * 100).toFixed(0)}%{" "}
+                  {grupo.tipoAgrupamento === "FOLHA_2D" ? "da folha" : "da bobina"}
+                </p>
               </div>
             </li>
           ))}
