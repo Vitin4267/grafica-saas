@@ -6,6 +6,7 @@ import type { SegmentoGrafica } from "@/generated/prisma/enums";
 import { calcularItemOrcamento, type DadosItemOrcamento } from "@/lib/orcamento-precificacao";
 import { D } from "@/lib/pricing/decimal";
 import { ehViolacaoDeChaveEstrangeira } from "@/lib/prisma-conflito";
+import { PREFIXO_EXEMPLO, ehDadoDeExemplo } from "@/lib/dados-exemplo-marcador";
 
 // Dados de exemplo pra /comecar: um conjunto mínimo e COERENTE (máquina +
 // matéria-prima quando o modelo exige + produto avançado + produto simples +
@@ -32,7 +33,13 @@ import { ehViolacaoDeChaveEstrangeira } from "@/lib/prisma-conflito";
 // mestre com nome parecido. O CLIENTE de exemplo é compartilhado por todos
 // os pacotes (só uma gráfica carrega um pacote por vez, então não há
 // colisão) — é ele quem marca "dados de exemplo já carregados".
-export const PREFIXO_EXEMPLO = "[Exemplo] ";
+//
+// Achado E5 — PREFIXO_EXEMPLO/ehDadoDeExemplo moraram sempre AQUI
+// conceitualmente, mas fisicamente vivem em ./dados-exemplo-marcador (sem
+// "server-only", ver import acima) pra poder ser importados por client
+// components (badge visual nos seletores de orçamento). Reexportado abaixo
+// pra não quebrar nenhum import existente deste módulo.
+export { PREFIXO_EXEMPLO, ehDadoDeExemplo };
 
 const NOME_CLIENTE = `${PREFIXO_EXEMPLO}Cliente Demonstração`;
 

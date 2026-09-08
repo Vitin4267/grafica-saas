@@ -5,6 +5,7 @@ import { useAoMudar } from "@/lib/hooks/useAoMudar";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { ehDadoDeExemplo } from "@/lib/dados-exemplo-marcador";
 import { alterarClienteOrcamento } from "./actions";
 
 type Cliente = { id: string; nome: string };
@@ -47,7 +48,9 @@ export function TrocarClienteForm({
         <Select label="Cliente" name="clienteId" defaultValue={clienteAtualId}>
           {clientes.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.nome}
+              {/* Achado E5 — mesmo reforço visual do seletor de cliente da
+                  Calculadora (CalculadoraForm.tsx). */}
+              {ehDadoDeExemplo(c.nome) ? `⚠️ ${c.nome}` : c.nome}
             </option>
           ))}
         </Select>

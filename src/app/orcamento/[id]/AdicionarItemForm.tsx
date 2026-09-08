@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { ehDadoDeExemplo } from "@/lib/dados-exemplo-marcador";
 import { adicionarItemOrcamento } from "./actions";
 import {
   SeletorItemOrcamento,
@@ -49,6 +50,13 @@ export function AdicionarItemForm({
   }
 
   if (itens.length === 0) return null;
+
+  // Achado E5 — mesmo aviso da Calculadora (CalculadoraForm.tsx), aqui pro
+  // fluxo de "+ Adicionar item" num orçamento já existente: o item escolhido
+  // no <select> (dentro de SeletorItemOrcamento) pode ser um produto de
+  // exemplo do onboarding.
+  const itemSelecionado = itens.find((i) => i.id === campos.itemGraficaId);
+  const itemExemploSelecionado = itemSelecionado ? ehDadoDeExemplo(itemSelecionado.nome) : false;
 
   return (
     <Card className="p-6">
@@ -201,6 +209,14 @@ export function AdicionarItemForm({
           valores={campos}
           onChange={setCampos}
         />
+
+        {itemExemploSelecionado && (
+          <Alert variant="warning">
+            Este produto é um item de EXEMPLO (dado de demonstração do onboarding) — não
+            deveria entrar num orçamento real. Você ainda pode adicionar assim, mas confira
+            antes de enviar pro cliente de verdade.
+          </Alert>
+        )}
 
         {state && <Alert variant={state.ok ? "success" : "error"}>{state.mensagem}</Alert>}
 

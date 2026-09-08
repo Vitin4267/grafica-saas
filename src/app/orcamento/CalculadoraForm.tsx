@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { ehDadoDeExemplo } from "@/lib/dados-exemplo-marcador";
 import { ReceiptIcon, RulerIcon, SparklesIcon } from "@/components/icons";
 import { criarOrcamento, precificarItem, buscarCondicoesComerciaisCliente } from "./actions";
 import {
@@ -339,6 +340,21 @@ export function CalculadoraForm({
 
   const totalCarrinho = itensCarrinho.reduce((soma, i) => soma + Number(i.precoTotal), 0);
 
+  // Achado E5 — cliente escolhido é dado de exemplo (ver badge logo acima do
+  // <select>).
+  const clienteExemploSelecionado = (() => {
+    const cliente = clientes.find((c) => c.id === clienteId);
+    return cliente ? ehDadoDeExemplo(cliente.nome) : false;
+  })();
+  // Achado E5 — algum item já adicionado ao carrinho é dado de exemplo (o
+  // NOME vem de `resultado.nome`, devolvido pelo servidor em precificarItem
+  // — sempre o nome real do ItemGrafica, então carrega o mesmo prefixo).
+  const itensExemploNoCarrinho = itensCarrinho.filter((i) => ehDadoDeExemplo(i.nome));
+  // Aviso antes de salvar — junta os dois casos acima (achado E5, parte 2).
+  // Não bloqueia o salvamento (é aviso, não trava dura), só difícil de
+  // ignorar: aparece logo acima do botão "Salvar orçamento".
+  const usaExemploNoOrcamento = clienteExemploSelecionado || itensExemploNoCarrinho.length > 0;
+
   async function adicionarAoCarrinho() {
     setErroAdicionar(null);
     const quantidade = Number(campos.quantidade);
@@ -536,10 +552,19 @@ export function CalculadoraForm({
             </option>
             {clientes.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.nome}
+                {/* Achado E5 — mesmo reforço visual do seletor de produto em
+                    SeletorItemOrcamento.tsx: <option> nativa não aceita
+                    cor/HTML, o ícone é o sinal possível dentro da lista. */}
+                {ehDadoDeExemplo(c.nome) ? `⚠️ ${c.nome}` : c.nome}
               </option>
             ))}
           </Select>
+
+          {clienteExemploSelecionado && (
+            <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+              ⚠️ Exemplo — não use este cliente num orçamento real
+            </span>
+          )}
 
           {filiais.length > 0 && (
             <Select
@@ -733,6 +758,20 @@ export function CalculadoraForm({
             <input type="hidden" name="transportadora" value={dadosGerais.transportadora} />
             <input type="hidden" name="localEntrega" value={dadosGerais.localEntrega} />
             <input type="hidden" name="observacoes" value={dadosGerais.observacoes} />
+
+            {usaExemploNoOrcamento && (
+              <Alert variant="warning">
+                Este orçamento usa{" "}
+                {clienteExemploSelecionado && itensExemploNoCarrinho.length > 0
+                  ? "um cliente E um ou mais produtos de EXEMPLO"
+                  : clienteExemploSelecionado
+                    ? "um cliente de EXEMPLO"
+                    : "um ou mais produtos de EXEMPLO"}{" "}
+                (dado de demonstração do onboarding) — não deveria virar um orçamento
+                real. Você ainda pode salvar assim, mas confira antes de enviar pro
+                cliente de verdade.
+              </Alert>
+            )}
 
             {state && !state.ok && <Alert variant="error">{state.mensagem}</Alert>}
 

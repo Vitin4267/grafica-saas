@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
 import { CampoAjuda } from "@/components/ui/CampoAjuda";
+import { ehDadoDeExemplo } from "@/lib/dados-exemplo-marcador";
 import { CamposEtiquetaOrcamento, etiquetaInicial, type CamposEtiqueta } from "./CamposEtiquetaOrcamento";
 import { CamposCorEspecialOrcamento } from "./CamposCorEspecialOrcamento";
 import type { CamposCorEspecial } from "./cor-especial-campos";
@@ -460,10 +461,21 @@ export function SeletorItemOrcamento({
         </option>
         {itens.map((i) => (
           <option key={i.id} value={i.id}>
-            {i.nome}
+            {/* Achado E5 — <option> nativa não aceita HTML/cor (badge de
+                verdade só é possível FORA do dropdown, ver badge abaixo),
+                então o ícone de alerta é o reforço visual possível DENTRO da
+                lista — não só o prefixo de texto "[Exemplo] ", fácil de
+                passar despercebido misturado com produtos reais. */}
+            {ehDadoDeExemplo(i.nome) ? `⚠️ ${i.nome}` : i.nome}
           </option>
         ))}
       </Select>
+
+      {itemSelecionado && ehDadoDeExemplo(itemSelecionado.nome) && (
+        <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+          ⚠️ Exemplo — não use este produto num orçamento real
+        </span>
+      )}
 
       <Input
         label="Quantidade"
