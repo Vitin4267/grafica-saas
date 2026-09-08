@@ -238,6 +238,29 @@ comportamento.
   condição de gerar movimentação e o uso de `custoAquisicaoTotal`
   continuam intactos, só a QUANTIDADE lançada por confirmação muda.
 
+## Atualização 2026-09-07 (3) — A11/Compras (OTIF) e A16/Financeiro (exportação)
+
+- **Compras — OTIF e desempenho de fornecedor (achado A11):** SEM tabela
+  nova (dependia de A4/A7/A8, todos já construídos). `calcularDesempenho
+  Fornecedores` (`src/lib/desempenho-fornecedor.ts`, função pura) deriva %
+  no prazo, % completo, OTIF combinado e nº com divergência de
+  `SolicitacaoCompra`. Compra sem cotação vencedora vinculada fica fora do
+  denominador de "no prazo"/"OTIF" (sem promessa, nada a confrontar) mas
+  entra no de "completo". Amostra mínima de 3 (`AMOSTRA_MINIMA_DESEMPENHO`)
+  pra exibir percentual — abaixo disso, "dado insuficiente". Exibido em
+  `/compras/nova` (comparativo de fornecedores).
+- **Financeiro — exportação pro contador expandida (achado A16):**
+  `/financeiro/exportar` ganhou intervalo livre (`?de=&ate=`, `?mes=`
+  antigo ainda funciona) + blocos novos: contas a receber com aging (5
+  faixas), comissões, custos por pedido, agrupamento por `CategoriaCusto`
+  com subtotal por `natureza`, DRE do período (reaproveita `buscarDRE` de
+  `dre-query.ts`) e "possíveis duplicidades" — heurística em
+  `src/lib/exportacao-financeira.ts` (`detectarCandidatosDuplicidade`) que
+  soma `Pagamento` por orçamento no período (excluindo o que financiou
+  depósito de `CreditoCliente`, mecanismo legítimo) e sinaliza quando a
+  soma ultrapassa o total do orçamento com 2+ pagamentos — não resolve a
+  causa raiz, só torna visível pro contador revisar.
+
 ---
 
 ## Índice
