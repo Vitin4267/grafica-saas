@@ -498,6 +498,33 @@ export async function avancarSolicitacaoCompra(
   const parseDesconto = parseValorNaoNegativoOpcional("valorDesconto");
   if (!parseDesconto.ok) return { ok: false, mensagem: parseDesconto.mensagem };
 
+  // Achado A7 da auditoria de abrangência (Parte 3/Compras, 2026-09-07) —
+  // quantidade efetivamente recebida NESTA confirmação (só aparece no form
+  // quando proximoStatus=RECEBIDO, ver camposContextuais em
+  // AcoesSolicitacaoForm.tsx) — obrigatoriedade real é checada dentro de
+  // avancarStatusCompra (que também sabe o restante esperado pra sugerir a
+  // divergência), aqui só parseia o número.
+  let quantidadeRecebida: number | null | undefined;
+  const quantidadeRecebidaTexto = formData.has("quantidadeRecebida")
+    ? String(formData.get("quantidadeRecebida") ?? "").trim()
+    : undefined;
+  if (quantidadeRecebidaTexto === undefined) {
+    quantidadeRecebida = undefined;
+  } else if (quantidadeRecebidaTexto === "") {
+    quantidadeRecebida = null;
+  } else {
+    const numero = Number(quantidadeRecebidaTexto);
+    if (!Number.isFinite(numero) || numero <= 0) {
+      return { ok: false, mensagem: "Quantidade recebida inválida." };
+    }
+    quantidadeRecebida = numero;
+  }
+
+  const parseValorNotaFiscal = parseValorNaoNegativoOpcional("valorNotaFiscal");
+  if (!parseValorNotaFiscal.ok) return { ok: false, mensagem: parseValorNotaFiscal.mensagem };
+
+  const divergenciaObservacao = campoOpcionalTransicao(formData, "divergenciaObservacao");
+
   // Achado A1 da auditoria de abrangência (Parte 3/Compras, 2026-09-06) —
   // itemGrafica pode ser null (compra por descricaoLivre); nome exibido
   // cai pra descrição livre digitada na criação.
@@ -523,6 +550,7 @@ export async function avancarSolicitacaoCompra(
     valorIpi: solicitacao.valorIpi,
     valorIcmsCreditavel: solicitacao.valorIcmsCreditavel,
     valorDesconto: solicitacao.valorDesconto,
+    quantidadeRecebida: solicitacao.quantidadeRecebida,
   };
 
   const resultado = await avancarStatusCompra(
@@ -537,6 +565,9 @@ export async function avancarSolicitacaoCompra(
       valorIpi: parseIpi.valor,
       valorIcmsCreditavel: parseIcms.valor,
       valorDesconto: parseDesconto.valor,
+      quantidadeRecebida,
+      valorNotaFiscal: parseValorNotaFiscal.valor,
+      divergenciaObservacao,
     }
   );
 

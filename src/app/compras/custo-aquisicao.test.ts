@@ -97,6 +97,7 @@ async function solicitacaoParaTransicao(solicitacaoId: string): Promise<Solicita
     valorIpi: solicitacao.valorIpi,
     valorIcmsCreditavel: solicitacao.valorIcmsCreditavel,
     valorDesconto: solicitacao.valorDesconto,
+    quantidadeRecebida: solicitacao.quantidadeRecebida,
   };
 }
 
@@ -154,7 +155,7 @@ describe("avancarStatusCompra — custo de aquisição real (achado A2)", () => 
       expect(Number(solicitacaoComprada.valorDesconto)).toBe(20);
 
       atual = await solicitacaoParaTransicao(solicitacao.id);
-      const recebido = await avancarStatusCompra(atual, "RECEBIDO", { id: f.usuarioDonoId });
+      const recebido = await avancarStatusCompra(atual, "RECEBIDO", { id: f.usuarioDonoId }, { quantidadeRecebida: 10 });
       expect(recebido.ok).toBe(true);
 
       const movimentacao = await prisma.movimentacaoEstoque.findFirstOrThrow({
@@ -189,7 +190,7 @@ describe("avancarStatusCompra — custo de aquisição real (achado A2)", () => 
       await avancarStatusCompra(atual, "COMPRADO", { id: f.usuarioDonoId }, { valorFinal: 250 });
 
       atual = await solicitacaoParaTransicao(solicitacao.id);
-      await avancarStatusCompra(atual, "RECEBIDO", { id: f.usuarioDonoId });
+      await avancarStatusCompra(atual, "RECEBIDO", { id: f.usuarioDonoId }, { quantidadeRecebida: 5 });
 
       const movimentacao = await prisma.movimentacaoEstoque.findFirstOrThrow({
         where: { solicitacaoCompraId: solicitacao.id },
@@ -228,7 +229,7 @@ describe("avancarStatusCompra — custo de aquisição real (achado A2)", () => 
       });
 
       atual = await solicitacaoParaTransicao(solicitacao.id);
-      await avancarStatusCompra(atual, "RECEBIDO", { id: f.usuarioDonoId });
+      await avancarStatusCompra(atual, "RECEBIDO", { id: f.usuarioDonoId }, { quantidadeRecebida: 10 });
 
       const custo = await prisma.custoPedido.findUnique({ where: { solicitacaoCompraId: solicitacao.id } });
       expect(custo).not.toBeNull();

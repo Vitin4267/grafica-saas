@@ -43,11 +43,16 @@ const ROTULOS_PEDIDO: Record<string, string> = {
   CANCELADO: "Cancelado",
 };
 
+// Achado A7 da auditoria de abrangência (Parte 3/Compras, 2026-09-07) —
+// RECEBIDO_PARCIAL entre COMPRADO (violeta) e RECEBIDO (teal): ciano,
+// deliberadamente distinto dos dois pra não parecer "já terminou" nem "ainda
+// nem chegou".
 const CORES_COMPRA: Record<string, string> = {
   SOLICITADO: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
   COTANDO: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
   APROVADO: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
   COMPRADO: "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300",
+  RECEBIDO_PARCIAL: "bg-cyan-100 text-cyan-700 dark:bg-cyan-950 dark:text-cyan-300",
   RECEBIDO: "bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300",
   CONFERIDO: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
   CANCELADO: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
@@ -58,6 +63,7 @@ const ROTULOS_COMPRA: Record<string, string> = {
   COTANDO: "Cotando",
   APROVADO: "Aprovado",
   COMPRADO: "Comprado",
+  RECEBIDO_PARCIAL: "Recebido parcialmente",
   RECEBIDO: "Recebido",
   CONFERIDO: "Conferido",
   CANCELADO: "Cancelado",

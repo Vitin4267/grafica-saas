@@ -12,6 +12,7 @@ const TODOS_STATUS: StatusSolicitacaoCompra[] = [
   "COTANDO",
   "APROVADO",
   "COMPRADO",
+  "RECEBIDO_PARCIAL",
   "RECEBIDO",
   "CONFERIDO",
   "CANCELADO",
@@ -36,6 +37,15 @@ describe("TRANSICOES_VALIDAS", () => {
 
   it("RECEBIDO só pode virar CONFERIDO — depois que o material chega, cancelar não é mais permitido", () => {
     expect(TRANSICOES_VALIDAS.RECEBIDO).toEqual(["CONFERIDO"]);
+  });
+
+  // Achado A7 da auditoria de abrangência (Parte 3/Compras, 2026-09-07) —
+  // RECEBIDO_PARCIAL só aceita "RECEBIDO" de novo: a UI reabre a mesma ação
+  // de "confirmar recebimento" pra registrar o restante chegando, e
+  // avancarStatusCompra decide se o resultado real fica RECEBIDO ou
+  // continua RECEBIDO_PARCIAL (ver src/app/compras/status-transicao.ts).
+  it("RECEBIDO_PARCIAL só pode virar RECEBIDO — sem CANCELADO, mesma lógica de RECEBIDO", () => {
+    expect(TRANSICOES_VALIDAS.RECEBIDO_PARCIAL).toEqual(["RECEBIDO"]);
   });
 
   it("CONFERIDO e CANCELADO são estados terminais — nunca têm transição de saída", () => {

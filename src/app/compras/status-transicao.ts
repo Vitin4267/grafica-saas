@@ -2,7 +2,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import type { PapelUsuario } from "@/generated/prisma/enums";
-import { D } from "@/lib/pricing/decimal";
+import { D, type Dec } from "@/lib/pricing/decimal";
 import {
   TRANSICOES_VALIDAS,
   ROTULOS_STATUS_SOLICITACAO_COMPRA,
@@ -66,6 +66,14 @@ export type SolicitacaoParaTransicao = {
   valorIpi?: Prisma.Decimal | null;
   valorIcmsCreditavel?: Prisma.Decimal | null;
   valorDesconto?: Prisma.Decimal | null;
+  // Achado A7 da auditoria de abrangência (Parte 3/Compras, 2026-09-07) —
+  // recebimento parcial: CUMULATIVO — tudo que já foi efetivamente
+  // conferido até agora, somando todas as confirmações de RECEBIDO/
+  // RECEBIDO_PARCIAL desta solicitação (ver comentário do campo no schema).
+  // null/undefined tratado como 0 (nenhuma confirmação ainda) — cobre tanto
+  // "campo ainda não existe nesta linha" quanto testes/chamadores anteriores
+  // a esta feature.
+  quantidadeRecebida?: Prisma.Decimal | null;
 };
 
 // Campos opcionais que o formulário de transição pode enviar junto — cada
@@ -86,6 +94,22 @@ export type DadosTransicaoCompra = {
   valorIpi?: number | null;
   valorIcmsCreditavel?: number | null;
   valorDesconto?: number | null;
+  // Achado A7 da auditoria de abrangência (Parte 3/Compras, 2026-09-07) —
+  // campos do passo "confirmar recebimento" (proximoStatus=RECEBIDO, tanto
+  // vindo de COMPRADO quanto reabrindo a partir de RECEBIDO_PARCIAL).
+  //
+  // quantidadeRecebida aqui é o INCREMENTO desta confirmação (quanto chegou
+  // NESTA vez) — DIFERENTE de SolicitacaoParaTransicao.quantidadeRecebida
+  // acima, que é o acumulado já gravado no banco antes desta chamada.
+  // Obrigatório (não `undefined`) quando proximoStatus=RECEBIDO — sem ele a
+  // função nem sabe quanto lançar na MovimentacaoEstoque.
+  quantidadeRecebida?: number | null;
+  // Opcional, puramente informativo (ver comentário no schema) —
+  // `undefined` = "não mexer", `null` = "limpar", número = "definir".
+  valorNotaFiscal?: number | null;
+  // Exigido pela própria função (não aqui no tipo) quando a quantidade
+  // recebida nesta confirmação diverge do restante esperado.
+  divergenciaObservacao?: string | null;
 };
 
 export type AvancarStatusCompraResult =
@@ -118,7 +142,11 @@ const MENSAGEM_CONFLITO_ESTOQUE =
 // Qual campo de data corresponde a cada status — preenchido pela transição
 // que ENTRA nesse status (nunca retroativo). SOLICITADO fica de fora: nasce
 // preenchido pelo default do schema (solicitadoEm), nunca é alcançado por
-// uma transição.
+// uma transição. RECEBIDO_PARCIAL fica de fora de propósito: `proximoStatus`
+// pedido é sempre "RECEBIDO" (nunca "RECEBIDO_PARCIAL" literal, ver bloco de
+// recebimento parcial em avancarStatusCompra) — este mapa é indexado pelo
+// status REQUISITADO, então `recebidoEm` já é setado aqui em toda confirmação
+// (parcial ou final) e funciona como "data do ÚLTIMO recebimento".
 const CAMPO_DATA_POR_STATUS: Partial<Record<StatusSolicitacaoCompra, string>> = {
   COTANDO: "cotandoEm",
   APROVADO: "aprovadoEm",
@@ -230,6 +258,47 @@ export async function avancarStatusCompra(
     return { ok: false, mensagem: "Informe o valor final pago antes de marcar como comprado." };
   }
 
+  // Achado A7 da auditoria de abrangência (Parte 3/Compras, 2026-09-07) —
+  // recebimento parcial. `proximoStatus` pedido é sempre "RECEBIDO" (a UI
+  // reabre a mesma ação a partir de RECEBIDO_PARCIAL, ver
+  // ROTULO_PROXIMA_ETAPA em src/lib/compras-status.ts) — quem decide o
+  // status REAL gravado é esta função, comparando o acumulado com o total
+  // solicitado. Calculado ANTES de `dadosUpdate` pra poder sobrescrever
+  // `status` abaixo com o valor real (RECEBIDO ou RECEBIDO_PARCIAL).
+  let statusRecebimentoReal: "RECEBIDO" | "RECEBIDO_PARCIAL" | null = null;
+  let incrementoRecebidoDec: Dec | null = null;
+  let quantidadeRecebidaAcumuladaDec: Dec | null = null;
+  if (proximoStatus === "RECEBIDO") {
+    if (dados.quantidadeRecebida === undefined || dados.quantidadeRecebida === null || dados.quantidadeRecebida <= 0) {
+      return { ok: false, mensagem: "Informe a quantidade recebida antes de confirmar o recebimento." };
+    }
+
+    const quantidadeSolicitadaDec = new D(solicitacao.quantidade.toString());
+    const quantidadeJaRecebidaDec =
+      solicitacao.quantidadeRecebida !== null && solicitacao.quantidadeRecebida !== undefined
+        ? new D(solicitacao.quantidadeRecebida.toString())
+        : new D(0);
+    const restanteEsperadoDec = quantidadeSolicitadaDec.minus(quantidadeJaRecebidaDec);
+
+    incrementoRecebidoDec = new D(dados.quantidadeRecebida.toString());
+    quantidadeRecebidaAcumuladaDec = quantidadeJaRecebidaDec.plus(incrementoRecebidoDec);
+    statusRecebimentoReal = quantidadeRecebidaAcumuladaDec.gte(quantidadeSolicitadaDec) ? "RECEBIDO" : "RECEBIDO_PARCIAL";
+
+    // Divergência: a quantidade informada nesta confirmação não bate com o
+    // restante esperado (pra mais ou pra menos — avaria, erro de separação
+    // do fornecedor, sobra negociada etc.) — exige observação explicando.
+    // Quando bate exato, divergenciaObservacao não é tocado (fica como
+    // estava, ver bloco de dadosUpdate abaixo).
+    if (!incrementoRecebidoDec.eq(restanteEsperadoDec)) {
+      if (!dados.divergenciaObservacao?.trim()) {
+        return {
+          ok: false,
+          mensagem: `A quantidade recebida (${incrementoRecebidoDec.toFixed(4)}) é diferente do restante esperado (${restanteEsperadoDec.toFixed(4)}) — registre uma observação explicando a divergência.`,
+        };
+      }
+    }
+  }
+
   const dadosUpdate: Record<string, unknown> = { status: proximoStatus };
   const campoData = CAMPO_DATA_POR_STATUS[proximoStatus];
   if (campoData) dadosUpdate[campoData] = new Date();
@@ -254,6 +323,19 @@ export async function avancarStatusCompra(
     if (dados.valorIpi !== undefined) dadosUpdate.valorIpi = dados.valorIpi;
     if (dados.valorIcmsCreditavel !== undefined) dadosUpdate.valorIcmsCreditavel = dados.valorIcmsCreditavel;
     if (dados.valorDesconto !== undefined) dadosUpdate.valorDesconto = dados.valorDesconto;
+  }
+  if (proximoStatus === "RECEBIDO" && statusRecebimentoReal && quantidadeRecebidaAcumuladaDec) {
+    // Achado A7 da auditoria de abrangência (Parte 3/Compras, 2026-09-07) —
+    // `status` sobrescreve o "RECEBIDO" requisitado pelo real (pode ficar
+    // RECEBIDO_PARCIAL). `recebidoEm` (já setado acima via CAMPO_DATA_POR_STATUS,
+    // que mapeia RECEBIDO) fica valendo como "data do ÚLTIMO recebimento",
+    // parcial ou final — não é retroativo, então preservar esse valor
+    // também serve pro caso parcial.
+    dadosUpdate.status = statusRecebimentoReal;
+    dadosUpdate.quantidadeRecebida = quantidadeRecebidaAcumuladaDec.toFixed(4);
+    if (dados.valorNotaFiscal !== undefined) dadosUpdate.valorNotaFiscal = dados.valorNotaFiscal;
+    const divergenciaTexto = dados.divergenciaObservacao?.trim();
+    if (divergenciaTexto) dadosUpdate.divergenciaObservacao = divergenciaTexto;
   }
 
   try {
@@ -303,7 +385,13 @@ export async function avancarStatusCompra(
         geraMovimentacaoEstoque && registroEstoque !== null && registroEstoque.estoqueAtual === null;
       const estoqueAnterior = registroEstoque?.estoqueAtual;
 
-      const quantidadeDec = new D(solicitacao.quantidade.toString());
+      // Achado A7 da auditoria de abrangência (Parte 3/Compras, 2026-09-07)
+      // — o que entra em estoque/MovimentacaoEstoque NESTA confirmação é só
+      // o INCREMENTO desta vez (incrementoRecebidoDec, validado acima), não
+      // mais necessariamente `solicitacao.quantidade` inteira. `quantidadeDec`
+      // (nome mantido pro resto do bloco, ex: variável usada no increment()
+      // de ContratoFornecimento mais abaixo) É o incremento.
+      const quantidadeDec = incrementoRecebidoDec!;
       const novoEstoque = new D(estoqueAnterior?.toString() ?? 0).plus(quantidadeDec).toFixed(4);
       // Achado A2 da auditoria de abrangência (Parte 3/Compras, 2026-09-06)
       // — custoUnitario/custoTotal snapshotados na MovimentacaoEstoque (e o
@@ -317,6 +405,17 @@ export async function avancarStatusCompra(
       // os 4 componentes ausentes (compra antiga, ou nova sem preenchê-
       // los) reduzem a EXATAMENTE valorFinal, comportamento de hoje
       // preservado (ver testes de compatibilidade em status-transicao.test.ts).
+      //
+      // custoAquisicaoTotalDec é o custo da NOTA INTEIRA (a solicitação
+      // toda) — continua o mesmo em qualquer recebimento, parcial ou não.
+      // Achado A7: custoUnitarioDec (preço por unidade, constante entre
+      // recebimentos parciais) divide pelo total SOLICITADO, não pelo
+      // incremento desta vez — só o custoTotal LANÇADO nesta
+      // MovimentacaoEstoque (custoTotalDesteLoteDec, abaixo) é prorateado
+      // pelo incremento. Em recebimento único (comportamento de hoje,
+      // incremento === total solicitado), custoTotalDesteLoteDec ==
+      // custoAquisicaoTotalDec — zero regressão.
+      const quantidadeSolicitadaDec = new D(solicitacao.quantidade.toString());
       const custoAquisicaoTotalDec =
         valorFinalFinal !== null
           ? calcularCustoAquisicaoTotal(
@@ -328,7 +427,10 @@ export async function avancarStatusCompra(
             )
           : null;
       const custoUnitarioDec =
-        custoAquisicaoTotalDec !== null && quantidadeDec.gt(0) ? custoAquisicaoTotalDec.div(quantidadeDec) : null;
+        custoAquisicaoTotalDec !== null && quantidadeSolicitadaDec.gt(0)
+          ? custoAquisicaoTotalDec.div(quantidadeSolicitadaDec)
+          : null;
+      const custoTotalDesteLoteDec = custoUnitarioDec !== null ? custoUnitarioDec.times(quantidadeDec) : null;
 
       await prisma.$transaction(async (tx) => {
         const casStatus = await tx.solicitacaoCompra.updateMany({
@@ -357,7 +459,11 @@ export async function avancarStatusCompra(
               tipo: "ENTRADA_COMPRA",
               quantidade: quantidadeDec.toFixed(4),
               custoUnitario: custoUnitarioDec ? custoUnitarioDec.toFixed(4) : null,
-              custoTotal: custoAquisicaoTotalDec ? custoAquisicaoTotalDec.toFixed(2) : null,
+              // Achado A7: prorateado pelo incremento desta confirmação —
+              // não o custo da nota inteira (custoAquisicaoTotalDec), que
+              // já pode ter sido total ou parcialmente lançado em
+              // confirmações anteriores desta mesma solicitação.
+              custoTotal: custoTotalDesteLoteDec ? custoTotalDesteLoteDec.toFixed(2) : null,
               metodoCusteio: "ULTIMA_COMPRA",
               precoReferenciaEm: new Date(),
               documento: documentoFinal,
@@ -376,7 +482,18 @@ export async function avancarStatusCompra(
         // — pedidoId + compra de serviço/peça sem item de catálogo também
         // entra aqui (itemGraficaId null é aceito). Achado A2 — o valor
         // lançado é o custo de aquisição REAL, não só valorFinal.
-        if (solicitacao.pedidoId && custoAquisicaoTotalDec !== null) {
+        //
+        // Achado A7 (recebimento parcial): DELIBERADAMENTE só dispara na
+        // confirmação que FECHA o total (statusRecebimentoReal="RECEBIDO"),
+        // nunca numa parcial intermediária — CustoPedido.solicitacaoCompraId
+        // é @unique (dedup: uma solicitação nunca gera dois CustoPedido), e
+        // criarCustoAutomaticoCompra já é no-op se chamado de novo pra
+        // mesma solicitação (ver jaExiste ali) — então lançar cedo, na
+        // primeira parcial, perderia silenciosamente o resto do custo do
+        // pedido nas confirmações seguintes. Lançando só no fechamento, o
+        // valor usado continua sendo o da NOTA INTEIRA
+        // (custoAquisicaoTotalDec), exatamente como antes desta feature.
+        if (statusRecebimentoReal === "RECEBIDO" && solicitacao.pedidoId && custoAquisicaoTotalDec !== null) {
           const itemGraficaMaterial = solicitacao.itemGraficaId
             ? await tx.itemGrafica.findUnique({
                 where: { id: solicitacao.itemGraficaId },
@@ -400,10 +517,18 @@ export async function avancarStatusCompra(
         // de fato — increment() do Prisma, nunca leitura+gravação em passos
         // separados, pra nunca perder incremento sob concorrência (duas
         // solicitações do mesmo contrato confirmando RECEBIDO ao mesmo tempo).
-        if (solicitacao.contratoFornecimentoId) {
+        //
+        // Achado A7 (recebimento parcial): mesmo raciocínio do bloco de
+        // CustoPedido acima — só dispara no fechamento
+        // (statusRecebimentoReal="RECEBIDO"), incrementando de uma vez o
+        // total SOLICITADO (quantidadeSolicitadaDec), não o incremento desta
+        // última confirmação — o contrato reflete "quanto desta solicitação
+        // foi consumido do teto contratado", que é o total pedido, não
+        // quantos lotes parciais levaram até lá.
+        if (statusRecebimentoReal === "RECEBIDO" && solicitacao.contratoFornecimentoId) {
           await tx.contratoFornecimento.update({
             where: { id: solicitacao.contratoFornecimentoId },
-            data: { quantidadeConsumida: { increment: quantidadeDec.toFixed(4) } },
+            data: { quantidadeConsumida: { increment: quantidadeSolicitadaDec.toFixed(4) } },
           });
         }
       });
@@ -429,10 +554,17 @@ export async function avancarStatusCompra(
   revalidatePath("/catalogo");
   revalidatePath("/catalogo/estoque");
 
+  // Achado A7 da auditoria de abrangência (Parte 3/Compras, 2026-09-07) —
+  // o status REAL gravado pode divergir do `proximoStatus` requisitado
+  // (RECEBIDO pedido, RECEBIDO_PARCIAL gravado) — a mensagem/resultado
+  // devolvidos (e o log de auditoria em quem chama, ver
+  // src/app/compras/actions.ts) refletem o que foi REALMENTE gravado.
+  const statusFinal = statusRecebimentoReal ?? proximoStatus;
+
   return {
     ok: true,
-    mensagem: `Avançado para "${ROTULOS_STATUS_SOLICITACAO_COMPRA[proximoStatus]}".`,
+    mensagem: `Avançado para "${ROTULOS_STATUS_SOLICITACAO_COMPRA[statusFinal]}".`,
     statusAnterior,
-    proximoStatus,
+    proximoStatus: statusFinal,
   };
 }

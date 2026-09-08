@@ -10,6 +10,8 @@ import { CampoAjuda } from "@/components/ui/CampoAjuda";
 import { avancarSolicitacaoCompra } from "../actions";
 import { ROTULOS_STATUS_SOLICITACAO_COMPRA, type StatusSolicitacaoCompra } from "@/lib/compras-status";
 
+const formatoQuantidade = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 4 });
+
 // Campos contextuais: só aparecem quando fazem sentido pro próximo status
 // escolhido (ver DadosTransicaoCompra em ../status-transicao.ts) — um
 // campo que não aparece no DOM não entra na FormData, e a action trata
@@ -30,6 +32,12 @@ function camposContextuais(status: StatusSolicitacaoCompra, statusAtual: StatusS
     // compra costuma chegar com frete/IPI/desconto discriminados).
     custoAquisicao: status === "COMPRADO",
     documento: status === "COMPRADO" || status === "RECEBIDO",
+    // Achado A7 da auditoria de abrangência (Parte 3/Compras, 2026-09-07) —
+    // proximoStatus é sempre "RECEBIDO" (tanto vindo de COMPRADO quanto
+    // reabrindo a partir de RECEBIDO_PARCIAL, ver ROTULO_PROXIMA_ETAPA em
+    // src/lib/compras-status.ts) — nos dois casos o form pede quanto chegou
+    // de verdade nesta confirmação.
+    recebimento: status === "RECEBIDO",
   };
 }
 
@@ -43,6 +51,9 @@ export function AcoesSolicitacaoForm({
   documentoAtual,
   fornecedores,
   geraMovimentacaoEstoque,
+  quantidadeSolicitada,
+  quantidadeJaRecebida,
+  unidade,
 }: {
   solicitacaoId: string;
   statusAtual: StatusSolicitacaoCompra;
@@ -61,6 +72,14 @@ export function AcoesSolicitacaoForm({
   // geraMovimentacaoEstoque em ../status-transicao.ts) — decide a
   // mensagem exibida ao escolher RECEBIDO logo abaixo.
   geraMovimentacaoEstoque: boolean;
+  // Achado A7 da auditoria de abrangência (Parte 3/Compras, 2026-09-07) —
+  // recebimento parcial: `quantidadeSolicitada` é o total pedido,
+  // `quantidadeJaRecebida` é o acumulado já confirmado ANTES desta ação
+  // (null = nenhuma confirmação ainda) — juntos calculam o "restante
+  // esperado" que pré-preenche o campo de quantidade recebida abaixo.
+  quantidadeSolicitada: number;
+  quantidadeJaRecebida: number | null;
+  unidade: string;
 }) {
   const [state, formAction, pending] = useActionState(avancarSolicitacaoCompra, null);
   const [stateCancelar, formActionCancelar, pendingCancelar] = useActionState(avancarSolicitacaoCompra, null);
@@ -68,6 +87,11 @@ export function AcoesSolicitacaoForm({
 
   const campos = proximoStatus ? camposContextuais(proximoStatus, statusAtual) : null;
   const vindoDeCotacao = statusAtual === "COTANDO" && proximoStatus === "APROVADO";
+  // Achado A7 da auditoria de abrangência (Parte 3/Compras, 2026-09-07) —
+  // sugestão de quanto falta chegar, só pra PRÉ-PREENCHER o campo (editável
+  // — quem confere pode digitar outro valor, inclusive maior/menor, o que
+  // dispara a exigência de observação de divergência no servidor).
+  const quantidadeRestante = Math.max(0, quantidadeSolicitada - (quantidadeJaRecebida ?? 0));
 
   return (
     <Card className="flex flex-col gap-6 p-6">
@@ -162,12 +186,36 @@ export function AcoesSolicitacaoForm({
               />
             )}
 
-            {proximoStatus === "RECEBIDO" && (
-              <p className="text-xs text-slate-500">
-                {geraMovimentacaoEstoque
-                  ? "Confirmar aqui gera automaticamente uma entrada no estoque desta matéria-prima."
-                  : "Esta compra não gera entrada de estoque (não é matéria-prima do catálogo)."}
-              </p>
+            {campos?.recebimento && (
+              <div className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Recebimento
+                  <CampoAjuda texto="Quanto chegou de verdade nesta confirmação — pré-preenchido com o restante esperado desta solicitação, mas editável. Se vier menos que o restante, a solicitação fica 'Recebido parcialmente' e você confirma o resto depois reabrindo esta mesma ação; se vier diferente do restante esperado (pra mais ou pra menos), é preciso explicar a divergência." />
+                </p>
+                <Input
+                  label={`Quantidade recebida agora${unidade ? ` (${unidade})` : ""}`}
+                  name="quantidadeRecebida"
+                  type="number"
+                  step="0.0001"
+                  min="0"
+                  defaultValue={quantidadeRestante}
+                  required
+                />
+                <p className="text-xs text-slate-500">
+                  Restam {formatoQuantidade.format(quantidadeRestante)} {unidade} desta solicitação de{" "}
+                  {formatoQuantidade.format(quantidadeSolicitada)} {unidade}.
+                  {geraMovimentacaoEstoque
+                    ? " Confirmar aqui gera automaticamente uma entrada no estoque desta matéria-prima."
+                    : " Esta compra não gera entrada de estoque (não é matéria-prima do catálogo)."}
+                </p>
+                <Input label="Valor da nota fiscal (opcional)" name="valorNotaFiscal" type="number" step="0.01" min="0" />
+                <Input
+                  label="Observação da divergência (obrigatório se a quantidade acima for diferente do restante esperado)"
+                  name="divergenciaObservacao"
+                  type="text"
+                  maxLength={500}
+                />
+              </div>
             )}
 
             {state && <Alert variant={state.ok ? "success" : "error"}>{state.mensagem}</Alert>}

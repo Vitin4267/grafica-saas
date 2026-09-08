@@ -137,16 +137,24 @@ async function solicitacaoParaTransicao(solicitacaoId: string): Promise<Solicita
     documento: solicitacao.documento,
     pedidoId: solicitacao.pedidoId,
     contratoFornecimentoId: solicitacao.contratoFornecimentoId,
+    quantidadeRecebida: solicitacao.quantidadeRecebida,
   };
 }
 
 // SOLICITADO→APROVADO→COMPRADO→RECEBIDO, sem cotação (mesmo caminho "direto"
 // já coberto em cotacao-fornecedor.test.ts) — usada pelos testes que
-// precisam chegar em RECEBIDO pra checar o CustoPedido gerado.
+// precisam chegar em RECEBIDO pra checar o CustoPedido gerado. Achado A7
+// (Parte 3/Compras, 2026-09-07): RECEBIDO agora exige quantidadeRecebida —
+// sempre a quantidade total solicitada aqui, pra fechar em RECEBIDO direto.
 async function avancarAteRecebido(solicitacaoId: string, usuarioId: string, valorFinal: number) {
   for (const proximo of ["APROVADO", "COMPRADO", "RECEBIDO"] as StatusSolicitacaoCompra[]) {
     const atual = await solicitacaoParaTransicao(solicitacaoId);
-    const dados = proximo === "COMPRADO" ? { valorFinal } : {};
+    const dados =
+      proximo === "COMPRADO"
+        ? { valorFinal }
+        : proximo === "RECEBIDO"
+          ? { quantidadeRecebida: Number(atual.quantidade) }
+          : {};
     const resultado = await avancarStatusCompra(atual, proximo, { id: usuarioId }, dados);
     if (!resultado.ok) throw new Error(`Falha avançando pra ${proximo}: ${resultado.mensagem}`);
   }

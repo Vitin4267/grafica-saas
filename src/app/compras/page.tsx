@@ -114,7 +114,7 @@ export default async function ComprasPage() {
           <div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Compras</h1>
             <p className="mt-1 text-slate-500">
-              Solicitado → Cotando → Aprovado → Comprado → Recebido → Conferido.
+              Solicitado → Cotando → Aprovado → Comprado → Recebido (parcial ou total) → Conferido.
             </p>
           </div>
           <div className="flex gap-2">

@@ -64,12 +64,22 @@ model MovimentacaoEstoque {
   // Qual SolicitacaoCompra gerou esta entrada (quando aplicável) — mesmo
   // papel de `pedidoId` só que do lado de compras: liga a ENTRADA_COMPRA ao
   // pedido de compra que a originou (ver avancarStatusCompra em
-  // src/app/compras/status-transicao.ts). @unique porque uma solicitação só
-  // gera no máximo uma entrada de estoque, ao confirmar RECEBIDO — CONFERIDO
-  // (a etapa seguinte) é só a auditoria do que já entrou, não gera outra.
-  // null pra toda movimentação que não veio de uma solicitação de compra
-  // (compra avulsa lançada direto, ajuste manual, etc.).
-  solicitacaoCompraId String? @unique
+  // src/app/compras/status-transicao.ts). null pra toda movimentação que não
+  // veio de uma solicitação de compra (compra avulsa lançada direto, ajuste
+  // manual, etc.).
+  //
+  // Achado A7 da auditoria de abrangência (Parte 3/Compras, 2026-09-07) —
+  // deixou de ser @unique: antes, uma solicitação só podia gerar NO MÁXIMO
+  // uma entrada de estoque (RECEBIDO era tudo-ou-nada). Agora RECEBIDO pode
+  // ser confirmado mais de uma vez (recebimento parcial — ver
+  // StatusSolicitacaoCompra.RECEBIDO_PARCIAL e
+  // SolicitacaoCompra.quantidadeRecebida abaixo), cada confirmação gerando
+  // sua PRÓPRIA MovimentacaoEstoque com só a quantidade daquele lote — a
+  // mesma solicitação pode ter várias linhas aqui agora. Confirmado antes da
+  // migration que não havia nenhuma duplicata em produção (não deveria
+  // haver, já que era @unique até então) — a migration só troca o índice
+  // único por um índice normal, não reescreve nenhuma linha.
+  solicitacaoCompraId String?
 
   // Achado F4 da auditoria de abrangência (Parte 7, 2026-09-05) —
   // rastreabilidade de lote/validade, opt-in por matéria-prima (ver
@@ -122,5 +132,6 @@ model MovimentacaoEstoque {
   @@index([pedidoId])
   @@index([varianteId])
   @@index([fornecedorId])
+  @@index([solicitacaoCompraId])
   @@map("movimentacoes_estoque")
 }

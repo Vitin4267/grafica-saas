@@ -96,15 +96,25 @@ async function solicitacaoParaTransicao(solicitacaoId: string): Promise<Solicita
     documento: solicitacao.documento,
     pedidoId: solicitacao.pedidoId,
     contratoFornecimentoId: solicitacao.contratoFornecimentoId,
+    quantidadeRecebida: solicitacao.quantidadeRecebida,
   };
 }
 
 // SOLICITADO→APROVADO→COMPRADO→RECEBIDO, sem cotação (mesmo caminho "direto"
 // de origem-solicitacao-compra.test.ts) — usada por todos os testes abaixo.
+// Achado A7 (Parte 3/Compras, 2026-09-07): RECEBIDO agora exige
+// quantidadeRecebida — aqui sempre igual à quantidade total solicitada, pra
+// preservar o comportamento de recebimento único (zero regressão, ver
+// recebimento-parcial.test.ts pro caminho parcial).
 async function avancarAteRecebido(solicitacaoId: string, usuarioId: string, valorFinal: number) {
   for (const proximo of ["APROVADO", "COMPRADO", "RECEBIDO"] as StatusSolicitacaoCompra[]) {
     const atual = await solicitacaoParaTransicao(solicitacaoId);
-    const dados = proximo === "COMPRADO" ? { valorFinal } : {};
+    const dados =
+      proximo === "COMPRADO"
+        ? { valorFinal }
+        : proximo === "RECEBIDO"
+          ? { quantidadeRecebida: Number(atual.quantidade) }
+          : {};
     const resultado = await avancarStatusCompra(atual, proximo, { id: usuarioId }, dados);
     if (!resultado.ok) throw new Error(`Falha avançando pra ${proximo}: ${resultado.mensagem}`);
   }

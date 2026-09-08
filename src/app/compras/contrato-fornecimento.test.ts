@@ -137,6 +137,7 @@ async function solicitacaoParaTransicao(solicitacaoId: string): Promise<Solicita
     documento: solicitacao.documento,
     pedidoId: solicitacao.pedidoId,
     contratoFornecimentoId: solicitacao.contratoFornecimentoId,
+    quantidadeRecebida: solicitacao.quantidadeRecebida,
   };
 }
 
@@ -370,7 +371,10 @@ describe("RECEBIDO incrementa ContratoFornecimento.quantidadeConsumida (achado A
 
       for (const proximo of ["COMPRADO", "RECEBIDO"] as StatusSolicitacaoCompra[]) {
         const atual = await solicitacaoParaTransicao(solicitacao.id);
-        const dados = proximo === "COMPRADO" ? { valorFinal: 75 } : {};
+        const dados =
+          proximo === "COMPRADO"
+            ? { valorFinal: 75 }
+            : { quantidadeRecebida: Number(atual.quantidade) }; // achado A7 — fecha em RECEBIDO direto
         const resultado = await avancarStatusCompra(atual, proximo, { id: f.usuarioDonoId }, dados);
         expect(resultado.ok).toBe(true);
       }
@@ -398,7 +402,12 @@ describe("RECEBIDO incrementa ContratoFornecimento.quantidadeConsumida (achado A
 
       for (const proximo of ["APROVADO", "COMPRADO", "RECEBIDO"] as StatusSolicitacaoCompra[]) {
         const atual = await solicitacaoParaTransicao(solicitacao.id);
-        const dados = proximo === "COMPRADO" ? { valorFinal: 100 } : {};
+        const dados =
+          proximo === "COMPRADO"
+            ? { valorFinal: 100 }
+            : proximo === "RECEBIDO"
+              ? { quantidadeRecebida: Number(atual.quantidade) } // achado A7
+              : {};
         const resultado = await avancarStatusCompra(atual, proximo, { id: f.usuarioDonoId }, dados);
         expect(resultado.ok).toBe(true);
       }
@@ -460,8 +469,8 @@ describe("RECEBIDO incrementa ContratoFornecimento.quantidadeConsumida (achado A
       // se o código lesse+gravasse quantidadeConsumida em passos separados,
       // uma das duas atualizações se perderia (last-write-wins).
       const [resultadoA, resultadoB] = await Promise.all([
-        avancarStatusCompra(atualA, "RECEBIDO", { id: f.usuarioDonoId }),
-        avancarStatusCompra(atualB, "RECEBIDO", { id: f.usuarioDonoId }),
+        avancarStatusCompra(atualA, "RECEBIDO", { id: f.usuarioDonoId }, { quantidadeRecebida: 10 }),
+        avancarStatusCompra(atualB, "RECEBIDO", { id: f.usuarioDonoId }, { quantidadeRecebida: 7 }),
       ]);
       expect(resultadoA.ok).toBe(true);
       expect(resultadoB.ok).toBe(true);

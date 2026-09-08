@@ -115,11 +115,27 @@ model PrestadorServico {
 // gera a MovimentacaoEstoque de entrada quando o material de fato chega
 // (RECEBIDO) — CONFERIDO é só a conferência/auditoria do que já entrou,
 // nunca gera uma segunda entrada.
+//
+// Achado A7 da auditoria de abrangência (Parte 3/Compras, 2026-09-07) —
+// RECEBIDO_PARCIAL: até esta feature, confirmar RECEBIDO era tudo-ou-nada
+// (sempre somava `quantidade` inteira ao estoque, sem informar quanto
+// chegou de fato). Agora COMPRADO→RECEBIDO pede a quantidade efetivamente
+// conferida (ver SolicitacaoCompra.quantidadeRecebida); se ela for menor que
+// o restante esperado, o status real gravado é RECEBIDO_PARCIAL em vez de
+// RECEBIDO — e RECEBIDO_PARCIAL aceita a MESMA transição ("RECEBIDO" pedido
+// de novo pela UI) pra registrar o restante chegando depois, até a soma
+// bater com `quantidade` (aí sim o status final vira RECEBIDO). Ver
+// avancarStatusCompra em src/app/compras/status-transicao.ts pra decisão de
+// fluxo completa. RECEBIDO_PARCIAL não é alcançável a partir de CANCELADO
+// nem permite CANCELADO — mesmo raciocínio de RECEBIDO: material já chegou
+// (ainda que parcialmente) fisicamente na gráfica, cancelar não desfaz uma
+// entrada de estoque já confirmada.
 enum StatusSolicitacaoCompra {
   SOLICITADO
   COTANDO
   APROVADO
   COMPRADO
+  RECEBIDO_PARCIAL
   RECEBIDO
   CONFERIDO
   CANCELADO
@@ -239,6 +255,36 @@ model SolicitacaoCompra {
   valorIcmsCreditavel  Decimal?       @db.Decimal(12, 2)
   valorDesconto        Decimal?       @db.Decimal(12, 2)
 
+  // Achado A7 da auditoria de abrangência (Parte 3/Compras, 2026-09-07) —
+  // recebimento parcial e divergência (ver enum StatusSolicitacaoCompra
+  // acima e avancarStatusCompra em ./status-transicao.ts).
+  //
+  // quantidadeRecebida é CUMULATIVO — a soma de tudo já efetivamente
+  // conferido até agora, across todas as confirmações de RECEBIDO/
+  // RECEBIDO_PARCIAL desta solicitação (não "quanto chegou nesta última
+  // vez"). null até a primeira transição pra RECEBIDO/RECEBIDO_PARCIAL
+  // acontecer — nunca 0 nesse meio tempo (mesmo princípio de custoUnitario
+  // em MovimentacaoEstoque: null é "ainda não apurado", não "apurado como
+  // zero"). Comparado contra `quantidade` (o total solicitado) pra decidir
+  // se a confirmação atual fecha em RECEBIDO ou fica RECEBIDO_PARCIAL.
+  quantidadeRecebida Decimal? @db.Decimal(12, 4)
+  // Valor que veio na NF de entrada, opcional — puramente informativo, pra
+  // comparar com o valor esperado (valorFinal/custoAquisicaoTotal) na tela
+  // de detalhe. Nunca usado em nenhum cálculo de custo (isso continua sendo
+  // valorFinal + os 4 campos de custo de aquisição acima, achado A2) — só
+  // preenchido quando a gráfica quer registrar o número da nota pra
+  // conferência visual. Reescrito a cada confirmação de RECEBIDO que o
+  // informe (mesmo padrão simples de `documento`, sem histórico por
+  // recebimento parcial).
+  valorNotaFiscal Decimal? @db.Decimal(12, 2)
+  // Preenchido só quando a quantidade confirmada num recebimento diverge do
+  // restante esperado (pra mais ou pra menos) — exigido pela aplicação
+  // nesse caso (não é constraint de banco), texto livre porque o motivo de
+  // uma divergência (avaria, erro de separação do fornecedor, sobra
+  // negociada) não é um catálogo fechado. Quando o recebimento bate exato
+  // com o restante esperado, este campo não é tocado (fica como estava).
+  divergenciaObservacao String?
+
   observacao String? // texto livre — ex: motivo da solicitação, condição de pagamento
 
   // Achado A3 da auditoria de abrangência (Parte 3/Compras) — ver comentário
@@ -305,8 +351,13 @@ model SolicitacaoCompra {
   // do campo contratoFornecimentoId acima.
   contratoFornecimento ContratoFornecimento? @relation(fields: [contratoFornecimentoId], references: [id], onDelete: SetNull)
   // Lado inverso de MovimentacaoEstoque.solicitacaoCompraId (FK mora lá, não
-  // aqui) — a entrada de estoque gerada ao confirmar RECEBIDO.
-  movimentacaoEstoque  MovimentacaoEstoque?
+  // aqui) — as entradas de estoque geradas ao confirmar RECEBIDO/
+  // RECEBIDO_PARCIAL. Achado A7 da auditoria de abrangência (Parte 3/
+  // Compras, 2026-09-07): virou lista (era `MovimentacaoEstoque?` 1:1) —
+  // recebimento parcial pode gerar mais de uma MovimentacaoEstoque pra
+  // mesma solicitação (uma por confirmação), ver comentário de
+  // MovimentacaoEstoque.solicitacaoCompraId em 07-estoque.prisma.
+  movimentacoesEstoque MovimentacaoEstoque[]
   // Cotações registradas de cada fornecedor consultado (ver model
   // CotacaoFornecedor abaixo) — achado A4 da auditoria de abrangência.
   cotacoes             CotacaoFornecedor[]

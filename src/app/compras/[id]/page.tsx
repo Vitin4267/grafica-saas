@@ -47,7 +47,7 @@ export default async function DetalheSolicitacaoCompraPage({
 
   const { id } = await params;
 
-  const [solicitacao, fornecedores, movimentacaoGerada, cotacoes] = await Promise.all([
+  const [solicitacao, fornecedores, movimentacoesGeradas, cotacoes] = await Promise.all([
     prisma.solicitacaoCompra.findFirst({
       where: { id, graficaId: usuario.graficaId },
       include: {
@@ -64,9 +64,14 @@ export default async function DetalheSolicitacaoCompraPage({
       orderBy: { nome: "asc" },
       select: { id: true, nome: true },
     }),
-    prisma.movimentacaoEstoque.findFirst({
+    // Achado A7 da auditoria de abrangência (Parte 3/Compras, 2026-09-07) —
+    // pode haver mais de uma agora (recebimento parcial gera uma
+    // MovimentacaoEstoque por confirmação) — findMany em vez do findFirst
+    // de antes, ordenada pela mais antiga primeiro.
+    prisma.movimentacaoEstoque.findMany({
       where: { solicitacaoCompraId: id },
       select: { quantidade: true, custoUnitario: true, custoTotal: true, createdAt: true },
+      orderBy: { createdAt: "asc" },
     }),
     prisma.cotacaoFornecedor.findMany({
       where: { solicitacaoCompraId: id, solicitacaoCompra: { graficaId: usuario.graficaId } },
@@ -248,6 +253,33 @@ export default async function DetalheSolicitacaoCompraPage({
               <p className="text-xs font-medium text-slate-500">Nº da nota</p>
               <p className="mt-0.5 text-slate-900 dark:text-white">{solicitacao.documento ?? "—"}</p>
             </div>
+            {/* Achado A7 da auditoria de abrangência (Parte 3/Compras, 2026-09-07) —
+                só aparece depois da primeira confirmação de recebimento. */}
+            {solicitacao.quantidadeRecebida !== null && (
+              <div>
+                <p className="text-xs font-medium text-slate-500">Quantidade recebida</p>
+                <p className="mt-0.5 text-slate-900 dark:text-white">
+                  {formatoQuantidade.format(Number(solicitacao.quantidadeRecebida))} de{" "}
+                  {formatoQuantidade.format(Number(solicitacao.quantidade))} {unidade}
+                </p>
+              </div>
+            )}
+            {solicitacao.valorNotaFiscal !== null && (
+              <div>
+                <p className="text-xs font-medium text-slate-500">Valor da nota fiscal</p>
+                <p className="mt-0.5 text-slate-900 dark:text-white">
+                  {formatoMoeda.format(Number(solicitacao.valorNotaFiscal))}
+                </p>
+              </div>
+            )}
+            {solicitacao.divergenciaObservacao && (
+              <div className="col-span-2">
+                <p className="text-xs font-medium text-slate-500">Divergência no recebimento</p>
+                <p className="mt-0.5 whitespace-pre-wrap text-slate-900 dark:text-white">
+                  {solicitacao.divergenciaObservacao}
+                </p>
+              </div>
+            )}
             <div>
               <p className="text-xs font-medium text-slate-500">Origem</p>
               <p className="mt-0.5 text-slate-900 dark:text-white">
@@ -273,17 +305,24 @@ export default async function DetalheSolicitacaoCompraPage({
             )}
           </Card>
 
-          {movimentacaoGerada && (
+          {movimentacoesGeradas.length > 0 && (
             <Card className="p-6 text-sm">
               <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Entrada de estoque gerada
+                {/* Achado A7 da auditoria de abrangência (Parte 3/Compras, 2026-09-07) —
+                    mais de uma linha quando houve recebimento parcial (uma
+                    MovimentacaoEstoque por confirmação). */}
+                Entrada{movimentacoesGeradas.length > 1 ? "s" : ""} de estoque gerada
+                {movimentacoesGeradas.length > 1 ? "s" : ""}
               </p>
-              <p className="text-slate-900 dark:text-white">
-                +{formatoQuantidade.format(Number(movimentacaoGerada.quantidade))} {unidade} em{" "}
-                {formatoInstanteRealComHora.format(movimentacaoGerada.createdAt)}
-                {movimentacaoGerada.custoTotal &&
-                  ` · custo total ${formatoMoeda.format(Number(movimentacaoGerada.custoTotal))}`}
-              </p>
+              <ul className="flex flex-col gap-1.5">
+                {movimentacoesGeradas.map((mov, i) => (
+                  <li key={i} className="text-slate-900 dark:text-white">
+                    +{formatoQuantidade.format(Number(mov.quantidade))} {unidade} em{" "}
+                    {formatoInstanteRealComHora.format(mov.createdAt)}
+                    {mov.custoTotal && ` · custo total ${formatoMoeda.format(Number(mov.custoTotal))}`}
+                  </li>
+                ))}
+              </ul>
             </Card>
           )}
 
@@ -337,6 +376,9 @@ export default async function DetalheSolicitacaoCompraPage({
               documentoAtual={solicitacao.documento}
               fornecedores={fornecedores}
               geraMovimentacaoEstoque={solicitacao.tipoCompra === "MATERIA_PRIMA" && solicitacao.itemGraficaId !== null}
+              quantidadeSolicitada={Number(solicitacao.quantidade)}
+              quantidadeJaRecebida={solicitacao.quantidadeRecebida ? Number(solicitacao.quantidadeRecebida) : null}
+              unidade={unidade}
             />
           )}
 

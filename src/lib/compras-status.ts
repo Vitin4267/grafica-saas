@@ -1,8 +1,15 @@
+// Achado A7 da auditoria de abrangência (Parte 3/Compras, 2026-09-07) —
+// RECEBIDO_PARCIAL entre COMPRADO e RECEBIDO: confirmar recebimento passou a
+// pedir a quantidade efetivamente conferida; quando ela não fecha o total
+// solicitado, o status real fica em RECEBIDO_PARCIAL até um novo
+// recebimento completar o restante (ver avancarStatusCompra em
+// src/app/compras/status-transicao.ts).
 export type StatusSolicitacaoCompra =
   | "SOLICITADO"
   | "COTANDO"
   | "APROVADO"
   | "COMPRADO"
+  | "RECEBIDO_PARCIAL"
   | "RECEBIDO"
   | "CONFERIDO"
   | "CANCELADO";
@@ -77,11 +84,20 @@ export const TIPOS_COMPRA: TipoCompra[] = [
 // depois que o material chega fisicamente (RECEBIDO/CONFERIDO), cancelar a
 // solicitação não desfaz uma entrada de estoque já confirmada (mesma lógica
 // de StatusPedido.CANCELADO nunca ser alcançável a partir de ENTREGUE).
+// RECEBIDO_PARCIAL: só aceita "RECEBIDO" como destino — a UI sempre
+// submete "RECEBIDO" de novo (reabre a mesma ação de "confirmar
+// recebimento"), e avancarStatusCompra decide internamente se a quantidade
+// informada desta vez fecha o total (grava RECEBIDO de verdade) ou não
+// (permanece RECEBIDO_PARCIAL, mesmo destino requisitado). Sem CANCELADO a
+// partir daqui, mesmo raciocínio de RECEBIDO: material já chegou
+// (parcialmente) fisicamente, cancelar não desfaz uma entrada de estoque já
+// confirmada.
 export const TRANSICOES_VALIDAS: Record<StatusSolicitacaoCompra, StatusSolicitacaoCompra[]> = {
   SOLICITADO: ["COTANDO", "APROVADO", "CANCELADO"],
   COTANDO: ["APROVADO", "CANCELADO"],
   APROVADO: ["COMPRADO", "CANCELADO"],
   COMPRADO: ["RECEBIDO", "CANCELADO"],
+  RECEBIDO_PARCIAL: ["RECEBIDO"],
   RECEBIDO: ["CONFERIDO"],
   CONFERIDO: [],
   CANCELADO: [],
@@ -92,6 +108,7 @@ export const ROTULOS_STATUS_SOLICITACAO_COMPRA: Record<StatusSolicitacaoCompra, 
   COTANDO: "Cotando",
   APROVADO: "Aprovado",
   COMPRADO: "Comprado",
+  RECEBIDO_PARCIAL: "Recebido parcialmente",
   RECEBIDO: "Recebido",
   CONFERIDO: "Conferido",
   CANCELADO: "Cancelado",
@@ -100,11 +117,14 @@ export const ROTULOS_STATUS_SOLICITACAO_COMPRA: Record<StatusSolicitacaoCompra, 
 // Ordem de exibição das colunas na tela /compras (lista agrupada por
 // status) — CANCELADO por último de propósito, junto com CONFERIDO, são os
 // dois estados terminais que menos precisam de atenção no dia a dia.
+// RECEBIDO_PARCIAL fica entre COMPRADO e RECEBIDO, seguindo a ordem real do
+// fluxo (achado A7).
 export const ORDEM_STATUS_SOLICITACAO_COMPRA: StatusSolicitacaoCompra[] = [
   "SOLICITADO",
   "COTANDO",
   "APROVADO",
   "COMPRADO",
+  "RECEBIDO_PARCIAL",
   "RECEBIDO",
   "CONFERIDO",
   "CANCELADO",
@@ -126,5 +146,8 @@ export const ROTULO_PROXIMA_ETAPA: Partial<Record<StatusSolicitacaoCompra, strin
   COTANDO: "Aprovar",
   APROVADO: "Marcar como comprado",
   COMPRADO: "Confirmar recebimento",
+  // Mesmo rótulo de COMPRADO acima de propósito — é literalmente a mesma
+  // ação reaberta pra registrar o restante chegando (achado A7).
+  RECEBIDO_PARCIAL: "Confirmar recebimento",
   RECEBIDO: "Conferir",
 };
