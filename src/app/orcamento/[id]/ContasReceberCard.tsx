@@ -16,11 +16,16 @@ import {
   cancelarContaReceber,
 } from "@/app/financeiro/contas-receber/actions";
 
+// Achado A11 da Parte 4 da auditoria de abrangência (2026-09-08) — CARTAO
+// continua na lista (legado) ao lado dos valores novos e específicos.
 const ROTULO_FORMA: Record<string, string> = {
   DINHEIRO: "Dinheiro",
   PIX: "Pix",
-  CARTAO: "Cartão",
+  CARTAO: "Cartão (genérico)",
+  CARTAO_CREDITO: "Cartão de crédito",
+  CARTAO_DEBITO: "Cartão de débito",
   BOLETO: "Boleto",
+  CHEQUE: "Cheque",
   TRANSFERENCIA: "Transferência",
   OUTRO: "Outro",
 };
@@ -73,14 +78,40 @@ function statusPill(conta: ContaReceber) {
   );
 }
 
-function LinhaContaReceber({ conta, podeEditar }: { conta: ContaReceber; podeEditar: boolean }) {
+function LinhaContaReceber({
+  conta,
+  podeEditar,
+  taxasFormaPagamento = [],
+}: {
+  conta: ContaReceber;
+  podeEditar: boolean;
+  // Achado A11 da Parte 4 da auditoria de abrangência (2026-09-08) — só
+  // alimenta o pré-preenchimento OPCIONAL do campo "Taxa" abaixo.
+  taxasFormaPagamento?: { forma: string; percentual: string }[];
+}) {
   const [estadoRecebido, acaoRecebido, marcandoRecebido] = useActionState(registrarBaixaContaReceber, null);
   const [estadoCancelar, acaoCancelar, cancelando] = useActionState(cancelarContaReceber, null);
   const [confirmandoCancelamento, setConfirmandoCancelamento] = useState(false);
+  const [valorRecebido, setValorRecebido] = useState(conta.saldo);
+  const [valorTaxa, setValorTaxa] = useState("");
 
   useAoMudar(estadoCancelar, (estado) => {
     if (estado && !estado.ok) setConfirmandoCancelamento(false);
   });
+
+  // Achado A11 da Parte 4 — mesmo padrão de pré-preenchimento usado em
+  // PagamentosCard.tsx/ContaReceberLinha.tsx.
+  function aoEscolherForma(forma: string) {
+    const taxa = taxasFormaPagamento.find((t) => t.forma === forma);
+    if (!taxa || Number(taxa.percentual) <= 0) {
+      setValorTaxa("");
+      return;
+    }
+    const valorBase = Number(valorRecebido);
+    if (Number.isFinite(valorBase) && valorBase > 0) {
+      setValorTaxa(((valorBase * Number(taxa.percentual)) / 100).toFixed(2));
+    }
+  }
 
   return (
     <div className="flex flex-col gap-2 p-4">
@@ -127,17 +158,40 @@ function LinhaContaReceber({ conta, podeEditar }: { conta: ContaReceber; podeEdi
                   step="0.01"
                   min="0.01"
                   max={conta.saldo}
-                  defaultValue={conta.saldo}
+                  value={valorRecebido}
+                  onChange={(evento) => setValorRecebido(evento.target.value)}
                   className="w-28 rounded-md border border-slate-300 px-2 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900"
                 />
               </div>
-              <Select label="Forma" name="forma" defaultValue="PIX" className="!py-1.5 text-xs">
+              <Select
+                label="Forma"
+                name="forma"
+                defaultValue="PIX"
+                className="!py-1.5 text-xs"
+                onChange={(evento) => aoEscolherForma(evento.target.value)}
+              >
                 {Object.entries(ROTULO_FORMA).map(([valor, rotulo]) => (
                   <option key={valor} value={valor}>
                     {rotulo}
                   </option>
                 ))}
               </Select>
+              <div className="flex flex-col gap-1">
+                <label htmlFor={`taxa-${conta.id}`} className="text-xs font-medium text-slate-500">
+                  Taxa cobrada
+                </label>
+                <input
+                  id={`taxa-${conta.id}`}
+                  type="number"
+                  name="valorTaxa"
+                  step="0.01"
+                  min="0"
+                  value={valorTaxa}
+                  onChange={(evento) => setValorTaxa(evento.target.value)}
+                  placeholder="0,00"
+                  className="w-24 rounded-md border border-slate-300 px-2 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900"
+                />
+              </div>
               <Button type="submit" variant="outline" loading={marcandoRecebido}>
                 {marcandoRecebido ? "Registrando..." : "Registrar recebimento"}
               </Button>
@@ -176,6 +230,7 @@ export function ContasReceberCard({
   contas,
   podeEditar,
   vencimentoSugerido = null,
+  taxasFormaPagamento = [],
 }: {
   orcamentoId: string;
   contas: ContaReceber[];
@@ -186,6 +241,9 @@ export function ContasReceberCard({
   // de hoje). Só um defaultValue — o campo continua editável e obrigatório
   // como sempre.
   vencimentoSugerido?: string | null;
+  // Achado A11 da Parte 4 da auditoria de abrangência (2026-09-08) — mesmo
+  // array já usado em PagamentosCard, repassado pra cada LinhaContaReceber.
+  taxasFormaPagamento?: { forma: string; percentual: string }[];
 }) {
   const [state, formAction, isPending] = useActionState(criarContaReceber, null);
 
@@ -237,7 +295,12 @@ export function ContasReceberCard({
       {contas.length > 0 && (
         <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
           {contas.map((c) => (
-            <LinhaContaReceber key={c.id} conta={c} podeEditar={podeEditar} />
+            <LinhaContaReceber
+              key={c.id}
+              conta={c}
+              podeEditar={podeEditar}
+              taxasFormaPagamento={taxasFormaPagamento}
+            />
           ))}
         </div>
       )}

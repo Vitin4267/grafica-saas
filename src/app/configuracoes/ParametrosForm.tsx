@@ -1209,6 +1209,28 @@ export function ParametrosForm({
           </Link>
         </Card>
 
+        {/* Achado A11 da Parte 4 da auditoria de abrangência (2026-09-08) —
+            quanto a maquininha/banco cobra por forma de pagamento + em
+            quantos dias compensa; pré-preenche Pagamento.valorTaxa (sempre
+            editável) ao registrar um pagamento novo. Ver model
+            TaxaFormaPagamento no schema. */}
+        <Card className="flex items-center justify-between gap-4 p-6">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+              Taxas de forma de pagamento
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              MDR de cartão, prazo de compensação de cheque/boleto... cadastre
+              pra pré-preencher a taxa cobrada ao registrar um pagamento.
+            </p>
+          </div>
+          <Link href="/configuracoes/taxas-forma-pagamento">
+            <Button type="button" variant="outline">
+              Gerenciar taxas
+            </Button>
+          </Link>
+        </Card>
+
         <Card className="flex items-center justify-between gap-4 p-6">
           <div>
             <h2 className="text-base font-semibold text-slate-900 dark:text-white">

@@ -88,7 +88,10 @@ const formaPagamentoSchema = z.enum([
   "DINHEIRO",
   "PIX",
   "CARTAO",
+  "CARTAO_CREDITO",
+  "CARTAO_DEBITO",
   "BOLETO",
+  "CHEQUE",
   "TRANSFERENCIA",
   "OUTRO",
 ]);
@@ -113,6 +116,14 @@ export async function registrarPagamento(
   const valor = Number(formData.get("valor"));
   const formaParsed = formaPagamentoSchema.safeParse(formData.get("forma"));
   const observacao = String(formData.get("observacao") || "").trim().slice(0, 500) || null;
+  // Achado A11 da Parte 4 da auditoria de abrangência (2026-09-08) — quanto
+  // de taxa (maquininha/antecipação) foi de fato cobrado NESTE pagamento.
+  // Opcional: string vazia/ausente vira 0, comportamento de hoje preservado
+  // 100% (ver comentário em Pagamento.valorTaxa no schema). Pode vir
+  // pré-preenchido pelo client a partir de TaxaFormaPagamento cadastrada,
+  // mas sempre editável — o servidor só confia no valor final enviado.
+  const valorTaxaBruto = String(formData.get("valorTaxa") || "").trim();
+  const valorTaxa = valorTaxaBruto ? Number(valorTaxaBruto) : 0;
   // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04) — ONDE o
   // dinheiro entrou, opcional (complementa `forma`, que já diz COMO). String
   // vazia (gráfica sem conta cadastrada, campo nem aparece no form) vira
@@ -132,6 +143,9 @@ export async function registrarPagamento(
   }
   if (!formaParsed.success) {
     return { ok: false, mensagem: "Forma de pagamento inválida." };
+  }
+  if (!Number.isFinite(valorTaxa) || valorTaxa < 0) {
+    return { ok: false, mensagem: "Valor de taxa inválido." };
   }
 
   const orcamento = await prisma.orcamento.findFirst({
@@ -176,7 +190,15 @@ export async function registrarPagamento(
   // preservado 100% (ver bloco de saldo remanescente logo abaixo, achado A8).
   const { pagamento, contaReceberVinculada } = await prisma.$transaction(async (tx) => {
     const pagamentoCriado = await tx.pagamento.create({
-      data: { orcamentoId, valor, forma: formaParsed.data, formaDetalhe, observacao, contaFinanceiraId },
+      data: {
+        orcamentoId,
+        valor,
+        forma: formaParsed.data,
+        formaDetalhe,
+        observacao,
+        contaFinanceiraId,
+        valorTaxa,
+      },
     });
 
     const candidata = await tx.contaReceber.findFirst({

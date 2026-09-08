@@ -278,6 +278,17 @@ export default async function OrcamentoDetalhePage({
     select: { id: true, nome: true },
   });
 
+  // Achado A11 da Parte 4 da auditoria de abrangência (2026-09-08) — só
+  // alimenta o pré-preenchimento opcional de "Taxa cobrada" em
+  // PagamentosCard/ContasReceberCard; some da sugestão pra gráfica que nunca
+  // cadastrou nenhuma.
+  const taxasFormaPagamento = (
+    await prisma.taxaFormaPagamento.findMany({
+      where: { graficaId: usuario.graficaId, ativa: true },
+      select: { forma: true, percentual: true },
+    })
+  ).map((t) => ({ forma: t.forma, percentual: t.percentual.toString() }));
+
   // Achado A13 da auditoria de abrangência — saldo de CreditoCliente do
   // cliente deste orçamento, só pra oferecer o campo "usar crédito" em
   // OrcamentoAcoes quando ainda faz sentido (orçamento pra ser aprovado e
@@ -958,15 +969,18 @@ export default async function OrcamentoDetalhePage({
             observacao: p.observacao,
             createdAt: p.createdAt.toISOString(),
             contaFinanceiraNome: p.contaFinanceira?.nome ?? null,
+            valorTaxa: p.valorTaxa.toString(),
           }))}
           podeRegistrar={orcamento.status === "APROVADO"}
           contasFinanceiras={contasFinanceiras}
+          taxasFormaPagamento={taxasFormaPagamento}
         />
 
         {orcamento.status === "APROVADO" && (
           <ContasReceberCard
             orcamentoId={orcamento.id}
             podeEditar={podeEditarFinanceiro}
+            taxasFormaPagamento={taxasFormaPagamento}
             // Achado A6 da Parte 5 — pré-calcula o vencimento sugerido a
             // partir de Cliente.prazoPagamentoPadraoDias (hoje + N dias).
             // null = cliente sem prazo cadastrado, campo nasce em branco

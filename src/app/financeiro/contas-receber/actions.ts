@@ -17,7 +17,19 @@ export type ContaReceberResult = { ok: boolean; mensagem: string };
 
 const MENSAGEM_SEM_PERMISSAO = "Você não tem permissão pra editar o Financeiro.";
 
-const FORMAS_PAGAMENTO = ["DINHEIRO", "PIX", "CARTAO", "BOLETO", "TRANSFERENCIA", "OUTRO"] as const;
+// Achado A11 da Parte 4 da auditoria de abrangência (2026-09-08) — CARTAO
+// continua na lista (legado) ao lado dos valores novos e específicos.
+const FORMAS_PAGAMENTO = [
+  "DINHEIRO",
+  "PIX",
+  "CARTAO",
+  "CARTAO_CREDITO",
+  "CARTAO_DEBITO",
+  "BOLETO",
+  "CHEQUE",
+  "TRANSFERENCIA",
+  "OUTRO",
+] as const;
 
 // Sinaliza, de dentro da transação, que a conta já mudou de status (recebida,
 // cancelada, ou baixada por outra requisição) entre a leitura inicial e a
@@ -140,6 +152,16 @@ const registrarBaixaSchema = z.object({
     .refine((v) => v === undefined || (Number.isFinite(v) && v > 0), {
       message: "Informe um valor maior que zero.",
     }),
+  // Achado A11 da Parte 4 da auditoria de abrangência (2026-09-08) — quanto
+  // de taxa (maquininha/antecipação) foi de fato cobrado neste recebimento.
+  // Opcional: ausente/vazio vira 0 (comportamento de hoje preservado 100%).
+  // Pode vir pré-preenchido pelo client a partir de TaxaFormaPagamento
+  // cadastrada, mas sempre editável.
+  valorTaxa: z
+    .string()
+    .optional()
+    .transform((v) => (v ? Number(v) : 0))
+    .refine((v) => Number.isFinite(v) && v >= 0, { message: "Valor de taxa inválido." }),
 });
 
 // Compare-and-swap via updateMany (where status: status lido) pra evitar
@@ -188,11 +210,12 @@ export async function registrarBaixaContaReceber(
     forma: formData.get("forma"),
     formaDetalhe: formData.get("formaDetalhe") ?? undefined,
     valor: formData.get("valor") ?? undefined,
+    valorTaxa: formData.get("valorTaxa") ?? undefined,
   });
   if (!parsed.success) {
     return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   }
-  const { id, forma, formaDetalhe } = parsed.data;
+  const { id, forma, formaDetalhe, valorTaxa } = parsed.data;
 
   const conta = await prisma.contaReceber.findFirst({
     where: { id, graficaId: usuario.graficaId },
@@ -227,6 +250,7 @@ export async function registrarBaixaContaReceber(
           forma,
           formaDetalhe: formaDetalhe ?? null,
           observacao: `Gerado ao registrar baixa de "${conta.descricao}"`,
+          valorTaxa,
         },
       });
 

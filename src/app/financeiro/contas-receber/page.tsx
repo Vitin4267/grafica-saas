@@ -48,6 +48,19 @@ export default async function ContasReceberPage() {
       })
   );
 
+  // Achado A11 da Parte 4 da auditoria de abrangência (2026-09-08) — só
+  // alimenta o pré-preenchimento opcional de "Taxa cobrada" em
+  // ContaReceberLinha; some da sugestão pra gráfica que nunca cadastrou
+  // nenhuma.
+  const taxasFormaPagamentoCadastradas = await prisma.taxaFormaPagamento.findMany({
+    where: { graficaId: usuario.graficaId, ativa: true },
+    select: { forma: true, percentual: true },
+  });
+  const taxasFormaPagamento = taxasFormaPagamentoCadastradas.map((t) => ({
+    forma: t.forma,
+    percentual: t.percentual.toString(),
+  }));
+
   const pendentes = contas.filter((c) => c.status === "PENDENTE" || c.status === "PARCIAL");
   const vencidas = pendentes.filter((c) => dataEhPassado(c.vencimento));
   const recebidas = contas.filter((c) => c.status === "RECEBIDO");
@@ -129,6 +142,7 @@ export default async function ContasReceberPage() {
             <ContaReceberLinha
               key={conta.id}
               podeEditar={podeEditar}
+              taxasFormaPagamento={taxasFormaPagamento}
               conta={{
                 id: conta.id,
                 descricao: conta.descricao,

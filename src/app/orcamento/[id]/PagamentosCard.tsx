@@ -11,11 +11,17 @@ import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
 import { formatoMoeda } from "@/lib/moeda";
 import { registrarPagamento, excluirPagamento } from "./actions";
 
+// Achado A11 da Parte 4 da auditoria de abrangência (2026-09-08) — CARTAO
+// continua na lista (legado, pagamento antigo pode ter usado ele) ao lado
+// dos valores novos e específicos (CARTAO_CREDITO/CARTAO_DEBITO/CHEQUE).
 const ROTULO_FORMA: Record<string, string> = {
   DINHEIRO: "Dinheiro",
   PIX: "Pix",
-  CARTAO: "Cartão",
+  CARTAO: "Cartão (genérico)",
+  CARTAO_CREDITO: "Cartão de crédito",
+  CARTAO_DEBITO: "Cartão de débito",
   BOLETO: "Boleto",
+  CHEQUE: "Cheque",
   TRANSFERENCIA: "Transferência",
   OUTRO: "Outro",
 };
@@ -36,6 +42,10 @@ type Pagamento = {
   // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04) — ONDE o
   // dinheiro entrou, opcional (complementa `forma`, que já diz COMO).
   contaFinanceiraNome?: string | null;
+  // Achado A11 da Parte 4 da auditoria de abrangência (2026-09-08) — quanto
+  // de taxa (maquininha/antecipação) foi de fato cobrado neste pagamento.
+  // "0" pra todo pagamento antigo ou registrado sem preencher o campo.
+  valorTaxa: string;
 };
 
 function LinhaPagamento({ pagamento }: { pagamento: Pagamento }) {
@@ -59,6 +69,8 @@ function LinhaPagamento({ pagamento }: { pagamento: Pagamento }) {
           <p className="text-xs text-slate-500">
             {new Date(pagamento.createdAt).toLocaleDateString("pt-BR")}
             {pagamento.contaFinanceiraNome && ` · ${pagamento.contaFinanceiraNome}`}
+            {Number(pagamento.valorTaxa) > 0 &&
+              ` · taxa: ${formatoMoeda.format(Number(pagamento.valorTaxa))}`}
             {pagamento.observacao && ` · ${pagamento.observacao}`}
           </p>
           {state && !state.ok && (
@@ -95,6 +107,7 @@ export function PagamentosCard({
   pagamentos,
   podeRegistrar,
   contasFinanceiras = [],
+  taxasFormaPagamento = [],
 }: {
   orcamentoId: string;
   total: number;
@@ -102,9 +115,34 @@ export function PagamentosCard({
   podeRegistrar: boolean;
   // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04).
   contasFinanceiras?: { id: string; nome: string }[];
+  // Achado A11 da Parte 4 da auditoria de abrangência (2026-09-08) — só
+  // alimenta o pré-preenchimento OPCIONAL do campo "Taxa" abaixo; some da
+  // sugestão pra gráfica que nunca cadastrou nenhuma (mesmo padrão de
+  // contasFinanceiras acima).
+  taxasFormaPagamento?: { forma: string; percentual: string }[];
 }) {
   const [state, formAction, isPending] = useActionState(registrarPagamento, null);
   const [formaEscolhida, setFormaEscolhida] = useState("PIX");
+  const [valorDigitado, setValorDigitado] = useState("");
+  const [valorTaxa, setValorTaxa] = useState("");
+
+  // Achado A11 da Parte 4 — escolher a forma pré-preenche a taxa sugerida
+  // (percentual cadastrado × valor já digitado), sempre editável depois —
+  // mesmo padrão de FK-pré-preenche-campo-editável do resto do repo
+  // (ex: condicaoPagamentoId → condicoesPagamento). Sem cadastro pra essa
+  // forma, o campo fica em branco (usuário digita à mão, como sempre foi).
+  function aoEscolherForma(forma: string) {
+    setFormaEscolhida(forma);
+    const taxa = taxasFormaPagamento.find((t) => t.forma === forma);
+    if (!taxa || Number(taxa.percentual) <= 0) {
+      setValorTaxa("");
+      return;
+    }
+    const valorBase = Number(valorDigitado);
+    if (Number.isFinite(valorBase) && valorBase > 0) {
+      setValorTaxa(((valorBase * Number(taxa.percentual)) / 100).toFixed(2));
+    }
+  }
 
   const valorPago = pagamentos.reduce((soma, p) => soma + Number(p.valor), 0);
   const saldoDevedor = total - valorPago;
@@ -158,12 +196,21 @@ export function PagamentosCard({
         <form action={formAction} className="flex flex-col gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
           <input type="hidden" name="orcamentoId" value={orcamentoId} />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <Input label="Valor" name="valor" type="number" step="0.01" min="0.01" required />
+            <Input
+              label="Valor"
+              name="valor"
+              type="number"
+              step="0.01"
+              min="0.01"
+              required
+              value={valorDigitado}
+              onChange={(evento) => setValorDigitado(evento.target.value)}
+            />
             <Select
               label="Forma"
               name="forma"
               value={formaEscolhida}
-              onChange={(evento) => setFormaEscolhida(evento.target.value)}
+              onChange={(evento) => aoEscolherForma(evento.target.value)}
             >
               {Object.entries(ROTULO_FORMA).map(([valor, rotulo]) => (
                 <option key={valor} value={valor}>
@@ -171,6 +218,16 @@ export function PagamentosCard({
                 </option>
               ))}
             </Select>
+            <Input
+              label="Taxa cobrada (opcional)"
+              name="valorTaxa"
+              type="number"
+              step="0.01"
+              min="0"
+              value={valorTaxa}
+              onChange={(evento) => setValorTaxa(evento.target.value)}
+              hint="Quanto a maquininha/banco descontou deste pagamento."
+            />
             <Input label="Observação (opcional)" name="observacao" />
             {formaEscolhida === "OUTRO" && (
               <Input

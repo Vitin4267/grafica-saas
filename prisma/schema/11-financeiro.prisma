@@ -1,10 +1,55 @@
+// Achado A11 da Parte 4 da auditoria de abrangência (2026-09-08) — CARTAO
+// (genérico) e CHEQUE (que até aqui só existia escondido dentro de OUTRO,
+// via Pagamento.formaDetalhe) viram valores de primeira classe. ADD VALUE
+// aditivo, nunca removido/renomeado: CARTAO continua existindo pra todo
+// Pagamento/PagamentoDespesa histórico que já usa ele (nenhum dado
+// reescrito), só as telas NOVAS de registro passam a oferecer
+// CARTAO_CREDITO/CARTAO_DEBITO em vez dele (taxa de MDR e prazo de
+// compensação são bem diferentes entre os dois). CHEQUE tem data de
+// compensação (ver TaxaFormaPagamento.diasCompensacao abaixo) — era
+// funcionalmente um recebível igual boleto, não um "outro" genérico.
 enum FormaPagamento {
   DINHEIRO
   PIX
   CARTAO
   BOLETO
   TRANSFERENCIA
+  CARTAO_CREDITO
+  CARTAO_DEBITO
+  CHEQUE
   OUTRO
+}
+
+// Achado A11 da Parte 4 da auditoria de abrangência (2026-09-08) — cadastro
+// de referência "PIX: 0%/0 dias, Cartão de Crédito: 3,5%/30 dias" etc, por
+// gráfica. Alimenta o PRÉ-PREENCHIMENTO opcional de Pagamento.valorTaxa (ver
+// campo abaixo) quando o usuário escolhe a forma no momento do registro —
+// mesmo padrão de FK-pré-preenche-campo-editável já usado em
+// contatoClienteId/condicaoPagamentoId (ver arquitetura-resumo.md §1). NUNCA
+// recalcula/reescreve um Pagamento já registrado: só sugere o valor pro
+// PRÓXIMO pagamento sendo criado, sempre editável.
+// percentual em formato "humano" (3.50 = 3,5%), mesma convenção de
+// CondicaoPagamento.acrescimoPercent/CondicaoPagamentoParcela.percentual —
+// campo digitado direto pelo usuário num form simples, diferente dos
+// percentuais em fração (5,4) usados dentro do motor de precificação.
+model TaxaFormaPagamento {
+  id               String         @id @default(cuid())
+  graficaId        String
+  forma            FormaPagamento
+  percentual       Decimal        @default(0) @db.Decimal(5, 2)
+  diasCompensacao  Int            @default(0)
+  ativa            Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+
+  // No máximo 1 cadastro por forma de pagamento por gráfica — evita "qual eu
+  // uso pra pré-preencher" quando há duas linhas de CARTAO_CREDITO. Quem quer
+  // trocar a taxa de uma forma já cadastrada edita a linha existente.
+  @@unique([graficaId, forma])
+  @@index([graficaId])
+  @@map("taxas_forma_pagamento")
 }
 
 enum TipoContaFinanceira {
@@ -69,6 +114,19 @@ model Pagamento {
   formaDetalhe String?
   observacao   String?
   createdAt    DateTime       @default(now())
+
+  // Achado A11 da Parte 4 da auditoria de abrangência (2026-09-08) — quanto
+  // de taxa (maquininha/antecipação/MDR) foi DE FATO cobrado neste pagamento
+  // específico. @default(0) aditivo: todo Pagamento existente e todo
+  // Pagamento novo registrado sem preencher este campo continua se
+  // comportando exatamente como hoje (taxa fica invisível no resultado
+  // financeiro, como sempre foi) — NUNCA calculado automaticamente sobre um
+  // Pagamento já existente, só um valor que o usuário informa ao registrar
+  // um pagamento novo (opcionalmente pré-preenchido a partir de
+  // TaxaFormaPagamento cadastrada pra `forma`, sempre editável). Distinto de
+  // ParametrosGrafica.taxaFinanceiraPercent, que é só ESTIMATIVA usada no
+  // motor de preço do orçamento — este aqui é o valor REAL cobrado.
+  valorTaxa Decimal @default(0) @db.Decimal(12, 2)
 
   // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04) — ONDE
   // (qual conta bancária/caixa) o dinheiro entrou, complementar a `forma`

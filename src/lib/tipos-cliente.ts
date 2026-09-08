@@ -86,12 +86,18 @@ export const ROTULO_INDICADOR_INSCRICAO_ESTADUAL: Record<IndicadorInscricaoEstad
 // diferente de origem/segmento, este valor é só uma sugestão de
 // preenchimento (condicoesPagamento do orçamento), nunca gravado como valor
 // final em lugar nenhum — não vale a pena o campo extra "*Outro" pra isso.
+// Achado A11 da Parte 4 da auditoria de abrangência (2026-09-08) — 3 valores
+// novos (CARTAO_CREDITO/CARTAO_DEBITO/CHEQUE) somados aditivamente ao final
+// da ordem, sem reordenar/remover os que já existiam.
 export const ORDEM_FORMA_PAGAMENTO_CLIENTE: FormaPagamento[] = [
   "PIX",
   "BOLETO",
   "CARTAO",
   "TRANSFERENCIA",
   "DINHEIRO",
+  "CARTAO_CREDITO",
+  "CARTAO_DEBITO",
+  "CHEQUE",
   "OUTRO",
 ];
 
@@ -99,7 +105,10 @@ export const ROTULO_FORMA_PAGAMENTO_CLIENTE: Record<FormaPagamento, string> = {
   DINHEIRO: "Dinheiro",
   PIX: "Pix",
   CARTAO: "Cartão",
+  CARTAO_CREDITO: "Cartão de crédito",
+  CARTAO_DEBITO: "Cartão de débito",
   BOLETO: "Boleto",
+  CHEQUE: "Cheque",
   TRANSFERENCIA: "Transferência",
   OUTRO: "Outro",
 };
