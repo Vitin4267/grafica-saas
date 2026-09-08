@@ -39,6 +39,7 @@ function pedidoBase(overrides: Partial<PedidoParaOrdemProducao> = {}): PedidoPar
     prazoEntrega: null,
     orcamento: {
       observacoes: null,
+      numeroPedidoCliente: null,
       cliente: { nome: "Cliente Teste", preferenciasProducao: null },
       grafica: { nome: "Gráfica Teste" },
       itens: [],

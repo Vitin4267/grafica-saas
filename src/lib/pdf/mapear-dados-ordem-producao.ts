@@ -5,6 +5,15 @@ import { linhasEtiqueta, ROTULO_LADO, rotuloTipoHotStamping } from "@/app/orcame
 import { converterDeCm, ROTULO_UNIDADE_DIMENSAO, type UnidadeDimensao } from "@/lib/unidade-dimensao";
 import type { DadosPdfOrdemProducao, MateriaPrimaPdfOrdem } from "./OrdemProducaoDocumento";
 
+// Mesmo enum TipoPedidoOrcamento/mesmos rótulos de src/lib/pdf/mapear-dados.ts
+// (PDF de orçamento) — aqui aplicado ao campo POR ITEM (OrcamentoItem.
+// tipoRepeticao), não ao cabeçalho.
+const ROTULO_TIPO_PEDIDO: Record<string, string> = {
+  MODELO_NOVO: "Modelo novo",
+  REPETICAO_SEM_ALTERACAO: "Repetição sem alteração",
+  REPETICAO_COM_ALTERACAO: "Repetição com alteração",
+};
+
 // Formata a quantidade necessária de matéria-prima com no máximo 3 casas
 // decimais (a ficha técnica é Decimal(12,6), mas o chão de fábrica não
 // precisa de precisão de micrograma) e a unidade cadastrada no catálogo —
@@ -34,6 +43,11 @@ export type PedidoParaOrdemProducao = {
   prazoEntrega: Date | null;
   orcamento: {
     observacoes: string | null;
+    // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+    // Graphics, 2026-09-08) — número que o CLIENTE usa pra rastrear a
+    // própria compra, exibido perto do número do pedido no GrafPro
+    // (pedidoNumero abaixo) pra facilitar a conferência lado a lado.
+    numeroPedidoCliente: string | null;
     cliente: { nome: string; preferenciasProducao: string | null };
     grafica: { nome: string };
     itens: {
@@ -46,6 +60,12 @@ export type PedidoParaOrdemProducao = {
       unidadeDimensao: UnidadeDimensao;
       cores: string | null;
       acabamento: string | null;
+      // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+      // Graphics, 2026-09-08) — checkbox "Modelo Novo / Repetição s/
+      // alteração / Repetição c/ alteração", por item. Relevante em
+      // produção: repetição sem alteração normalmente reaproveita a
+      // faca/clichê já existente.
+      tipoRepeticao: string | null;
       acabamentos: {
         qtdBase: Prisma.Decimal;
         itemGrafica: {
@@ -134,6 +154,7 @@ export function mapearDadosOrdemProducao(
     criadoEm: pedido.createdAt,
     prazoEntrega: pedido.prazoEntrega,
     observacoes: pedido.orcamento.observacoes,
+    numeroPedidoCliente: pedido.orcamento.numeroPedidoCliente,
     // Achado A11 da auditoria de abrangência: preferência do CLIENTE (ex:
     // "sempre mandar arte em RGB"), diferente de `observacoes` acima (nota
     // do PEDIDO). Snapshot em Cliente, não em Orcamento — vale pra todo
@@ -158,6 +179,7 @@ export function mapearDadosOrdemProducao(
       espessura: item.espessuraMm ? `Espessura: ${Number(item.espessuraMm)}mm` : null,
       cores: item.cores,
       acabamento: item.acabamento,
+      tipoRepeticao: item.tipoRepeticao ? (ROTULO_TIPO_PEDIDO[item.tipoRepeticao] ?? item.tipoRepeticao) : null,
       acabamentosEstruturados: item.acabamentos.map((a) => a.itemGrafica.itemCatalogo.nome),
       etiquetaLinhas: item.etiqueta ? linhasEtiqueta(item.etiqueta) : [],
       hotStampingLinhas: (item.etiqueta?.hotStampings ?? []).map((h) => {

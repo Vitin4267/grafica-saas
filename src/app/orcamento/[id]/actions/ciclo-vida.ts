@@ -186,6 +186,18 @@ export type DuplicarOrcamentoResult = { ok: boolean; mensagem: string };
 // contexto específico do pedido concluído (ex: "cliente atrasou pagamento"),
 // enganoso se herdado sem revisão. `tipoPedido` nasce fixo em
 // REPETICAO_SEM_ALTERACAO — é literalmente o que este botão representa.
+// Achado novo (comparação com o "Pedido Interno" de papel da Assus
+// Graphics, 2026-09-08) — `numeroPedidoCliente` (cabeçalho) e
+// `OrcamentoItem.tipoRepeticao` (por item) TAMBÉM ficam de fora, decisão
+// deliberada: numeroPedidoCliente é o número do PEDIDO ORIGINAL do
+// cliente, não faz sentido herdar pro pedido novo (o cliente vai mandar um
+// número diferente pra esta nova compra, se mandar algum). tipoRepeticao é
+// ainda mais claro — o orçamento novo inteiro JÁ É a repetição
+// (tipoPedido acima assume isso automaticamente), mas quem decide se CADA
+// item individual veio sem alteração ou mudou é quem preenche o formulário
+// de novo, olhando pro pedido de papel de agora — nunca um carimbo herdado
+// do item antigo. Os dois nascem null no orçamento duplicado, mesmo
+// comportamento de um orçamento novo criado do zero.
 export async function duplicarOrcamento(
   _estadoAnterior: DuplicarOrcamentoResult | null,
   formData: FormData

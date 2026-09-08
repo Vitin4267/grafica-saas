@@ -33,6 +33,16 @@ import { editarOrcamento, removerItemOrcamento } from "./actions";
 // Diferente de SeletorItemOrcamento, aqui não há troca de unidade: o item
 // já existe e reabrir a edição tem que mostrar o número que a pessoa
 // digitou lá atrás, não um valor reinterpretado.
+// Achado novo (comparação com o "Pedido Interno" de papel da Assus
+// Graphics, 2026-09-08) — mesmas 3 opções/rótulos do enum TipoPedidoOrcamento
+// já usado no cabeçalho (ver OPCOES_TIPO_PEDIDO em
+// EditarDadosGeraisOrcamentoForm.tsx), aqui reaproveitadas POR ITEM.
+const OPCOES_TIPO_REPETICAO: [string, string][] = [
+  ["MODELO_NOVO", "Modelo novo"],
+  ["REPETICAO_SEM_ALTERACAO", "Repetição sem alteração"],
+  ["REPETICAO_COM_ALTERACAO", "Repetição com alteração"],
+];
+
 function paraExibicao(valorCm: string, unidade: UnidadeDimensao): string {
   if (!valorCm) return "";
   const numero = Number(valorCm);
@@ -112,6 +122,10 @@ export function EditarOrcamentoForm({
     // preenchido (ver src/lib/pdf/mapear-dados.ts). Disponível pra QUALQUER
     // modeloCalculo, ao contrário de `acabamento` acima.
     descricaoLivre: string;
+    // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+    // Graphics, 2026-09-08) — "" = não informado. Ver comentário completo
+    // em OrcamentoItem.tipoRepeticao no schema.
+    tipoRepeticao: string;
     acabamentoIds: string[];
     corFrente: string;
     corVerso: string;
@@ -638,6 +652,24 @@ export function EditarOrcamentoForm({
           placeholder='ex: "Banner 3×1m lona 440g com bastão e corda"'
           hint="Sobrepõe o nome do catálogo no PDF e no link público — deixe em branco pra mostrar o nome padrão."
         />
+
+        {/* Achado novo (comparação com o "Pedido Interno" de papel da Assus
+            Graphics, 2026-09-08) — checkbox "Modelo Novo / Repetição s/
+            alteração / Repetição c/ alteração" do formulário de papel, por
+            ITEM. Puramente informativo/produção, nunca afeta preço. */}
+        <Select
+          label="Tipo de repetição (opcional)"
+          name="tipoRepeticao"
+          defaultValue={valoresIniciais.tipoRepeticao}
+          hint="Repetição sem alteração normalmente reaproveita a faca/clichê já existente — informativo, não muda o preço automaticamente."
+        >
+          <option value="">não informado</option>
+          {OPCOES_TIPO_REPETICAO.map(([v, rotulo]) => (
+            <option key={v} value={v}>
+              {rotulo}
+            </option>
+          ))}
+        </Select>
 
         {usaMotorAvancado ? (
           <div className="flex flex-col gap-1.5">

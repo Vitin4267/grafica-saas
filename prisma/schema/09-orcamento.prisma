@@ -133,6 +133,17 @@ model Orcamento {
   // vínculo — o texto snapshot continua valendo.
   vendedorUsuarioId        String?
   tipoPedido               TipoPedidoOrcamento?
+  // Achado novo da auditoria de abrangência (comparação com o "Pedido
+  // Interno" de papel da Assus Graphics, cliente-piloto, 2026-09-08) —
+  // número que o CLIENTE usa pra rastrear a própria compra (ex:
+  // "MLAGO/001"), independente do id/número do orçamento do GrafPro.
+  // Texto livre, sem validação de formato nem unicidade — o GrafPro não tem
+  // controle sobre como cada cliente numera os próprios pedidos. Exibido
+  // sempre perto do número do próprio GrafPro (PDF de orçamento, Ordem de
+  // Produção) pra facilitar a conferência lado a lado. NÃO copiado em
+  // duplicarOrcamento ("Pedir de novo" — ver ciclo-vida.ts): é o número do
+  // PEDIDO ORIGINAL do cliente, não faz sentido herdar pro novo orçamento.
+  numeroPedidoCliente      String?
   contatoNome              String?
   contatoEmail             String?
   // Achado A4 da Parte 5 — quando o vendedor escolhe um ContatoCliente
@@ -651,6 +662,31 @@ model OrcamentoItem {
   // 100% manuais, ninguém zera isso sozinho. SetNull: desativar/remover o
   // Ferramental não pode apagar o item de orçamento que só referenciava ele.
   ferramentalId String?
+
+  // Achado novo da auditoria de abrangência (comparação com o "Pedido
+  // Interno" de papel da Assus Graphics, 2026-09-08) — checkbox "Modelo
+  // Novo / Repetição s/ alteração / Repetição c/ alteração" do formulário
+  // de papel, POR ITEM (não no cabeçalho — um mesmo orçamento pode
+  // reimprimir um SKU sem nenhuma mudança e criar outro do zero). Reaproveita
+  // o enum TipoPedidoOrcamento (topo deste arquivo — hoje só usado por
+  // Orcamento.tipoPedido, campo de CABEÇALHO com o MESMO significado numa
+  // granularidade diferente) em vez de duplicar um enum idêntico — decisão
+  // deliberada, não descuido. Puramente informativo/produção, mesmo caráter
+  // de ferramentalId acima: NUNCA lido por src/lib/pricing/ nem
+  // orcamento-precificacao.ts, nunca zera custoFaca/custoClichePorCm2
+  // sozinho. Integração com F1 (quando este item já tem ferramentalId
+  // vinculado E tipoRepeticao=REPETICAO_SEM_ALTERACAO, reforçar o aviso
+  // "esta faca/clichê já existe, considere não cobrar de novo" que F1
+  // propôs) NÃO foi construída nesta rodada — F1 (`OrcamentoItem.
+  // ferramentalId`) ainda não tem NENHUM seletor na UI de item de orçamento
+  // (só existe no schema), então não havia onde plugar o reforço sem também
+  // construir aquele seletor primeiro. Próximo passo, não forçado aqui (ver
+  // AdicionarItemForm.tsx/EditarOrcamentoForm.tsx, que hoje só têm o select
+  // de tipoRepeticao). NÃO copiado em duplicarOrcamento ("Pedir de
+  // novo" — ver ciclo-vida.ts): o novo orçamento É a repetição, quem decide
+  // o tipo é quem preenche o formulário de novo, não um carimbo herdado do
+  // item anterior.
+  tipoRepeticao TipoPedidoOrcamento?
 
   orcamento   Orcamento       @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
   opcao       OrcamentoOpcao? @relation(fields: [opcaoId], references: [id], onDelete: Cascade)

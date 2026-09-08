@@ -50,6 +50,10 @@ type DadosGerais = {
   // contatoClienteId/condicaoPagamentoId em EditarDadosGeraisOrcamentoForm.tsx).
   vendedorUsuarioId: string;
   tipoPedido: string;
+  // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+  // Graphics, 2026-09-08) — número que o CLIENTE usa pra rastrear a própria
+  // compra, independente do id/número do GrafPro.
+  numeroPedidoCliente: string;
   contatoNome: string;
   contatoEmail: string;
   condicoesPagamento: string;
@@ -64,6 +68,7 @@ function dadosGeraisIniciais(): DadosGerais {
     vendedor: "",
     vendedorUsuarioId: "",
     tipoPedido: "",
+    numeroPedidoCliente: "",
     contatoNome: "",
     contatoEmail: "",
     condicoesPagamento: "",
@@ -178,6 +183,10 @@ type ItemCarrinho = {
   cores: string | null;
   acabamento: string | null;
   descricaoLivre: string | null;
+  // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+  // Graphics, 2026-09-08) — puramente informativo, nunca passa pelo motor
+  // de preço (precificarItem), mesmo caráter de descricaoLivre acima.
+  tipoRepeticao: string | null;
   acabamentoIds: string[];
   // Achado F8 — QUAL cor especial/Pantone este item usa. Biblioteca do
   // cliente não é oferecida aqui (a Calculadora ainda nem escolheu um
@@ -441,6 +450,7 @@ export function CalculadoraForm({
         cores: campos.cores.trim() || null,
         acabamento: campos.acabamento.trim() || null,
         descricaoLivre: campos.descricaoLivre.trim() || null,
+        tipoRepeticao: campos.tipoRepeticao || null,
         acabamentoIds: campos.acabamentoIds,
         coresEspeciais: campos.coresEspeciais,
         precoUnitario: resultado.precoUnitario,
@@ -483,6 +493,7 @@ export function CalculadoraForm({
       cores: i.cores,
       acabamento: i.acabamento,
       descricaoLivre: i.descricaoLivre,
+      tipoRepeticao: i.tipoRepeticao,
       acabamentoIds: i.acabamentoIds,
       coresEspeciais: i.coresEspeciais
         .filter((c) => c.nomeDeclarado.trim() !== "")
@@ -580,6 +591,13 @@ export function CalculadoraForm({
                     </option>
                   ))}
                 </Select>
+                <Input
+                  label="Número do pedido do cliente"
+                  value={dadosGerais.numeroPedidoCliente}
+                  onChange={setDadoGeral("numeroPedidoCliente")}
+                  placeholder="ex: MLAGO/001"
+                  hint="Número que o próprio cliente usa pra rastrear a compra — independente do número deste orçamento no GrafPro."
+                />
                 <Input
                   label="Contato do pedido"
                   value={dadosGerais.contatoNome}
@@ -707,6 +725,7 @@ export function CalculadoraForm({
             <input type="hidden" name="vendedor" value={dadosGerais.vendedor} />
             <input type="hidden" name="vendedorUsuarioId" value={dadosGerais.vendedorUsuarioId} />
             <input type="hidden" name="tipoPedido" value={dadosGerais.tipoPedido} />
+            <input type="hidden" name="numeroPedidoCliente" value={dadosGerais.numeroPedidoCliente} />
             <input type="hidden" name="contatoNome" value={dadosGerais.contatoNome} />
             <input type="hidden" name="contatoEmail" value={dadosGerais.contatoEmail} />
             <input type="hidden" name="condicoesPagamento" value={dadosGerais.condicoesPagamento} />

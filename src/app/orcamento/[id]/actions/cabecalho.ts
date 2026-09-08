@@ -293,6 +293,10 @@ export async function editarDadosGeraisOrcamento(
       vendedor: campoTexto("vendedor", 120),
       vendedorUsuarioId,
       tipoPedido: tipoPedidoParsed?.success ? tipoPedidoParsed.data : null,
+      // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+      // Graphics, 2026-09-08) — ver comentário completo em
+      // Orcamento.numeroPedidoCliente no schema.
+      numeroPedidoCliente: campoTexto("numeroPedidoCliente", 60),
       contatoNome: campoTexto("contatoNome", 120),
       contatoEmail: campoTexto("contatoEmail", 200),
       contatoClienteId,

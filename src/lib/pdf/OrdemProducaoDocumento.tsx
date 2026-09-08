@@ -26,6 +26,11 @@ export type ItemPdfOrdemProducao = {
   espessura: string | null;
   cores: string | null;
   acabamento: string | null;
+  // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+  // Graphics, 2026-09-08) — já convertido pro rótulo em português. Relevante
+  // em produção: repetição sem alteração normalmente reaproveita a
+  // faca/clichê já existente.
+  tipoRepeticao: string | null;
   acabamentosEstruturados: string[];
   etiquetaLinhas: [string, string][];
   hotStampingLinhas: string[];
@@ -49,6 +54,11 @@ export type DadosPdfOrdemProducao = {
   criadoEm: Date;
   prazoEntrega: Date | null;
   observacoes: string | null;
+  // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+  // Graphics, 2026-09-08) — número que o CLIENTE usa pra rastrear a
+  // própria compra, exibido perto de pedidoNumero (acima) pra facilitar a
+  // conferência lado a lado.
+  numeroPedidoCliente: string | null;
   // Achado A11 da auditoria de abrangência: preferência do CLIENTE (ex:
   // "sempre mandar arte em RGB", "não aceita variação de tom entre
   // lotes") — diferente de `observacoes` acima, que é nota do PEDIDO.
@@ -188,6 +198,11 @@ export function OrdemProducaoDocumento({ dados }: { dados: DadosPdfOrdemProducao
             <Text style={estilos.tituloDocumento}>ORDEM DE PRODUÇÃO</Text>
             <Text style={estilos.graficaNome}>{dados.graficaNome}</Text>
             <Text style={estilos.numeroPedido}>Pedido #{dados.pedidoNumero}</Text>
+            {dados.numeroPedidoCliente && (
+              <Text style={estilos.numeroPedido}>
+                Pedido do cliente: {dados.numeroPedidoCliente}
+              </Text>
+            )}
           </View>
           <Text style={estilos.statusBadge}>{dados.statusRotulo}</Text>
         </View>
@@ -232,6 +247,7 @@ export function OrdemProducaoDocumento({ dados }: { dados: DadosPdfOrdemProducao
             item.acabamentosEstruturados.length > 0
               ? `Acabamento: ${item.acabamentosEstruturados.join(", ")}`
               : null,
+            item.tipoRepeticao,
           ].filter(Boolean);
 
           return (

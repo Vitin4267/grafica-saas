@@ -84,6 +84,7 @@ import { paraDecimal, type Dec } from "@/lib/pricing/decimal";
 import { aplicarPisoDoPedido } from "@/lib/pricing";
 import { montarDadosItemParaRecalculo, calcularDescontoHerdado } from "@/lib/orcamento-duplicar";
 import { corEspecialEntradaSchema, resolverCoresEspeciais } from "@/lib/orcamento-cor-especial";
+import { tipoRepeticaoItemSchema } from "@/lib/orcamento-item-entrada";
 
 import { buscarAlcadasDesconto } from "./helpers";
 
@@ -389,6 +390,19 @@ export async function editarOrcamento(
   // descritivo, nunca passa por calcularItemOrcamento — só lido do FormData e
   // gravado direto, mesmo caminho de `acabamento` acima.
   const descricaoLivre = String(formData.get("descricaoLivre") || "").trim().slice(0, 500);
+  // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+  // Graphics, 2026-09-08) — ver comentário completo em
+  // OrcamentoItem.tipoRepeticao no schema. Puramente descritivo, nunca
+  // passa por calcularItemOrcamento — só lido do FormData e gravado direto,
+  // mesmo caminho de `descricaoLivre` acima.
+  const tipoRepeticaoBruto = formData.get("tipoRepeticao");
+  const tipoRepeticaoParsed = tipoRepeticaoBruto
+    ? tipoRepeticaoItemSchema.safeParse(tipoRepeticaoBruto)
+    : null;
+  if (tipoRepeticaoParsed && !tipoRepeticaoParsed.success) {
+    return { ok: false, mensagem: "Tipo de repetição inválido." };
+  }
+  const tipoRepeticao = tipoRepeticaoParsed?.success ? tipoRepeticaoParsed.data : null;
   const corFrente = formData.get("corFrente") ? Number(formData.get("corFrente")) : null;
   const corVerso = formData.get("corVerso") ? Number(formData.get("corVerso")) : null;
   // Motor Flexografia — deliberadamente separado de corFrente/corVerso (ver
@@ -603,6 +617,7 @@ export async function editarOrcamento(
             cores: cores || null,
             acabamento: acabamento || null,
             descricaoLivre: descricaoLivre || null,
+            tipoRepeticao,
             precoUnitario: resultado.precoUnitario,
             precoTotal: resultado.precoTotal,
             // Baseline sempre fresca — precoSugeridoUnitario nunca fica presa
@@ -889,6 +904,19 @@ export async function adicionarItemOrcamento(
   // descritivo, nunca passa por calcularItemOrcamento — só lido do FormData e
   // gravado direto, mesmo caminho de `acabamento` acima.
   const descricaoLivre = String(formData.get("descricaoLivre") || "").trim().slice(0, 500);
+  // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+  // Graphics, 2026-09-08) — ver comentário completo em
+  // OrcamentoItem.tipoRepeticao no schema. Puramente descritivo, nunca
+  // passa por calcularItemOrcamento — só lido do FormData e gravado direto,
+  // mesmo caminho de `descricaoLivre` acima.
+  const tipoRepeticaoBruto = formData.get("tipoRepeticao");
+  const tipoRepeticaoParsed = tipoRepeticaoBruto
+    ? tipoRepeticaoItemSchema.safeParse(tipoRepeticaoBruto)
+    : null;
+  if (tipoRepeticaoParsed && !tipoRepeticaoParsed.success) {
+    return { ok: false, mensagem: "Tipo de repetição inválido." };
+  }
+  const tipoRepeticao = tipoRepeticaoParsed?.success ? tipoRepeticaoParsed.data : null;
   const acabamentoIds = formData.getAll("acabamentoIds").map(String).filter(Boolean).slice(0, 20);
   const corFrente = formData.get("corFrente") ? Number(formData.get("corFrente")) : null;
   const corVerso = formData.get("corVerso") ? Number(formData.get("corVerso")) : null;
@@ -1098,6 +1126,7 @@ export async function adicionarItemOrcamento(
             cores: cores || null,
             acabamento: acabamento || null,
             descricaoLivre: descricaoLivre || null,
+            tipoRepeticao,
             precoUnitario: resultado.precoUnitario,
             precoTotal: resultado.precoTotal,
             // Preço sugerido pelo motor no momento da criação — nunca editado

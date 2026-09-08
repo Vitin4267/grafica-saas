@@ -16,6 +16,17 @@ import { corEspecialEntradaSchema } from "@/lib/orcamento-cor-especial";
 // pra centímetro na fronteira.
 export const unidadeDimensaoSchema = z.enum(UNIDADES_DIMENSAO);
 
+// Achado novo (comparação com o "Pedido Interno" de papel da Assus
+// Graphics, 2026-09-08) — mesmo enum TipoPedidoOrcamento do cabeçalho
+// (Orcamento.tipoPedido), aqui POR ITEM (ver comentário completo em
+// OrcamentoItem.tipoRepeticao no schema, 09-orcamento.prisma). Puramente
+// informativo, nunca passa por calcularItemOrcamento.
+export const tipoRepeticaoItemSchema = z.enum([
+  "MODELO_NOVO",
+  "REPETICAO_SEM_ALTERACAO",
+  "REPETICAO_COM_ALTERACAO",
+]);
+
 // Detalhe descritivo/de produção de etiqueta (OrcamentoItemEtiqueta) — só
 // relevante quando o item usa modeloCalculo=M2 (flexografia). NÃO entra na
 // conta de preço (ver src/lib/pricing/m2.ts), então esse bloco fica solto do
@@ -194,6 +205,13 @@ export const itemEntradaSchema = z.object({
   // pra QUALQUER modeloCalculo, ao contrário de acabamento acima (que só se
   // aplica ao modo SIMPLES) — nunca entra no motor de preço.
   descricaoLivre: z.string().max(500).nullable(),
+  // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+  // Graphics, 2026-09-08) — ver comentário completo em
+  // OrcamentoItem.tipoRepeticao no schema. Opcional (nullable E
+  // `.optional()`, mesmo padrão de larguraPlanificada acima) — chave
+  // ausente do JSON (fixtures/chamadas anteriores a este achado) e chave
+  // presente com null são tratadas igual. Nunca entra no motor de preço.
+  tipoRepeticao: tipoRepeticaoItemSchema.nullable().optional(),
   acabamentoIds: z.array(z.string().min(1)).max(20).default([]),
   // Achado F8 — QUAL cor especial/Pantone este item usa (nome + referência
   // opcional da biblioteca do cliente, ver src/lib/orcamento-cor-especial.ts).

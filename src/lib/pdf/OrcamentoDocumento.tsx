@@ -15,6 +15,11 @@ export type ItemPdfOrcamento = {
   espessura: string | null;
   cores: string | null;
   acabamento: string | null;
+  // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+  // Graphics, 2026-09-08) — já chega convertido pro rótulo em português
+  // (ver mapearDadosPdf), mesmo padrão de tipoPedido em DadosPdfPedido
+  // abaixo. Puramente informativo, nunca afeta preço.
+  tipoRepeticao: string | null;
   acabamentosEstruturados: string[];
   precoUnitario: string;
   precoTotal: string;
@@ -34,6 +39,11 @@ export type ItemPdfOrcamento = {
 export type DadosPdfPedido = {
   vendedor: string | null;
   tipoPedido: string | null;
+  // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+  // Graphics, 2026-09-08) — número que o CLIENTE usa pra rastrear a
+  // própria compra, exibido perto do número do próprio orçamento no
+  // GrafPro pra facilitar a conferência lado a lado.
+  numeroPedidoCliente: string | null;
   condicoesPagamento: string | null;
   frete: string | null;
   transportadora: string | null;
@@ -344,6 +354,7 @@ export function OrcamentoDocumento({ dados }: { dados: DadosPdfOrcamento }) {
               {[
                 ["Vendedor", dados.dadosPedido.vendedor],
                 ["Tipo de pedido", dados.dadosPedido.tipoPedido],
+                ["Número do pedido do cliente", dados.dadosPedido.numeroPedidoCliente],
                 ["Condições de pagamento", dados.dadosPedido.condicoesPagamento],
                 ["Frete", dados.dadosPedido.frete],
                 ["Transportadora", dados.dadosPedido.transportadora],
@@ -384,6 +395,7 @@ export function OrcamentoDocumento({ dados }: { dados: DadosPdfOrcamento }) {
               item.acabamentosEstruturados.length > 0
                 ? `Acabamento: ${item.acabamentosEstruturados.join(", ")}`
                 : null,
+              item.tipoRepeticao,
             ].filter(Boolean);
 
             return (
