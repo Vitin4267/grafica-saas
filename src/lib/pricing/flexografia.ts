@@ -31,6 +31,8 @@ type Candidato = {
   bobina: Bobina;
   nUp: number;
   numRevolucoes: number;
+  metragemBoa: Dec;
+  metragemPerda: Dec;
   metragemTotal: Dec;
   custoMaterial: Dec;
 };
@@ -84,7 +86,15 @@ export function calcularFlexografia(
     const metragemTotal = metragemBoa.plus(metragemPerda).plus(metragemSetup);
     const custoMaterial = metragemTotal.times(larguraNominal).times(custoM2Material);
 
-    candidatos.push({ bobina, nUp, numRevolucoes, metragemTotal, custoMaterial });
+    candidatos.push({
+      bobina,
+      nUp,
+      numRevolucoes,
+      metragemBoa,
+      metragemPerda,
+      metragemTotal,
+      custoMaterial,
+    });
   }
 
   if (candidatos.length === 0) {
@@ -99,9 +109,26 @@ export function calcularFlexografia(
     atual.custoMaterial.lt(melhor.custoMaterial) ? atual : melhor
   );
 
+  // Achado N9 (auditoria de abrangência) — mesmo bug do Offset (ver
+  // comentário espelho em offset.ts): ANTES, `escolhido.metragemTotal` (=
+  // metragemBoa + metragemPerda + metragemSetup) já continha
+  // metragemSetup = metrosAcerto × entradas, o total de acerto do job
+  // inteiro (linha ~69 acima). `custoRodagem = entradas ×
+  // custoRodagemPorEntrada` logo abaixo multiplicava esse total por
+  // entradas DE NOVO — a parcela de acerto escalava com entradas² em vez de
+  // entradas. DEPOIS: cada entrada cobra rodagem sobre a metragem cheia
+  // (metragemBoa + metragemPerda, repetida em toda entrada) mais o acerto
+  // DESSA entrada (metrosAcerto, não metragemSetup) — `entradas ×
+  // custoRodagemPorEntrada` soma o acerto uma vez por entrada =
+  // metrosAcerto × entradas no total, linear. O consumo FÍSICO de material
+  // (custoMaterial, metragemLinearM) continua usando metragemTotal (com
+  // metragemSetup) sem nenhuma mudança — só o custo de rodagem estava errado.
+  const metragemParaRodagemPorEntrada = escolhido.metragemBoa
+    .plus(escolhido.metragemPerda)
+    .plus(params.metrosAcerto);
   const custoRodagemPorEntrada = maiorDec(
     paraDecimal(params.rodagemMinima),
-    escolhido.metragemTotal.times(params.custoMetroLinearRod)
+    metragemParaRodagemPorEntrada.times(params.custoMetroLinearRod)
   );
   const custoRodagem = paraDecimal(entradas).times(custoRodagemPorEntrada);
   const custoSetup = paraDecimal(entradas).times(params.tempoAcertoH).times(params.custoHoraMaq);

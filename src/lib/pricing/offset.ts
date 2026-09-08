@@ -138,9 +138,33 @@ export function calcularOffset(
 
   const custoMilheiroRod = paraDecimal(params.custoMilheiroRod);
   const rodagemMinima = paraDecimal(params.rodagemMinima);
+  // Achado N9 (auditoria de abrangência) — ANTES: aqui entrava
+  // `escolhido.folhasTotais` (= folhasBoas + folhasPerda + folhasSetup), e
+  // folhasSetup JÁ é folhasAcerto × entradas — o total de acerto do job
+  // inteiro (linha ~71 acima), não o de uma entrada. `custoRodagem =
+  // entradas × custoRodagemPorEntrada` logo abaixo multiplicava esse total
+  // por entradas DE NOVO, fazendo a parcela de acerto escalar com entradas²
+  // em vez de entradas — um job 6/6 numa prensa de 2 cores (entradas=6)
+  // cobrava o acerto 36× em vez de 6×. A pesquisa do setor offset confirma
+  // que o desperdício de acerto escala LINEARMENTE com o nº de
+  // cores/passadas (cada cor usa sua própria chapa e seu próprio acerto de
+  // registro) — então folhasSetup = folhasAcerto × entradas como TOTAL do
+  // job está certo; o bug era essa quantia já-total reentrar multiplicada
+  // por entradas no custo de rodagem.
+  // DEPOIS: cada entrada cobra rodagem sobre a tiragem cheia (folhasBoas +
+  // folhasPerda, que se repete em toda entrada, já que cada passada imprime
+  // o pedido inteiro) mais o acerto DESSA entrada (folhasAcerto, não
+  // folhasSetup). `entradas × custoRodagemPorEntrada` então soma o acerto
+  // uma vez por entrada = folhasAcerto × entradas no total do job — linear.
+  // O consumo FÍSICO de papel (custoPapel, pesoTotalPedidoKg mais abaixo)
+  // continua usando folhasTotais (com folhasSetup) sem nenhuma mudança — só
+  // o custo de rodagem estava errado, não a contagem de folhas de fato
+  // gastas/pesadas.
+  const folhasParaRodagemPorEntrada =
+    escolhido.folhasBoas + escolhido.folhasPerda + params.folhasAcerto;
   const custoRodagemPorEntrada = maiorDec(
     rodagemMinima,
-    paraDecimal(escolhido.folhasTotais).div(1000).times(custoMilheiroRod)
+    paraDecimal(folhasParaRodagemPorEntrada).div(1000).times(custoMilheiroRod)
   );
   const custoRodagem = paraDecimal(entradas).times(custoRodagemPorEntrada);
 

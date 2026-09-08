@@ -124,11 +124,87 @@ describe("calcularFlexografia — entradas multiplica setup/rodagem quando numer
     expect(r1entrada.custoSetup.toNumber()).toBeCloseTo(75, 6);
     expect(r2entradas.custoSetup.toNumber()).toBeCloseTo(150, 6);
 
-    // custoRodagem também escala com entradas, mas via max(rodagemMinima, ...)
-    // por entrada — em 1 entrada a rodagem mínima ainda domina (25), em 2
-    // entradas o metrosAcerto dobrado já supera o piso.
+    // custoRodagem também escala com entradas, via max(rodagemMinima, ...)
+    // POR ENTRADA — e cada entrada só carrega o SEU PRÓPRIO metrosAcerto
+    // (20), não o metrosAcerto × entradas do job inteiro. Correção do
+    // achado N9 (auditoria de abrangência, 2026-09-08): o valor antigo deste
+    // teste (73,888) assumia o bug — metragemTotal usada no cálculo por
+    // entrada já trazia metragemSetup = metrosAcerto × entradas (o total do
+    // job), e `entradas × custoRodagemPorEntrada` multiplicava esse total
+    // por entradas DE NOVO, fazendo a parcela de acerto escalar com
+    // entradas² em vez de entradas.
+    //
+    // Recálculo manual sob a fórmula corrigida (metragemBoa=6,0,
+    // metragemPerda=0,18 — ambas independentes de `entradas` neste cenário
+    // — e metrosAcerto=20 por entrada, não por job):
+    //   metragemParaRodagemPorEntrada = 6,0 + 0,18 + 20 = 26,18
+    //   custoRodagemPorEntrada = max(25, 26,18 × 0,8) = max(25, 20,944) = 25
+    //     (o piso rodagemMinima domina em AMBOS os cenários agora, já que o
+    //     acerto de UMA entrada só não é grande o bastante pra superá-lo —
+    //     diferente do bug antigo, que somava o acerto de todas as entradas
+    //     antes de comparar com o piso)
+    //   custoRodagem(1 entrada)  = 1 × 25 = 25
+    //   custoRodagem(2 entradas) = 2 × 25 = 50
+    // Ainda dobra (25 → 50), só que agora via `entradas` multiplicando o
+    // MESMO custo-por-entrada, não via a metragem-base inflada pelo bug.
     expect(r1entrada.custoRodagem.toNumber()).toBeCloseTo(25, 3);
-    expect(r2entradas.custoRodagem.toNumber()).toBeCloseTo(73.888, 3);
+    expect(r2entradas.custoRodagem.toNumber()).toBeCloseTo(50, 3);
+  });
+});
+
+describe("calcularFlexografia — achado N9: custoRodagem escala linear com entradas, não quadrático", () => {
+  it("a parcela de acerto do custoRodagem multiplica por 6× (entradas), não por 36× (entradas²)", () => {
+    // Mesma bobina/peça/quantidade nos dois cenários — só numeroCores muda
+    // (numeroEstacoesCores=1 faz entradas = numeroCores exatamente), então
+    // metragemBoa/metragemPerda são IDÊNTICAS nos dois casos; só `entradas`
+    // varia. metrosAcerto alto (100) e rodagemMinima baixa (1) garantem que
+    // o piso não mascare o efeito — a parcela de acerto domina o cálculo.
+    const contexto = contextoFlexoValido({
+      bobinas: [{ id: "b-folgada", larguraNominal: 1.0, refile: 0 }],
+    });
+    const params = paramsFlexoValidos({
+      larguraMaquinaM: 1.2,
+      numeroEstacoesCores: 1,
+      metrosAcerto: 100,
+      custoMetroLinearRod: 0.8,
+      rodagemMinima: 1,
+    });
+
+    const r1entrada = calcularFlexografia(pedidoFlexoValido({ numeroCores: 1 }), contexto, params);
+    const r6entradas = calcularFlexografia(pedidoFlexoValido({ numeroCores: 6 }), contexto, params);
+
+    expect(r1entrada.entradas).toBe(1);
+    expect(r6entradas.entradas).toBe(6);
+
+    // Cálculo manual (nUp=floor(1,008/0,128)=7; numRevolucoes=ceil(100/7)=15;
+    // metragemBoa=15×0,4=6,0; metragemPerda=6,0×0,03=0,18 — iguais nos dois
+    // cenários):
+    //   metragemParaRodagemPorEntrada = 6,0 + 0,18 + 100 = 106,18
+    //   custoRodagemPorEntrada = max(1, 106,18 × 0,8) = 84,944 (igual nos
+    //     dois cenários, pois não depende de `entradas`)
+    //   custoRodagem(1 entrada)  = 1 × 84,944 =  84,944
+    //   custoRodagem(6 entradas) = 6 × 84,944 = 509,664
+    expect(r1entrada.custoRodagem.toNumber()).toBeCloseTo(84.944, 3);
+    expect(r6entradas.custoRodagem.toNumber()).toBeCloseTo(509.664, 3);
+
+    // A prova central do achado N9: a razão é EXATAMENTE 6 (linear em
+    // entradas). Com o bug antigo (folhasSetup/metragemSetup — já o TOTAL
+    // do job — reentrando na conta por entrada) essa razão teria vindo bem
+    // maior que 6 (o acerto sendo cobrado ~entradas² vezes).
+    const razao = r6entradas.custoRodagem.div(r1entrada.custoRodagem).toNumber();
+    expect(razao).toBeCloseTo(6, 6);
+
+    // Consumo FÍSICO de material (metragemLinearM/custoMaterial) NÃO muda de
+    // fórmula — continua usando metragemTotal (com metragemSetup =
+    // metrosAcerto × entradas, o total real gasto/pesado). Só o custo de
+    // rodagem estava errado.
+    // entradas=1: metragemSetup=100×1=100 → metragemTotal=6,0+0,18+100=106,18
+    // entradas=6: metragemSetup=100×6=600 → metragemTotal=6,0+0,18+600=606,18
+    expect(r1entrada.metragemLinearM.toNumber()).toBeCloseTo(106.18, 6);
+    expect(r6entradas.metragemLinearM.toNumber()).toBeCloseTo(606.18, 6);
+    // custoMaterial = metragemTotal × larguraNominal(1,0) × custoM2Material(5)
+    expect(r1entrada.custoMaterial.toNumber()).toBeCloseTo(530.9, 6);
+    expect(r6entradas.custoMaterial.toNumber()).toBeCloseTo(3030.9, 6);
   });
 });
 
