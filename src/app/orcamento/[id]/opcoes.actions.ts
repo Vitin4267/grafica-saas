@@ -109,6 +109,10 @@ export async function adicionarOpcaoOrcamento(
     cores: string | null;
     acabamento: string | null;
     descricaoLivre: string | null;
+    // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+    // Graphics, 2026-09-08) — ver comentário completo em
+    // OrcamentoItem.tipoRepeticao no schema. Nunca entra no motor de preço.
+    tipoRepeticao: "MODELO_NOVO" | "REPETICAO_SEM_ALTERACAO" | "REPETICAO_COM_ALTERACAO" | null;
     precoUnitario: string;
     precoTotal: string;
     modeloCalculo:
@@ -255,6 +259,7 @@ export async function adicionarOpcaoOrcamento(
       cores: entrada.cores,
       acabamento: entrada.acabamento,
       descricaoLivre: entrada.descricaoLivre,
+      tipoRepeticao: entrada.tipoRepeticao ?? null,
       precoUnitario: resultado.precoUnitario,
       precoTotal: resultado.precoTotal,
       modeloCalculo: resultado.modeloCalculo,
@@ -320,6 +325,7 @@ export async function adicionarOpcaoOrcamento(
           cores: item.cores,
           acabamento: item.acabamento,
           descricaoLivre: item.descricaoLivre,
+          tipoRepeticao: item.tipoRepeticao,
           precoUnitario: item.precoUnitario,
           precoTotal: item.precoTotal,
           // Preço sugerido nasce igual ao vendido — mesmo padrão de

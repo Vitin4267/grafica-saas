@@ -35,6 +35,11 @@ type DadosGerais = {
   // mesmo padrão de contatoClienteId/condicaoPagamentoId.
   vendedorUsuarioId: string | null;
   tipoPedido: string | null;
+  // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+  // Graphics, 2026-09-08) — número que o CLIENTE usa pra rastrear a própria
+  // compra, independente do id/número do GrafPro (ver comentário completo
+  // no schema).
+  numeroPedidoCliente: string | null;
   contatoNome: string | null;
   contatoEmail: string | null;
   // Achado A4 da Parte 5 da auditoria de abrangência — id do ContatoCliente
@@ -205,6 +210,9 @@ export function EditarDadosGeraisOrcamentoForm({
   const linhas: [string, string][] = [
     dados.vendedor ? (["Vendedor", dados.vendedor] as [string, string]) : null,
     dados.tipoPedido ? (["Tipo de pedido", ROTULO_TIPO_PEDIDO[dados.tipoPedido] ?? dados.tipoPedido] as [string, string]) : null,
+    dados.numeroPedidoCliente
+      ? (["Número do pedido do cliente", dados.numeroPedidoCliente] as [string, string])
+      : null,
     dados.contatoNome ? (["Contato", dados.contatoNome] as [string, string]) : null,
     dados.contatoEmail ? (["E-mail de contato", dados.contatoEmail] as [string, string]) : null,
     dados.condicoesPagamento ? (["Condições de pagamento", dados.condicoesPagamento] as [string, string]) : null,
@@ -279,6 +287,13 @@ export function EditarDadosGeraisOrcamentoForm({
             </option>
           ))}
         </Select>
+        <Input
+          label="Número do pedido do cliente"
+          name="numeroPedidoCliente"
+          defaultValue={dados.numeroPedidoCliente ?? ""}
+          placeholder="ex: MLAGO/001"
+          hint="Número que o próprio cliente usa pra rastrear a compra — independente do número deste orçamento no GrafPro."
+        />
         {contatosCliente.length > 0 && (
           <Select
             label="Contato"

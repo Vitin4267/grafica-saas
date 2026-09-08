@@ -88,6 +88,9 @@ export function AdicionarItemForm({
         <input type="hidden" name="cores" value={campos.cores} />
         <input type="hidden" name="acabamento" value={campos.acabamento} />
         <input type="hidden" name="descricaoLivre" value={campos.descricaoLivre} />
+        {/* Achado novo (comparação com o "Pedido Interno" de papel da Assus
+            Graphics, 2026-09-08). */}
+        <input type="hidden" name="tipoRepeticao" value={campos.tipoRepeticao} />
         {campos.acabamentoIds.map((id) => (
           <input key={id} type="hidden" name="acabamentoIds" value={id} />
         ))}

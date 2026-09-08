@@ -121,6 +121,11 @@ async function criarOrcamentoOrigem(
       usuarioId: fixture.usuarioDonoId,
       status: opcoes.status ?? "APROVADO",
       total: precoUnitarioVendido * quantidade,
+      // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+      // Graphics, 2026-09-08) — presentes no ORIGEM pra confirmar que
+      // duplicarOrcamento deliberadamente NÃO os copia (ver teste abaixo e
+      // comentário completo em ciclo-vida.ts).
+      numeroPedidoCliente: "MLAGO/001",
       itens: {
         create: {
           itemGraficaId: fixture.itemGraficaId,
@@ -131,6 +136,7 @@ async function criarOrcamentoOrigem(
           descontoTipo: opcoes.comDesconto ? "PERCENTUAL" : null,
           descontoValor: opcoes.comDesconto ? 10 : null,
           motivoDesconto: opcoes.comDesconto ? "fidelidade" : null,
+          tipoRepeticao: "REPETICAO_COM_ALTERACAO",
         },
       },
     },
@@ -203,7 +209,15 @@ describe("duplicarOrcamento", () => {
       expect(novo.clienteId).toBe(fixture.clienteId);
       expect(novo.duplicadoDeId).toBe(original.id);
       expect(novo.tipoPedido).toBe("REPETICAO_SEM_ALTERACAO");
+      // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+      // Graphics, 2026-09-08) — numeroPedidoCliente é do PEDIDO ORIGINAL do
+      // cliente, não copiado (decisão documentada em ciclo-vida.ts).
+      expect(novo.numeroPedidoCliente).toBeNull();
       expect(novo.itens).toHaveLength(1);
+      // tipoRepeticao (por item) também não é copiado — o novo orçamento JÁ
+      // É a repetição (tipoPedido acima), quem decide o tipo de CADA item é
+      // quem preenche o formulário de novo, olhando o pedido de papel atual.
+      expect(novo.itens[0].tipoRepeticao).toBeNull();
       // Preço novo usa o preço ATUAL (150), nunca o congelado no original (100).
       expect(Number(novo.itens[0].precoUnitario)).toBe(150);
       expect(Number(novo.itens[0].precoTotal)).toBe(1500);

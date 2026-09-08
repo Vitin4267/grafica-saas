@@ -134,6 +134,10 @@ export type OrcamentoParaPdf = {
   // aqui de propósito (ver comentário em DadosPdfOrcamento).
   vendedor: string | null;
   tipoPedido: string | null;
+  // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+  // Graphics, 2026-09-08) — número que o CLIENTE usa pra rastrear a
+  // própria compra, independente do id/número do GrafPro.
+  numeroPedidoCliente: string | null;
   condicoesPagamento: string | null;
   frete: string | null;
   transportadora: string | null;
@@ -160,6 +164,11 @@ export type OrcamentoParaPdf = {
     // como o nome exibido do item (ver mapearDadosPdf abaixo). Puramente
     // descritivo, nunca afeta preço.
     descricaoLivre: string | null;
+    // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+    // Graphics, 2026-09-08) — checkbox "Modelo Novo / Repetição s/
+    // alteração / Repetição c/ alteração", por item. Puramente
+    // informativo, nunca afeta preço.
+    tipoRepeticao: string | null;
     acabamentos: { itemGrafica: { itemCatalogo: { nome: string } } }[];
     precoUnitario: Prisma.Decimal;
     precoTotal: Prisma.Decimal;
@@ -229,6 +238,7 @@ export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
   const dadosPedido = {
     vendedor: orcamento.vendedor,
     tipoPedido: orcamento.tipoPedido ? (ROTULO_TIPO_PEDIDO[orcamento.tipoPedido] ?? orcamento.tipoPedido) : null,
+    numeroPedidoCliente: orcamento.numeroPedidoCliente,
     condicoesPagamento: orcamento.condicoesPagamento,
     frete: orcamento.frete ? (ROTULO_FRETE[orcamento.frete] ?? orcamento.frete) : null,
     transportadora: orcamento.transportadora,
@@ -291,6 +301,10 @@ export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
       espessura: item.espessuraMm ? `Espessura: ${Number(item.espessuraMm)}mm` : null,
       cores: item.cores,
       acabamento: item.acabamento,
+      // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+      // Graphics, 2026-09-08) — já convertido pro rótulo em português,
+      // mesmo padrão de tipoPedido (dadosPedido) acima.
+      tipoRepeticao: item.tipoRepeticao ? (ROTULO_TIPO_PEDIDO[item.tipoRepeticao] ?? item.tipoRepeticao) : null,
       acabamentosEstruturados: item.acabamentos.map((a) => a.itemGrafica.itemCatalogo.nome),
       precoUnitario: formatoMoeda.format(Number(item.precoUnitario)),
       precoTotal: formatoMoeda.format(Number(item.precoTotal)),

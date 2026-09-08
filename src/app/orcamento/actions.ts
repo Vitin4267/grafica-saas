@@ -325,6 +325,10 @@ export async function criarOrcamento(
     vendedor: campoTexto("vendedor", 120),
     vendedorUsuarioId,
     tipoPedido: tipoPedidoParsed?.success ? tipoPedidoParsed.data : null,
+    // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+    // Graphics, 2026-09-08) — ver comentário completo em
+    // Orcamento.numeroPedidoCliente no schema.
+    numeroPedidoCliente: campoTexto("numeroPedidoCliente", 60),
     contatoNome: campoTexto("contatoNome", 120),
     contatoEmail: campoTexto("contatoEmail", 200),
     condicoesPagamento: campoTexto("condicoesPagamento", 200),
@@ -385,6 +389,10 @@ export async function criarOrcamento(
     cores: string | null;
     acabamento: string | null;
     descricaoLivre: string | null;
+    // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+    // Graphics, 2026-09-08) — ver comentário completo em
+    // OrcamentoItem.tipoRepeticao no schema. Nunca entra no motor de preço.
+    tipoRepeticao: "MODELO_NOVO" | "REPETICAO_SEM_ALTERACAO" | "REPETICAO_COM_ALTERACAO" | null;
     precoUnitario: string;
     precoTotal: string;
     modeloCalculo:
@@ -546,6 +554,7 @@ export async function criarOrcamento(
       cores: entrada.cores,
       acabamento: entrada.acabamento,
       descricaoLivre: entrada.descricaoLivre,
+      tipoRepeticao: entrada.tipoRepeticao ?? null,
       precoUnitario: resultado.precoUnitario,
       precoTotal: resultado.precoTotal,
       modeloCalculo: resultado.modeloCalculo,
@@ -606,6 +615,7 @@ export async function criarOrcamento(
           cores: item.cores,
           acabamento: item.acabamento,
           descricaoLivre: item.descricaoLivre,
+          tipoRepeticao: item.tipoRepeticao,
           precoUnitario: item.precoUnitario,
           precoTotal: item.precoTotal,
           modeloCalculo: item.modeloCalculo,

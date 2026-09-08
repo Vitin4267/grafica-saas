@@ -69,6 +69,16 @@ export type ItemAcabamentoDisponivel = {
   baseCobranca: "UNIDADE" | "M2" | "FOLHA_IMPRESSA" | "METRO_LINEAR" | "FIXO" | "HORA" | "MILHEIRO" | "CENTO";
 };
 
+// Achado novo (comparação com o "Pedido Interno" de papel da Assus
+// Graphics, 2026-09-08) — mesmas 3 opções/rótulos do enum TipoPedidoOrcamento
+// já usado no cabeçalho do orçamento (ver OPCOES_TIPO_PEDIDO em
+// CalculadoraForm.tsx), aqui reaproveitadas POR ITEM.
+const OPCOES_TIPO_REPETICAO: [string, string][] = [
+  ["MODELO_NOVO", "Modelo novo"],
+  ["REPETICAO_SEM_ALTERACAO", "Repetição sem alteração"],
+  ["REPETICAO_COM_ALTERACAO", "Repetição com alteração"],
+];
+
 export type CamposItemOrcamento = {
   itemGraficaId: string;
   quantidade: string;
@@ -136,6 +146,11 @@ export type CamposItemOrcamento = {
   // modeloCalculo, ao contrário de `acabamento` acima — nunca entra no
   // motor de preço.
   descricaoLivre: string;
+  // Achado novo (comparação com o "Pedido Interno" de papel da Assus
+  // Graphics, 2026-09-08) — "" = não informado (comportamento de hoje).
+  // Puramente informativo/produção, nunca entra no motor de preço (ver
+  // comentário completo em OrcamentoItem.tipoRepeticao no schema).
+  tipoRepeticao: string;
   acabamentoIds: string[];
   // Achado F8 — QUAL cor especial/Pantone este item usa (0 a N linhas,
   // independente de modeloCalculo, ao contrário de etiqueta abaixo, que é
@@ -210,6 +225,7 @@ export function camposIniciais(
     cores: "",
     acabamento: "",
     descricaoLivre: "",
+    tipoRepeticao: "",
     acabamentoIds: [],
     coresEspeciais: [],
     etiqueta: etiquetaInicial(),
@@ -378,6 +394,7 @@ export function SeletorItemOrcamento({
       cores: "",
       acabamento: "",
       descricaoLivre: "",
+      tipoRepeticao: "",
       acabamentoIds: [],
       coresEspeciais: [],
       etiqueta: etiquetaInicial(),
@@ -726,6 +743,24 @@ export function SeletorItemOrcamento({
         placeholder='ex: "Banner 3×1m lona 440g com bastão e corda"'
         hint="Sobrepõe o nome do catálogo no PDF e no link público — deixe em branco pra mostrar o nome padrão."
       />
+
+      {/* Achado novo (comparação com o "Pedido Interno" de papel da Assus
+          Graphics, 2026-09-08) — checkbox "Modelo Novo / Repetição s/
+          alteração / Repetição c/ alteração" do formulário de papel, por
+          ITEM. Puramente informativo/produção, nunca afeta preço. */}
+      <Select
+        label="Tipo de repetição (opcional)"
+        value={valores.tipoRepeticao}
+        onChange={set("tipoRepeticao")}
+        hint="Repetição sem alteração normalmente reaproveita a faca/clichê já existente — informativo, não muda o preço automaticamente."
+      >
+        <option value="">não informado</option>
+        {OPCOES_TIPO_REPETICAO.map(([v, rotulo]) => (
+          <option key={v} value={v}>
+            {rotulo}
+          </option>
+        ))}
+      </Select>
 
       {usaMotorAvancado ? (
         <SeletorAcabamentos
