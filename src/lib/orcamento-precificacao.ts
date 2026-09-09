@@ -18,7 +18,8 @@ type ModeloCalculoPrecificavel =
   | "BORDADO"
   | "TEMPO_MAQUINA"
   | "DTF"
-  | "EDITORIAL";
+  | "EDITORIAL"
+  | "CHAPA_RIGIDA";
 
 // Os 4 modelos de "setup por peça" — SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE/
 // PERSONALIZACAO (achado A3 da auditoria de abrangência: tampografia,
@@ -389,6 +390,24 @@ export async function calcularItemOrcamento(
       (!Number.isFinite(dados.tempoEstimadoMin) || dados.tempoEstimadoMin <= 0)
     ) {
       return { ok: false, mensagem: "Tempo estimado de máquina inválido (deve ser maior que zero)." };
+    }
+    if (dados.metrosCorte !== null && (!Number.isFinite(dados.metrosCorte) || dados.metrosCorte <= 0)) {
+      return { ok: false, mensagem: "Metros de corte inválidos (deve ser maior que zero)." };
+    }
+  }
+
+  // Guarda de CHAPA_RIGIDA (achado A7) -- corte (mesmos campos
+  // tempoEstimadoMin/metrosCorte de TEMPO_MAQUINA acima) é OPCIONAL aqui:
+  // diferente do guard de TEMPO_MAQUINA, NÃO exige "ao menos um
+  // preenchido" -- os dois ausentes é um produto legítimo sem corte
+  // configurado (ex: só impressão). Quando informado, precisa ser válido,
+  // mesma checagem individual do guard de TEMPO_MAQUINA acima.
+  if (itemGrafica.modeloCalculo === "CHAPA_RIGIDA") {
+    if (
+      dados.tempoEstimadoMin !== null &&
+      (!Number.isFinite(dados.tempoEstimadoMin) || dados.tempoEstimadoMin <= 0)
+    ) {
+      return { ok: false, mensagem: "Tempo estimado de corte inválido (deve ser maior que zero)." };
     }
     if (dados.metrosCorte !== null && (!Number.isFinite(dados.metrosCorte) || dados.metrosCorte <= 0)) {
       return { ok: false, mensagem: "Metros de corte inválidos (deve ser maior que zero)." };
@@ -799,6 +818,22 @@ export async function calcularItemOrcamento(
         },
         acabamentos,
       };
+    } else if (itemGrafica.modeloCalculo === "CHAPA_RIGIDA") {
+      // Achado A7 -- mesma dimensão NESTING que OFFSET/DIGITAL/DTF/M2 usam
+      // acima (larguraNestingCm/alturaNestingCm, preferindo a planificada
+      // quando informada). Corte é opcional (guarda acima já validou
+      // quando informado) -- ecoa os mesmos campos que TEMPO_MAQUINA usa.
+      pedido = {
+        tipo: "CHAPA_RIGIDA",
+        pedido: {
+          larguraM: larguraNestingCm / 100,
+          alturaM: alturaNestingCm / 100,
+          quantidade,
+          tempoEstimadoMin: dados.tempoEstimadoMin ?? undefined,
+          metrosCorte: dados.metrosCorte ?? undefined,
+        },
+        acabamentos,
+      };
     } else {
       pedido = {
         tipo: "M2",
@@ -836,9 +871,16 @@ export async function calcularItemOrcamento(
       numeroPontos: itemGrafica.modeloCalculo === "BORDADO" ? dados.numeroPontos! : null,
       // Ecoa o valor de entrada como veio — TEMPO_MAQUINA aceita os dois
       // campos independentes (a guarda acima já garantiu que ao menos um
-      // está presente).
-      tempoEstimadoMin: itemGrafica.modeloCalculo === "TEMPO_MAQUINA" ? dados.tempoEstimadoMin : null,
-      metrosCorte: itemGrafica.modeloCalculo === "TEMPO_MAQUINA" ? dados.metrosCorte : null,
+      // está presente). CHAPA_RIGIDA (achado A7) compartilha as mesmas duas
+      // colunas pro corte OPCIONAL (guarda acima permite os dois ausentes).
+      tempoEstimadoMin:
+        itemGrafica.modeloCalculo === "TEMPO_MAQUINA" || itemGrafica.modeloCalculo === "CHAPA_RIGIDA"
+          ? dados.tempoEstimadoMin
+          : null,
+      metrosCorte:
+        itemGrafica.modeloCalculo === "TEMPO_MAQUINA" || itemGrafica.modeloCalculo === "CHAPA_RIGIDA"
+          ? dados.metrosCorte
+          : null,
       // Não é model-gated como numeroSetups acima — acabamento por hora pode
       // ser anexado a qualquer motor avançado. Ecoa o valor validado (guarda
       // já garantiu presença quando há acabamento HORA anexado).

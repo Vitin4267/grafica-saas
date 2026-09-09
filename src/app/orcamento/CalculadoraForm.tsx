@@ -210,7 +210,8 @@ type ItemCarrinho = {
     | "BORDADO"
     | "TEMPO_MAQUINA"
     | "DTF"
-    | "EDITORIAL";
+    | "EDITORIAL"
+    | "CHAPA_RIGIDA";
   etiqueta: CamposEtiqueta;
   precificacaoEtiqueta: CamposPrecificacaoEtiqueta;
   // Achado N8 — só OFFSET: gramatura escolhida NESTE orçamento, sobrepondo a
@@ -308,7 +309,10 @@ export function CalculadoraForm({
     itemSelecionado?.modeloCalculo === "TEMPO_MAQUINA" ||
     // DTF (achado A5) — mesmo motor avançado de M2 (calcularM2
     // compartilhado), nunca o preview client-side de SIMPLES.
-    itemSelecionado?.modeloCalculo === "DTF";
+    itemSelecionado?.modeloCalculo === "DTF" ||
+    // Chapa rígida (achado A7) — imposição em folha como M2/OFFSET/DIGITAL/
+    // DTF acima, sempre motor avançado.
+    itemSelecionado?.modeloCalculo === "CHAPA_RIGIDA";
 
   // Prévia instantânea, sem round-trip, só pra itens SIMPLES (matemática pura,
   // igual a src/lib/orcamento.ts). M2/Offset só têm preço real depois de

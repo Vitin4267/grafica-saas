@@ -30,7 +30,8 @@ export type CodigoErroPrecificacao =
   | "CONTEXTO_EDITORIAL_NAO_CONFIGURADO"
   | "NUMERO_PAGINAS_INVALIDO"
   | "PAPEL_MIOLO_NAO_CONFIGURADO"
-  | "PAPEL_CAPA_NAO_CONFIGURADO";
+  | "PAPEL_CAPA_NAO_CONFIGURADO"
+  | "CHAPA_NAO_CONFIGURADA";
 
 // Erro estruturado: o motor nunca retorna NaN ou um preço silenciosamente errado —
 // sempre um código + mensagem + detalhes que a UI pode mostrar de forma útil.

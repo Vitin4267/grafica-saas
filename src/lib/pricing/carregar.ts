@@ -221,6 +221,7 @@ export async function carregarContextoPrecificacao(
       maquinaSetupPorPeca: true,
       maquinaBordado: true,
       maquinaTempo: true,
+      chapa: true,
     },
   });
 
@@ -576,6 +577,41 @@ export async function carregarContextoPrecificacao(
       custoEncadernacaoPorPeca: Number(item.custoEncadernacaoPorPeca ?? 0),
       paginasPorCaderno: parametros.paginasPorCadernoPadrao ?? 16,
     };
+  } else if (item.modeloCalculo === "CHAPA_RIGIDA") {
+    // Achado A7 -- mesmo padrao de PRENSA_NAO_CONFIGURADA/PAPEL_NAO_
+    // CONFIGURADA do Offset: a chapa (materia-prima) e fixa no PRODUTO, nao
+    // escolhida por orcamento (diferente do papel do Digital) -- uma
+    // gráfica de placas normalmente cadastra um produto por combinacao
+    // material+espessura.
+    if (!item.chapa) {
+      throw new ErroPrecificacao(
+        "CHAPA_NAO_CONFIGURADA",
+        "Este produto usa o modelo Chapa Rígida mas não tem uma chapa (matéria-prima) selecionada — configure isso na tela do produto, no catálogo."
+      );
+    }
+
+    contexto.chapaRigida = {
+      // Mesma relacao FormatoFolha do Offset (item.formatosFolha, ja
+      // carregada acima no include), so passa a ser lida tambem aqui --
+      // "a estrutura ja serve" (achado A7).
+      folhas: item.formatosFolha.map((f) => ({
+        id: f.id,
+        nome: f.nome,
+        larguraFolha: Number(f.larguraFolha),
+        alturaFolha: Number(f.alturaFolha),
+      })),
+      precoPorChapa: Number(item.chapa.precoCompra ?? 0),
+      custoImpressaoM2: Number(item.custoImpressaoM2ChapaRigida ?? 0),
+    };
+
+    // Corte OPCIONAL (achado A6/A7) -- so preenche parametrosMaquinaTempo
+    // quando o PRODUTO configurou uma maquina; ausente = calcularChapaRigida
+    // nunca cobra corte (ver contexto.parametrosMaquinaTempo em
+    // precificar.ts). Mesmo helper que TEMPO_MAQUINA ja usa acima.
+    if (item.maquinaTempo) {
+      contexto.parametrosMaquinaTempo = await carregarParametrosMaquinaTempo(item.maquinaTempo.id, graficaId);
+      contexto.maquinaTempoUsada = { id: item.maquinaTempo.id, nome: item.maquinaTempo.nome };
+    }
   }
 
   return contexto;

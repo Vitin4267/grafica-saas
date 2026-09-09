@@ -426,6 +426,13 @@ export default async function ConfiguracaoItemPage({
                 nome: m.nome,
                 emManutencao: idsMaquinasEmManutencao.has(m.id),
               }))}
+              custoImpressaoM2ChapaRigida={itemGrafica.custoImpressaoM2ChapaRigida?.toString() ?? ""}
+              chapaId={itemGrafica.chapaId ?? ""}
+              chapas={materiasPrimas.map((m) => ({
+                id: m.id,
+                nome: m.itemCatalogo.nome,
+                precoCompra: m.precoCompra?.toString() ?? null,
+              }))}
             />
             {itemGrafica.modeloCalculo === "M2" && (
               <ConfiguracaoClicheEtiquetaForm

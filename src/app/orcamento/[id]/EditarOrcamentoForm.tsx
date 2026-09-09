@@ -88,7 +88,8 @@ export function EditarOrcamentoForm({
     | "BORDADO"
     | "TEMPO_MAQUINA"
     | "DTF"
-    | "EDITORIAL";
+    | "EDITORIAL"
+    | "CHAPA_RIGIDA";
   // ConfiguracaoClicheEtiqueta presente pro produto deste item — só então
   // mostra o seletor de papel/cores/faca/frete.
   usaClicheEtiqueta: boolean;
@@ -203,7 +204,10 @@ export function EditarOrcamentoForm({
     modeloCalculo === "DTF" ||
     // Editorial (achado A10, rota 1) — sempre motor avançado, mesma razão
     // de REVENDA/BORDADO acima.
-    modeloCalculo === "EDITORIAL";
+    modeloCalculo === "EDITORIAL" ||
+    // Chapa rígida (achado A7) — mesmo motor avançado de M2/OFFSET/DTF
+    // acima (imposição em folha).
+    modeloCalculo === "CHAPA_RIGIDA";
   // Diferente de usaMotorAvancado: M2/OFFSET/FLEXOGRAFIA/DIGITAL (achado N4:
   // agora faz imposição igual ao Offset) EXIGEM largura/altura pro cálculo em
   // si (nesting) — os 3 de setup-por-peça, Revenda, Bordado e Tempo de
@@ -218,7 +222,8 @@ export function EditarOrcamentoForm({
     modeloCalculo === "FLEXOGRAFIA" ||
     modeloCalculo === "DIGITAL" ||
     modeloCalculo === "DTF" ||
-    modeloCalculo === "EDITORIAL";
+    modeloCalculo === "EDITORIAL" ||
+    modeloCalculo === "CHAPA_RIGIDA";
   const usaModeloDigital = modeloCalculo === "DIGITAL";
   const usaModeloEditorial = modeloCalculo === "EDITORIAL";
   // Achado B7 — mesmo agrupamento de SeletorItemOrcamento.tsx (os 5
@@ -230,6 +235,7 @@ export function EditarOrcamentoForm({
     modeloCalculo === "PERSONALIZACAO";
   const usaModeloBordado = modeloCalculo === "BORDADO";
   const usaModeloTempoMaquina = modeloCalculo === "TEMPO_MAQUINA";
+  const usaModeloChapaRigida = modeloCalculo === "CHAPA_RIGIDA";
   // Achado N1 — SIMPLES só mostra largura/altura quando o PRODUTO está
   // marcado como "cobra por área" (simplesCobraPorArea); sem a flag,
   // preencher dimensão não muda mais o preço (sempre por peça).
@@ -254,7 +260,8 @@ export function EditarOrcamentoForm({
     usaModeloSetupPorPeca ||
     modeloCalculo === "REVENDA" ||
     usaModeloBordado ||
-    usaModeloTempoMaquina;
+    usaModeloTempoMaquina ||
+    usaModeloChapaRigida;
   const [largura, setLargura] = useState(() =>
     paraExibicao(valoresIniciais.larguraCm, unidadeDimensao)
   );
@@ -548,13 +555,19 @@ export function EditarOrcamentoForm({
                 />
               )}
 
-              {usaModeloTempoMaquina && (
+              {(usaModeloTempoMaquina || usaModeloChapaRigida) && (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Input
                     label={
                       <>
                         Tempo estimado de máquina (min)
-                        <CampoAjuda texto="Quanto tempo a máquina fica rodando pra produzir este item inteiro (todas as peças da quantidade), em minutos. Preencha este campo, os metros de corte ao lado, ou os dois — a máquina cobra pelo que estiver preenchido." />
+                        <CampoAjuda
+                          texto={
+                            usaModeloChapaRigida
+                              ? "Quanto tempo a máquina de corte fica rodando pra produzir este item inteiro, em minutos — só entra no custo se este produto tiver uma máquina de corte configurada em Catálogo. Deixe em branco se este produto não tem recorte (ex: só impressão)."
+                              : "Quanto tempo a máquina fica rodando pra produzir este item inteiro (todas as peças da quantidade), em minutos. Preencha este campo, os metros de corte ao lado, ou os dois — a máquina cobra pelo que estiver preenchido."
+                          }
+                        />
                       </>
                     }
                     name="tempoEstimadoMin"

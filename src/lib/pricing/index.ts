@@ -9,6 +9,7 @@ export { calcularRevenda, type ResultadoRevenda } from "./revenda";
 export { calcularBordado, type ResultadoBordado } from "./bordado";
 export { calcularTempoMaquina, type ResultadoTempoMaquina } from "./tempo-maquina";
 export { calcularEditorial, type ResultadoEditorial } from "./editorial";
+export { calcularChapaRigida, type ResultadoChapaRigida } from "./chapa-rigida";
 export {
   calcularQtdBase,
   calcularCustoAcabamento,

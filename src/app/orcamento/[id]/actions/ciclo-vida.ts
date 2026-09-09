@@ -311,7 +311,8 @@ export async function duplicarOrcamento(
       | "BORDADO"
       | "TEMPO_MAQUINA"
       | "DTF"
-      | "EDITORIAL";
+      | "EDITORIAL"
+      | "CHAPA_RIGIDA";
     corFrente: number | null;
     corVerso: number | null;
     numeroCoresFlexo: number | null;

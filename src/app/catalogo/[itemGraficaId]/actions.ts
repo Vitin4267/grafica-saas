@@ -73,6 +73,7 @@ const modeloCalculoSchema = z.enum([
   "TEMPO_MAQUINA",
   "DTF",
   "EDITORIAL",
+  "CHAPA_RIGIDA",
 ]);
 // Sem OUTRO de propósito: unidadeContagem não tem campo "outro" livre (só
 // ItemCatalogo.unidade tem), então OUTRO aqui só mostraria o rótulo genérico
@@ -206,6 +207,7 @@ export async function salvarModeloProduto(
     TEMPO_MAQUINA: "Tempo de máquina (corte a laser, router, plotter)",
     DTF: "DTF (transfer têxtil)",
     EDITORIAL: "Editorial (livro/revista multipágina)",
+    CHAPA_RIGIDA: "Chapa rígida (PVC, ACM, acrílico, MDF)",
   };
   const modeloAntes = ROTULO_MODELO[itemGrafica.modeloCalculo as typeof modeloCalculo] ?? itemGrafica.modeloCalculo;
 
@@ -740,6 +742,95 @@ export async function salvarModeloProduto(
         descricao: `Modelo de cálculo do item atualizado para ${ROTULO_MODELO.EDITORIAL}`,
         valorAnterior: `Modelo: ${modeloAntes}`,
         valorNovo: `Modelo: ${ROTULO_MODELO.EDITORIAL}, custo impressão/m²: ${formatarPreco(custoImpressaoM2Editorial)}, encadernação/peça: ${formatarPreco(custoEncadernacaoPorPeca)}`,
+      });
+    } else if (modeloCalculo === "CHAPA_RIGIDA") {
+      // Achado A7 da auditoria de abrangência — PVC, ACM, acrílico, MDF,
+      // papelão Paraná: reaproveita a MESMA imposição 2D do Offset
+      // (FormatoFolha) sobre a chapa (matéria-prima com preço fixo por
+      // chapa inteira, não por kg — sem TabelaPrecoPapel/gramatura). Corte é
+      // OPCIONAL: máquina de tempo (MaquinaTempo, achado A6) só entra se
+      // selecionada — ausente = produto sem recorte configurado.
+      const formatosResult = parseJsonArray(
+        formData.get("formatosFolhaJson"),
+        formatoFolhaSchema
+      );
+      if (!formatosResult.ok) {
+        return { ok: false, mensagem: formatosResult.mensagem };
+      }
+      if (formatosResult.data.length === 0) {
+        return {
+          ok: false,
+          mensagem: "Adicione ao menos um formato de chapa para habilitar o cálculo Chapa rígida.",
+        };
+      }
+
+      const chapaId = String(formData.get("chapaId") ?? "");
+      if (!chapaId) {
+        return { ok: false, mensagem: "Selecione uma chapa para habilitar o cálculo Chapa rígida." };
+      }
+      const chapaValida = await prisma.itemGrafica.findFirst({
+        where: {
+          id: chapaId,
+          graficaId: usuario.graficaId,
+          itemCatalogo: { tipo: "MATERIA_PRIMA" },
+        },
+        select: { id: true },
+      });
+      if (!chapaValida) {
+        return { ok: false, mensagem: "Chapa selecionada é inválida." };
+      }
+
+      const custoImpressaoM2ChapaRigida = Number(formData.get("custoImpressaoM2ChapaRigida") || 0);
+      if (!Number.isFinite(custoImpressaoM2ChapaRigida) || custoImpressaoM2ChapaRigida < 0) {
+        return { ok: false, mensagem: "Custo de impressão por m² inválido." };
+      }
+
+      // Diferente de prensaId/maquinaFlexografiaId/impressoraDigitalId acima
+      // (todos obrigatórios pro modelo correspondente): maquinaTempoId é
+      // OPCIONAL aqui — um produto CHAPA_RIGIDA sem recorte configurado (ex:
+      // só impressão) não tem corte no custo, sem precisar de nenhuma
+      // máquina cadastrada.
+      const maquinaTempoIdRaw = String(formData.get("maquinaTempoId") ?? "");
+      let maquinaTempoId: string | null = null;
+      if (maquinaTempoIdRaw) {
+        const maquinaValida = await prisma.maquinaTempo.findFirst({
+          where: { id: maquinaTempoIdRaw, graficaId: usuario.graficaId, ativa: true },
+          select: { id: true },
+        });
+        if (!maquinaValida) {
+          return { ok: false, mensagem: "Máquina de corte selecionada é inválida." };
+        }
+        maquinaTempoId = maquinaTempoIdRaw;
+      }
+
+      await prisma.$transaction([
+        prisma.itemGrafica.update({
+          where: { id: itemGraficaId },
+          data: {
+            modeloCalculo: "CHAPA_RIGIDA",
+            chapaId,
+            custoImpressaoM2ChapaRigida,
+            maquinaTempoId,
+            unidadeContagem: unidadeContagemFinal,
+            fatorConversao: fatorConversaoFinal,
+          },
+        }),
+        prisma.formatoFolha.deleteMany({ where: { itemGraficaId } }),
+        prisma.formatoFolha.createMany({
+          data: formatosResult.data.map((f) => ({ itemGraficaId, ...f })),
+        }),
+      ]);
+
+      await registrarAuditoria({
+        graficaId: usuario.graficaId,
+        usuarioId: usuario.id,
+        usuarioNome: usuario.nome,
+        acao: "catalogo.salvar_modelo_calculo",
+        entidade: "ItemGrafica",
+        entidadeId: itemGraficaId,
+        descricao: `Modelo de cálculo do item atualizado para ${ROTULO_MODELO.CHAPA_RIGIDA}`,
+        valorAnterior: `Modelo: ${modeloAntes}`,
+        valorNovo: `Modelo: ${ROTULO_MODELO.CHAPA_RIGIDA}, custo impressão/m²: ${formatarPreco(custoImpressaoM2ChapaRigida)}, ${formatosResult.data.length} formato${formatosResult.data.length > 1 ? "s" : ""} de chapa${maquinaTempoId ? ", com corte configurado" : ""}`,
       });
     }
   } catch {

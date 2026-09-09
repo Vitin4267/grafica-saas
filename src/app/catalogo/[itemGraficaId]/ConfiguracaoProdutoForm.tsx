@@ -26,7 +26,8 @@ type ModeloCalculo =
   | "BORDADO"
   | "TEMPO_MAQUINA"
   | "DTF"
-  | "EDITORIAL";
+  | "EDITORIAL"
+  | "CHAPA_RIGIDA";
 
 // Mesmo conjunto de unidadeContagemSchema em actions.ts — sem OUTRO (sem
 // campo de texto livre pra essa, ficaria só "outro" na exibição de preço).
@@ -239,6 +240,9 @@ export function ConfiguracaoProdutoForm({
   maquinasBordado,
   maquinaTempoId: maquinaTempoIdInicial,
   maquinasTempo,
+  custoImpressaoM2ChapaRigida: custoImpressaoM2ChapaRigidaInicial,
+  chapaId: chapaIdInicial,
+  chapas,
 }: {
   itemGraficaId: string;
   modeloCalculo: ModeloCalculo;
@@ -299,6 +303,13 @@ export function ConfiguracaoProdutoForm({
   maquinasBordado: { id: string; nome: string; emManutencao: boolean }[];
   maquinaTempoId: string;
   maquinasTempo: { id: string; nome: string; emManutencao: boolean }[];
+  // Achado A7 — só relevantes/exibidos quando modeloCalculo=CHAPA_RIGIDA. A
+  // máquina de tempo (maquinaTempoId acima) é REAPROVEITADA — mesmo campo/
+  // estado do bloco TEMPO_MAQUINA, mas opcional pra chapa rígida (corte não
+  // é obrigatório, ver bloco abaixo).
+  custoImpressaoM2ChapaRigida: string;
+  chapaId: string;
+  chapas: { id: string; nome: string; precoCompra: string | null }[];
 }) {
   const [modeloCalculo, setModeloCalculo] = useState<ModeloCalculo>(modeloCalculoInicial);
   const [simplesCobraPorArea, setSimplesCobraPorArea] = useState(simplesCobraPorAreaInicial);
@@ -315,6 +326,7 @@ export function ConfiguracaoProdutoForm({
   const [maquinaSetupPorPecaId, setMaquinaSetupPorPecaId] = useState(maquinaSetupPorPecaIdInicial);
   const [maquinaBordadoId, setMaquinaBordadoId] = useState(maquinaBordadoIdInicial);
   const [maquinaTempoId, setMaquinaTempoId] = useState(maquinaTempoIdInicial);
+  const [chapaId, setChapaId] = useState(chapaIdInicial);
   const [state, formAction, isPending] = useActionState(salvarModeloProduto, null);
   const [mostrarAvancadoM2, setMostrarAvancadoM2] = useState(
     Boolean(areaMinimaFaturavelInicial)
@@ -374,7 +386,11 @@ export function ConfiguracaoProdutoForm({
     modeloCalculo !== "FLEXOGRAFIA" &&
     modeloCalculo !== "DTF" &&
     bobinas.length > 0;
-  const temFormatosOrfaos = modeloCalculo !== "OFFSET" && formatos.length > 0;
+  // Achado A7 — FormatoFolha passou a ser usado também por CHAPA_RIGIDA (a
+  // mesma imposição 2D do Offset, ver comentário do enum ModeloCalculo no
+  // schema), então não é mais órfão só por não ser Offset.
+  const temFormatosOrfaos =
+    modeloCalculo !== "OFFSET" && modeloCalculo !== "CHAPA_RIGIDA" && formatos.length > 0;
 
   return (
     <form action={formAction} className="flex flex-col gap-6">
@@ -425,6 +441,7 @@ export function ConfiguracaoProdutoForm({
           <option value="TEMPO_MAQUINA">Tempo de máquina (corte a laser, router, plotter)</option>
           <option value="REVENDA">Revenda / terceirização</option>
           <option value="EDITORIAL">Editorial — livro/revista multipágina (miolo + capa)</option>
+          <option value="CHAPA_RIGIDA">Chapa rígida — PVC, ACM, acrílico, MDF (imposição em chapa)</option>
         </Select>
 
         {modeloCalculo === "SIMPLES" && (
@@ -602,6 +619,88 @@ export function ConfiguracaoProdutoForm({
                 defaultValue={custoEncadernacaoPorPecaInicial}
               />
             </div>
+          </div>
+        )}
+
+        {modeloCalculo === "CHAPA_RIGIDA" && (
+          <div className="flex flex-col gap-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+            <p className="text-xs text-slate-500">
+              Custo = número de chapas × preço da chapa (reaproveita a mesma imposição em
+              folha do Offset) + custo de impressão por área impressa + corte opcional numa
+              máquina de tempo (se configurada abaixo).
+            </p>
+            {chapas.length === 0 ? (
+              <Alert variant="error">
+                Nenhuma matéria-prima cadastrada ainda. Cadastre a chapa (ex: &quot;PVC
+                3mm&quot;, &quot;ACM 4mm&quot;) em{" "}
+                <Link href="/catalogo" className="underline">
+                  Catálogo
+                </Link>{" "}
+                antes de usar o modelo Chapa rígida.
+              </Alert>
+            ) : (
+              <Select
+                label="Chapa (matéria-prima)"
+                name="chapaId"
+                value={chapaId}
+                onChange={(e) => setChapaId(e.target.value)}
+                hint="Preço fixo por chapa inteira (não por kg) — vem do preço de compra desta matéria-prima."
+              >
+                <option value="">Selecione uma chapa</option>
+                {chapas.map((chapa) => (
+                  <option key={chapa.id} value={chapa.id}>
+                    {chapa.nome}
+                    {chapa.precoCompra ? ` — R$ ${Number(chapa.precoCompra).toFixed(2)}/chapa` : " (sem preço)"}
+                  </option>
+                ))}
+              </Select>
+            )}
+            <Input
+              label={
+                <>
+                  Custo de impressão por m²
+                  <CampoAjuda texto="R$ por m² impresso (impressão UV flatbed sobre a chapa) — aplicado sobre a área da peça, não sobre a chapa inteira." />
+                </>
+              }
+              name="custoImpressaoM2ChapaRigida"
+              type="number"
+              step="0.0001"
+              min="0"
+              defaultValue={custoImpressaoM2ChapaRigidaInicial}
+            />
+            {maquinasTempo.length > 0 && (
+              <Select
+                label="Máquina de corte (opcional)"
+                name="maquinaTempoId"
+                value={maquinaTempoId}
+                onChange={(e) => setMaquinaTempoId(e.target.value)}
+                hint="Se escolher uma máquina, o corte (informado por pedido) entra no custo. Deixe em branco se este produto não tem recorte configurado (ex: só impressão)."
+              >
+                <option value="">Sem corte configurado</option>
+                {maquinasTempo.map((maquina) => (
+                  <option key={maquina.id} value={maquina.id}>
+                    {maquina.nome}
+                    {maquina.emManutencao ? " (em manutenção)" : ""}
+                  </option>
+                ))}
+              </Select>
+            )}
+            {maquinaTempoEmManutencao && (
+              <Alert variant="warning">
+                Esta máquina está com uma parada em andamento agora. Você ainda pode
+                salvar o produto assim configurado, mas confira em{" "}
+                <Link href="/configuracoes/maquinas/manutencao" className="underline">
+                  Configurações → Máquinas → Manutenção
+                </Link>{" "}
+                antes de produzir.
+              </Alert>
+            )}
+            {formatos.length === 0 && (
+              <Alert variant="error">
+                Adicione ao menos um formato de chapa para habilitar o cálculo.
+              </Alert>
+            )}
+            <FormatosFolhaEditor itens={formatos} onChange={setFormatos} />
           </div>
         )}
 
