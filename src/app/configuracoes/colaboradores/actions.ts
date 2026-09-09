@@ -3,13 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import type { TipoColaborador } from "@/generated/prisma/enums";
+import type { TipoColaborador, TipoChavePix } from "@/generated/prisma/enums";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { registrarAuditoria, criarDiffCampos } from "@/lib/auditoria";
 import { ORDEM_TIPO_COLABORADOR, rotuloTipoColaborador } from "@/lib/tipos-colaborador";
+import { ORDEM_TIPO_CHAVE_PIX } from "@/lib/tipos-grafica";
 
 export type SalvarColaboradorResult = { ok: boolean; mensagem: string };
 
@@ -125,6 +126,31 @@ export async function editarColaborador(
 
   const telefone = campoTextoOuNull(formData, "telefone");
 
+  // Achado D3 da auditoria de abrangência — CPF/chave PIX/especialidade têm
+  // um segundo gate MAIS RESTRITO (FINANCEIRO) por cima do CONFIGURACOES já
+  // checado acima. Nunca confia no formData pra decidir isso: se o usuário
+  // não tem FINANCEIRO, os 4 campos simplesmente não entram no update, mesmo
+  // que um POST forjado os inclua (a UI nem os renderiza pra esse usuário).
+  const temFinanceiro = await podeEditarModulo(usuario, "FINANCEIRO");
+  let cpf = colaborador.cpf;
+  let chavePix = colaborador.chavePix;
+  let tipoChavePix: TipoChavePix | null = colaborador.tipoChavePix;
+  let especialidade = colaborador.especialidade;
+  if (temFinanceiro) {
+    cpf = campoTextoOuNull(formData, "cpf");
+    chavePix = campoTextoOuNull(formData, "chavePix");
+    especialidade = campoTextoOuNull(formData, "especialidade");
+    const tipoChavePixBruto = String(formData.get("tipoChavePix") ?? "").trim();
+    if (tipoChavePixBruto) {
+      if (!ORDEM_TIPO_CHAVE_PIX.includes(tipoChavePixBruto as TipoChavePix)) {
+        return { ok: false, mensagem: "Tipo de chave PIX inválido." };
+      }
+      tipoChavePix = tipoChavePixBruto as TipoChavePix;
+    } else {
+      tipoChavePix = null;
+    }
+  }
+
   await prisma.colaborador.update({
     where: { id: colaboradorId },
     data: {
@@ -132,6 +158,10 @@ export async function editarColaborador(
       tipo: validacaoTipo.tipo,
       tipoOutro: validacaoTipo.tipoOutro,
       telefone,
+      cpf,
+      chavePix,
+      tipoChavePix,
+      especialidade,
     },
   });
 
@@ -143,7 +173,25 @@ export async function editarColaborador(
     rotuloTipoColaborador(validacaoTipo.tipo, validacaoTipo.tipoOutro)
   );
   diff.campo("Telefone", colaborador.telefone, telefone);
-  if (diff.temMudanca) {
+
+  // NUNCA loga o VALOR de CPF/PIX (dado sensível, ver missão) — só QUE
+  // mudou, por isso fora do criarDiffCampos acima (que sempre inclui o
+  // valor no texto).
+  const camposPagamentoMudados: string[] = [];
+  if (temFinanceiro) {
+    if ((colaborador.cpf ?? null) !== cpf) camposPagamentoMudados.push("CPF");
+    if ((colaborador.chavePix ?? null) !== chavePix) camposPagamentoMudados.push("Chave PIX");
+    if ((colaborador.tipoChavePix ?? null) !== tipoChavePix)
+      camposPagamentoMudados.push("Tipo de chave PIX");
+    if ((colaborador.especialidade ?? null) !== especialidade)
+      camposPagamentoMudados.push("Especialidade");
+  }
+
+  if (diff.temMudanca || camposPagamentoMudados.length > 0) {
+    const descricaoPagamento =
+      camposPagamentoMudados.length > 0
+        ? ` — dados de pagamento atualizados (${camposPagamentoMudados.join(", ")})`
+        : "";
     await registrarAuditoria({
       graficaId: usuario.graficaId,
       usuarioId: usuario.id,
@@ -151,9 +199,9 @@ export async function editarColaborador(
       acao: "configuracoes.editar_colaborador",
       entidade: "Colaborador",
       entidadeId: colaboradorId,
-      descricao: `Colaborador "${colaborador.nome}" atualizado`,
-      valorAnterior: diff.antesTextos.join("; "),
-      valorNovo: diff.depoisTextos.join("; "),
+      descricao: `Colaborador "${colaborador.nome}" atualizado${descricaoPagamento}`,
+      valorAnterior: diff.antesTextos.length > 0 ? diff.antesTextos.join("; ") : undefined,
+      valorNovo: diff.depoisTextos.length > 0 ? diff.depoisTextos.join("; ") : undefined,
     });
   }
 

@@ -6,13 +6,14 @@ import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
-import { exigirPapel, MODULOS_PERMISSAO } from "@/lib/auth/permissoes";
+import { exigirPapel, podeEditarModulo, MODULOS_PERMISSAO } from "@/lib/auth/permissoes";
 import { senhaSchema } from "@/lib/auth/validation";
 import { hashPassword } from "@/lib/auth/password";
 import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
 import { AREAS_ADMINISTRATIVAS, ROTULO_AREA_ADMINISTRATIVA } from "@/lib/areas-administrativas";
+import { ORDEM_TIPO_CHAVE_PIX } from "@/lib/tipos-grafica";
 import { registrarAuditoria } from "@/lib/auditoria";
-import type { AreaAdministrativa } from "@/generated/prisma/enums";
+import type { AreaAdministrativa, TipoChavePix } from "@/generated/prisma/enums";
 
 const ROTULO_PAPEL: Record<"ADMIN" | "OPERADOR", string> = {
   ADMIN: "Admin",
@@ -426,6 +427,113 @@ export async function salvarComissaoUsuarios(
   revalidatePath("/usuarios");
 
   return { ok: true, mensagem: "Comissão por vendedor atualizada com sucesso!" };
+}
+
+export type SalvarDadosPagamentoUsuariosResult = { ok: boolean; mensagem: string };
+
+// Achado D3 da auditoria de abrangência (Parte 7/Pessoas,
+// pesquisa-abrangencia-modulos.md, 2026-09-09) — pra onde a gráfica paga
+// cada usuário (comissão de vendedor, freelancer). Mesmo padrão de
+// formulário único de salvarComissaoUsuarios: um campo por usuário, tudo
+// salvo de uma vez. SÓ EXIBIÇÃO: cpf/chavePix nunca são validados (mesmo
+// raciocínio do comentário de Grafica.chavePix no schema) — texto livre,
+// sem checar dígito verificador nem formato. Gated por FINANCEIRO (além do
+// exigirPapel DONO que já protege toda a página /usuarios) — hoje é
+// redundante na prática (DONO sempre passa em podeEditarModulo), mas é o
+// mecanismo pedido pra este dado sensível, e protege se a página um dia
+// abrir pra outros papéis.
+export async function salvarDadosPagamentoUsuarios(
+  _estadoAnterior: SalvarDadosPagamentoUsuariosResult | null,
+  formData: FormData
+): Promise<SalvarDadosPagamentoUsuariosResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  exigirPapel(usuario, ["DONO"]);
+  if (!(await podeEditarModulo(usuario, "FINANCEIRO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar dados financeiros." };
+  }
+
+  // desativadoEm: null — mesmo motivo de salvarComissaoUsuarios: sem o
+  // filtro, um funcionário removido (que não aparece mais no form) teria os
+  // dados de pagamento apagados a cada salvamento por falta dos campos
+  // `*_${id}` no formData.
+  const usuarios = await prisma.usuario.findMany({
+    where: { graficaId: usuario.graficaId, desativadoEm: null },
+    select: { id: true, nome: true, cpf: true, chavePix: true, tipoChavePix: true, especialidade: true },
+  });
+
+  const atualizacoes: {
+    id: string;
+    cpf: string | null;
+    chavePix: string | null;
+    tipoChavePix: TipoChavePix | null;
+    especialidade: string | null;
+  }[] = [];
+
+  for (const u of usuarios) {
+    const cpf = String(formData.get(`cpf_${u.id}`) ?? "").trim() || null;
+    const chavePix = String(formData.get(`chavePix_${u.id}`) ?? "").trim() || null;
+    const tipoChavePixBruto = String(formData.get(`tipoChavePix_${u.id}`) ?? "").trim();
+    const especialidade = String(formData.get(`especialidade_${u.id}`) ?? "").trim() || null;
+
+    let tipoChavePix: TipoChavePix | null = null;
+    if (tipoChavePixBruto) {
+      if (!ORDEM_TIPO_CHAVE_PIX.includes(tipoChavePixBruto as TipoChavePix)) {
+        return { ok: false, mensagem: `Tipo de chave PIX inválido para "${u.nome}".` };
+      }
+      tipoChavePix = tipoChavePixBruto as TipoChavePix;
+    }
+
+    atualizacoes.push({ id: u.id, cpf, chavePix, tipoChavePix, especialidade });
+  }
+
+  await prisma.$transaction(
+    atualizacoes.map((a) =>
+      prisma.usuario.update({
+        where: { id: a.id },
+        data: {
+          cpf: a.cpf,
+          chavePix: a.chavePix,
+          tipoChavePix: a.tipoChavePix,
+          especialidade: a.especialidade,
+        },
+      })
+    )
+  );
+
+  // NUNCA loga o VALOR de CPF/PIX (dado sensível) — só QUAIS campos mudaram,
+  // por pessoa. Diferente do resto do repo (que costuma logar antes/depois
+  // com criarDiffCampos): aqui é deliberado não usar esse helper porque ele
+  // sempre inclui o valor no texto.
+  const usuarioAntesPorId = new Map(usuarios.map((u) => [u.id, u]));
+  const mudancasPorPessoa = atualizacoes
+    .map((a) => {
+      const antes = usuarioAntesPorId.get(a.id)!;
+      const camposMudados: string[] = [];
+      if ((antes.cpf ?? null) !== a.cpf) camposMudados.push("CPF");
+      if ((antes.chavePix ?? null) !== a.chavePix) camposMudados.push("Chave PIX");
+      if ((antes.tipoChavePix ?? null) !== a.tipoChavePix) camposMudados.push("Tipo de chave PIX");
+      if ((antes.especialidade ?? null) !== a.especialidade) camposMudados.push("Especialidade");
+      return camposMudados.length > 0 ? `${antes.nome}: ${camposMudados.join(", ")}` : null;
+    })
+    .filter((texto): texto is string => texto !== null);
+
+  if (mudancasPorPessoa.length > 0) {
+    await registrarAuditoria({
+      graficaId: usuario.graficaId,
+      usuarioId: usuario.id,
+      usuarioNome: usuario.nome,
+      acao: "usuario.salvar_dados_pagamento",
+      entidade: "Grafica",
+      entidadeId: usuario.graficaId,
+      descricao: `Dados de pagamento atualizados — ${mudancasPorPessoa.join("; ")}`,
+    });
+  }
+
+  revalidatePath("/usuarios");
+
+  return { ok: true, mensagem: "Dados de pagamento atualizados com sucesso!" };
 }
 
 export type SalvarResponsaveisEstagioResult = { ok: boolean; mensagem: string };

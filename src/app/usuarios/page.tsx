@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
-import { exigirPapel, podeVerMeuNegocio } from "@/lib/auth/permissoes";
+import { exigirPapel, podeVerMeuNegocio, podeVerModulo, podeEditarModulo } from "@/lib/auth/permissoes";
 import { garantirPerfisAcessoPadrao } from "@/lib/perfis-acesso-padrao";
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
@@ -11,6 +11,7 @@ import { UsuarioForm } from "./UsuarioForm";
 import { UsuariosLista } from "./UsuariosLista";
 import { AcessoMeuNegocioForm } from "./AcessoMeuNegocioForm";
 import { ComissaoUsuarioForm } from "./ComissaoUsuarioForm";
+import { DadosPagamentoUsuarioForm } from "./DadosPagamentoUsuarioForm";
 import { ResponsaveisEstagioForm } from "./ResponsaveisEstagioForm";
 import { ResponsaveisAdministrativoForm } from "./ResponsaveisAdministrativoForm";
 import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
@@ -26,6 +27,16 @@ export default async function UsuariosPage() {
   // PerfilAcesso cadastrado — mesmo princípio de garantirCondicoesPagamentoPadrao
   // (ver comentário completo em src/lib/perfis-acesso-padrao.ts).
   await garantirPerfisAcessoPadrao(usuario.graficaId);
+
+  // Achado D3 da auditoria de abrangência — dados de pagamento (CPF/PIX) são
+  // sensíveis, exibidos só pra quem tem a permissão FINANCEIRO. Hoje é
+  // sempre true nesta página (só DONO chega aqui, e DONO sempre passa em
+  // podeVerModulo/podeEditarModulo), mas é o mecanismo pedido pra este dado —
+  // ver DadosPagamentoUsuarioForm.
+  const [podeVerFinanceiro, podeEditarFinanceiro] = await Promise.all([
+    podeVerModulo(usuario, "FINANCEIRO"),
+    podeEditarModulo(usuario, "FINANCEIRO"),
+  ]);
 
   const [todosUsuarios, perfisAcesso, etapas] = await Promise.all([
     prisma.usuario.findMany({
@@ -172,6 +183,32 @@ export default async function UsuariosPage() {
             }))}
           />
         </section>
+
+        {podeVerFinanceiro && (
+          <section className="mt-12">
+            <h2 className="mb-1 text-lg font-semibold text-slate-900 dark:text-white">
+              Dados de pagamento
+            </h2>
+            <p className="mb-4 text-sm text-slate-500">
+              CPF, chave PIX e especialidade — pra saber pra quem/onde pagar comissão ou
+              serviço avulso. Visível só pra quem tem acesso a Financeiro; nunca aparece na
+              lista de usuários acima nem em nenhum PDF.
+            </p>
+            <DadosPagamentoUsuarioForm
+              usuarios={usuarios.map((u) => ({
+                id: u.id,
+                nome: u.nome,
+                email: u.email,
+                papel: u.papel,
+                cpf: u.cpf,
+                chavePix: u.chavePix,
+                tipoChavePix: u.tipoChavePix,
+                especialidade: u.especialidade,
+              }))}
+              podeEditar={podeEditarFinanceiro}
+            />
+          </section>
+        )}
 
         <section className="mt-12">
           <h2 className="mb-1 text-lg font-semibold text-slate-900 dark:text-white">
