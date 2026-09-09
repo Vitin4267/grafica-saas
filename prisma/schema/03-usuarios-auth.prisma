@@ -58,6 +58,27 @@ model Usuario {
   // reativa.
   desativadoEm DateTime?
 
+  // Dados de pagamento avulso (achado D3 da auditoria de abrangência, Parte 7
+  // pesquisa-abrangencia-modulos.md, 2026-09-09) — pra ONDE a gráfica paga
+  // este usuário (comissão de vendedor, freelancer), sentido OPOSTO de
+  // Grafica.chavePix/tipoChavePix (achado F6, é pra a gráfica RECEBER do
+  // cliente — não confundir os dois). SÓ EXIBIÇÃO: cpf/chavePix nunca são
+  // validados (mesmo raciocínio do comentário de Grafica.chavePix acima —
+  // não confere dígito verificador de CPF nem formato de e-mail/telefone,
+  // texto livre) e nada aqui confirma pagamento automaticamente. Reaproveita
+  // o MESMO enum TipoChavePix de Grafica.tipoChavePix (01-grafica.prisma),
+  // não um novo. Exposição controlada: só aparece na tela /usuarios (edição,
+  // gated por FINANCEIRO — ver podeVerModulo/podeEditarModulo) e em
+  // /financeiro/comissoes (exibição, mesmo gate) — NUNCA em listagem geral
+  // de usuários (UsuariosLista) nem em PDF algum.
+  cpf          String?
+  chavePix     String?
+  tipoChavePix TipoChavePix?
+  // Área de atuação livre (ex: "Motorista", "Designer freelance", "Operador
+  // de guilhotina") — puramente descritivo/organizacional, nunca lido por
+  // nenhuma lógica de negócio (preço, permissão, produção).
+  especialidade String?
+
   grafica                       Grafica                     @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   // Cargos com permissão pré-configurada (feature "multi-cargo",
   // 2026-09-06) — substitui o antigo Usuario.perfilAcessoId (FK única pra
@@ -475,6 +496,23 @@ model Colaborador {
   // arquitetura-resumo.md), validado na Server Action, nunca CHECK no banco.
   tipoOutro String?
   telefone  String?
+  // Dados de pagamento avulso (achado D3 da auditoria de abrangência, Parte 7
+  // pesquisa-abrangencia-modulos.md, 2026-09-09) — Colaborador é quem MAIS
+  // recebe pagamento avulso na prática (motorista/freelancer terceirizado
+  // sem login), e hoje não tinha onde registrar isso. Mesmo raciocínio de
+  // Usuario.cpf/chavePix acima (ver comentário completo lá): SÓ EXIBIÇÃO,
+  // nunca validado, reaproveita o MESMO enum TipoChavePix (01-grafica.prisma).
+  // Exposição controlada: só aparece em /configuracoes/colaboradores/[id]
+  // quando o operador também tem FINANCEIRO (ver podeVerModulo/
+  // podeEditarModulo) — a página em si já é gated por CONFIGURACOES, mas
+  // estes 4 campos têm um segundo gate por cima, mais restrito. NUNCA em
+  // listagem geral (/configuracoes/colaboradores) nem em PDF algum.
+  cpf            String?
+  chavePix       String?
+  tipoChavePix   TipoChavePix?
+  // Área de atuação livre (ex: "Motorista", "Operador de guilhotina") —
+  // puramente descritivo, nunca lido por nenhuma lógica de negócio.
+  especialidade  String?
   // Soft-delete — mesmo princípio de Transportadora.ativa/Fornecedor.ativo:
   // um colaborador referenciado em Entrega.motoristaColaboradorId não pode
   // ser removido de verdade sem quebrar o histórico, só sai da lista de

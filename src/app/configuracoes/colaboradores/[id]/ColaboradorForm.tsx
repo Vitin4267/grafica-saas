@@ -7,8 +7,9 @@ import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { ORDEM_TIPO_COLABORADOR, ROTULO_TIPO_COLABORADOR } from "@/lib/tipos-colaborador";
+import { ORDEM_TIPO_CHAVE_PIX, ROTULO_TIPO_CHAVE_PIX } from "@/lib/tipos-grafica";
 import { editarColaborador, alternarAtivoColaborador } from "../actions";
-import type { TipoColaborador } from "@/generated/prisma/enums";
+import type { TipoColaborador, TipoChavePix } from "@/generated/prisma/enums";
 
 type ValoresColaborador = {
   nome: string;
@@ -16,14 +17,25 @@ type ValoresColaborador = {
   tipoOutro: string | null;
   telefone: string | null;
   ativo: boolean;
+  cpf: string | null;
+  chavePix: string | null;
+  tipoChavePix: TipoChavePix | null;
+  especialidade: string | null;
 };
 
 export function ColaboradorForm({
   colaboradorId,
   valoresIniciais,
+  podeVerFinanceiro,
+  podeEditarFinanceiro,
 }: {
   colaboradorId: string;
   valoresIniciais: ValoresColaborador;
+  // Achado D3 da auditoria de abrangência — CPF/PIX/especialidade só
+  // aparecem pra quem tem a permissão FINANCEIRO, um gate MAIS RESTRITO que
+  // o resto desta tela (CONFIGURACOES). Ver comentário completo em page.tsx.
+  podeVerFinanceiro: boolean;
+  podeEditarFinanceiro: boolean;
 }) {
   const [state, formAction, isPending] = useActionState(editarColaborador, null);
   const [estadoAtivo, alternarAction, alternandoPending] = useActionState(
@@ -71,6 +83,67 @@ export function ColaboradorForm({
             defaultValue={valoresIniciais.telefone ?? ""}
           />
         </Card>
+
+        {podeVerFinanceiro && (
+          <Card className="flex flex-col gap-4 p-6">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+                Dados de pagamento
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                CPF, chave PIX e especialidade — pra saber pra quem/onde pagar (comissão,
+                frete avulso, serviço). Não validamos o formato, e nada aqui confirma
+                pagamento automaticamente.
+              </p>
+            </div>
+
+            {podeEditarFinanceiro ? (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Input
+                  label="CPF"
+                  name="cpf"
+                  type="text"
+                  defaultValue={valoresIniciais.cpf ?? ""}
+                  placeholder="000.000.000-00"
+                />
+                <Input
+                  label="Especialidade"
+                  name="especialidade"
+                  type="text"
+                  defaultValue={valoresIniciais.especialidade ?? ""}
+                  placeholder="ex: Motorista, Operador de guilhotina"
+                />
+                <Input
+                  label="Chave PIX"
+                  name="chavePix"
+                  type="text"
+                  defaultValue={valoresIniciais.chavePix ?? ""}
+                  placeholder="CPF, e-mail, telefone..."
+                />
+                <Select
+                  label="Tipo de chave"
+                  name="tipoChavePix"
+                  defaultValue={valoresIniciais.tipoChavePix ?? ""}
+                >
+                  <option value="">Não informado</option>
+                  {ORDEM_TIPO_CHAVE_PIX.map((valor) => (
+                    <option key={valor} value={valor}>
+                      {ROTULO_TIPO_CHAVE_PIX[valor]}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                CPF: {valoresIniciais.cpf ?? "—"} · Chave PIX: {valoresIniciais.chavePix ?? "—"}
+                {valoresIniciais.tipoChavePix
+                  ? ` (${ROTULO_TIPO_CHAVE_PIX[valoresIniciais.tipoChavePix]})`
+                  : ""}{" "}
+                · Especialidade: {valoresIniciais.especialidade ?? "—"}
+              </p>
+            )}
+          </Card>
+        )}
         {state && <Alert variant={state.ok ? "success" : "error"}>{state.mensagem}</Alert>}
         <Button type="submit" loading={isPending} className="self-start">
           {isPending ? "Salvando..." : "Salvar"}

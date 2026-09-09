@@ -383,6 +383,144 @@ describe("alternarAtivoColaborador (achado D1)", () => {
   );
 });
 
+describe("Dados de pagamento — CPF/chave PIX/especialidade (achado D3)", () => {
+  it(
+    "DONO grava CPF/chave PIX/tipo/especialidade e o log de auditoria NÃO contém o valor de CPF nem PIX",
+    async () => {
+      const f = await criarFixture();
+      const colaborador = await prisma.colaborador.create({
+        data: { graficaId: f.graficaId, nome: "Motorista Pagamento", tipo: "MOTORISTA" },
+      });
+      await comoUsuario(f.usuarioDonoId);
+
+      const fd = new FormData();
+      fd.set("colaboradorId", colaborador.id);
+      fd.set("nome", "Motorista Pagamento");
+      fd.set("tipo", "MOTORISTA");
+      fd.set("cpf", "123.456.789-00");
+      fd.set("chavePix", "motorista@example.com");
+      fd.set("tipoChavePix", "EMAIL");
+      fd.set("especialidade", "Motorista freelancer");
+
+      const resultado = await editarColaborador(null, fd);
+      expect(resultado.ok).toBe(true);
+
+      const atualizado = await prisma.colaborador.findUniqueOrThrow({ where: { id: colaborador.id } });
+      expect(atualizado.cpf).toBe("123.456.789-00");
+      expect(atualizado.chavePix).toBe("motorista@example.com");
+      expect(atualizado.tipoChavePix).toBe("EMAIL");
+      expect(atualizado.especialidade).toBe("Motorista freelancer");
+
+      const logs = await prisma.logAuditoria.findMany({
+        where: { graficaId: f.graficaId, acao: "configuracoes.editar_colaborador" },
+      });
+      expect(logs).toHaveLength(1);
+      const textoCompleto = `${logs[0].descricao} ${logs[0].valorAnterior ?? ""} ${logs[0].valorNovo ?? ""}`;
+      // Só o NOME dos campos que mudaram pode aparecer, nunca o CONTEÚDO
+      // sensível (CPF/chave PIX) — ver missão: "CPF/PIX atualizado" sem valor.
+      expect(textoCompleto).toMatch(/CPF/);
+      expect(textoCompleto).toMatch(/Chave PIX/);
+      expect(textoCompleto).not.toContain("123.456.789-00");
+      expect(textoCompleto).not.toContain("motorista@example.com");
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "OPERADOR com CONFIGURACOES mas SEM FINANCEIRO edita nome normalmente, mas NÃO grava CPF/PIX mesmo que o form os inclua",
+    async () => {
+      const f = await criarFixture();
+      const colaborador = await prisma.colaborador.create({
+        data: { graficaId: f.graficaId, nome: "Antes RBAC Financeiro", tipo: "MOTORISTA" },
+      });
+      await prisma.permissaoUsuario.create({
+        data: { usuarioId: f.usuarioOperadorId, modulo: "CONFIGURACOES", podeVer: true, podeEditar: true },
+      });
+      // Deliberadamente SEM linha de FINANCEIRO — "ausência = sem acesso"
+      // (mesmo princípio de resolverPermissaoOperador).
+      await comoUsuario(f.usuarioOperadorId);
+
+      const fd = new FormData();
+      fd.set("colaboradorId", colaborador.id);
+      fd.set("nome", "Depois RBAC Financeiro");
+      fd.set("tipo", "MOTORISTA");
+      // Mesmo um POST forjado tentando setar dado sensível não deve colar —
+      // "tudo sensível no backend", nunca confia no formData pra isso.
+      fd.set("cpf", "999.999.999-99");
+      fd.set("chavePix", "chave-forjada@example.com");
+      fd.set("tipoChavePix", "EMAIL");
+      fd.set("especialidade", "Especialidade forjada");
+
+      const resultado = await editarColaborador(null, fd);
+      expect(resultado.ok).toBe(true);
+
+      const atualizado = await prisma.colaborador.findUniqueOrThrow({ where: { id: colaborador.id } });
+      expect(atualizado.nome).toBe("Depois RBAC Financeiro");
+      expect(atualizado.cpf).toBeNull();
+      expect(atualizado.chavePix).toBeNull();
+      expect(atualizado.tipoChavePix).toBeNull();
+      expect(atualizado.especialidade).toBeNull();
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "OPERADOR com CONFIGURACOES **e** FINANCEIRO consegue gravar CPF/PIX normalmente",
+    async () => {
+      const f = await criarFixture();
+      const colaborador = await prisma.colaborador.create({
+        data: { graficaId: f.graficaId, nome: "Com Financeiro", tipo: "MOTORISTA" },
+      });
+      await prisma.permissaoUsuario.createMany({
+        data: [
+          { usuarioId: f.usuarioOperadorId, modulo: "CONFIGURACOES", podeVer: true, podeEditar: true },
+          { usuarioId: f.usuarioOperadorId, modulo: "FINANCEIRO", podeVer: true, podeEditar: true },
+        ],
+      });
+      await comoUsuario(f.usuarioOperadorId);
+
+      const fd = new FormData();
+      fd.set("colaboradorId", colaborador.id);
+      fd.set("nome", "Com Financeiro");
+      fd.set("tipo", "MOTORISTA");
+      fd.set("cpf", "111.222.333-44");
+      fd.set("chavePix", "111.222.333-44");
+      fd.set("tipoChavePix", "CPF");
+
+      const resultado = await editarColaborador(null, fd);
+      expect(resultado.ok).toBe(true);
+
+      const atualizado = await prisma.colaborador.findUniqueOrThrow({ where: { id: colaborador.id } });
+      expect(atualizado.cpf).toBe("111.222.333-44");
+      expect(atualizado.chavePix).toBe("111.222.333-44");
+      expect(atualizado.tipoChavePix).toBe("CPF");
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "tipo de chave PIX inválido é rejeitado (mesmo pra quem tem FINANCEIRO)",
+    async () => {
+      const f = await criarFixture();
+      const colaborador = await prisma.colaborador.create({
+        data: { graficaId: f.graficaId, nome: "Chave Invalida", tipo: "MOTORISTA" },
+      });
+      await comoUsuario(f.usuarioDonoId);
+
+      const fd = new FormData();
+      fd.set("colaboradorId", colaborador.id);
+      fd.set("nome", "Chave Invalida");
+      fd.set("tipo", "MOTORISTA");
+      fd.set("tipoChavePix", "BITCOIN");
+
+      const resultado = await editarColaborador(null, fd);
+      expect(resultado.ok).toBe(false);
+      expect(resultado.mensagem).toMatch(/tipo de chave pix inválido/i);
+    },
+    TIMEOUT_MS
+  );
+});
+
 describe("RBAC — OPERADOR sem permissão de CONFIGURACOES não consegue mexer em Colaborador", () => {
   it(
     "criarColaborador recusa e nada é criado",

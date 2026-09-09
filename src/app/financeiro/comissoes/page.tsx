@@ -23,9 +23,16 @@ export default async function ComissoesPage() {
   await exigirVerModulo(usuario, "FINANCEIRO");
   const podeEditar = await podeEditarModulo(usuario, "FINANCEIRO");
 
+  // Achado D3 da auditoria de abrangência — cpf/chavePix/tipoChavePix vêm
+  // junto pra exibir aqui (read-only) qual é a chave PIX do vendedor na hora
+  // de marcar a comissão como paga, sem precisar ir em /usuarios. Página já
+  // gated por FINANCEIRO acima (exigirVerModulo) — nenhum gate adicional
+  // necessário pra só EXIBIR (edição continua só em /usuarios).
   const comissoes = await prisma.comissao.findMany({
     where: { graficaId: usuario.graficaId },
-    include: { usuario: { select: { nome: true } } },
+    include: {
+      usuario: { select: { nome: true, cpf: true, chavePix: true, tipoChavePix: true } },
+    },
     orderBy: [{ status: "asc" }, { createdAt: "desc" }],
   });
 
@@ -83,6 +90,9 @@ export default async function ComissoesPage() {
               key={c.id}
               comissaoId={c.id}
               vendedorNome={c.usuario.nome}
+              vendedorCpf={c.usuario.cpf}
+              vendedorChavePix={c.usuario.chavePix}
+              vendedorTipoChavePix={c.usuario.tipoChavePix}
               orcamentoId={c.orcamentoId}
               baseCalculo={c.baseCalculo}
               percentualAplicado={c.percentualAplicado.toString()}

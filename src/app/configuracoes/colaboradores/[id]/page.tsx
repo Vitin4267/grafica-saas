@@ -8,6 +8,8 @@ import {
   podeVerMeuNegocio,
   exigirVerModulo,
   obterModulosVisiveis,
+  podeVerModulo,
+  podeEditarModulo,
 } from "@/lib/auth/permissoes";
 import { UserNav } from "@/components/UserNav";
 import { ArrowLeftIcon } from "@/components/icons";
@@ -31,6 +33,16 @@ export default async function ColaboradorDetalhePage({
   if (!colaborador) {
     notFound();
   }
+
+  // Achado D3 da auditoria de abrangência — CPF/chave PIX/especialidade são
+  // dados sensíveis, um segundo gate MAIS RESTRITO que o resto desta tela
+  // (que já exige CONFIGURACOES): só aparecem/editam pra quem também tem
+  // FINANCEIRO. Um operador com CONFIGURACOES mas sem FINANCEIRO edita
+  // nome/tipo/telefone normalmente, só não vê os 4 campos novos.
+  const [podeVerFinanceiro, podeEditarFinanceiro] = await Promise.all([
+    podeVerModulo(usuario, "FINANCEIRO"),
+    podeEditarModulo(usuario, "FINANCEIRO"),
+  ]);
 
   return (
     <div className="flex flex-1 flex-col">
@@ -65,7 +77,13 @@ export default async function ColaboradorDetalhePage({
             tipoOutro: colaborador.tipoOutro,
             telefone: colaborador.telefone,
             ativo: colaborador.ativo,
+            cpf: colaborador.cpf,
+            chavePix: colaborador.chavePix,
+            tipoChavePix: colaborador.tipoChavePix,
+            especialidade: colaborador.especialidade,
           }}
+          podeVerFinanceiro={podeVerFinanceiro}
+          podeEditarFinanceiro={podeEditarFinanceiro}
         />
       </main>
     </div>
