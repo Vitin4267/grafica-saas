@@ -1,6 +1,41 @@
 import { z } from "zod";
+import { normalizarDocumento, validarCpf, validarCnpj } from "@/lib/documento";
 
 const opcional = z.string().trim().max(160).optional().or(z.literal(""));
+
+// Achado A2/Parte 5-Fiscal da auditoria de abrangência ("Fase A") — CPF/CNPJ
+// do cliente, validado por dígito verificador de verdade (src/lib/documento.ts
+// cobre CNPJ numérico E alfanumérico, padrão Serpro vigente desde
+// 31/07/2026). Normaliza SEMPRE em silêncio (nunca rejeita só por
+// pontuação) e só rejeita quando o dígito verificador não bate — mensagem
+// única cobre os dois casos (tamanho errado nem chega a ser CPF/CNPJ
+// possível, então cai na mesma rejeição). Campo continua opcional: sem
+// documento (string vazia) é sempre aceito, mesmo comportamento de sempre.
+//
+// Cuidado com cadastro legado: esta validação roda toda vez que `documento`
+// é passado pro schema. src/app/clientes/actions.ts (atualizarCliente) evita
+// travar a edição de um cliente com documento sujo já salvo (sem DV válido)
+// omitindo a chave `documento` do objeto passado a este schema quando o
+// campo não foi de fato alterado no formulário — ver comentário lá.
+const documentoOpcional = z
+  .string()
+  .trim()
+  .max(40)
+  .optional()
+  .or(z.literal(""))
+  .transform((valor) => (valor ? normalizarDocumento(valor) : valor))
+  .refine(
+    (valor) => {
+      if (!valor) return true;
+      if (valor.length === 11) return validarCpf(valor);
+      if (valor.length === 14) return validarCnpj(valor);
+      return false;
+    },
+    {
+      message:
+        "CPF/CNPJ inválido — confira o número digitado (CPF tem 11 dígitos, CNPJ tem 14 posições).",
+    }
+  );
 
 // Texto livre mais longo — observacoes/preferenciasProducao (achado A11 da
 // auditoria de abrangência) são notas/parágrafos, não um campo de linha
@@ -21,7 +56,7 @@ export const clienteSchema = z.object({
   nome: z.string().trim().min(2, "Nome muito curto").max(120),
   email: z.union([z.string().trim().toLowerCase().email("E-mail inválido"), z.literal("")]).optional(),
   telefone: opcional,
-  documento: opcional,
+  documento: documentoOpcional,
   enderecoCep: cepOpcional,
   enderecoLogradouro: opcional,
   enderecoNumero: opcional,

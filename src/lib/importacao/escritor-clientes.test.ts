@@ -49,7 +49,9 @@ describe("escritor-clientes: validação (clienteSchema reusado)", () => {
     const resultado = clienteSchema.safeParse({
       nome: "Fulano de Tal",
       telefone: "11999999999",
-      documento: "12345678900",
+      // CPF de teste canônico (dígito verificador válido) — ver
+      // src/lib/documento.test.ts.
+      documento: "111.444.777-35",
       enderecoCep: "01310-100",
       enderecoLogradouro: "Av. Paulista",
       enderecoNumero: "1000",
@@ -59,5 +61,21 @@ describe("escritor-clientes: validação (clienteSchema reusado)", () => {
       enderecoUf: "SP",
     });
     expect(resultado.success).toBe(true);
+  });
+
+  // Achado A2/Parte 5-Fiscal ("Fase A") — clienteSchema agora valida
+  // dígito verificador de CPF/CNPJ (src/lib/documento.ts), e a importação
+  // de planilha reusa o schema byte-a-byte: uma linha com documento
+  // inválido é rejeitada aqui do mesmo jeito que no cadastro manual, sem
+  // nenhuma validação duplicada neste arquivo.
+  it("rejeita linha com documento de dígito verificador inválido (herda a validação do clienteSchema)", () => {
+    const resultado = clienteSchema.safeParse({ nome: "Fulano de Tal", documento: "111.444.777-99" });
+    expect(resultado.success).toBe(false);
+  });
+
+  it("aceita e normaliza pontuação de um CNPJ válido vindo da planilha", () => {
+    const resultado = clienteSchema.safeParse({ nome: "Empresa Fulano", documento: "11.222.333/0001-81" });
+    expect(resultado.success).toBe(true);
+    if (resultado.success) expect(resultado.data.documento).toBe("11222333000181");
   });
 });
