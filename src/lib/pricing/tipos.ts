@@ -14,7 +14,8 @@ export type ModeloCalculo =
   | "BORDADO"
   | "TEMPO_MAQUINA"
   | "DTF"
-  | "EDITORIAL";
+  | "EDITORIAL"
+  | "CHAPA_RIGIDA";
 export type BaseCobranca =
   | "UNIDADE"
   | "M2"
@@ -420,4 +421,40 @@ export type ContextoEditorial = {
   // parâmetros pra uma única fórmula — carregarContextoPrecificacao sempre
   // ecoa o mesmo valor de parametros.paginasPorCadernoPadrao.
   paginasPorCaderno: number;
+};
+
+// ---------- Cenario 11 (chapa rigida -- achado A7, imposicao em folha) ----------
+
+// Mesma geometria do Digital (cenario 5 acima): a peca e imposta num
+// FormatoFolha (aqui o formato da CHAPA -- PVC, ACM, acrilico, MDF, papelao
+// Parana etc.), maximizando nUp pra minimizar o numero de chapas. Corte
+// (achado A6, MaquinaTempo) e OPCIONAL -- tempoEstimadoMin/metrosCorte so
+// entram no custo quando o produto tem maquinaTempoId configurado (ver
+// ContextoPrecificacao.parametrosMaquinaTempo, ja existente) E ao menos um
+// dos dois foi informado neste pedido; ausentes = corte nao entra no custo
+// (produto sem recorte configurado, ex: so impressao).
+export type PedidoChapaRigida = {
+  larguraM: number; // w
+  alturaM: number; // h
+  quantidade: number; // Q
+  sangria?: number; // por lado, default 0.002-0.005 (spec Sec.2.2, mesmo default do Offset/Digital)
+  margemLateral?: number; // m_lat, refile/margens laterais da chapa, default 0.01
+  gapPecas?: number; // g, gap entre pecas na chapa, default 0.002
+  tempoEstimadoMin?: number; // corte opcional -- ver comentario acima
+  metrosCorte?: number; // corte opcional -- ver comentario acima
+};
+
+export type ContextoChapaRigida = {
+  // Formatos de chapa do PRODUTO (mesma relacao FormatoFolha do Offset,
+  // reaproveitada aqui -- reutilizada em vez de criada de novo, ver achado
+  // A7 no schema).
+  folhas: FormatoFolhaInput[];
+  // = ItemGrafica.chapa.precoCompra (materia-prima chapa referenciada por
+  // ItemGrafica.chapaId) -- preco FIXO por chapa inteira, nao por kg (chapa
+  // rigida nao se pesa por gramatura de papel, diferente do Offset).
+  precoPorChapa: number;
+  // = ItemGrafica.custoImpressaoM2ChapaRigida do PRODUTO -- R$/m2 impresso
+  // (impressao UV flatbed), aplicado sobre a area da PECA (com sangria), nao
+  // sobre a chapa inteira -- mesma semantica de ContextoM2.custoImpressaoM2.
+  custoImpressaoM2: number;
 };

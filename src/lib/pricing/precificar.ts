@@ -1,5 +1,6 @@
 import { paraDecimal } from "./decimal";
 import { calcularM2 } from "./m2";
+import { calcularChapaRigida } from "./chapa-rigida";
 import { calcularOffset } from "./offset";
 import { calcularFlexografia } from "./flexografia";
 import { calcularDigital } from "./digital";
@@ -15,6 +16,7 @@ import type {
   ConfigAcabamento,
   ContextoAcabamento,
   ContextoBordado,
+  ContextoChapaRigida,
   ContextoDigital,
   ContextoEditorial,
   ContextoFlexografia,
@@ -32,6 +34,7 @@ import type {
   ParametrosPrensa,
   ParametrosTenant,
   PedidoBordado,
+  PedidoChapaRigida,
   PedidoDigital,
   PedidoEditorial,
   PedidoFlexografia,
@@ -77,7 +80,11 @@ export type PedidoPrecificacao =
   // Editorial multipágina (achado A10, Rota 1) — sem nesting, mas COM
   // dimensões obrigatórias (formato fechado da página), diferente da
   // família DIGITAL/setup-por-peça/REVENDA/BORDADO/TEMPO_MAQUINA acima.
-  | { tipo: "EDITORIAL"; pedido: PedidoEditorial; acabamentos: ConfigAcabamento[] };
+  | { tipo: "EDITORIAL"; pedido: PedidoEditorial; acabamentos: ConfigAcabamento[] }
+  // Chapa rigida (achado A7) -- imposicao 2D igual ao Digital (nUp por
+  // FormatoFolha do PRODUTO), mas com formula de custo propria (chapas x
+  // preco fixo + impressao/m2 + corte opcional via MaquinaTempo).
+  | { tipo: "CHAPA_RIGIDA"; pedido: PedidoChapaRigida; acabamentos: ConfigAcabamento[] };
 
 export type ContextoPrecificacao = {
   itemGraficaId: string;
@@ -105,6 +112,7 @@ export type ContextoPrecificacao = {
   parametrosMaquinaTempo?: ParametrosMaquinaTempo;
   maquinaTempoUsada?: { id: string; nome: string };
   editorial?: ContextoEditorial;
+  chapaRigida?: ContextoChapaRigida;
   margemLucroOverride?: number;
   custoEmbalagem?: number;
   custoFreteEstimado?: number;
@@ -572,6 +580,58 @@ export function precificar(
         custoPapelCapa: resultado.custoPapelCapa.toNumber(),
         custoImpressaoCapa: resultado.custoImpressaoCapa.toNumber(),
         custoEncadernacao: resultado.custoEncadernacao.toNumber(),
+      },
+    };
+  }
+
+  if (pedido.tipo === "CHAPA_RIGIDA") {
+    if (!contexto.chapaRigida) {
+      throw new ErroPrecificacao(
+        "CHAPA_NAO_CONFIGURADA",
+        "Contexto de chapa rígida não fornecido para um item com modeloCalculo=CHAPA_RIGIDA."
+      );
+    }
+
+    // Corte (achado A6) e OPCIONAL -- so passa parametrosMaquinaTempo quando
+    // o PRODUTO tem maquinaTempoId configurado (mesmo campo de contexto que
+    // TEMPO_MAQUINA usa, ver carregarContextoPrecificacao); calcularChapaRigida
+    // decide sozinho se o PEDIDO informou dados de corte pra realmente cobrar
+    // (ver comentario em chapa-rigida.ts).
+    const resultado = calcularChapaRigida(pedido.pedido, contexto.chapaRigida, contexto.parametrosMaquinaTempo);
+
+    const ctxAcabamento: ContextoAcabamento = {
+      quantidade: pedido.pedido.quantidade,
+      larguraEfetivaM: pedido.pedido.larguraM,
+      alturaEfetivaM: pedido.pedido.alturaM,
+      ...ctxAcabamentoExtra(contexto, pedido.pedido.larguraM, pedido.pedido.alturaM),
+    };
+    const acabamentos = calcularAcabamentos(pedido.acabamentos, ctxAcabamento);
+
+    const composicao = comporPreco({
+      quantidade: pedido.pedido.quantidade,
+      custoBase: resultado.custoBase,
+      custoAcabamentos: acabamentos.total,
+      acabamentosDetalhe: acabamentos.itens,
+      custoEmbalagem: contexto.custoEmbalagem !== undefined ? paraDecimal(contexto.custoEmbalagem) : undefined,
+      custoFreteEstimado:
+        contexto.custoFreteEstimado !== undefined ? paraDecimal(contexto.custoFreteEstimado) : undefined,
+      custoFaca: contexto.custoFaca !== undefined ? paraDecimal(contexto.custoFaca) : undefined,
+      parametros: contexto.parametros,
+      margemLucroOverride: contexto.margemLucroOverride,
+      detalhesExtras: { chapas: resultado.custoChapas, setup: resultado.custoCorte },
+    });
+
+    return {
+      ...composicao,
+      metricas: {
+        nUp: resultado.nUp,
+        rotacionado: resultado.rotacionado,
+        nChapas: resultado.nChapas,
+        custoChapas: resultado.custoChapas.toNumber(),
+        custoImpressao: resultado.custoImpressao.toNumber(),
+        custoCorte: resultado.custoCorte.toNumber(),
+        folhaEscolhida: resultado.folhaEscolhida,
+        maquinaTempoUsada: contexto.maquinaTempoUsada ?? null,
       },
     };
   }

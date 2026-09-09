@@ -67,7 +67,8 @@ export type PrecificarItemResult =
         | "BORDADO"
         | "TEMPO_MAQUINA"
         | "DTF"
-        | "EDITORIAL";
+        | "EDITORIAL"
+        | "CHAPA_RIGIDA";
     }
   | { ok: false; mensagem: string };
 
@@ -409,7 +410,8 @@ export async function criarOrcamento(
       | "BORDADO"
       | "TEMPO_MAQUINA"
       | "DTF"
-      | "EDITORIAL";
+      | "EDITORIAL"
+      | "CHAPA_RIGIDA";
     corFrente: number | null;
     corVerso: number | null;
     numeroCoresFlexo: number | null;

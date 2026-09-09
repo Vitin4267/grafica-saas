@@ -1,12 +1,14 @@
 import { ErroPrecificacao } from "./erros";
 import type {
   ContextoBordado,
+  ContextoChapaRigida,
   ContextoDigital,
   ContextoEditorial,
   ContextoFlexografia,
   ContextoM2,
   ContextoOffset,
   ContextoRevenda,
+  PedidoChapaRigida,
   PedidoDigital,
   PedidoEditorial,
   PedidoFlexografia,
@@ -305,6 +307,49 @@ export function validarPedidoEditorial(pedido: PedidoEditorial, contexto: Contex
       "NUMERO_PAGINAS_INVALIDO",
       "O número de páginas por caderno configurado na gráfica precisa ser um inteiro maior ou igual a 1.",
       { paginasPorCaderno: contexto.paginasPorCaderno }
+    );
+  }
+}
+
+// Chapa rigida (achado A7) -- mesma exigencia de dimensao/quantidade do
+// Digital (validarComum), mais ao menos um FormatoFolha cadastrado no
+// PRODUTO (mesma exigencia de contexto.folhas do Offset/Digital acima) e um
+// preco de chapa > 0. Corte (tempoEstimadoMin/metrosCorte) e OPCIONAL --
+// diferente de validarPedidoTempoMaquina, NAO exige "ao menos um dos dois":
+// ausentes os dois = corte simplesmente nao entra no custo (ver
+// calcularChapaRigida). Quando informado, cada campo precisa ser finito e
+// maior que zero, mesma checagem individual de validarPedidoTempoMaquina.
+export function validarPedidoChapaRigida(pedido: PedidoChapaRigida, contexto: ContextoChapaRigida) {
+  validarComum(pedido.quantidade, pedido.larguraM, pedido.alturaM);
+
+  if (contexto.folhas.length === 0) {
+    throw new ErroPrecificacao(
+      "MATERIAL_SEM_FOLHA",
+      "Esta chapa não tem nenhum formato de folha cadastrado."
+    );
+  }
+  if (contexto.precoPorChapa <= 0) {
+    throw new ErroPrecificacao(
+      "CUSTO_INVALIDO",
+      "O preço de compra da chapa precisa ser maior que zero.",
+      { precoPorChapa: contexto.precoPorChapa }
+    );
+  }
+  if (
+    pedido.tempoEstimadoMin !== undefined &&
+    (!Number.isFinite(pedido.tempoEstimadoMin) || pedido.tempoEstimadoMin <= 0)
+  ) {
+    throw new ErroPrecificacao(
+      "DIMENSAO_INVALIDA",
+      "O tempo estimado de corte precisa ser maior que zero.",
+      { tempoEstimadoMin: pedido.tempoEstimadoMin }
+    );
+  }
+  if (pedido.metrosCorte !== undefined && (!Number.isFinite(pedido.metrosCorte) || pedido.metrosCorte <= 0)) {
+    throw new ErroPrecificacao(
+      "DIMENSAO_INVALIDA",
+      "Os metros de corte precisam ser maiores que zero.",
+      { metrosCorte: pedido.metrosCorte }
     );
   }
 }

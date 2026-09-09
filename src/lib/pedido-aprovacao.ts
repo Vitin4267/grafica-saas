@@ -188,6 +188,7 @@ function componentesCustoBreakdown(
     | "TEMPO_MAQUINA"
     | "DTF"
     | "EDITORIAL"
+    | "CHAPA_RIGIDA"
 ): ComponenteCusto[] | null {
   if (!breakdown || typeof breakdown !== "object" || Array.isArray(breakdown)) return null;
   const raiz = breakdown as Record<string, unknown>;
@@ -311,6 +312,25 @@ function componentesCustoBreakdown(
     const componentes: ComponenteCusto[] = [];
     if (restante.gt(0)) componentes.push({ chave: "material", valor: restante });
     if (custoEncadernacao.gt(0)) componentes.push({ chave: "impressao", valor: custoEncadernacao });
+    return componentes;
+  }
+
+  // Chapa rígida (achado A7) — mesmo raciocínio de nomear chave "chapas" que
+  // OFFSET já usa (categoria CATEGORIA_CHAPAS_NOME abaixo), mas SEM o bucket
+  // "material" separado do papel (chapa não referencia matéria-prima
+  // externa como o papel do Offset — a chapa É o produto): custoChapas
+  // inteiro vai pra "chapas", custoImpressao (área impressa) + custoCorte
+  // (MaquinaTempo opcional, ver detalhesExtras.setup em precificar.ts) juntos
+  // pra "impressao" (processo, não matéria-prima).
+  if (modeloCalculo === "CHAPA_RIGIDA") {
+    const chapas = lerDecimalDeJson(detalhes.chapas) ?? paraDecimal(0);
+    const corte = lerDecimalDeJson(detalhes.setup) ?? paraDecimal(0);
+    const impressao = materialTotal.minus(chapas).minus(corte);
+
+    const componentes: ComponenteCusto[] = [];
+    if (chapas.gt(0)) componentes.push({ chave: "chapas", valor: chapas });
+    const processo = impressao.plus(corte);
+    if (processo.gt(0)) componentes.push({ chave: "impressao", valor: processo });
     return componentes;
   }
 

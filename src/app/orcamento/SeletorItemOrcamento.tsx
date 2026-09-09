@@ -45,7 +45,8 @@ export type ItemVenda = {
     | "BORDADO"
     | "TEMPO_MAQUINA"
     | "DTF"
-    | "EDITORIAL";
+    | "EDITORIAL"
+    | "CHAPA_RIGIDA";
   // ConfiguracaoClicheEtiqueta presente pra este produto — só produtos M2
   // marcados assim mostram o seletor de papel/cores/faca/frete abaixo.
   usaClicheEtiqueta: boolean;
@@ -299,6 +300,12 @@ export function SeletorItemOrcamento({
   // folha (diferente de M2/OFFSET/DTF acima), mas COM dimensão obrigatória
   // (a página fechada do livro é o driver do peso de papel).
   const usaModeloEditorial = itemSelecionado?.modeloCalculo === "EDITORIAL";
+  // Chapa rígida (achado A7) — mesma imposição 2D de M2/OFFSET/DIGITAL/DTF
+  // acima (exige dimensão, ver exigeDimensao abaixo), mas com corte
+  // OPCIONAL (mesmos campos tempoEstimadoMin/metrosCorte de
+  // usaModeloTempoMaquina) — só entra no custo se o produto tiver uma
+  // máquina de corte configurada em Catálogo.
+  const usaModeloChapaRigida = itemSelecionado?.modeloCalculo === "CHAPA_RIGIDA";
   const usaMotorAvancado =
     usaModeloM2 ||
     usaModeloOffset ||
@@ -309,7 +316,8 @@ export function SeletorItemOrcamento({
     usaModeloBordado ||
     usaModeloTempoMaquina ||
     usaModeloDTF ||
-    usaModeloEditorial;
+    usaModeloEditorial ||
+    usaModeloChapaRigida;
   // Os 3 de setup-por-peça não precisam de largura/altura pro custo em si
   // (sem nesting) — M2/OFFSET/FLEXOGRAFIA/DIGITAL (achado N4: agora faz
   // imposição igual ao Offset) exigem dimensão aqui. DTF (achado A5) exige
@@ -322,7 +330,8 @@ export function SeletorItemOrcamento({
     usaModeloFlexografia ||
     usaModeloDigital ||
     usaModeloDTF ||
-    usaModeloEditorial;
+    usaModeloEditorial ||
+    usaModeloChapaRigida;
   const usaClicheEtiqueta = usaModeloM2 && itemSelecionado?.usaClicheEtiqueta === true;
   // Achado N1 — pra um produto SIMPLES sem a flag simplesCobraPorArea,
   // preencher largura/altura não muda mais o preço (sempre por peça), então
@@ -354,7 +363,8 @@ export function SeletorItemOrcamento({
     usaModeloSetupPorPeca ||
     usaModeloRevenda ||
     usaModeloBordado ||
-    usaModeloTempoMaquina;
+    usaModeloTempoMaquina ||
+    usaModeloChapaRigida;
 
   const set =
     (campo: keyof CamposItemOrcamento) =>
@@ -646,13 +656,19 @@ export function SeletorItemOrcamento({
               />
             )}
 
-            {usaModeloTempoMaquina && (
+            {(usaModeloTempoMaquina || usaModeloChapaRigida) && (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Input
                   label={
                     <>
                       Tempo estimado de máquina (min)
-                      <CampoAjuda texto="Quanto tempo a máquina fica rodando pra produzir este item inteiro (todas as peças da quantidade), em minutos. Preencha este campo, os metros de corte abaixo, ou os dois — a máquina cobra pelo que estiver preenchido." />
+                      <CampoAjuda
+                        texto={
+                          usaModeloChapaRigida
+                            ? "Quanto tempo a máquina de corte fica rodando pra produzir este item inteiro, em minutos — só entra no custo se este produto tiver uma máquina de corte configurada em Catálogo. Deixe em branco se este produto não tem recorte (ex: só impressão)."
+                            : "Quanto tempo a máquina fica rodando pra produzir este item inteiro (todas as peças da quantidade), em minutos. Preencha este campo, os metros de corte abaixo, ou os dois — a máquina cobra pelo que estiver preenchido."
+                        }
+                      />
                     </>
                   }
                   type="number"
