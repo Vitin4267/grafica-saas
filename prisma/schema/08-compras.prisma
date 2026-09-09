@@ -31,6 +31,45 @@ model Fornecedor {
   enderecoUf         String?
   enderecoCep        String?
 
+  // Achado A5 da Parte 3 (Compras) da auditoria de abrangência
+  // (pesquisa-abrangencia-modulos.md) — cadastro enriquecido: contato
+  // estruturado, categoria de material fornecido, condição de pagamento
+  // negociada, lead time de entrega e pedido mínimo. Condições 30/60/90,
+  // boleto, Pix e desconto por antecipação são padrão de negociação B2B
+  // brasileiro; ERPs tratam "condição de pagamento" como cadastro
+  // estruturado ligado ao fornecedor. Todos opcionais/aditivos: Fornecedor
+  // cadastrado sem eles continua funcionando exatamente como hoje.
+  //
+  // ESCOPO DELIBERADAMENTE REDUZIDO NESTA RODADA: só cadastro. A proposta
+  // original do achado também previa gerar AUTOMATICAMENTE parcelas de
+  // contas a pagar quando uma SolicitacaoCompra muda de status pra
+  // COMPRADO, usando `condicaoPagamentoPadrao` — isso NÃO foi construído
+  // (dinheiro se movendo sozinho é mudança de comportamento sensível numa
+  // área financeira, ver critério de "achado caro" no documento da
+  // auditoria). Fica como próximo passo explícito, fora desta rodada.
+  email    String?
+  telefone String?
+
+  // Lista fechada com OUTRO de escape, mesmo padrão de
+  // TipoPrestadorServico/PrestadorServico.tipoOutro logo abaixo — cobre
+  // perfil de fornecedor além do offset comercial (embalagem/cartonagem,
+  // estamparia/bordado, brindes...).
+  categoria CategoriaFornecedor?
+  // Só usado quando categoria=OUTRO.
+  categoriaOutro String?
+
+  // "Jeito de pagar" negociado com este fornecedor — cadastro simples e
+  // fechado, DIFERENTE do model CondicaoPagamento (que é o motor de
+  // parcelas/âncora de CONTAS A RECEBER do lado do cliente/venda; não
+  // reaproveitado aqui de propósito, ver comentário no enum
+  // CondicaoPagamentoFornecedor).
+  condicaoPagamentoPadrao CondicaoPagamentoFornecedor?
+  // Só usado quando condicaoPagamentoPadrao=OUTRO.
+  condicaoPagamentoPadraoOutro String?
+
+  prazoEntregaMedioDias Int?
+  pedidoMinimoValor     Decimal? @db.Decimal(12, 2)
+
   grafica               Grafica                @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   movimentacoes         MovimentacaoEstoque[]
   solicitacoesCompra    SolicitacaoCompra[]
@@ -41,10 +80,51 @@ model Fornecedor {
   // Achado E1 da auditoria de abrangência (Parte 2/Produção) — ver model
   // EtapaTerceirizada.
   etapasTerceirizadas   EtapaTerceirizada[]
+  // Achado A5 da Parte 3 (Compras) — vínculo opcional em Despesa.fornecedorId
+  // (ver comentário lá, 11-financeiro.prisma).
+  despesas              Despesa[]
 
   @@unique([graficaId, nome])
+  // documento é opcional — nem toda gráfica tem o CNPJ de todo fornecedor
+  // cadastrado ainda. Postgres não considera NULLs iguais em constraint
+  // UNIQUE, então múltiplos fornecedores da mesma gráfica sem documento
+  // preenchido continuam coexistindo normalmente; só bloqueia CNPJ
+  // duplicado quando ambos os cadastros o têm preenchido.
+  @@unique([graficaId, documento])
   @@index([graficaId])
   @@map("fornecedores")
+}
+
+// Achado A5 da Parte 3 (Compras) da auditoria de abrangência — perfil de
+// material fornecido, cobre universo além do offset comercial (embalagem/
+// cartonagem, estamparia/bordado, brindes promocionais...). Lista fechada
+// com OUTRO de escape, mesmo padrão do resto do schema.
+enum CategoriaFornecedor {
+  PAPEL_CARTAO
+  TINTA_VERNIZ
+  CHAPA_CLICHE_MATRIZ
+  SUBSTRATO_RIGIDO
+  TECIDO_LINHA_BORDADO
+  BRINDE_PROMOCIONAL
+  ACABAMENTO_TERCEIRIZADO
+  OUTRO
+}
+
+// Achado A5 da Parte 3 (Compras) — "jeito de pagar" negociado com o
+// fornecedor. Cadastro simples e fechado com OUTRO de escape.
+// DELIBERADAMENTE separado do model CondicaoPagamento (que já existe no
+// schema, ver 11-financeiro.prisma): aquele é o motor de PARCELAS + âncora
+// de vencimento (AncoraVencimento: APROVACAO/EMISSAO_NOTA/ENTREGA) que
+// gera ContaReceber do lado do cliente/venda — conceito de ciclo de vida
+// do ORÇAMENTO, sem nenhum sentido pro lado de compra de matéria-prima.
+// Reaproveitar o mesmo model aqui obrigaria a criar CondicaoPagamento
+// "fake" com âncoras que nunca disparam nada, só pra guardar um rótulo —
+// pior que um enum simples e fechado.
+enum CondicaoPagamentoFornecedor {
+  A_VISTA
+  BOLETO_30_60_90
+  PIX
+  OUTRO
 }
 
 // Achado D2 da auditoria de abrangência (Parte 7, "D. Equipe e prestadores

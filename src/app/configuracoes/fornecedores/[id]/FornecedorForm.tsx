@@ -1,12 +1,20 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { EnderecoFields, type ValoresEndereco } from "@/app/clientes/EnderecoFields";
+import {
+  ORDEM_CATEGORIA_FORNECEDOR,
+  ROTULO_CATEGORIA_FORNECEDOR,
+  ORDEM_CONDICAO_PAGAMENTO_FORNECEDOR,
+  ROTULO_CONDICAO_PAGAMENTO_FORNECEDOR,
+} from "@/lib/tipos-fornecedor";
 import { editarFornecedor, alternarAtivoFornecedor } from "../actions";
+import type { CategoriaFornecedor, CondicaoPagamentoFornecedor } from "@/generated/prisma/enums";
 
 export function FornecedorForm({
   fornecedorId,
@@ -15,6 +23,14 @@ export function FornecedorForm({
   ativo,
   documento,
   endereco,
+  email,
+  telefone,
+  categoria,
+  categoriaOutro,
+  condicaoPagamentoPadrao,
+  condicaoPagamentoPadraoOutro,
+  prazoEntregaMedioDias,
+  pedidoMinimoValor,
 }: {
   fornecedorId: string;
   nome: string;
@@ -26,12 +42,24 @@ export function FornecedorForm({
   // src/lib/nota-fiscal.ts), nunca aqui no cadastro em si.
   documento: string;
   endereco: ValoresEndereco;
+  // Achado A5 da Parte 3 (Compras) da auditoria de abrangência — cadastro
+  // enriquecido, todos opcionais (ver comentário no model Fornecedor).
+  email: string;
+  telefone: string;
+  categoria: CategoriaFornecedor | "";
+  categoriaOutro: string;
+  condicaoPagamentoPadrao: CondicaoPagamentoFornecedor | "";
+  condicaoPagamentoPadraoOutro: string;
+  prazoEntregaMedioDias: string;
+  pedidoMinimoValor: string;
 }) {
   const [state, formAction, isPending] = useActionState(editarFornecedor, null);
   const [estadoAtivo, alternarAction, alternandoPending] = useActionState(
     alternarAtivoFornecedor,
     null
   );
+  const [categoriaAtual, setCategoriaAtual] = useState(categoria);
+  const [condicaoAtual, setCondicaoAtual] = useState(condicaoPagamentoPadrao);
 
   return (
     <div className="flex flex-col gap-6">
@@ -40,7 +68,91 @@ export function FornecedorForm({
         <Card className="flex flex-col gap-4 p-6">
           <Input label="Nome" name="nome" type="text" defaultValue={nome} required />
           <Input label="Contato (opcional)" name="contato" type="text" defaultValue={contato} />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input label="E-mail (opcional)" name="email" type="email" defaultValue={email} />
+            <Input label="Telefone (opcional)" name="telefone" type="text" defaultValue={telefone} />
+          </div>
         </Card>
+
+        <Card className="flex flex-col gap-4 p-6">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+              Perfil de compra (opcional)
+            </h2>
+            <p className="text-xs text-slate-500">
+              Categoria do que este fornecedor vende, condição de pagamento negociada, prazo
+              de entrega médio e pedido mínimo — informativo, não gera nenhuma cobrança ou
+              conta a pagar sozinho.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Select
+              label="Categoria"
+              name="categoria"
+              value={categoriaAtual}
+              onChange={(e) => setCategoriaAtual(e.target.value as CategoriaFornecedor | "")}
+            >
+              <option value="">Não classificado</option>
+              {ORDEM_CATEGORIA_FORNECEDOR.map((valor) => (
+                <option key={valor} value={valor}>
+                  {ROTULO_CATEGORIA_FORNECEDOR[valor]}
+                </option>
+              ))}
+            </Select>
+            <Select
+              label="Condição de pagamento padrão"
+              name="condicaoPagamentoPadrao"
+              value={condicaoAtual}
+              onChange={(e) => setCondicaoAtual(e.target.value as CondicaoPagamentoFornecedor | "")}
+            >
+              <option value="">Não definida</option>
+              {ORDEM_CONDICAO_PAGAMENTO_FORNECEDOR.map((valor) => (
+                <option key={valor} value={valor}>
+                  {ROTULO_CONDICAO_PAGAMENTO_FORNECEDOR[valor]}
+                </option>
+              ))}
+            </Select>
+          </div>
+          {categoriaAtual === "OUTRO" && (
+            <Input
+              label="Descreva a categoria"
+              name="categoriaOutro"
+              type="text"
+              defaultValue={categoriaOutro}
+              required
+            />
+          )}
+          {condicaoAtual === "OUTRO" && (
+            <Input
+              label="Descreva a condição de pagamento"
+              name="condicaoPagamentoPadraoOutro"
+              type="text"
+              defaultValue={condicaoPagamentoPadraoOutro}
+              required
+            />
+          )}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input
+              label="Prazo de entrega médio, em dias"
+              name="prazoEntregaMedioDias"
+              type="number"
+              min="0"
+              step="1"
+              defaultValue={prazoEntregaMedioDias}
+              placeholder="opcional"
+            />
+            <Input
+              label="Pedido mínimo, em R$"
+              name="pedidoMinimoValor"
+              type="number"
+              min="0"
+              step="0.01"
+              defaultValue={pedidoMinimoValor}
+              placeholder="opcional"
+            />
+          </div>
+        </Card>
+
         <Card className="flex flex-col gap-4 p-6">
           <div>
             <h2 className="text-sm font-semibold text-slate-900 dark:text-white">

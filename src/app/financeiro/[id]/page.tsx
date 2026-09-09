@@ -33,6 +33,7 @@ export default async function DespesaDetalhePage({
     include: {
       filial: { select: { nome: true } },
       contaFinanceira: { select: { nome: true } },
+      fornecedor: { select: { nome: true } },
     },
   });
 
@@ -78,6 +79,17 @@ export default async function DespesaDetalhePage({
     orderBy: { nome: "asc" },
     select: { id: true, nome: true },
   });
+  // Achado A5 da Parte 3 (Compras) da auditoria de abrangência (2026-09-09)
+  // — mesmo cuidado das listas acima: inclui o fornecedor já vinculado
+  // mesmo se tiver sido desativado depois.
+  const fornecedores = await prisma.fornecedor.findMany({
+    where: {
+      graficaId: usuario.graficaId,
+      OR: [{ ativo: true }, ...(despesa.fornecedorId ? [{ id: despesa.fornecedorId }] : [])],
+    },
+    orderBy: { nome: "asc" },
+    select: { id: true, nome: true },
+  });
 
   return (
     <div className="flex flex-1 flex-col">
@@ -117,12 +129,15 @@ export default async function DespesaDetalhePage({
             recorrenciaAteEm: despesa.recorrenciaAteEm ? dataParaInputValue(despesa.recorrenciaAteEm) : null,
             valorVariavel: despesa.valorVariavel,
             filialId: despesa.filialId,
+            fornecedorId: despesa.fornecedorId,
           }}
           categoriasCusto={categoriasCusto}
           filiais={filiais}
+          fornecedores={fornecedores}
           contasFinanceiras={contasFinanceiras}
           contaFinanceiraNome={despesa.contaFinanceira?.nome ?? null}
           filialNome={despesa.filial?.nome ?? null}
+          fornecedorNome={despesa.fornecedor?.nome ?? null}
           status={despesa.status}
           saldo={saldo}
           pagoEm={despesa.pagoEm ? dataParaInputValue(despesa.pagoEm) : null}

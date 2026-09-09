@@ -13,6 +13,7 @@ import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { ArrowLeftIcon } from "@/components/icons";
 import { NovoFornecedorForm } from "./NovoFornecedorForm";
+import { rotuloCategoriaFornecedor } from "@/lib/tipos-fornecedor";
 
 export default async function FornecedoresPage() {
   const usuario = await exigirUsuarioAutenticado();
@@ -74,6 +75,11 @@ export default async function FornecedoresPage() {
                   </p>
                   {fornecedor.contato && (
                     <p className="mt-0.5 text-xs text-slate-500">{fornecedor.contato}</p>
+                  )}
+                  {fornecedor.categoria && (
+                    <p className="mt-0.5 text-xs text-slate-400">
+                      {rotuloCategoriaFornecedor(fornecedor.categoria, fornecedor.categoriaOutro)}
+                    </p>
                   )}
                 </div>
                 <span

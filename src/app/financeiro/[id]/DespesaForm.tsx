@@ -39,6 +39,8 @@ type ValoresDespesa = {
   valorVariavel: boolean;
   // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04).
   filialId: string | null;
+  // Achado A5 da Parte 3 (Compras) da auditoria de abrangência (2026-09-09).
+  fornecedorId: string | null;
 };
 
 export function DespesaForm({
@@ -46,9 +48,11 @@ export function DespesaForm({
   valoresIniciais,
   categoriasCusto,
   filiais = [],
+  fornecedores = [],
   contasFinanceiras = [],
   contaFinanceiraNome,
   filialNome,
+  fornecedorNome,
   status,
   saldo,
   pagoEm,
@@ -62,9 +66,12 @@ export function DespesaForm({
   categoriasCusto: { id: string; nome: string }[];
   // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04).
   filiais?: { id: string; nome: string }[];
+  // Achado A5 da Parte 3 (Compras) da auditoria de abrangência (2026-09-09).
+  fornecedores?: { id: string; nome: string }[];
   contasFinanceiras?: { id: string; nome: string }[];
   contaFinanceiraNome: string | null;
   filialNome: string | null;
+  fornecedorNome: string | null;
   status: "PENDENTE" | "PARCIAL" | "PAGA";
   // Saldo em aberto — sempre calculado (achado A8 da Parte 4), nunca
   // armazenado. Igual ao valor cheio pra despesa PENDENTE.
@@ -96,6 +103,7 @@ export function DespesaForm({
         </p>
         <p className="text-slate-500">Vencimento: {valoresIniciais.vencimento}</p>
         {filialNome && <p className="text-slate-500">Filial: {filialNome}</p>}
+        {fornecedorNome && <p className="text-slate-500">Fornecedor: {fornecedorNome}</p>}
         <p className="text-slate-500">
           Status:{" "}
           {status === "PAGA"
@@ -252,6 +260,21 @@ export function DespesaForm({
                 {filiais.map((filial) => (
                   <option key={filial.id} value={filial.id}>
                     {filial.nome}
+                  </option>
+                ))}
+              </Select>
+            )}
+            {fornecedores.length > 0 && (
+              <Select
+                label="Fornecedor (opcional)"
+                name="fornecedorId"
+                defaultValue={valoresIniciais.fornecedorId ?? ""}
+                className="col-span-2"
+              >
+                <option value="">Sem fornecedor específico</option>
+                {fornecedores.map((fornecedor) => (
+                  <option key={fornecedor.id} value={fornecedor.id}>
+                    {fornecedor.nome}
                   </option>
                 ))}
               </Select>

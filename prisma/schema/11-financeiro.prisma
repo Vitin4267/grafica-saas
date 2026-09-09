@@ -264,6 +264,16 @@ model Despesa {
   // rodada — só o campo e o vínculo). null = despesa não atribuída a
   // nenhuma filial específica (comportamento de hoje, preservado 100%).
   filialId          String?
+  // Achado A5 da Parte 3 (Compras) da auditoria de abrangência
+  // (pesquisa-abrangencia-modulos.md) — vínculo OPCIONAL com o Fornecedor
+  // que originou esta despesa (ex: despesa avulsa de compra de material,
+  // fora do fluxo estruturado de SolicitacaoCompra). Mesmo padrão de
+  // categoriaCustoId/contaFinanceiraId/filialId acima: aditivo, SetNull,
+  // NUNCA gera/edita nada sozinho — nenhuma automação financeira lê este
+  // campo ainda (ver comentário no model Fornecedor, 08-compras.prisma,
+  // sobre o escopo reduzido desta rodada). Despesa sem fornecedorId
+  // continua funcionando exatamente como hoje.
+  fornecedorId String?
 
   grafica         Grafica          @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   // SetNull, não Restrict: uma categoria de custo nunca é apagada de
@@ -273,6 +283,7 @@ model Despesa {
   categoriaCusto  CategoriaCusto?  @relation(fields: [categoriaCustoId], references: [id], onDelete: SetNull)
   contaFinanceira ContaFinanceira? @relation(fields: [contaFinanceiraId], references: [id], onDelete: SetNull)
   filial          Filial?          @relation(fields: [filialId], references: [id], onDelete: SetNull)
+  fornecedor      Fornecedor?      @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
 
   // Presente quando esta despesa foi gerada a partir de "marcar comissão
   // como paga" (ver marcarComissaoPaga em src/app/financeiro/comissoes/actions.ts)
@@ -304,6 +315,7 @@ model Despesa {
   @@index([graficaId, serieRecorrenciaId])
   @@index([contaFinanceiraId])
   @@index([filialId])
+  @@index([fornecedorId])
   @@map("despesas")
 }
 

@@ -70,6 +70,24 @@ async function resolverFilialDespesa(
   return { ok: true, filialId: filial.id };
 }
 
+// Achado A5 da Parte 3 (Compras) da auditoria de abrangência (2026-09-09) —
+// mesma validação de resolverFilialDespesa, agora pra fornecedorId. Vínculo
+// puramente informativo: nenhuma automação financeira lê esse campo (ver
+// comentário no schema/model Fornecedor).
+async function resolverFornecedorDespesa(
+  graficaId: string,
+  fornecedorId: string | undefined
+): Promise<{ ok: true; fornecedorId: string | null } | { ok: false; mensagem: string }> {
+  if (!fornecedorId) {
+    return { ok: true, fornecedorId: null };
+  }
+  const fornecedor = await prisma.fornecedor.findFirst({ where: { id: fornecedorId, graficaId } });
+  if (!fornecedor) {
+    return { ok: false, mensagem: "Fornecedor não encontrado." };
+  }
+  return { ok: true, fornecedorId: fornecedor.id };
+}
+
 // Achado A15 — mesma validação, agora pra contaFinanceiraId (usado só em
 // marcarComoPaga, ver comentário lá).
 async function resolverContaFinanceiraDespesa(
@@ -106,6 +124,7 @@ export async function criarDespesa(
     periodicidade: formData.get("periodicidade") ?? undefined,
     recorrenciaAteEm: formData.get("recorrenciaAteEm") ?? undefined,
     filialId: formData.get("filialId") ?? undefined,
+    fornecedorId: formData.get("fornecedorId") ?? undefined,
   });
   if (!parsed.success) {
     return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Dados inválidos." };
@@ -118,6 +137,10 @@ export async function criarDespesa(
   const dadosFilial = await resolverFilialDespesa(usuario.graficaId, parsed.data.filialId);
   if (!dadosFilial.ok) {
     return { ok: false, mensagem: dadosFilial.mensagem };
+  }
+  const dadosFornecedor = await resolverFornecedorDespesa(usuario.graficaId, parsed.data.fornecedorId);
+  if (!dadosFornecedor.ok) {
+    return { ok: false, mensagem: dadosFornecedor.mensagem };
   }
 
   const recorrente = formData.get("recorrente") === "on";
@@ -143,6 +166,7 @@ export async function criarDespesa(
         recorrenciaAteEm: parsed.data.recorrenciaAteEm ?? null,
         valorVariavel,
         filialId: dadosFilial.filialId,
+        fornecedorId: dadosFornecedor.fornecedorId,
       },
     });
     if (!recorrente) return criada;
@@ -201,6 +225,7 @@ export async function editarDespesa(
     periodicidade: formData.get("periodicidade") ?? undefined,
     recorrenciaAteEm: formData.get("recorrenciaAteEm") ?? undefined,
     filialId: formData.get("filialId") ?? undefined,
+    fornecedorId: formData.get("fornecedorId") ?? undefined,
   });
   if (!parsed.success) {
     return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Dados inválidos." };
@@ -213,6 +238,10 @@ export async function editarDespesa(
   const dadosFilial = await resolverFilialDespesa(usuario.graficaId, parsed.data.filialId);
   if (!dadosFilial.ok) {
     return { ok: false, mensagem: dadosFilial.mensagem };
+  }
+  const dadosFornecedor = await resolverFornecedorDespesa(usuario.graficaId, parsed.data.fornecedorId);
+  if (!dadosFornecedor.ok) {
+    return { ok: false, mensagem: dadosFornecedor.mensagem };
   }
 
   const recorrente = formData.get("recorrente") === "on";
@@ -231,6 +260,7 @@ export async function editarDespesa(
       recorrenciaAteEm: parsed.data.recorrenciaAteEm ?? null,
       valorVariavel,
       filialId: dadosFilial.filialId,
+      fornecedorId: dadosFornecedor.fornecedorId,
       // Liga recorrência numa despesa que ainda não tinha série: essa
       // ocorrência vira o início. Já tinha série (recorrente antes ou
       // desligando agora): mantém o serieRecorrenciaId como estava — ver

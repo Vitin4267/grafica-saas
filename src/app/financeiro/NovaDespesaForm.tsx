@@ -12,9 +12,12 @@ import { criarDespesa } from "./actions";
 export function NovaDespesaForm({
   categoriasCusto,
   filiais = [],
+  fornecedores = [],
 }: {
   categoriasCusto: { id: string; nome: string }[];
   filiais?: { id: string; nome: string }[];
+  // Achado A5 da Parte 3 (Compras) da auditoria de abrangência (2026-09-09).
+  fornecedores?: { id: string; nome: string }[];
 }) {
   const [state, formAction, isPending] = useActionState(criarDespesa, null);
   const [recorrente, setRecorrente] = useState(false);
@@ -39,6 +42,21 @@ export function NovaDespesaForm({
             {filiais.map((filial) => (
               <option key={filial.id} value={filial.id}>
                 {filial.nome}
+              </option>
+            ))}
+          </Select>
+        )}
+        {fornecedores.length > 0 && (
+          <Select
+            label="Fornecedor (opcional)"
+            name="fornecedorId"
+            defaultValue=""
+            className="sm:col-span-2"
+          >
+            <option value="">Sem fornecedor específico</option>
+            {fornecedores.map((fornecedor) => (
+              <option key={fornecedor.id} value={fornecedor.id}>
+                {fornecedor.nome}
               </option>
             ))}
           </Select>

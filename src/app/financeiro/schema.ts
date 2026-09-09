@@ -60,6 +60,17 @@ export const despesaSchema = z.object({
     .max(50)
     .optional()
     .transform((v) => (v ? v : undefined)),
+  // Achado A5 da Parte 3 (Compras) da auditoria de abrangência
+  // (2026-09-09) — vínculo opcional com o Fornecedor que originou esta
+  // despesa. A action confere que o id pertence à gráfica antes de gravar;
+  // aqui só a forma do dado. Mesmo padrão "string vazia = sem vínculo" de
+  // filialId acima.
+  fornecedorId: z
+    .string()
+    .trim()
+    .max(50)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
 });
 
 // Schema separado de propósito: status/pagoEm nunca aparecem no form

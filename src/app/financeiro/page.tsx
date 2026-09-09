@@ -90,6 +90,16 @@ export default async function FinanceiroPage() {
     select: { id: true, nome: true },
   });
 
+  // Achado A5 da Parte 3 (Compras) da auditoria de abrangência (2026-09-09)
+  // — mesmo padrão de filiais acima: alimenta o <select> opcional de
+  // fornecedor no form de nova despesa, some da tela pra gráfica que nunca
+  // cadastrou fornecedor.
+  const fornecedores = await prisma.fornecedor.findMany({
+    where: { graficaId: usuario.graficaId, ativo: true },
+    orderBy: { nome: "asc" },
+    select: { id: true, nome: true },
+  });
+
   // Saldo em aberto de cada despesa PARCIAL — sempre calculado (achado A8 da
   // Parte 4), nunca armazenado.
   const saldosPorDespesa = new Map<string, string>();
@@ -221,7 +231,7 @@ export default async function FinanceiroPage() {
             <h2 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">
               Nova despesa
             </h2>
-            <NovaDespesaForm categoriasCusto={categoriasCusto} filiais={filiais} />
+            <NovaDespesaForm categoriasCusto={categoriasCusto} filiais={filiais} fornecedores={fornecedores} />
           </Card>
         )}
       </main>

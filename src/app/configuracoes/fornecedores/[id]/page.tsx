@@ -96,6 +96,14 @@ export default async function FornecedorDetalhePage({
             municipio: fornecedor.enderecoMunicipio ?? "",
             uf: fornecedor.enderecoUf ?? "",
           }}
+          email={fornecedor.email ?? ""}
+          telefone={fornecedor.telefone ?? ""}
+          categoria={fornecedor.categoria ?? ""}
+          categoriaOutro={fornecedor.categoriaOutro ?? ""}
+          condicaoPagamentoPadrao={fornecedor.condicaoPagamentoPadrao ?? ""}
+          condicaoPagamentoPadraoOutro={fornecedor.condicaoPagamentoPadraoOutro ?? ""}
+          prazoEntregaMedioDias={fornecedor.prazoEntregaMedioDias?.toString() ?? ""}
+          pedidoMinimoValor={fornecedor.pedidoMinimoValor?.toString() ?? ""}
         />
 
         <Card className="mt-6 flex flex-col gap-1 p-6">

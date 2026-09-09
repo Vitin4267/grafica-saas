@@ -56,6 +56,35 @@ export function ehViolacaoDeUnicidade(erro: unknown): boolean {
   return erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2002";
 }
 
+// Quais campos formam a constraint @@unique que causou um P2002 — necessário
+// pra distinguir QUAL constraint foi violada quando um model tem mais de uma
+// (ex: Fornecedor tem @@unique([graficaId, nome]) E
+// @@unique([graficaId, documento]), achado A5 da Parte 3/Compras). Mesmo
+// motivo dos dois helpers acima (confirmado empiricamente, script direto
+// contra o banco, não só documentação): com @prisma/adapter-pg,
+// erro.meta.target — a forma "normal"/documentada do Prisma — simplesmente
+// não existe; a informação real fica em
+// erro.meta.driverAdapterError.cause.constraint.fields. Os nomes de campo
+// vêm como literais SQL do Postgres (alguns entre aspas duplas quando têm
+// letra maiúscula, ex: `"graficaId"`, outros sem, ex: `documento`) —
+// normalizados aqui removendo as aspas, pra comparação limpa com o nome do
+// campo do schema.
+export function camposDaViolacaoDeUnicidade(erro: unknown): string[] {
+  if (!(erro instanceof Prisma.PrismaClientKnownRequestError) || erro.code !== "P2002") return [];
+  const meta = erro.meta as Record<string, unknown> | undefined;
+  // Client engine clássico — não é o que este projeto usa (ver
+  // src/lib/prisma.ts), mas já vem como array de nomes de campo, sem
+  // precisar do fallback abaixo.
+  if (Array.isArray(meta?.target)) return (meta.target as unknown[]).map(String);
+  const fields = (
+    meta?.driverAdapterError as { cause?: { constraint?: { fields?: unknown } } } | undefined
+  )?.cause?.constraint?.fields;
+  if (Array.isArray(fields)) {
+    return fields.map((f) => String(f).replace(/^"|"$/g, ""));
+  }
+  return [];
+}
+
 // Tentativa de apagar uma linha ainda referenciada por uma FK com
 // onDelete:Restrict (ex: excluir Prensa/Cliente ainda em uso) — o app trata
 // isso como erro amigável ("está em uso, não dá pra excluir"), nunca 500.
