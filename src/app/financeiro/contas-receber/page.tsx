@@ -30,7 +30,12 @@ export default async function ContasReceberPage() {
   // antigo primeiro — então uma parcela vencida há mais tempo aparece no topo.
   const contas = await prisma.contaReceber.findMany({
     where: { graficaId: usuario.graficaId },
-    include: { orcamento: { include: { cliente: { select: { nome: true } } } } },
+    include: {
+      orcamento: { include: { cliente: { select: { nome: true, retemImpostos: true } } } },
+      // Achado A9 da Parte 4 — linhas de retenção declaradas pra esta conta
+      // (ver comentário em ContaReceber.retencoes no schema).
+      retencoes: { orderBy: { createdAt: "asc" } },
+    },
     orderBy: [{ status: "asc" }, { vencimento: "asc" }],
   });
 
@@ -153,6 +158,15 @@ export default async function ContasReceberPage() {
                 recebidoEm: conta.recebidoEm ? conta.recebidoEm.toISOString() : null,
                 orcamentoId: conta.orcamentoId,
                 clienteNome: conta.orcamento.cliente.nome,
+                valorRetencoes: conta.valorRetencoes.toString(),
+                clienteRetemImpostos: conta.orcamento.cliente.retemImpostos,
+                retencoes: conta.retencoes.map((r) => ({
+                  id: r.id,
+                  tributo: r.tributo,
+                  tributoOutro: r.tributoOutro,
+                  percentual: r.percentual.toString(),
+                  valor: r.valor.toString(),
+                })),
               }}
             />
           ))}

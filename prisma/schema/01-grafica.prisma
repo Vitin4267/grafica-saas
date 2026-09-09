@@ -174,6 +174,9 @@ model Grafica {
   // pesquisa-abrangencia-modulos.md) — ver model Colaborador
   // (03-usuarios-auth.prisma).
   colaboradores         Colaborador[]
+  // Achado A9 da Parte 4 da auditoria de abrangência (2026-09-09) — ver
+  // model RetencaoContaReceber (11-financeiro.prisma).
+  retencoesContaReceber RetencaoContaReceber[]
 
   @@map("graficas")
 }

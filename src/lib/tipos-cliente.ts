@@ -4,6 +4,7 @@ import type {
   TipoPessoa,
   IndicadorInscricaoEstadual,
   FormaPagamento,
+  TipoTomador,
 } from "@/generated/prisma/enums";
 
 // Canal de aquisição do cliente (achado A11 da auditoria de abrangência,
@@ -110,5 +111,23 @@ export const ROTULO_FORMA_PAGAMENTO_CLIENTE: Record<FormaPagamento, string> = {
   BOLETO: "Boleto",
   CHEQUE: "Cheque",
   TRANSFERENCIA: "Transferência",
+  OUTRO: "Outro",
+};
+
+// Classificação do tomador pra fins de retenção de imposto na fonte (achado
+// A9 da Parte 4 da auditoria de abrangência, 2026-09-09) — mesmo padrão
+// enum-fechado+OUTRO acima. Ver Cliente.retemImpostos/tipoTomador no schema
+// e src/lib/retencao-conta-receber.ts (tributos retidos em si).
+export const ORDEM_TIPO_TOMADOR: TipoTomador[] = [
+  "PJ_PRIVADA",
+  "ORGAO_PUBLICO",
+  "PESSOA_FISICA",
+  "OUTRO",
+];
+
+export const ROTULO_TIPO_TOMADOR: Record<TipoTomador, string> = {
+  PJ_PRIVADA: "Pessoa jurídica privada",
+  ORGAO_PUBLICO: "Órgão público",
+  PESSOA_FISICA: "Pessoa física",
   OUTRO: "Outro",
 };

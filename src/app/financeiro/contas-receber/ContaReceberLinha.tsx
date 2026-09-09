@@ -10,6 +10,7 @@ import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
 import { formatoMoeda } from "@/lib/moeda";
 import { formatoData, dataEhPassado } from "@/lib/data";
 import { registrarBaixaContaReceber, cancelarContaReceber } from "./actions";
+import { RetencoesContaReceber } from "./RetencoesContaReceber";
 
 // Achado A11 da Parte 4 da auditoria de abrangência (2026-09-08) — CARTAO
 // continua na lista (legado) ao lado dos valores novos e específicos.
@@ -37,6 +38,18 @@ type ContaReceber = {
   recebidoEm: string | null;
   orcamentoId: string;
   clienteNome: string;
+  // Achado A9 da Parte 4 da auditoria de abrangência (2026-09-09) — versão
+  // declarativa de retenção de imposto na fonte (ver
+  // RetencoesContaReceber.tsx).
+  valorRetencoes: string;
+  clienteRetemImpostos: boolean;
+  retencoes: {
+    id: string;
+    tributo: string;
+    tributoOutro: string | null;
+    percentual: string;
+    valor: string;
+  }[];
 };
 
 function statusPill(conta: ContaReceber) {
@@ -137,6 +150,21 @@ export function ContaReceberLinha({
           {statusPill(conta)}
         </div>
       </div>
+
+      {/* Achado A9 da Parte 4 — só aparece quando faz sentido: cliente
+          marcado como retentor, ou a conta já tem alguma retenção lançada
+          (histórico continua visível mesmo se o cliente for editado depois
+          e deixar de reter). Conta CANCELADA não ganha o formulário de
+          registro novo, mas ainda mostra o que já foi lançado antes. */}
+      {(conta.clienteRetemImpostos || conta.retencoes.length > 0) && (
+        <RetencoesContaReceber
+          contaReceberId={conta.id}
+          valorBruto={Number(conta.valor)}
+          valorRetencoes={Number(conta.valorRetencoes)}
+          retencoes={conta.retencoes}
+          podeEditar={podeEditar && conta.status !== "CANCELADO"}
+        />
+      )}
 
       {podeEditar &&
         (conta.status === "PENDENTE" || conta.status === "PARCIAL") &&

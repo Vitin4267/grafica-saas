@@ -188,6 +188,28 @@ model Cliente {
   // A3 da mesma Parte da auditoria).
   inscricaoMunicipal String?
 
+  // Achado A9 da Parte 4 da auditoria de abrangência (2026-09-09) — versão
+  // DECLARATIVA apenas (proposta original, "retenção de impostos na fonte",
+  // ficou marcada 🔴 Caro por mudar critério de conciliação automática de
+  // ContaReceber — deliberadamente FORA de escopo aqui, ver comentário em
+  // ContaReceber.valorRetencoes abaixo). Quando o tomador é PJ/órgão
+  // público, ele retém parte do valor na fonte (IRRF, CSRF/PIS/COFINS/CSLL,
+  // ISS retido — impressos personalizados são tributados por ISS, boa parte
+  // do faturamento de gráfica é NFS-e com retenção). Hoje não havia onde
+  // registrar isso: o valor recebido a menor parecia uma divergência sem
+  // explicação. retemImpostos é o gatilho de UI (mostra/oferece o form de
+  // retenção na tela da conta a receber deste cliente); tipoTomador é só
+  // classificatório, nenhum motor lê pra decidir alíquota automaticamente —
+  // quem calcula o percentual/valor de cada tributo retido é a gráfica, na
+  // tela (ver model RetencaoContaReceber). @default(false)/null preservam
+  // 100% o comportamento de hoje pra todo cliente já cadastrado.
+  retemImpostos   Boolean       @default(false)
+  tipoTomador     TipoTomador?
+  // Só preenchido (e obrigatório, validado na action) quando
+  // tipoTomador=OUTRO — mesmo padrão enum-fechado+OUTRO de origem/segmento
+  // acima.
+  tipoTomadorOutro String?
+
   grafica        Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   vendedor       Usuario?             @relation(fields: [vendedorId], references: [id], onDelete: SetNull)
   orcamentos     Orcamento[]
@@ -257,6 +279,21 @@ enum SegmentoCliente {
 enum TipoPessoa {
   FISICA
   JURIDICA
+}
+
+// Classificação do TOMADOR pra fins de retenção de imposto na fonte (achado
+// A9 da Parte 4 da auditoria de abrangência, 2026-09-09) — mesmo padrão
+// enum-fechado+OUTRO do resto do schema (ver Cliente.tipoTomadorOutro).
+// Deliberadamente DIFERENTE de SegmentoCliente (que é sobre perfil
+// comercial/margem): aqui é só "quem retém e por que regime" —
+// PJ_PRIVADA/ORGAO_PUBLICO tipicamente retêm, PESSOA_FISICA tipicamente não
+// (mas a gráfica decide na hora, via Cliente.retemImpostos, nunca inferido
+// automaticamente a partir deste campo).
+enum TipoTomador {
+  PJ_PRIVADA
+  ORGAO_PUBLICO
+  PESSOA_FISICA
+  OUTRO
 }
 
 // Tag indIEDest da NF-e 4.0 — decide se a Inscrição Estadual do destinatário

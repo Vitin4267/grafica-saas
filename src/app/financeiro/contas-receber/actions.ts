@@ -12,8 +12,15 @@ import { formatoMoeda } from "@/lib/moeda";
 import { dataInputParaUTC } from "@/lib/data";
 import { saldoContaReceber } from "@/lib/baixa-financeira";
 import { paraDecimal } from "@/lib/pricing/decimal";
+import { ROTULO_TRIBUTO_RETIDO } from "@/lib/retencao-conta-receber";
 
 export type ContaReceberResult = { ok: boolean; mensagem: string };
+
+// Achado A9 da Parte 4 da auditoria de abrangência (2026-09-09) — mesma
+// duplicação local de valores de enum já usada em FORMAS_PAGAMENTO abaixo (o
+// zod schema precisa de uma tupla literal, não do array TributoRetido[]
+// exportado por src/lib/retencao-conta-receber.ts).
+const TRIBUTOS_RETIDOS = ["IRRF", "CSRF", "PIS", "COFINS", "CSLL", "ISS", "INSS", "OUTRO"] as const;
 
 const MENSAGEM_SEM_PERMISSAO = "Você não tem permissão pra editar o Financeiro.";
 
@@ -353,4 +360,146 @@ export async function cancelarContaReceber(
 
   revalidarContasReceber(conta.orcamentoId);
   return { ok: true, mensagem: "Conta cancelada." };
+}
+
+// Achado A9 da Parte 4 da auditoria de abrangência (2026-09-09) — registro
+// (declarativo, ver comentário no schema em ContaReceber.valorRetencoes) de
+// um tributo retido na fonte pelo tomador desta conta. Puramente
+// informativo: só grava a linha e ATUALIZA valorRetencoes por soma (nunca
+// mexe em status/pagamentoId/BaixaContaReceber — conciliação automática
+// continua fora de escopo). Pode ter mais de uma linha por conta (ex: ISS +
+// IRRF juntos).
+const criarRetencaoSchema = z.object({
+  contaReceberId: z.string().min(1),
+  tributo: z.enum(TRIBUTOS_RETIDOS),
+  // Só obrigatório quando tributo=OUTRO — validado abaixo (zod não expressa
+  // essa dependência condicional de forma direta, mesmo padrão de
+  // validarSegmento em src/app/clientes/actions.ts).
+  tributoOutro: z
+    .string()
+    .trim()
+    .max(80)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+  percentual: z.coerce.number().finite().min(0).max(100, "Percentual inválido."),
+  valor: z.coerce.number().finite().positive("Informe um valor de retenção maior que zero."),
+});
+
+export async function criarRetencaoContaReceber(
+  _estadoAnterior: ContaReceberResult | null,
+  formData: FormData
+): Promise<ContaReceberResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "FINANCEIRO"))) {
+    return { ok: false, mensagem: MENSAGEM_SEM_PERMISSAO };
+  }
+
+  const parsed = criarRetencaoSchema.safeParse({
+    contaReceberId: formData.get("contaReceberId"),
+    tributo: formData.get("tributo"),
+    tributoOutro: formData.get("tributoOutro") ?? undefined,
+    percentual: formData.get("percentual"),
+    valor: formData.get("valor"),
+  });
+  if (!parsed.success) {
+    return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Dados inválidos." };
+  }
+  const { contaReceberId, tributo, valor, percentual } = parsed.data;
+  if (tributo === "OUTRO" && !parsed.data.tributoOutro) {
+    return { ok: false, mensagem: 'Descreva o tributo quando escolher "Outro".' };
+  }
+  const tributoOutro = tributo === "OUTRO" ? (parsed.data.tributoOutro ?? null) : null;
+
+  const conta = await prisma.contaReceber.findFirst({
+    where: { id: contaReceberId, graficaId: usuario.graficaId },
+  });
+  if (!conta) {
+    return { ok: false, mensagem: "Conta a receber não encontrada." };
+  }
+
+  await prisma.$transaction([
+    prisma.retencaoContaReceber.create({
+      data: {
+        graficaId: usuario.graficaId,
+        contaReceberId,
+        tributo,
+        tributoOutro,
+        percentual,
+        valor,
+      },
+    }),
+    prisma.contaReceber.update({
+      where: { id: contaReceberId },
+      data: { valorRetencoes: { increment: valor } },
+    }),
+  ]);
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "conta_receber.criar_retencao",
+    entidade: "ContaReceber",
+    entidadeId: contaReceberId,
+    descricao: `Retenção de ${ROTULO_TRIBUTO_RETIDO[tributo] ?? tributo} (${formatoMoeda.format(valor)}) registrada na conta a receber "${conta.descricao}"`,
+  });
+
+  revalidarContasReceber(conta.orcamentoId);
+  return { ok: true, mensagem: "Retenção registrada." };
+}
+
+const excluirRetencaoSchema = z.object({ id: z.string().min(1) });
+
+// Hard delete — diferente do soft-cancel de ContaReceber/Despesa: uma
+// RetencaoContaReceber é só um lançamento informativo digitado errado ou
+// desfeito, sem histórico financeiro real associado (nenhum Pagamento nem
+// BaixaContaReceber referencia esta tabela), então não há motivo pra manter
+// registro de exclusão.
+export async function excluirRetencaoContaReceber(
+  _estadoAnterior: ContaReceberResult | null,
+  formData: FormData
+): Promise<ContaReceberResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "FINANCEIRO"))) {
+    return { ok: false, mensagem: MENSAGEM_SEM_PERMISSAO };
+  }
+
+  const parsed = excluirRetencaoSchema.safeParse({ id: formData.get("id") });
+  if (!parsed.success) {
+    return { ok: false, mensagem: "Dados inválidos." };
+  }
+  const { id } = parsed.data;
+
+  const retencao = await prisma.retencaoContaReceber.findFirst({
+    where: { id, graficaId: usuario.graficaId },
+    include: { contaReceber: { select: { id: true, orcamentoId: true, descricao: true } } },
+  });
+  if (!retencao) {
+    return { ok: false, mensagem: "Retenção não encontrada." };
+  }
+
+  await prisma.$transaction([
+    prisma.retencaoContaReceber.delete({ where: { id } }),
+    prisma.contaReceber.update({
+      where: { id: retencao.contaReceberId },
+      data: { valorRetencoes: { decrement: retencao.valor } },
+    }),
+  ]);
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "conta_receber.excluir_retencao",
+    entidade: "ContaReceber",
+    entidadeId: retencao.contaReceberId,
+    descricao: `Retenção de ${ROTULO_TRIBUTO_RETIDO[retencao.tributo] ?? retencao.tributo} (${formatoMoeda.format(Number(retencao.valor))}) removida da conta a receber "${retencao.contaReceber.descricao}"`,
+  });
+
+  revalidarContasReceber(retencao.contaReceber.orcamentoId);
+  return { ok: true, mensagem: "Retenção removida." };
 }

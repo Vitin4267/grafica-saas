@@ -30,6 +30,8 @@ import {
   ROTULO_INDICADOR_INSCRICAO_ESTADUAL,
   ORDEM_FORMA_PAGAMENTO_CLIENTE,
   ROTULO_FORMA_PAGAMENTO_CLIENTE,
+  ORDEM_TIPO_TOMADOR,
+  ROTULO_TIPO_TOMADOR,
 } from "@/lib/tipos-cliente";
 import type {
   OrigemCliente,
@@ -37,6 +39,7 @@ import type {
   TipoPessoa,
   IndicadorInscricaoEstadual,
   FormaPagamento,
+  TipoTomador,
 } from "@/generated/prisma/enums";
 
 type ValoresCliente = {
@@ -74,6 +77,11 @@ type ValoresCliente = {
   // Server→Client, valor cru da coluna já é a fração 0-1).
   descontoPadraoPercent: string;
   observacaoFinanceira: string;
+  // Achado A9 da Parte 4 — versão declarativa de retenção de imposto na
+  // fonte (ver comentário no schema, Cliente.retemImpostos/tipoTomador).
+  retemImpostos: boolean;
+  tipoTomador: TipoTomador | "";
+  tipoTomadorOutro: string;
   observacoes: string;
   preferenciasProducao: string;
   origem: OrigemCliente | "";
@@ -117,6 +125,8 @@ export function ClienteEditForm({
   const [origem, setOrigem] = useState<OrigemCliente | "">(valoresIniciais.origem);
   const [segmento, setSegmento] = useState<SegmentoCliente | "">(valoresIniciais.segmento);
   const [tipoPessoa, setTipoPessoa] = useState<TipoPessoa | "">(valoresIniciais.tipoPessoa);
+  const [tipoTomador, setTipoTomador] = useState<TipoTomador | "">(valoresIniciais.tipoTomador);
+  const [retemImpostos, setRetemImpostos] = useState(valoresIniciais.retemImpostos);
 
   useAoMudar(estadoExclusao, (estadoExclusao) => {
     if (estadoExclusao && !estadoExclusao.ok) setConfirmandoExclusao(false);
@@ -329,6 +339,53 @@ export function ClienteEditForm({
             className="mt-4"
             maxLength={2000}
           />
+
+          <label className="mt-4 flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              name="retemImpostos"
+              checked={retemImpostos}
+              onChange={(e) => setRetemImpostos(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span>
+              <span className="block font-medium text-slate-700 dark:text-slate-200">
+                Retém imposto na fonte
+              </span>
+              <span className="block text-xs text-slate-500">
+                Comum quando o cliente é PJ ou órgão público (IRRF, ISS retido etc.) — o valor que
+                chega é menor que o combinado. Liga o formulário de retenção na tela da conta a
+                receber deste cliente; não muda nenhum cálculo sozinho.
+              </span>
+            </span>
+          </label>
+          {retemImpostos && (
+            <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Select
+                label="Tipo de tomador"
+                name="tipoTomador"
+                value={tipoTomador}
+                onChange={(e) => setTipoTomador(e.target.value as TipoTomador | "")}
+              >
+                <option value="">Não informado</option>
+                {ORDEM_TIPO_TOMADOR.map((valor) => (
+                  <option key={valor} value={valor}>
+                    {ROTULO_TIPO_TOMADOR[valor]}
+                  </option>
+                ))}
+              </Select>
+              {tipoTomador === "OUTRO" && (
+                <Input
+                  label="Descreva o tipo de tomador"
+                  name="tipoTomadorOutro"
+                  defaultValue={valoresIniciais.tipoTomadorOutro}
+                  placeholder="ex: cooperativa..."
+                  required
+                />
+              )}
+            </div>
+          )}
+
           <label className="mt-4 flex items-start gap-2 text-sm">
             <input
               type="checkbox"
