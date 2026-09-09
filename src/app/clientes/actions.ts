@@ -21,6 +21,7 @@ import {
   ORDEM_TIPO_PESSOA,
   ORDEM_INDICADOR_INSCRICAO_ESTADUAL,
   ORDEM_FORMA_PAGAMENTO_CLIENTE,
+  ORDEM_TIPO_TOMADOR,
 } from "@/lib/tipos-cliente";
 import type {
   OrigemCliente,
@@ -30,6 +31,7 @@ import type {
   FuncaoContatoCliente,
   FormaPagamento,
   TipoEnderecoCliente,
+  TipoTomador,
 } from "@/generated/prisma/enums";
 
 // Mesmo padrão do resto do schema (UnidadeMedida, CategoriaEquipamento etc.):
@@ -114,6 +116,29 @@ function validarIndicadorInscricaoEstadual(
     return { ok: false, mensagem: "Indicador de Inscrição Estadual inválido." };
   }
   return { ok: true, indicador: indicador as IndicadorInscricaoEstadual };
+}
+
+// Achado A9 da Parte 4 da auditoria de abrangência (2026-09-09) — mesmo
+// padrão de validarSegmento acima (lista fechada com OUTRO de escape, campo
+// em si opcional). tipoTomadorOutro só obrigatório quando tipoTomador=OUTRO.
+function validarTipoTomador(
+  formData: FormData
+): { ok: true; tipoTomador: TipoTomador | null; tipoTomadorOutro: string | null } | { ok: false; mensagem: string } {
+  const tipoTomador = String(formData.get("tipoTomador") ?? "").trim();
+  if (!tipoTomador) {
+    return { ok: true, tipoTomador: null, tipoTomadorOutro: null };
+  }
+  if (!ORDEM_TIPO_TOMADOR.includes(tipoTomador as TipoTomador)) {
+    return { ok: false, mensagem: "Tipo de tomador inválido." };
+  }
+  if (tipoTomador === "OUTRO") {
+    const tipoTomadorOutro = String(formData.get("tipoTomadorOutro") ?? "").trim();
+    if (!tipoTomadorOutro) {
+      return { ok: false, mensagem: 'Descreva o tipo de tomador quando escolher "Outro".' };
+    }
+    return { ok: true, tipoTomador: "OUTRO", tipoTomadorOutro };
+  }
+  return { ok: true, tipoTomador: tipoTomador as TipoTomador, tipoTomadorOutro: null };
 }
 
 // Achado A8 da auditoria de abrangência — vendedor/responsável comercial do
@@ -466,6 +491,13 @@ export async function atualizarCliente(
   if (!validacaoDescontoPadrao.ok) {
     return validacaoDescontoPadrao;
   }
+  const validacaoTipoTomador = validarTipoTomador(formData);
+  if (!validacaoTipoTomador.ok) {
+    return validacaoTipoTomador;
+  }
+  // Achado A9 da Parte 4 — mesmo padrão de bloqueadoParaVenda/
+  // bloqueadoParaFaturamento abaixo (checkbox fora do clienteSchema).
+  const retemImpostos = formData.get("retemImpostos") === "on";
 
   const {
     nome,
@@ -554,6 +586,9 @@ export async function atualizarCliente(
         formaPagamentoPreferida: validacaoFormaPagamento.forma,
         descontoPadraoPercent: validacaoDescontoPadrao.valor,
         observacaoFinanceira: observacaoFinanceira || null,
+        retemImpostos,
+        tipoTomador: validacaoTipoTomador.tipoTomador,
+        tipoTomadorOutro: validacaoTipoTomador.tipoTomadorOutro,
       },
     });
   } catch (erro) {

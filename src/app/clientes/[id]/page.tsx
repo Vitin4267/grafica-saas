@@ -118,6 +118,9 @@ export default async function ClienteDetalhePage({
             descontoPadraoPercent:
               cliente.descontoPadraoPercent !== null ? cliente.descontoPadraoPercent.toString() : "",
             observacaoFinanceira: cliente.observacaoFinanceira ?? "",
+            retemImpostos: cliente.retemImpostos,
+            tipoTomador: cliente.tipoTomador ?? "",
+            tipoTomadorOutro: cliente.tipoTomadorOutro ?? "",
             observacoes: cliente.observacoes ?? "",
             preferenciasProducao: cliente.preferenciasProducao ?? "",
             origem: cliente.origem ?? "",

@@ -178,6 +178,9 @@ model Grafica {
   // reduzida, 2026-09-09) — ver model OrcamentoEntregaProgramada
   // (09-orcamento.prisma).
   entregasProgramadas   OrcamentoEntregaProgramada[]
+  // Achado A9 da Parte 4 da auditoria de abrangência (2026-09-09) — ver
+  // model RetencaoContaReceber (11-financeiro.prisma).
+  retencoesContaReceber RetencaoContaReceber[]
 
   @@map("graficas")
 }

@@ -455,6 +455,27 @@ model ContaReceber {
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
 
+  // Achado A9 da Parte 4 da auditoria de abrangência (2026-09-09) — soma das
+  // retenções de imposto na fonte (IRRF/CSRF/ISS/etc, ver model
+  // RetencaoContaReceber abaixo) declaradas pra esta conta, quando o tomador
+  // retém (Cliente.retemImpostos). @default(0) aditivo: toda ContaReceber
+  // existente e toda nova sem preencher este campo continua se comportando
+  // EXATAMENTE como hoje — mesmo raciocínio de Pagamento.valorTaxa (achado
+  // A11 da Parte 4, ver comentário lá). PURAMENTE INFORMATIVO: NUNCA
+  // calculado automaticamente (ninguém soma RetencaoContaReceber pra
+  // preencher isto sozinho — é a gráfica quem lança cada linha na tela, ver
+  // src/app/financeiro/contas-receber/actions.ts), e — o ponto mais
+  // importante — NUNCA lido por saldoContaReceber/registrarBaixaContaReceber
+  // (src/lib/baixa-financeira.ts) nem por nenhum outro critério de "conta
+  // paga integralmente". A proposta original do achado A9 incluía retenção
+  // entrar na conciliação automática (o valor líquido esperado viraria
+  // saldo em vez do valor cheio) — ficou marcada 🔴 Caro e foi DELIBERADAMENTE
+  // deixada de fora desta rodada: um cliente que retém impostos e paga só o
+  // líquido continua, hoje, precisando de uma baixa PARCIAL manual (achado
+  // A8) pra fechar a conta — este campo só explica visualmente o porquê da
+  // diferença, nunca decide nada sozinho.
+  valorRetencoes Decimal @default(0) @db.Decimal(12, 2)
+
   // Pagamento gerado quando a conta é quitada NUM SÓ pagamento de valor
   // EXATO (caminho antigo, preservado 100% — ver registrarPagamento em
   // src/app/orcamento/[id]/actions.ts e registrarBaixaContaReceber). Quando a
@@ -490,6 +511,11 @@ model ContaReceber {
   // parciais) — achado A8 da Parte 4. Vazio pra toda conta fechada pelo
   // caminho antigo (pagamentoId acima) ou ainda PENDENTE.
   baixas BaixaContaReceber[]
+
+  // Linhas de retenção de imposto na fonte declaradas pra esta conta —
+  // achado A9 da Parte 4. Vazio pra toda conta cujo tomador não retém (o
+  // caso comum). Ver model RetencaoContaReceber abaixo.
+  retencoes RetencaoContaReceber[]
 
   @@index([graficaId, status, vencimento])
   @@index([orcamentoId])
@@ -529,6 +555,65 @@ model BaixaContaReceber {
   @@index([contaReceberId])
   @@index([pagamentoId])
   @@map("baixas_conta_receber")
+}
+
+// Tributo retido na fonte pelo tomador (achado A9 da Parte 4 da auditoria de
+// abrangência, 2026-09-09) — lista fechada com OUTRO de escape, mesmo padrão
+// do resto do schema. IRRF (Imposto de Renda Retido na Fonte), CSRF (retenção
+// unificada de PIS+COFINS+CSLL, comum em nota de serviço pra PJ — por isso
+// PIS/COFINS/CSLL também existem separados, pra quem discrimina cada um em
+// vez de usar o código unificado), ISS (retido pelo MUNICÍPIO do tomador em
+// grande parte das NFS-e de impressos personalizados), INSS (retenção sobre
+// mão de obra em serviço, rara em gráfica mas prevista).
+enum TributoRetido {
+  IRRF
+  CSRF
+  PIS
+  COFINS
+  CSLL
+  ISS
+  INSS
+  OUTRO
+}
+
+// Uma linha de retenção de imposto na fonte declarada contra uma
+// ContaReceber — achado A9 da Parte 4 da auditoria de abrangência
+// (2026-09-09), versão DECLARATIVA (ver comentário em
+// ContaReceber.valorRetencoes acima pro que ficou deliberadamente fora:
+// conciliação automática de pagamento). Uma conta pode ter mais de uma linha
+// (ex: ISS + IRRF retidos juntos no mesmo NFS-e/pagamento de uma PJ) — por
+// isso é tabela própria, não um campo único em ContaReceber. `percentual` é
+// só o que a gráfica DIGITOU (referência humana, ex: "1,50" = 1,5%, mesma
+// convenção "humana" de TaxaFormaPagamento.percentual/
+// CondicaoPagamento.acrescimoPercent) — nunca recalculado a partir de
+// `valor`, os dois são digitados/editáveis independentemente (a alíquota
+// oficial pode não bater exatamente com o valor arredondado que veio no
+// boleto/nota do cliente). `valor` é quem de fato soma em
+// ContaReceber.valorRetencoes (ver criarRetencaoContaReceber em
+// src/app/financeiro/contas-receber/actions.ts) — PURAMENTE INFORMATIVO,
+// nunca lido pela conciliação/baixa (mesmo alerta do campo acima).
+model RetencaoContaReceber {
+  id             String        @id @default(cuid())
+  graficaId      String
+  contaReceberId String
+  tributo        TributoRetido
+  // Só preenchido (e obrigatório, validado na action) quando tributo=OUTRO
+  // — mesmo padrão enum-fechado+OUTRO do resto do schema.
+  tributoOutro   String?
+  percentual     Decimal       @db.Decimal(5, 2)
+  valor          Decimal       @db.Decimal(12, 2)
+  createdAt      DateTime      @default(now())
+
+  grafica      Grafica      @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  // Cascade: uma retenção só existe em função de uma ContaReceber específica
+  // — apagar a conta (hoje não existe fluxo que apague de verdade, é
+  // soft-cancel via status=CANCELADO) não deixaria a linha de retenção
+  // órfã fazendo sentido sozinha.
+  contaReceber ContaReceber @relation(fields: [contaReceberId], references: [id], onDelete: Cascade)
+
+  @@index([graficaId])
+  @@index([contaReceberId])
+  @@map("retencoes_conta_receber")
 }
 
 enum StatusComissao {
