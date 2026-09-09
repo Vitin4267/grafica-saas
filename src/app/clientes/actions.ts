@@ -9,6 +9,7 @@ import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { clienteSchema } from "@/lib/clientes";
+import { normalizarDocumento } from "@/lib/documento";
 import { contatoClienteSchema, ORDEM_FUNCAO_CONTATO_CLIENTE } from "@/lib/contatos-cliente";
 import { enderecoClienteSchema, ORDEM_TIPO_ENDERECO_CLIENTE } from "@/lib/enderecos-cliente";
 import { ehViolacaoDeChaveEstrangeira } from "@/lib/prisma-conflito";
@@ -383,11 +384,27 @@ export async function atualizarCliente(
     return { ok: false, mensagem: "Cliente não encontrado." };
   }
 
+  // Achado A2/Parte 5-Fiscal da auditoria de abrangência ("Fase A") —
+  // clienteSchema agora valida dígito verificador de CPF/CNPJ
+  // (src/lib/documento.ts). Um cliente com documento LEGADO sujo (salvo
+  // antes dessa validação existir, sem DV válido) não pode ficar travado
+  // pra edição só porque o formulário reenvia o mesmo valor de sempre no
+  // <input defaultValue=...> — só valida (e só grava) `documento` quando ele
+  // foi de fato ALTERADO no formulário, comparando as duas formas já
+  // normalizadas (mesmo princípio de detectar-mudança-antes-de-agir de
+  // src/app/configuracoes/identidade/actions.ts). Documento inalterado:
+  // nem entra no zod (evita rejeitar dado sujo que ninguém tocou) nem no
+  // Prisma update (undefined = Prisma não mexe na coluna, valor legado
+  // continua exatamente como estava).
+  const documentoBruto = String(formData.get("documento") ?? "").trim();
+  const documentoAlterado =
+    normalizarDocumento(documentoBruto) !== normalizarDocumento(cliente.documento ?? "");
+
   const parsed = clienteSchema.safeParse({
     nome: formData.get("nome"),
     email: formData.get("email"),
     telefone: formData.get("telefone"),
-    documento: formData.get("documento"),
+    documento: documentoAlterado ? formData.get("documento") : undefined,
     enderecoCep: formData.get("enderecoCep"),
     enderecoLogradouro: formData.get("enderecoLogradouro"),
     enderecoNumero: formData.get("enderecoNumero"),
@@ -454,6 +471,9 @@ export async function atualizarCliente(
     nome,
     email,
     telefone,
+    // Só definido quando documentoAlterado=true (ver comentário acima) — o
+    // Prisma update abaixo usa `undefined` (não mexe na coluna) quando o
+    // campo não foi tocado.
     documento,
     enderecoCep,
     enderecoLogradouro,
@@ -498,7 +518,11 @@ export async function atualizarCliente(
         nome,
         email: email || null,
         telefone: telefone || null,
-        documento: documento || null,
+        // documentoAlterado=false -> undefined -> Prisma NÃO mexe na coluna
+        // (mesmo valor legado, sujo ou não, permanece intacto). Só grava
+        // quando o campo foi de fato alterado e já passou pela validação de
+        // dígito verificador acima.
+        documento: documentoAlterado ? documento || null : undefined,
         enderecoCep: enderecoCep || null,
         enderecoLogradouro: enderecoLogradouro || null,
         enderecoNumero: enderecoNumero || null,

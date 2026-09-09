@@ -14,7 +14,7 @@ import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
-import { UsersIcon, SearchIcon, ArrowLeftIcon, ArrowRightIcon } from "@/components/icons";
+import { UsersIcon, SearchIcon, ArrowLeftIcon, ArrowRightIcon, AlertTriangleIcon } from "@/components/icons";
 import { ClienteForm } from "./ClienteForm";
 
 const POR_PAGINA = 50;
@@ -98,11 +98,24 @@ export default async function ClientesPage({
       />
 
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-10">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Clientes</h1>
-          <p className="mt-1 text-slate-500">
-            Cadastre seus clientes uma vez e reaproveite em todos os orçamentos.
-          </p>
+        <div className="mb-8 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Clientes</h1>
+            <p className="mt-1 text-slate-500">
+              Cadastre seus clientes uma vez e reaproveite em todos os orçamentos.
+            </p>
+          </div>
+          {/* Achado A2/Parte 5-Fiscal ("Fase A") — relatório read-only de
+              cadastros com o mesmo CPF/CNPJ (pontuação diferente), pra
+              revisão manual do dono. Sempre visível (é só leitura), não só
+              pra quem pode editar. */}
+          <Link
+            href="/clientes/duplicados"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+          >
+            <AlertTriangleIcon className="h-4 w-4" />
+            Possíveis duplicados
+          </Link>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-5 lg:items-start">
