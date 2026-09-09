@@ -12,6 +12,7 @@ import { formatoMoeda } from "@/lib/moeda";
 import { anoMesBrasilia, limitesMesBrasilia } from "@/lib/data";
 import { buscarDRE } from "@/lib/dre-query";
 import type { RegimeDRE } from "@/lib/dre";
+import { buscarCoberturaOverhead } from "@/lib/cobertura-overhead-db";
 
 // Achado A3 da Parte 4 da auditoria de abrangência (pesquisa-abrangencia-
 // modulos.md, 2026-09-05): DRE simplificado com regime explícito por linha —
@@ -62,6 +63,7 @@ export default async function DrePage({
   }).format(new Date(Date.UTC(ano, mesNumero - 1, 1)));
 
   const dre = await buscarDRE(usuario.graficaId, inicio, fim);
+  const cobertura = await buscarCoberturaOverhead(usuario.graficaId, inicio, fim);
 
   return (
     <div className="flex flex-1 flex-col">
@@ -196,6 +198,61 @@ export default async function DrePage({
           dado no sistema — aparecem sempre em R$ 0,00 até essa origem ser
           construída.
         </p>
+
+        <Card className="mt-8 p-6">
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+            Cobertura de overhead
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Compara o overhead cobrado nos orçamentos aprovados de {nomeMes}{" "}
+            com o custo fixo real pago no mesmo período. Relatório de
+            leitura — não muda nenhum preço nem o % de overhead configurado
+            em Configurações.
+          </p>
+
+          <p className="mt-4 text-sm text-slate-700 dark:text-slate-300">
+            Seu overhead cobriu{" "}
+            <strong className="text-slate-900 dark:text-white">
+              {formatoMoeda.format(cobertura.overheadCobrado)}
+            </strong>
+            , seu custo fixo real foi{" "}
+            <strong className="text-slate-900 dark:text-white">
+              {formatoMoeda.format(cobertura.custoFixoPago)}
+            </strong>
+            {" — "}o percentual de overhead que fecharia a conta é{" "}
+            <strong className="text-slate-900 dark:text-white">
+              {cobertura.percentualQueFecharia !== null
+                ? `${cobertura.percentualQueFecharia.toFixed(1).replace(".", ",")}%`
+                : "indefinido (sem orçamento aprovado no período)"}
+            </strong>
+            .
+          </p>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <StatTile
+              label="Overhead cobrado"
+              value={formatoMoeda.format(cobertura.overheadCobrado)}
+              caption="Soma do overhead embutido nos itens de orçamentos aprovados"
+            />
+            <StatTile
+              label="Custo fixo pago"
+              value={formatoMoeda.format(cobertura.custoFixoPago)}
+              caption="Despesa paga no período com categoria de custo FIXO"
+            />
+            <StatTile
+              label="Diferença"
+              value={formatoMoeda.format(cobertura.diferenca)}
+              caption={
+                cobertura.diferenca > 0
+                  ? "Overhead cobrado NÃO cobriu o custo fixo real"
+                  : cobertura.diferenca < 0
+                    ? "Overhead cobrado sobrou em relação ao custo fixo real"
+                    : "Overhead cobrado bateu exatamente com o custo fixo real"
+              }
+              tone={cobertura.diferenca > 0 ? "neutral" : "positive"}
+            />
+          </div>
+        </Card>
       </main>
     </div>
   );
