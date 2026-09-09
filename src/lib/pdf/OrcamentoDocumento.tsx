@@ -1,5 +1,5 @@
 import { Document, Page, View, Text, Image, StyleSheet } from "@react-pdf/renderer";
-import { formatoInstanteReal, formatoInstanteRealHora, formatoInstanteRealComHora } from "@/lib/data";
+import { formatoInstanteReal, formatoInstanteRealHora, formatoInstanteRealComHora, formatoData } from "@/lib/data";
 import { TERMOS_CONDICOES_PDF_PADRAO } from "./termos-padrao";
 
 // Mesmo recorte de informação do link público (/o/[token]) — nunca inclui
@@ -85,6 +85,19 @@ export type DadosPdfOrcamento = {
   itens: ItemPdfOrcamento[];
   total: string;
   dadosPedido: DadosPdfPedido | null;
+  // Achado B3/Parte 1 da auditoria de abrangência (versão contratual
+  // reduzida, 2026-09-09) — cronograma de entrega COMBINADO com o cliente
+  // ("10.000 unidades em [data] no [local]", por linha). Puramente
+  // informativo: nunca gera Entrega/ContaReceber/muda StatusPedido — ver
+  // comentário completo no model OrcamentoEntregaProgramada (schema
+  // 09-orcamento.prisma). Vazio pra todo orçamento sem cronograma
+  // cadastrado (o caso de sempre).
+  cronogramaEntrega: {
+    quantidade: string;
+    dataPrevista: Date | null;
+    localEntrega: string | null;
+    observacao: string | null;
+  }[];
   // Achado A2 da Parte 6 (auditoria de abrangência, 2026-08-27) — decide se
   // "Prazo estimado de entrega" (abaixo) fala em "dias úteis" ou "dias
   // corridos", em vez do literal "dias úteis" fixo de sempre. Ver
@@ -224,6 +237,15 @@ const estilos = StyleSheet.create({
   dadosPedidoItem: { width: "50%", marginBottom: 4 },
   dadosPedidoRotulo: { fontSize: 7, color: "#94a3b8" },
   dadosPedidoValor: { fontSize: 9, color: "#0f172a" },
+  // Achado B3 — mesmo look de dadosPedidoBox acima, tabela própria (uma
+  // linha por parcela de entrega, em vez de grade de campo/valor).
+  cronogramaLinha: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 4,
+  },
+  cronogramaQuantidade: { fontSize: 9, fontWeight: "bold", color: "#0f172a" },
+  cronogramaDetalhe: { fontSize: 8, color: "#64748b", textAlign: "right" },
   etiquetaBox: {
     marginTop: 4,
     padding: 6,
@@ -376,6 +398,27 @@ export function OrcamentoDocumento({ dados }: { dados: DadosPdfOrcamento }) {
                   </View>
                 ))}
             </View>
+          </View>
+        )}
+
+        {dados.cronogramaEntrega.length > 0 && (
+          <View style={estilos.dadosPedidoBox}>
+            <Text style={estilos.dadosPedidoTitulo}>CRONOGRAMA DE ENTREGA</Text>
+            {dados.cronogramaEntrega.map((linha, i) => {
+              const detalhes = [
+                linha.dataPrevista ? formatoData.format(linha.dataPrevista) : null,
+                linha.localEntrega,
+                linha.observacao,
+              ]
+                .filter(Boolean)
+                .join(" · ");
+              return (
+                <View key={i} style={estilos.cronogramaLinha}>
+                  <Text style={estilos.cronogramaQuantidade}>{linha.quantidade} un.</Text>
+                  {detalhes && <Text style={estilos.cronogramaDetalhe}>{detalhes}</Text>}
+                </View>
+              );
+            })}
           </View>
         )}
 

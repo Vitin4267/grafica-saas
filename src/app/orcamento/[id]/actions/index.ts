@@ -12,6 +12,8 @@
 // - pagamentos.ts: registrar/excluir pagamento
 // - nfe.ts: emissão e status de nota fiscal
 // - faixas.ts: CRUD da tabela de tiragens alternativas por item (achado B5)
+// - entrega-programada.ts: CRUD do cronograma de entrega contratual do
+//   orçamento (achado B3, versão contratual reduzida)
 // - helpers.ts: funções compartilhadas entre os arquivos acima (não é
 //   "use server" — não são Server Actions por si só, só helpers de servidor)
 
@@ -23,3 +25,4 @@ export * from "./ciclo-vida";
 export * from "./pagamentos";
 export * from "./nfe";
 export * from "./faixas";
+export * from "./entrega-programada";

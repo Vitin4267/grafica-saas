@@ -71,6 +71,8 @@ function orcamentoBase(
         ...itemOverrides,
       },
     ],
+    // Achado B3 — orçamento sem cronograma cadastrado (o caso de sempre).
+    entregasProgramadas: [],
   };
 }
 
@@ -251,5 +253,42 @@ describe("mapearDadosPdf — identidade visual por filial (achado A8)", () => {
     });
     expect(dados.logoUrl).toBe("https://blob/logo-filial.png");
     expect(dados.corPrimaria).toBe("#7c3aed");
+  });
+});
+
+// Achado B3/Parte 1 da auditoria de abrangência (versão contratual
+// reduzida, 2026-09-09) — cronograma de entrega exibido no PDF.
+describe("mapearDadosPdf — cronograma de entrega (achado B3)", () => {
+  it("orçamento sem cronograma cadastrado: cronogramaEntrega vazio (regressão zero)", () => {
+    const dados = mapearDadosPdf(orcamentoBase());
+    expect(dados.cronogramaEntrega).toEqual([]);
+  });
+
+  it("mapeia cada linha formatando quantidade em pt-BR e preservando os demais campos", () => {
+    const dados = mapearDadosPdf({
+      ...orcamentoBase(),
+      entregasProgramadas: [
+        {
+          quantidade: 10000,
+          dataPrevista: new Date("2026-10-01"),
+          localEntrega: "CD São Paulo",
+          observacao: "Primeira parcela",
+        },
+        { quantidade: 5000, dataPrevista: null, localEntrega: null, observacao: null },
+      ],
+    });
+    expect(dados.cronogramaEntrega).toHaveLength(2);
+    expect(dados.cronogramaEntrega[0]).toEqual({
+      quantidade: "10.000",
+      dataPrevista: new Date("2026-10-01"),
+      localEntrega: "CD São Paulo",
+      observacao: "Primeira parcela",
+    });
+    expect(dados.cronogramaEntrega[1]).toEqual({
+      quantidade: "5.000",
+      dataPrevista: null,
+      localEntrega: null,
+      observacao: null,
+    });
   });
 });

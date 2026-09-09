@@ -224,6 +224,17 @@ export type OrcamentoParaPdf = {
       precoTotal: Prisma.Decimal;
     }[];
   }[];
+  // Achado B3/Parte 1 da auditoria de abrangência (versão contratual
+  // reduzida, 2026-09-09) — cronograma de entrega do orçamento como um
+  // todo (não de um item específico, ver comentário do model
+  // OrcamentoEntregaProgramada no schema). Vazio pra todo orçamento sem
+  // cronograma cadastrado (o caso de sempre).
+  entregasProgramadas: {
+    quantidade: number;
+    dataPrevista: Date | null;
+    localEntrega: string | null;
+    observacao: string | null;
+  }[];
 };
 
 export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
@@ -330,6 +341,14 @@ export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
         precoUnitario: formatoMoeda.format(Number(faixa.precoUnitario)),
         precoTotal: formatoMoeda.format(Number(faixa.precoTotal)),
       })),
+    })),
+    // Achado B3 — já ordenado por `ordem` crescente pela própria query (ver
+    // `orderBy: { ordem: "asc" }` nos includes de entregasProgramadas).
+    cronogramaEntrega: orcamento.entregasProgramadas.map((linha) => ({
+      quantidade: linha.quantidade.toLocaleString("pt-BR"),
+      dataPrevista: linha.dataPrevista,
+      localEntrega: linha.localEntrega,
+      observacao: linha.observacao,
     })),
   };
 }

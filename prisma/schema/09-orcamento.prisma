@@ -309,6 +309,9 @@ model Orcamento {
   transportadoraCadastrada Transportadora?    @relation(fields: [transportadoraId], references: [id], onDelete: SetNull)
   itens                    OrcamentoItem[]
   opcoes                   OrcamentoOpcao[]
+  // Achado B3/Parte 1 da auditoria de abrangência (versão contratual
+  // reduzida, 2026-09-09) — ver model OrcamentoEntregaProgramada abaixo.
+  entregasProgramadas      OrcamentoEntregaProgramada[]
   pedido                   Pedido?
   // Achado F2 da auditoria de abrangência (Parte 7, 2026-09-05): virou lista
   // (era NotaFiscal? 1:1) quando NotaFiscal.orcamentoId deixou de ser
@@ -794,6 +797,79 @@ model OrcamentoItemFaixaQuantidade {
 
   @@index([orcamentoItemId])
   @@map("orcamento_item_faixas_quantidade")
+}
+
+// Achado B3/Parte 1 da auditoria de abrangência
+// (pesquisa-abrangencia-modulos.md) — versão CONTRATUAL/DECLARATIVA,
+// ESCOPO DELIBERADAMENTE REDUZIDO (2026-09-09). O achado original completo
+// ("entrega programada/parcelada" de verdade — N `Entrega` FÍSICAS por
+// `Pedido`, cada uma disparando seu próprio `ContaReceber`) está marcado
+// 🔴 Caro: hoje `Entrega.pedidoId` é `@unique` (1:1) e relaxar isso pra N:1
+// muda QUANDO `ContaReceber` é gerado (faturamento por entrega, não por
+// pedido inteiro) — mudança estrutural que o achado F2/Produção também
+// precisaria, fora de escopo desta rodada (ver TODO no fim).
+//
+// O que ESTE model resolve: o modelo de negócio real de gráfica de
+// embalagem/rótulo (cliente-piloto Assus Graphics) — "produz 60.000
+// rótulos agora, entrega 10.000/mês por 6 meses" — como cronograma
+// ESTRUTURADO em vez de forçar o vendedor a digitar isso solto em
+// `Orcamento.observacoes`. Attach direto no ORÇAMENTO (não no
+// `OrcamentoItem`): o cronograma descreve como o TOTAL do orçamento será
+// entregue fisicamente, não uma tiragem alternativa de um item específico
+// (isso já é `OrcamentoItemFaixaQuantidade`, achado B5, acima). MESMO
+// espírito de "existe ao lado, nunca entra automaticamente em outro
+// cálculo/fluxo" de B5:
+// - Puramente CONTRATUAL/INFORMATIVO: aparece no PDF do orçamento e na
+//   tela pública do link (`/o/[token]`) como cronograma exibido, nunca
+//   editável por lá.
+// - NUNCA cria `Entrega` (que continua 1:1 com `Pedido`, só nasce quando a
+//   produção física começa).
+// - NUNCA cria `ContaReceber` (faturamento continua disparado pelos
+//   gatilhos de sempre — APROVACAO/EMISSAO_NOTA/ENTREGA, ver
+//   `CondicaoPagamento` — por PEDIDO INTEIRO, nunca por linha de
+//   cronograma).
+// - NUNCA muda `StatusPedido` nem qualquer lógica de
+//   aprovação/produção/gang-run existente.
+// - Editável a QUALQUER status do orçamento (mesmo padrão de
+//   `editarDadosGeraisOrcamento` — frete/transportadora/local de entrega
+//   também só costumam ser combinados depois que o cliente já aprovou;
+//   nenhum campo aqui mexe em preço/total).
+//
+// Validação de soma (linhas × `quantidade` comparadas à quantidade total
+// do orçamento) é feita em APP, nunca em CHECK de banco — ver
+// `validarSomaCronogramaEntrega` em
+// src/lib/orcamento-entrega-programada.ts. Critério escolhido: a soma
+// pode ficar ABAIXO do total (cronograma ainda incompleto/parcial — aceito
+// com aviso informativo, comum o vendedor cadastrar aos poucos conforme
+// combina com o cliente) mas nunca ACIMA (isso prometeria entregar mais
+// do que foi vendido — rejeitado com erro).
+//
+// TODO (achado B3, fora de escopo desta rodada): herdar isto como N
+// `Entrega` físicas na aprovação depende de relaxar `Entrega.pedidoId` de
+// `@unique` pra N:1 — acompanha o achado F2/Produção, próximo passo
+// natural depois que aquele também for priorizado.
+model OrcamentoEntregaProgramada {
+  id          String @id @default(cuid())
+  graficaId   String
+  orcamentoId String
+
+  // Posição de exibição da linha (0-based, atribuída sequencialmente na
+  // criação — mesmo padrão de OrcamentoItemFaixaQuantidade.ordem acima),
+  // não uma "parcela nº X" com significado próprio.
+  ordem        Int       @default(0)
+  quantidade   Int
+  dataPrevista DateTime? @db.Date
+  localEntrega String?
+  observacao   String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  grafica   Grafica   @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamento Orcamento @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+
+  @@unique([orcamentoId, ordem])
+  @@index([graficaId])
+  @@map("orcamento_entregas_programadas")
 }
 
 // Detalhe descritivo/de produção de etiqueta (rótulo adesivo) — só relevante

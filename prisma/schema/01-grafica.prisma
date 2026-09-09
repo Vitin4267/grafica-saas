@@ -174,6 +174,10 @@ model Grafica {
   // pesquisa-abrangencia-modulos.md) — ver model Colaborador
   // (03-usuarios-auth.prisma).
   colaboradores         Colaborador[]
+  // Achado B3/Parte 1 da auditoria de abrangência (versão contratual
+  // reduzida, 2026-09-09) — ver model OrcamentoEntregaProgramada
+  // (09-orcamento.prisma).
+  entregasProgramadas   OrcamentoEntregaProgramada[]
 
   @@map("graficas")
 }

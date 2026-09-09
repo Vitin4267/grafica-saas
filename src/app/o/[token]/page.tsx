@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { formatoMoeda } from "@/lib/moeda";
-import { formatoInstanteRealComHora } from "@/lib/data";
+import { formatoInstanteRealComHora, formatoData } from "@/lib/data";
 import { orcamentoEstaExpirado } from "@/lib/orcamento-status";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -64,6 +64,11 @@ export default async function OrcamentoPublicoPage({
           },
         },
       },
+      // Achado B3/Parte 1 (versão contratual reduzida) — cronograma de
+      // entrega combinado com o cliente, exibido nesta tela pública. Não
+      // varia por opção (ver comentário do model no schema) — sempre o
+      // mesmo cronograma, qualquer que seja a opção escolhida nas abas.
+      entregasProgramadas: { orderBy: { ordem: "asc" } },
     },
   });
 
@@ -224,6 +229,38 @@ export default async function OrcamentoPublicoPage({
                 </div>
               )}
             </dl>
+          </Card>
+        )}
+
+        {/* Achado B3/Parte 1 (versão contratual reduzida, 2026-09-09) —
+            cronograma de entrega combinado com o cliente, puramente
+            informativo (nunca gera Entrega/ContaReceber, nunca muda
+            StatusPedido — ver comentário completo no model
+            OrcamentoEntregaProgramada, schema 09-orcamento.prisma). */}
+        {orcamento.entregasProgramadas.length > 0 && (
+          <Card className="mb-6 p-5">
+            <p className="mb-3 text-sm font-medium text-slate-500">Cronograma de entrega</p>
+            <ul className="flex flex-col gap-2 text-sm">
+              {orcamento.entregasProgramadas.map((linha) => (
+                <li
+                  key={linha.id}
+                  className="flex items-start justify-between gap-3 border-t border-slate-100 pt-2 first:border-t-0 first:pt-0 dark:border-slate-800"
+                >
+                  <span className="font-medium text-slate-800 dark:text-slate-100">
+                    {linha.quantidade.toLocaleString("pt-BR")} unidades
+                  </span>
+                  <span className="text-right text-slate-500">
+                    {[
+                      linha.dataPrevista ? formatoData.format(linha.dataPrevista) : null,
+                      linha.localEntrega,
+                      linha.observacao,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </Card>
         )}
 

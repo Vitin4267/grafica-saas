@@ -47,6 +47,8 @@ import { EditarOrcamentoForm } from "./EditarOrcamentoForm";
 import { DescontoItemForm } from "./DescontoItemForm";
 import { FaixasQuantidadeForm } from "./FaixasQuantidadeForm";
 import { MAX_FAIXAS_QUANTIDADE } from "@/lib/orcamento-faixas-quantidade";
+import { CronogramaEntregaForm } from "./CronogramaEntregaForm";
+import { MAX_ENTREGAS_PROGRAMADAS } from "@/lib/orcamento-entrega-programada";
 import { AdicionarItemForm } from "./AdicionarItemForm";
 import { TrocarClienteForm } from "./TrocarClienteForm";
 import { CompartilharOrcamento } from "./CompartilharOrcamento";
@@ -138,6 +140,9 @@ export default async function OrcamentoDetalhePage({
           include: { contaFinanceira: { select: { nome: true } } },
         },
         contasReceber: { orderBy: { vencimento: "asc" } },
+        // Achado B3/Parte 1 (versão contratual reduzida) — cronograma de
+        // entrega combinado com o cliente, ver CronogramaEntregaForm.tsx.
+        entregasProgramadas: { orderBy: { ordem: "asc" } },
       },
     }),
     prisma.cliente.findMany({
@@ -609,6 +614,19 @@ export default async function OrcamentoDetalhePage({
             vendedores={vendedores}
           />
         </Card>
+
+        <CronogramaEntregaForm
+          orcamentoId={orcamento.id}
+          quantidadeTotalOrcamento={orcamento.itens.reduce((acumulado, item) => acumulado + item.quantidade, 0)}
+          maxLinhas={MAX_ENTREGAS_PROGRAMADAS}
+          linhas={orcamento.entregasProgramadas.map((linha) => ({
+            id: linha.id,
+            quantidade: linha.quantidade,
+            dataPrevista: linha.dataPrevista ? dataParaInputValue(linha.dataPrevista) : null,
+            localEntrega: linha.localEntrega,
+            observacao: linha.observacao,
+          }))}
+        />
 
         {orcamento.status === "RASCUNHO" && (
           <Card className="mb-6 p-5">

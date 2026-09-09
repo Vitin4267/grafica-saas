@@ -62,6 +62,9 @@ export async function GET(
           faixasQuantidade: { orderBy: { quantidade: "asc" } }, // achado B5
         },
       },
+      // Achado B3/Parte 1 (versão contratual reduzida) — cronograma de
+      // entrega combinado com o cliente, exibido no PDF (ver mapearDadosPdf).
+      entregasProgramadas: { orderBy: { ordem: "asc" } },
     },
   });
 
