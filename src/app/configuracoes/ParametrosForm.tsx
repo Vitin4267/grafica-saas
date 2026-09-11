@@ -153,6 +153,7 @@ export function ParametrosForm({
   diasFuncionamento,
   diasAlertaValidadeEstoque,
   comissaoSegueVendedorDoCliente,
+  comissaoRepresentanteSemCadastroPercent,
   paginasPorCadernoPadrao,
   situacaoAliquotaSimples,
 }: {
@@ -186,6 +187,7 @@ export function ParametrosForm({
   diasFuncionamento: number;
   diasAlertaValidadeEstoque: number;
   comissaoSegueVendedorDoCliente: boolean;
+  comissaoRepresentanteSemCadastroPercent: number | null;
   paginasPorCadernoPadrao: number;
   situacaoAliquotaSimples: SituacaoAliquotaSimples | null;
 }) {
@@ -962,6 +964,47 @@ export function ParametrosForm({
             campo fechou. Sem vendedor cadastrado no cliente, cai no
             comportamento de sempre.
           </p>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              Comissão padrão pra vendedor sem cadastro
+            </span>
+            <input
+              type="number"
+              name="comissaoRepresentanteSemCadastroPercent"
+              defaultValue={comissaoRepresentanteSemCadastroPercent ?? ""}
+              step="0.0001"
+              min="0"
+              max="1"
+              placeholder="em branco = não gera comissão"
+              className="w-full max-w-xs rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-slate-900 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/15 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            />
+          </label>
+          <p className="text-xs text-slate-500">
+            Quando o orçamento só tem um nome de vendedor em texto livre (sem
+            usuário cadastrado no sistema), não existe taxa pessoal pra usar.
+            Em branco (padrão): esse orçamento não gera comissão nenhuma —
+            mesmo comportamento de sempre. Preenchido: vira o percentual
+            usado nesse caso (fração, ex: 0.05 = 5%), a menos que uma Regra de
+            comissão mais específica se aplique.
+          </p>
+
+          <div className="mt-2 flex items-center justify-between gap-4 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
+            <div>
+              <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                Regras de comissão por vendedor/produto/margem
+              </p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Percentuais diferentes por pessoa, produto/categoria ou faixa
+                de margem — além da taxa única de cada pessoa (Usuários).
+              </p>
+            </div>
+            <Link href="/configuracoes/regras-comissao">
+              <Button type="button" variant="outline">
+                Gerenciar regras
+              </Button>
+            </Link>
+          </div>
         </Card>
       </GrupoParametros>
 

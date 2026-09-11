@@ -112,6 +112,9 @@ model Usuario {
   // Achado A4 da auditoria de abrangência (Parte 3/Compras) — ver model
   // CotacaoFornecedor.
   cotacoesFornecedorRegistradas CotacaoFornecedor[]
+  // Achado A12 da Parte 4 da auditoria de abrangência (2026-09-09) — ver
+  // model RegraComissao (11-financeiro.prisma).
+  regrasComissao                RegraComissao[]
 
   @@index([graficaId])
   @@map("usuarios")

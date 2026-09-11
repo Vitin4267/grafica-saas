@@ -675,20 +675,44 @@ enum StatusComissao {
 // Comissão de um vendedor sobre um orçamento aprovado — registro histórico
 // (nunca recalculado): guarda SNAPSHOT da taxa do usuário e da política de
 // cálculo da gráfica no momento da aprovação, pra não mudar retroativamente
-// se o dono trocar a config depois. Ver src/lib/comissao.ts (cálculo puro) e
-// o gatilho em src/app/orcamento/[id]/actions.ts (atualizarStatusOrcamento).
+// se o dono trocar a config depois. Ver src/lib/comissao.ts (cálculo puro,
+// inclusive resolverRegraComissao — achado A12 da Parte 4) e o gatilho em
+// src/app/orcamento/[id]/actions/status.ts (atualizarStatusOrcamento) e
+// src/app/o/[token]/actions.ts (responderOrcamentoPublico).
 model Comissao {
-  id                 String         @id @default(cuid())
-  graficaId          String
-  orcamentoId        String         @unique // no máximo 1 comissão por orçamento
-  usuarioId          String // vendedor — snapshot de Orcamento.usuarioId
-  baseCalculo        BaseComissao // snapshot de ParametrosGrafica.comissaoVendedorBase
-  percentualAplicado Decimal        @db.Decimal(5, 4) // snapshot de Usuario.comissaoPercent
-  valorBase          Decimal        @db.Decimal(12, 2) // total ou lucro, conforme baseCalculo
-  valorComissao      Decimal        @db.Decimal(12, 2)
+  id          String @id @default(cuid())
+  graficaId   String
+  orcamentoId String @unique // no máximo 1 comissão por orçamento
+  // Achado A12 da Parte 4 da auditoria de abrangência (2026-09-09) — nullable
+  // desde então. Antes SEMPRE apontava pra Orcamento.usuarioId (quem DIGITOU
+  // o orçamento), mesmo quando o vendedor de verdade só existia como texto
+  // livre em Orcamento.vendedor (sem cadastro de Usuario) — nesse caso a
+  // comissão ia silenciosamente pra pessoa errada, ou nem nascia se quem
+  // digitou não tinha comissaoPercent configurado. Agora null = vendedor sem
+  // cadastro (ver representanteNome abaixo), preenchido = vendedor real
+  // (Orcamento.vendedorUsuarioId, Cliente.vendedorId ou, no fallback de
+  // sempre, Orcamento.usuarioId — nunca muda pra quem já usa o sistema hoje).
+  usuarioId String?
+  // Snapshot do NOME do vendedor quando usuarioId é null (vendedor sem
+  // cadastro, só texto livre em Orcamento.vendedor) — mesmo padrão de
+  // ApontamentoEtapa.operadorNomeDeclarado: nome declarado, não verificado,
+  // sobrevive independente de qualquer cadastro futuro. Sempre null quando
+  // usuarioId está preenchido (os dois são mutuamente exclusivos).
+  representanteNome String?
+  baseCalculo        BaseComissao // snapshot de RegraComissao.baseCalculo ou ParametrosGrafica.comissaoVendedorBase
+  percentualAplicado Decimal      @db.Decimal(5, 4) // snapshot de RegraComissao.percentual ou Usuario.comissaoPercent
+  valorBase          Decimal      @db.Decimal(12, 2) // total ou lucro, conforme baseCalculo
+  valorComissao      Decimal      @db.Decimal(12, 2)
   status             StatusComissao @default(PENDENTE)
   pagoEm             DateTime?
   createdAt          DateTime       @default(now())
+  // Cancelamento de pedido (ver StatusComissao.CANCELADA acima): carimba
+  // QUANDO a comissão foi estornada, mesmo padrão/motivo de
+  // CustoPedido.estornadoEm — nunca apaga a linha, só marca (a comissão
+  // continua existindo pra auditoria/histórico, só sai da soma de "a
+  // pagar"). Comissão já PAGA não é estornada automaticamente (mesmo
+  // princípio de custo manual: dinheiro que já saiu não volta sozinho).
+  estornadoEm DateTime?
 
   // Despesa gerada quando marcada como paga (opcional — só existe depois do
   // pagamento) — ver comentário em Despesa.comissao acima.
@@ -696,12 +720,88 @@ model Comissao {
 
   grafica   Grafica   @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   orcamento Orcamento @relation(fields: [orcamentoId], references: [id])
-  usuario   Usuario   @relation(fields: [usuarioId], references: [id])
-  despesa   Despesa?  @relation(fields: [despesaId], references: [id], onDelete: SetNull)
+  // SetNull (não Restrict/Cascade): usuário removido da gráfica não pode
+  // travar nem apagar histórico de comissão — só perde o vínculo, snapshot
+  // fica órfão (mesmo espírito de Orcamento.vendedorUsuarioId). Diferente de
+  // representanteNome (vendedor NUNCA teve cadastro), este é o caso de um
+  // vendedor que TINHA cadastro e foi removido depois.
+  usuario Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+  despesa Despesa? @relation(fields: [despesaId], references: [id], onDelete: SetNull)
 
   @@index([graficaId, status])
   @@index([usuarioId])
   @@map("comissoes")
+}
+
+// Regra de comissão configurável por especificidade — achado A12 da Parte 4
+// da auditoria de abrangência (2026-09-09). Antes de existir este model, a
+// ÚNICA fonte de percentual era Usuario.comissaoPercent (uma taxa global por
+// vendedor, sem variar por produto/categoria/margem). Uma RegraComissao
+// permite, por exemplo, "vendedor X ganha 8% em vez do padrão" ou "produto Y
+// paga só 3% de comissão, independente de quem vendeu" ou "só paga comissão
+// cheia quando a margem for >= 30%" — ver resolverRegraComissao em
+// src/lib/comissao.ts (função pura de resolução por especificidade: quanto
+// mais destes 5 filtros abaixo estiverem preenchidos numa regra, mais
+// específica ela é, e a mais específica que bater vence; empate quebrado por
+// `prioridade`, maior primeiro).
+//
+// Fallback OBRIGATÓRIO: nenhuma RegraComissao cadastrada, ou nenhuma que
+// bata com a venda, cai em Usuario.comissaoPercent + ParametrosGrafica.
+// comissaoVendedorBase exatamente como hoje — uma gráfica que nunca cadastra
+// nenhuma regra continua com o comportamento idêntico ao de antes desta
+// feature (regressão zero, testado explicitamente).
+//
+// Deliberadamente FORA de escopo nesta rodada (proposta original ia além):
+// liberação proporcional da comissão conforme o cliente PAGA (ContaReceber
+// baixada) e fator de redução por faixa de desconto concedido. Comissao
+// continua sendo gerada 100% na aprovação do orçamento, snapshot único —
+// só a REGRA de qual percentual/base usar ficou mais rica.
+model RegraComissao {
+  id        String @id @default(cuid())
+  graficaId String
+  // Desempate quando duas regras candidatas têm a MESMA especificidade (mesmo
+  // número de filtros preenchidos) — maior prioridade vence. NÃO decide
+  // especificidade em si (isso é sempre "mais campos preenchidos = mais
+  // específica"), só desempata regras igualmente específicas.
+  prioridade Int @default(0)
+
+  // Todos os filtros abaixo são OPCIONAIS (null = "vale pra qualquer um"
+  // nessa dimensão) — mesmo espírito de AlcadaAprovacao (papel XOR usuário),
+  // mas aqui os filtros se COMBINAM em vez de se excluírem.
+  usuarioId      String? // null = vale pra qualquer vendedor
+  itemCatalogoId String? // null = vale pra qualquer produto/matéria-prima do catálogo
+  // Categoria do ItemCatalogo (texto livre, mesmo padrão de "categoria" em
+  // Despesa/CategoriaCusto — não é enum fechado, cada gráfica usa suas
+  // próprias categorias de catálogo) — null = vale pra qualquer categoria.
+  tipoItem String?
+  // Faixa de margem da venda (lucro/total, mesma fração 0-1 de
+  // BaseComissao.LUCRO) que a regra cobre — null = sem filtro nessa
+  // dimensão. Ex: margemMinPercent=0.30 = "só quando a margem for >= 30%".
+  margemMinPercent Decimal? @db.Decimal(5, 4)
+  margemMaxPercent Decimal? @db.Decimal(5, 4)
+
+  percentual Decimal @db.Decimal(5, 4)
+  // null = usa ParametrosGrafica.comissaoVendedorBase (comportamento de
+  // hoje) — só sobrepõe quando ESTA regra precisa de uma base de cálculo
+  // diferente da política padrão da gráfica (ex: comissão de item de
+  // revenda sempre sobre VALOR, mesmo a gráfica usando LUCRO no geral).
+  baseCalculo BaseComissao?
+  // Desliga sem apagar — mesmo padrão de soft-delete quase universal do
+  // repo (CategoriaCusto.ativa, CondicaoPagamento.ativa etc).
+  ativa     Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  // SetNull em ambos: apagar o usuário/item não deveria destruir a regra de
+  // comissão configurada — ela só fica mais genérica (vale pra "qualquer
+  // vendedor"/"qualquer item" nessa dimensão), a gráfica revisa se fizer
+  // sentido continuar assim.
+  usuario      Usuario?      @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+  itemCatalogo ItemCatalogo? @relation(fields: [itemCatalogoId], references: [id], onDelete: SetNull)
+
+  @@index([graficaId, ativa])
+  @@map("regras_comissao")
 }
 
 // Achado A2 da Parte 4 da auditoria de abrangência (2026-09-05) — SÓ o

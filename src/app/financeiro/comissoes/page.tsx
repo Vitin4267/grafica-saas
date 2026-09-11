@@ -89,10 +89,15 @@ export default async function ComissoesPage() {
             <ComissaoLinha
               key={c.id}
               comissaoId={c.id}
-              vendedorNome={c.usuario.nome}
-              vendedorCpf={c.usuario.cpf}
-              vendedorChavePix={c.usuario.chavePix}
-              vendedorTipoChavePix={c.usuario.tipoChavePix}
+              // Achado A12 da Parte 4 — usuario pode ser null (vendedor sem
+              // cadastro, ver Comissao.representanteNome) ou ter sido
+              // removido depois (SetNull) sem representanteNome (comissão
+              // antiga, criada antes desta feature). "Vendedor removido" só
+              // no segundo caso — o primeiro tem nome de verdade.
+              vendedorNome={c.usuario?.nome ?? c.representanteNome ?? "Vendedor removido"}
+              vendedorCpf={c.usuario?.cpf ?? null}
+              vendedorChavePix={c.usuario?.chavePix ?? null}
+              vendedorTipoChavePix={c.usuario?.tipoChavePix ?? null}
               orcamentoId={c.orcamentoId}
               baseCalculo={c.baseCalculo}
               percentualAplicado={c.percentualAplicado.toString()}
