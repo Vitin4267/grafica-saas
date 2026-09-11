@@ -6,6 +6,17 @@ enum TipoArquivoArmazenado {
   LOGO_FILIAL // achado A8 da auditoria de abrangência — logo própria de Filial, ver Filial.logoUrl
   ANALISE_TINTA // reservado pra Cálculo de gasto de tinta com IA
   PLANILHA_IMPORTACAO // reservado pro Importador de planilha com IA (ver ImportacaoPlanilha)
+  // Achado D1 da Parte 2 (Produção) da auditoria de abrangência
+  // (2026-09-11) — foto opcional anexada a uma AprovacaoProducao
+  // (10-producao.prisma). Diferente dos tipos ARTE_* acima, referenciaId
+  // aqui é o id da PRÓPRIA AprovacaoProducao (não do Pedido) — um pedido
+  // pode ter várias aprovações ao longo da produção, cada uma com sua
+  // própria foto, então usar pedidoId como referenciaId faria o dedup de
+  // confirmarArquivo (mesmo tipo+referenciaId) apagar a foto da aprovação
+  // anterior a cada nova. Como o id da aprovação só existe depois que ela é
+  // criada, a action registrarAprovacaoProducao cria a linha primeiro (sem
+  // arquivoId), só then reserva/confirma o upload com referenciaId=id dela.
+  FOTO_APROVACAO_PRODUCAO
 }
 
 enum TipoImportacaoPlanilha {
@@ -95,7 +106,7 @@ model ArquivoArmazenado {
   id           String                @id @default(cuid())
   graficaId    String
   tipo         TipoArquivoArmazenado
-  referenciaId String // pedidoId | graficaId | orcamentoItemId, conforme o tipo
+  referenciaId String // pedidoId | graficaId | orcamentoItemId | aprovacaoProducaoId, conforme o tipo
   bytes        Int
   url          String?               @unique
   pathname     String?
@@ -103,6 +114,11 @@ model ArquivoArmazenado {
   updatedAt    DateTime              @updatedAt
 
   grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  // Achado D1 da Parte 2 (Produção) da auditoria de abrangência
+  // (2026-09-11) — lado inverso de AprovacaoProducao.arquivoId
+  // (10-producao.prisma). [] pra toda linha que não é do tipo
+  // FOTO_APROVACAO_PRODUCAO.
+  aprovacoesProducao AprovacaoProducao[]
 
   @@index([graficaId])
   @@index([tipo, referenciaId])

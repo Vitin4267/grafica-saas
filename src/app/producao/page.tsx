@@ -30,11 +30,13 @@ import { Button } from "@/components/ui/Button";
 import { PrinterIcon, LayersIcon } from "@/components/icons";
 import type { TerceirizacaoResumo } from "./TerceirizacaoPedidoSecao";
 import type { ParadaResumo, SolicitacaoCompraOpcao } from "./ParadaPedidoSecao";
+import type { AprovacaoResumo } from "./AprovacaoProducaoSecao";
 import { PedidoLinha } from "./PedidoLinha";
 import { ProducaoVisualizacao } from "./ProducaoVisualizacao";
 import type { PedidoKanban } from "./KanbanBoard";
-import type { StatusPedido, MotivoParada } from "@/generated/prisma/enums";
+import type { StatusPedido, MotivoParada, TipoAprovacaoProducao, ResultadoAprovacao } from "@/generated/prisma/enums";
 import type { AvisoPreflight } from "@/lib/preflight";
+import { resultadoLiberaTransicao } from "@/lib/aprovacao-producao-status";
 
 const REGEX_DATA = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -131,6 +133,71 @@ function mapearParadas(
     iniciadaEm: parada.iniciadaEm.toISOString(),
     finalizadaEm: parada.finalizadaEm ? parada.finalizadaEm.toISOString() : null,
     observacao: parada.observacao,
+  }));
+}
+
+// Achado D1 da auditoria de abrangência (Parte 2/Produção, 2026-09-11) —
+// mesmo critério do gate REAL em avancarStatusPedido (status-transicao.ts):
+// aprovações da passagem ATUAL (apontamentoEtapaId === apontamento aberto
+// pra esta etapa) quando existe um; fallback pra TODAS as aprovações do
+// pedido quando não há apontamento aberto (caso raro, documentado no gate).
+// Único ponto que decide "esta etapa está aprovada?" pra fins de EXIBIÇÃO —
+// reaproveitado tanto no chip do Kanban/lista quanto no aviso dentro de
+// AprovacaoProducaoSecao, pra nunca divergir entre os dois.
+function resolverAprovacaoQualidade(
+  pedido: {
+    status: StatusPedido;
+    apontamentos: { id: string }[];
+    aprovacoesProducao: { apontamentoEtapaId: string | null; resultado: ResultadoAprovacao }[];
+  },
+  mapaExige: Map<StatusPedido, boolean>
+): { exige: boolean; valida: boolean } {
+  const exige = mapaExige.get(pedido.status) ?? false;
+  const apontamentoAtualId = pedido.apontamentos[0]?.id ?? null;
+  const relevantes = apontamentoAtualId
+    ? pedido.aprovacoesProducao.filter((a) => a.apontamentoEtapaId === apontamentoAtualId)
+    : pedido.aprovacoesProducao;
+  const valida = relevantes.some((a) => resultadoLiberaTransicao(a.resultado));
+  return { exige, valida };
+}
+
+// "Aguardando aprovação de qualidade" — mesma ideia de chipParada acima,
+// usado tanto na lista (PedidoLinha) quanto no Kanban. null quando a etapa
+// não exige aprovação, ou quando já existe uma válida pra passagem atual.
+function chipAprovacaoPendente(exige: boolean, valida: boolean) {
+  if (!exige || valida) return null;
+  return (
+    <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+      Aguardando aprovação de qualidade
+    </span>
+  );
+}
+
+// Formato que AprovacaoProducaoSecao.tsx espera — resolve o nome de quem
+// aprovou (Usuario cadastrado > nome declarado) e converte Date pro ISO que
+// cruza a fronteira server→client, mesmo padrão de mapearParadas acima.
+function mapearAprovacoes(
+  aprovacoes: {
+    id: string;
+    tipo: TipoAprovacaoProducao;
+    tipoOutro: string | null;
+    resultado: ResultadoAprovacao;
+    aprovadoPorNomeDeclarado: string | null;
+    aprovadoPor: { nome: string } | null;
+    observacao: string | null;
+    arquivo: { url: string | null } | null;
+    createdAt: Date;
+  }[]
+): AprovacaoResumo[] {
+  return aprovacoes.map((a) => ({
+    id: a.id,
+    tipo: a.tipo,
+    tipoOutro: a.tipoOutro,
+    resultado: a.resultado,
+    aprovadoPorNome: a.aprovadoPor?.nome ?? a.aprovadoPorNomeDeclarado,
+    observacao: a.observacao,
+    fotoUrl: a.arquivo?.url ?? null,
+    createdAt: a.createdAt.toISOString(),
   }));
 }
 
@@ -278,6 +345,12 @@ export default async function ProducaoPage({
         apontamentos: {
           where: { finalizadoEm: null },
           select: {
+            // Achado D1 da auditoria de abrangência (Parte 2/Produção,
+            // 2026-09-11) — id do apontamento ABERTO, usado pra filtrar
+            // quais AprovacaoProducao pertencem à passagem ATUAL do pedido
+            // por esta etapa (mesmo critério do gate em
+            // status-transicao.ts).
+            id: true,
             prensaId: true,
             maquinaFlexografiaId: true,
             equipamentoId: true,
@@ -285,6 +358,16 @@ export default async function ProducaoPage({
             maquinaSetupPorPecaId: true,
           },
           take: 1,
+        },
+        // Achado D1 da auditoria de abrangência (Parte 2/Produção) — todas
+        // as aprovações de qualidade deste pedido (não só a mais recente,
+        // ver AprovacaoProducaoSecao.tsx), mais recente primeiro.
+        aprovacoesProducao: {
+          include: {
+            aprovadoPor: { select: { nome: true } },
+            arquivo: { select: { url: true } },
+          },
+          orderBy: { createdAt: "desc" },
         },
         // Achado E1 da auditoria de abrangência (Parte 2/Produção) — todas
         // as terceirizações deste pedido (não só a ativa, ver
@@ -434,6 +517,14 @@ export default async function ProducaoPage({
     label: `${s.itemGrafica?.itemCatalogo.nome ?? s.descricaoLivre ?? "Compra avulsa"} — ${Number(s.quantidade)} (${ROTULOS_STATUS_SOLICITACAO_COMPRA[s.status]})`,
   }));
 
+  // Achado D1 da auditoria de abrangência (Parte 2/Produção, 2026-09-11) —
+  // lookup rápido "este status exige aprovação de qualidade?" a partir de
+  // etapas.todas (já buscado acima) — evita reconstruir o Map dentro de
+  // cada .map de pedido.
+  const mapaExigeAprovacaoQualidade = new Map(
+    etapas.todas.map((e) => [e.status, e.exigeAprovacaoQualidade])
+  );
+
   const responsaveisPorEtapa: Partial<Record<StatusPedido, string[]>> = {};
   for (const r of responsaveisEstagio) {
     (responsaveisPorEtapa[r.status] ??= []).push(r.usuario.nome);
@@ -514,6 +605,10 @@ export default async function ProducaoPage({
           }
         : null;
 
+      // Achado D1 — mesma resolução usada na lista abaixo (função
+      // compartilhada, ver comentário em resolverAprovacaoQualidade).
+      const aprovacaoQualidade = resolverAprovacaoQualidade(pedido, mapaExigeAprovacaoQualidade);
+
       return {
         id: pedido.id,
         orcamentoId: pedido.orcamentoId,
@@ -523,6 +618,7 @@ export default async function ProducaoPage({
         chipAtraso: chipAtraso(pedido.prazoEntrega, pedido.status),
         chipTerceirizacao: chipTerceirizacao(pedido.etapasTerceirizadas),
         chipParada: chipParada(pedido.paradas),
+        chipAprovacaoPendente: chipAprovacaoPendente(aprovacaoQualidade.exige, aprovacaoQualidade.valida),
         valorTotal: podeVerCustos ? Number(pedido.orcamento.total) : null,
         lucro: podeVerCustos ? lucroDoPedidoListado(pedido) : null,
         souResponsavelDesteStatus: etapasResponsavel.has(pedido.status),
@@ -564,6 +660,10 @@ export default async function ProducaoPage({
           const sugestao = sugerirMaquinaPedido(pedido.orcamento.itens);
           const sugestaoMaquinaValor = sugestao ? `${sugestao.campo}:${sugestao.id}` : "";
 
+          // Achado D1 — mesma resolução usada no Kanban acima (função
+          // compartilhada, ver comentário em resolverAprovacaoQualidade).
+          const aprovacaoQualidade = resolverAprovacaoQualidade(pedido, mapaExigeAprovacaoQualidade);
+
           return (
             <div key={pedido.id}>
               {inicioFinalizados && (
@@ -586,6 +686,10 @@ export default async function ProducaoPage({
                 chipAtraso={chipAtraso(pedido.prazoEntrega, pedido.status)}
                 chipTerceirizacao={chipTerceirizacao(pedido.etapasTerceirizadas)}
                 chipParada={chipParada(pedido.paradas)}
+                chipAprovacaoPendente={chipAprovacaoPendente(aprovacaoQualidade.exige, aprovacaoQualidade.valida)}
+                aprovacoesProducao={mapearAprovacoes(pedido.aprovacoesProducao)}
+                exigeAprovacaoQualidade={aprovacaoQualidade.exige}
+                aprovacaoQualidadeValida={aprovacaoQualidade.valida}
                 arteUrl={pedido.arteUrl}
                 arteAprovadaEm={pedido.arteAprovadaEm}
                 arteRespondidaPor={pedido.arteRespondidaPor}

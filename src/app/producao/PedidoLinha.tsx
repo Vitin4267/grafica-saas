@@ -35,6 +35,7 @@ import {
   type ParadaResumo,
   type SolicitacaoCompraOpcao,
 } from "./ParadaPedidoSecao";
+import { AprovacaoProducaoSecao, type AprovacaoResumo } from "./AprovacaoProducaoSecao";
 import type { MaquinaOpcaoUI } from "./SeletorMaquina";
 import { cancelarPedido, avancarPedido } from "./actions";
 import { PrioridadePedidoSeletor } from "./PrioridadePedidoSeletor";
@@ -68,6 +69,10 @@ export function PedidoLinha({
   chipAtraso,
   chipTerceirizacao,
   chipParada,
+  chipAprovacaoPendente,
+  aprovacoesProducao,
+  exigeAprovacaoQualidade,
+  aprovacaoQualidadeValida,
   arteUrl,
   arteAprovadaEm,
   arteComentarioCliente,
@@ -124,6 +129,20 @@ export function PedidoLinha({
   // pedido (ver chipParada em producao/page.tsx). null quando não há
   // nenhuma parada ativa.
   chipParada: ReactNode;
+  // Achado D1 da auditoria de abrangência (Parte 2/Produção, 2026-09-11) —
+  // "Aguardando aprovação de qualidade" quando a etapa ATUAL exige
+  // aprovação (ver EtapaGrafica.exigeAprovacaoQualidade) e ainda não existe
+  // uma válida pra passagem atual — null nos demais casos (mesmo critério
+  // de chipParada acima).
+  chipAprovacaoPendente: ReactNode;
+  // Achado D1 — histórico de AprovacaoProducao deste pedido (todas, não só
+  // a mais recente), mais recente primeiro.
+  aprovacoesProducao: AprovacaoResumo[];
+  // Achado D1 — mesmos dois booleanos que decidem chipAprovacaoPendente,
+  // repassados TAMBÉM em bruto pra AprovacaoProducaoSecao (que precisa
+  // deles separados, não só do ReactNode já montado).
+  exigeAprovacaoQualidade: boolean;
+  aprovacaoQualidadeValida: boolean;
   arteUrl: string | null;
   arteAprovadaEm: Date | null;
   arteComentarioCliente: string | null;
@@ -295,6 +314,7 @@ export function PedidoLinha({
           {chipAtraso}
           {chipTerceirizacao}
           {chipParada}
+          {chipAprovacaoPendente}
           {/* Achado C1 — editável por quem pode editar a produção; quem só
               tem leitura (ou responsável de etapa) vê um crachá read-only,
               e só quando a prioridade já saiu do padrão "Normal" (0) —
@@ -424,6 +444,19 @@ export function PedidoLinha({
           pedidoId={pedidoId}
           paradas={paradas}
           solicitacoesCompra={solicitacoesCompra}
+          podeEditar={podeEditar}
+        />
+      )}
+
+      {/* Achado D1 (Aprovação de qualidade dentro da produção) — mesma
+          disponibilidade de Terceirização/Parada acima (qualquer status
+          não-cancelado). */}
+      {status !== "CANCELADO" && (
+        <AprovacaoProducaoSecao
+          pedidoId={pedidoId}
+          aprovacoes={aprovacoesProducao}
+          exigeAprovacaoQualidade={exigeAprovacaoQualidade}
+          aprovacaoQualidadeValida={aprovacaoQualidadeValida}
           podeEditar={podeEditar}
         />
       )}

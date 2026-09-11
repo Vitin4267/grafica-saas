@@ -17,6 +17,10 @@ export type EtapaGraficaLinha = {
   // ARTE/PRODUCAO/ENTREGUE — nunca podem ser desativadas (ver
   // ETAPAS_SEMPRE_ATIVAS em src/lib/etapa-grafica.ts).
   sempreAtiva: boolean;
+  // Achado D1 da auditoria de abrangência (Parte 2/Produção, 2026-09-11) —
+  // gate opt-in de aprovação de qualidade (ver EtapaGrafica.exigeAprovacaoQualidade
+  // no schema e o gate em status-transicao.ts).
+  exigeAprovacaoQualidade: boolean;
 };
 
 export function EtapasProducaoForm({
@@ -46,6 +50,12 @@ export function EtapasProducaoForm({
                 </th>
                 <th scope="col" className="w-20 pb-3 text-center text-xs font-medium text-slate-500">
                   Ordem
+                </th>
+                <th scope="col" className="pb-3 text-center text-xs font-medium text-slate-500">
+                  <span className="inline-flex items-center gap-1">
+                    Exige aprovação
+                    <CampoAjuda texto="Quando ligado, o pedido não sai desta etapa sem que alguém registre uma aprovação de qualidade (OK de máquina, inspeção...) com resultado Aprovado ou Aprovado com ressalva." />
+                  </span>
                 </th>
               </tr>
             </thead>
@@ -91,6 +101,16 @@ export function EtapasProducaoForm({
                       disabled={!podeEditar}
                       aria-label={`Ordem de ${etapa.rotuloPadrao}`}
                       className="w-16 rounded-lg border border-slate-300 px-2 py-1.5 text-center text-sm text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/15 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    />
+                  </td>
+                  <td className="py-3 text-center">
+                    <input
+                      type="checkbox"
+                      name={`exigeAprovacaoQualidade_${etapa.status}`}
+                      defaultChecked={etapa.exigeAprovacaoQualidade}
+                      disabled={!podeEditar}
+                      aria-label={`${etapa.rotuloPadrao} exige aprovação de qualidade`}
+                      className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500 disabled:opacity-50"
                     />
                   </td>
                 </tr>

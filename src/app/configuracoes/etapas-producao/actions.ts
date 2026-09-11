@@ -39,7 +39,13 @@ export async function salvarEtapasGrafica(
   const antes = await prisma.etapaGrafica.findMany({ where: { graficaId: usuario.graficaId } });
   const antesPorStatus = new Map(antes.map((etapa) => [etapa.status, etapa]));
 
-  const novas: { status: StatusPedido; ativa: boolean; rotulo: string | null; ordem: number }[] = [];
+  const novas: {
+    status: StatusPedido;
+    ativa: boolean;
+    rotulo: string | null;
+    ordem: number;
+    exigeAprovacaoQualidade: boolean;
+  }[] = [];
   for (const status of SEQUENCIA_STATUS_PEDIDO) {
     // ARTE/PRODUCAO/ENTREGUE NUNCA podem ficar inativas (ver
     // ETAPAS_SEMPRE_ATIVAS em src/lib/etapa-grafica.ts pro motivo de cada
@@ -62,14 +68,25 @@ export async function salvarEtapasGrafica(
       ? Math.trunc(ordemBruta)
       : (antesPorStatus.get(status)?.ordem ?? SEQUENCIA_STATUS_PEDIDO.indexOf(status));
 
-    novas.push({ status, ativa, rotulo, ordem });
+    // Achado D1 da auditoria de abrangência (Parte 2/Produção, 2026-09-11) —
+    // gate opt-in de aprovação de qualidade (ver EtapaGrafica.exigeAprovacaoQualidade
+    // no schema). Mesmo critério de checkbox de `ativa` acima: ausente no
+    // FormData = desmarcado.
+    const exigeAprovacaoQualidade = formData.get(`exigeAprovacaoQualidade_${status}`) === "on";
+
+    novas.push({ status, ativa, rotulo, ordem, exigeAprovacaoQualidade });
   }
 
   await prisma.$transaction(
     novas.map((linha) =>
       prisma.etapaGrafica.update({
         where: { graficaId_status: { graficaId: usuario.graficaId, status: linha.status } },
-        data: { ativa: linha.ativa, rotulo: linha.rotulo, ordem: linha.ordem },
+        data: {
+          ativa: linha.ativa,
+          rotulo: linha.rotulo,
+          ordem: linha.ordem,
+          exigeAprovacaoQualidade: linha.exigeAprovacaoQualidade,
+        },
       })
     )
   );
@@ -86,6 +103,11 @@ export async function salvarEtapasGrafica(
     diff.campo(`${nomeEtapa} — ativa`, anterior.ativa, linha.ativa);
     diff.campo(`${nomeEtapa} — rótulo`, anterior.rotulo, linha.rotulo);
     diff.campo(`${nomeEtapa} — ordem`, anterior.ordem, linha.ordem);
+    diff.campo(
+      `${nomeEtapa} — exige aprovação de qualidade`,
+      anterior.exigeAprovacaoQualidade,
+      linha.exigeAprovacaoQualidade
+    );
   }
 
   if (diff.temMudanca) {
