@@ -34,6 +34,12 @@ export default async function DespesaDetalhePage({
       filial: { select: { nome: true } },
       contaFinanceira: { select: { nome: true } },
       fornecedor: { select: { nome: true } },
+      // Achado Fin-A1 da Parte 4 da auditoria de abrangência (2026-09-11).
+      pedido: { select: { id: true, orcamento: { select: { cliente: { select: { nome: true } } } } } },
+      // Espelho ativo ou estornado em CustoPedido (ver
+      // criarCustoAutomaticoDespesa em src/lib/custo-pedido.ts) — só o valor
+      // ATUAL importa aqui, pra mostrar "isso já lançou um custo de R$X".
+      custoPedido: { select: { valor: true, estornadoEm: true } },
     },
   });
 
@@ -90,6 +96,22 @@ export default async function DespesaDetalhePage({
     orderBy: { nome: "asc" },
     select: { id: true, nome: true },
   });
+  // Achado Fin-A1 da Parte 4 da auditoria de abrangência (2026-09-11) — mesmo
+  // cuidado das listas acima: inclui o pedido já vinculado mesmo se ele
+  // tiver saído da lista de "em andamento" (ex: foi cancelado ou entregue)
+  // desde que a despesa foi vinculada, senão o <select> perderia a opção
+  // selecionada e desvincularia o pedido sem o usuário pedir. Mesmo recorte
+  // de compras/nova/page.tsx (não CANCELADO, take 200 mais recentes) pra
+  // quem ainda não vinculou nada.
+  const pedidos = await prisma.pedido.findMany({
+    where: {
+      graficaId: usuario.graficaId,
+      OR: [{ status: { not: "CANCELADO" } }, ...(despesa.pedidoId ? [{ id: despesa.pedidoId }] : [])],
+    },
+    include: { orcamento: { include: { cliente: { select: { nome: true } } } } },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+  });
 
   return (
     <div className="flex flex-1 flex-col">
@@ -130,14 +152,22 @@ export default async function DespesaDetalhePage({
             valorVariavel: despesa.valorVariavel,
             filialId: despesa.filialId,
             fornecedorId: despesa.fornecedorId,
+            pedidoId: despesa.pedidoId,
           }}
           categoriasCusto={categoriasCusto}
           filiais={filiais}
           fornecedores={fornecedores}
+          pedidos={pedidos.map((p) => ({ id: p.id, clienteNome: p.orcamento.cliente.nome }))}
           contasFinanceiras={contasFinanceiras}
           contaFinanceiraNome={despesa.contaFinanceira?.nome ?? null}
           filialNome={despesa.filial?.nome ?? null}
           fornecedorNome={despesa.fornecedor?.nome ?? null}
+          pedidoNome={despesa.pedido ? despesa.pedido.orcamento.cliente.nome : null}
+          custoPedidoEspelhado={
+            despesa.custoPedido && despesa.custoPedido.estornadoEm === null
+              ? { valor: Number(despesa.custoPedido.valor) }
+              : null
+          }
           status={despesa.status}
           saldo={saldo}
           pagoEm={despesa.pagoEm ? dataParaInputValue(despesa.pagoEm) : null}

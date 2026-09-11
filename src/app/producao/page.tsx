@@ -604,6 +604,13 @@ export default async function ProducaoPage({
                   valor: podeVerCustos ? Number(custo.valor) : null,
                   observacao: custo.observacao,
                   createdAt: custo.createdAt.toISOString(),
+                  // Achado Fin-A1 da Parte 4 da auditoria de abrangência
+                  // (2026-09-11) — origem/despesaId já vêm no `include` de
+                  // cima (select completo, nenhuma query extra), só faltava
+                  // repassar pro client pra CustosPedidoSecao linkar a
+                  // Despesa de origem.
+                  origem: custo.origem,
+                  despesaId: custo.despesaId,
                 }))}
                 lucro={podeVerCustos ? lucroDoPedidoListado(pedido) : null}
                 maquinas={maquinasSelecionaveis}

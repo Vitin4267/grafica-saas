@@ -100,6 +100,17 @@ export default async function FinanceiroPage() {
     select: { id: true, nome: true },
   });
 
+  // Achado Fin-A1 da Parte 4 da auditoria de abrangência (2026-09-11) —
+  // alimenta o <select> opcional "Vincular a um pedido" do form de nova
+  // despesa. Mesmo recorte de compras/nova/page.tsx (não CANCELADO, take 200
+  // mais recentes) — lista de conveniência, não precisa ser exaustiva.
+  const pedidosParaVincular = await prisma.pedido.findMany({
+    where: { graficaId: usuario.graficaId, status: { not: "CANCELADO" } },
+    include: { orcamento: { include: { cliente: { select: { nome: true } } } } },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+  });
+
   // Saldo em aberto de cada despesa PARCIAL — sempre calculado (achado A8 da
   // Parte 4), nunca armazenado.
   const saldosPorDespesa = new Map<string, string>();
@@ -231,7 +242,12 @@ export default async function FinanceiroPage() {
             <h2 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">
               Nova despesa
             </h2>
-            <NovaDespesaForm categoriasCusto={categoriasCusto} filiais={filiais} fornecedores={fornecedores} />
+            <NovaDespesaForm
+              categoriasCusto={categoriasCusto}
+              filiais={filiais}
+              fornecedores={fornecedores}
+              pedidos={pedidosParaVincular.map((p) => ({ id: p.id, clienteNome: p.orcamento.cliente.nome }))}
+            />
           </Card>
         )}
       </main>

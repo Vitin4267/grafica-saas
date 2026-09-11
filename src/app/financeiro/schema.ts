@@ -71,6 +71,18 @@ export const despesaSchema = z.object({
     .max(50)
     .optional()
     .transform((v) => (v ? v : undefined)),
+  // Achado Fin-A1 da Parte 4 da auditoria de abrangência (2026-09-11) —
+  // vínculo opcional com o Pedido que esta despesa é sobre. A action confere
+  // que o id pertence à gráfica antes de gravar; aqui só a forma do dado.
+  // Mesmo padrão "string vazia = sem vínculo" de filialId/fornecedorId
+  // acima. Sozinho não gera nada — só combinado com categoriaCustoId (ver
+  // criarCustoAutomaticoDespesa em src/lib/custo-pedido.ts).
+  pedidoId: z
+    .string()
+    .trim()
+    .max(50)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
 });
 
 // Schema separado de propósito: status/pagoEm nunca aparecem no form

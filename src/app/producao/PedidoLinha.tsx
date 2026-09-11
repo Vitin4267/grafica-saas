@@ -48,6 +48,11 @@ type Custo = {
   valor: number | null;
   observacao: string | null;
   createdAt: string;
+  // Achado Fin-A1 da Parte 4 da auditoria de abrangência (2026-09-11) —
+  // repassados sem uso direto aqui, só pra bater com o tipo Custo de
+  // CustosPedidoSecao.tsx (que usa pra linkar a Despesa de origem).
+  origem: string;
+  despesaId: string | null;
 };
 
 // Linha inteira é um client component (não só o botão de cancelar) pra poder

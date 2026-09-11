@@ -416,6 +416,101 @@ export async function criarCustoAutomaticoTerceirizacao(
   });
 }
 
+// Espelha uma Despesa como CustoPedido — achado Fin-A1 da Parte 4 da
+// auditoria de abrangência (2026-09-11): Despesa (contas a pagar) e
+// CustoPedido (custo real do pedido) eram universos paralelos, o mesmo gasto
+// precisava ser digitado duas vezes e normalmente só uma das duas acontecia.
+// Chamada em toda criação/edição de Despesa (criarDespesa/editarDespesa em
+// src/app/financeiro/actions.ts), NA MESMA TRANSAÇÃO — mesmo estilo
+// defensivo de criarCustoAutomaticoComissao acima: NUNCA falha a
+// criação/edição da despesa por causa disto.
+//
+// Só espelha quando pedidoId E categoriaCustoId estão os dois preenchidos —
+// sem categoria não tem onde lançar o CustoPedido (categoriaCustoId é
+// obrigatório no model), sem pedido não tem o que espelhar. Falta um dos
+// dois: NÃO GERA NADA, sem erro (mesmo espírito de valor<=0 nas outras
+// funções acima) — e se já existia um espelho ativo de uma edição anterior,
+// ESTORNA (nunca deleta, mesmo padrão de cancelarPedido em
+// src/app/producao/actions.ts).
+//
+// Dedup/atualização via CustoPedido.despesaId @unique: chamar de novo pra
+// mesma despesa (reentrância, ou uma edição de verdade) nunca cria uma
+// segunda linha — ATUALIZA a existente (valor/pedido/categoria) e, se ela
+// tinha sido estornada numa edição anterior (pedidoId/categoriaCustoId
+// removidos e depois preenchidos de novo), REATIVA (estornadoEm: null).
+export async function criarCustoAutomaticoDespesa(
+  tx: Prisma.TransactionClient,
+  params: {
+    graficaId: string;
+    despesaId: string;
+    pedidoId: string | null;
+    categoriaCustoId: string | null;
+    valor: number;
+  }
+): Promise<void> {
+  const existente = await tx.custoPedido.findUnique({ where: { despesaId: params.despesaId } });
+
+  // Checagem inline (não um booleano separado) de propósito: o TypeScript só
+  // consegue estreitar params.pedidoId/categoriaCustoId de "string | null"
+  // pra "string" dentro do corpo de um `if` que testa a condição
+  // diretamente — CustoPedido.pedidoId/categoriaCustoId são colunas
+  // obrigatórias (String, não String?) no schema, então o create/update
+  // abaixo dependem desse estreitamento pra compilar.
+  if (params.pedidoId === null || params.categoriaCustoId === null || params.valor <= 0) {
+    // Só estorna quem estava ATIVO — nunca mexe num espelho que nunca
+    // existiu, nem re-estorna um que já estava estornado (idempotente,
+    // chamada pode acontecer mais de uma vez na mesma edição).
+    if (existente && existente.estornadoEm === null) {
+      await tx.custoPedido.update({
+        where: { id: existente.id },
+        data: { estornadoEm: new Date() },
+      });
+    }
+    return;
+  }
+  const pedidoId = params.pedidoId;
+  const categoriaCustoId = params.categoriaCustoId;
+
+  if (existente) {
+    await tx.custoPedido.update({
+      where: { id: existente.id },
+      data: {
+        pedidoId,
+        categoriaCustoId,
+        valor: params.valor,
+        valorCalculado: params.valor,
+        // Reativa se a edição anterior tinha estornado (pedido/categoria
+        // removidos e agora preenchidos de novo) — no-op se já estava ativo.
+        estornadoEm: null,
+      },
+    });
+    return;
+  }
+
+  // Mesmo cuidado de criarCustoAutomaticoComissao/criarCustoAutomaticoCompra/
+  // criarCustoAutomaticoTerceirizacao: nunca soma calado em cima de um custo
+  // MANUAL já lançado na mesma categoria — só marca possivelDuplicidade pra
+  // UI resolver (ex: a gráfica já tinha lançado o custo desta terceirização
+  // manualmente antes de vincular a Despesa a este pedido).
+  const existeManualMesmaCategoria = await tx.custoPedido.findFirst({
+    where: { pedidoId, categoriaCustoId, origem: "MANUAL" },
+    select: { id: true },
+  });
+
+  await tx.custoPedido.create({
+    data: {
+      graficaId: params.graficaId,
+      pedidoId,
+      categoriaCustoId,
+      origem: "DESPESA",
+      despesaId: params.despesaId,
+      valor: params.valor,
+      valorCalculado: params.valor,
+      possivelDuplicidade: existeManualMesmaCategoria !== null,
+    },
+  });
+}
+
 // Idempotente: só cria as categorias sugeridas se a gráfica ainda não tem
 // NENHUMA linha cadastrada. Se a gráfica já tinha categorias e apagou todas
 // de propósito, isto NUNCA recria sozinho — ausência de linhas depois da

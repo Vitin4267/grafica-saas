@@ -571,6 +571,11 @@ export default async function FechamentoPedidoPage({
               valor: Number(custo.valor),
               observacao: custo.observacao,
               createdAt: custo.createdAt.toISOString(),
+              // Achado Fin-A1 da Parte 4 da auditoria de abrangência
+              // (2026-09-11) — já vêm no `include` de cima, só faltava
+              // repassar pro client (ver comentário em producao/page.tsx).
+              origem: custo.origem,
+              despesaId: custo.despesaId,
             }))}
             lucro={lucroCard}
             podeEditarCustos={podeEditarCustos}

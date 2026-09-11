@@ -20,6 +20,15 @@ type Custo = {
   valor: number | null;
   observacao: string | null;
   createdAt: string;
+  // Achado Fin-A1 da Parte 4 da auditoria de abrangência (2026-09-11) —
+  // despesaId só vem preenchido quando origem === "DESPESA" (ver
+  // criarCustoAutomaticoDespesa em src/lib/custo-pedido.ts), pra linkar
+  // direto pra despesa que gerou este lançamento. Nenhuma outra origem
+  // automática (COMISSAO/COMPRA/TERCEIRIZACAO/CONSUMO_ESTOQUE/GANG_RUN/
+  // PRODUTO_PRE_PRODUZIDO) tem indicação própria nesta tela hoje — fora do
+  // escopo desta rodada mexer nelas.
+  origem: string;
+  despesaId: string | null;
 };
 
 // Mesmo padrão de LinhaPagamento (src/app/orcamento/[id]/PagamentosCard.tsx):
@@ -65,6 +74,20 @@ function LinhaCusto({
           <p className="text-xs text-slate-500">
             {new Date(custo.createdAt).toLocaleDateString("pt-BR")}
             {custo.observacao && ` · ${custo.observacao}`}
+            {/* Achado Fin-A1 da Parte 4 da auditoria de abrangência
+                (2026-09-11) — link direto pra Despesa que gerou este
+                lançamento (ver criarCustoAutomaticoDespesa em
+                src/lib/custo-pedido.ts). Gate podeVer: mesma trava de
+                visibilidade do resto desta linha, o link só aparece pra quem
+                já pode ver valor/categoria. */}
+            {podeVer && custo.origem === "DESPESA" && custo.despesaId && (
+              <>
+                {" · "}
+                <Link href={`/financeiro/${custo.despesaId}`} className="text-teal-700 hover:underline dark:text-teal-400">
+                  Despesa vinculada
+                </Link>
+              </>
+            )}
           </p>
           {state && !state.ok && <p className="mt-1 text-xs text-rose-600">{state.mensagem}</p>}
         </div>

@@ -77,9 +77,9 @@ model ApontamentoEtapa {
   // ACABAMENTO, CONFERENCIA...). Todos null em todo apontamento ANTIGO
   // (migração 100% aditiva) e em qualquer apontamento cujo operador não
   // reportou nada (não é obrigatório preencher).
-  quantidadeBoa    Int?
-  quantidadeRefugo Int?
-  motivoRefugo     MotivoRefugo?
+  quantidadeBoa     Int?
+  quantidadeRefugo  Int?
+  motivoRefugo      MotivoRefugo?
   // Obrigatório quando motivoRefugo=OUTRO (validado em app via
   // parseRefugoFormData, src/lib/refugo-producao.ts — nunca CHECK no
   // banco, mesmo padrão de todo xxxOutro do sistema).
@@ -307,6 +307,12 @@ model Pedido {
   // (prisma/schema/09-orcamento.prisma). [] pra TODO pedido que nunca usou
   // arte por item (opt-in) — comportamento de sempre, sem migração nenhuma.
   arteItens           ArteItem[]
+  // Achado Fin-A1 da Parte 4 da auditoria de abrangência (2026-09-11) — lado
+  // inverso de Despesa.pedidoId (vínculo opcional "essa despesa é sobre ESTE
+  // pedido", ver comentário completo no model Despesa,
+  // prisma/schema/11-financeiro.prisma). [] pra TODO pedido que nunca teve
+  // uma despesa vinculada — comportamento de sempre, sem migração de dado.
+  despesas            Despesa[]
 
   @@index([graficaId])
   @@map("pedidos")
@@ -526,10 +532,10 @@ model Entrega {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  grafica             Grafica         @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  pedido              Pedido          @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
-  transportadora      Transportadora? @relation(fields: [transportadoraId], references: [id], onDelete: SetNull)
-  motoristaColaborador Colaborador?   @relation("EntregaMotoristaColaborador", fields: [motoristaColaboradorId], references: [id], onDelete: SetNull)
+  grafica              Grafica         @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  pedido               Pedido          @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  transportadora       Transportadora? @relation(fields: [transportadoraId], references: [id], onDelete: SetNull)
+  motoristaColaborador Colaborador?    @relation("EntregaMotoristaColaborador", fields: [motoristaColaboradorId], references: [id], onDelete: SetNull)
 
   @@index([graficaId])
   @@index([transportadoraId])
