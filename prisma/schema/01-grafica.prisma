@@ -384,6 +384,23 @@ model ParametrosGrafica {
   // pra quem nunca configurou nada.
   paginasPorCadernoPadrao Int @default(16)
 
+  // Achado A5 da Parte 4 da auditoria de abrangência (2026-09-09) — "régua
+  // de cobrança + juros/multa", fatia 2 (a fatia 1 é o status EM_COBRANCA/
+  // PERDA em StatusContaReceber, 11-financeiro.prisma). Percentual "humano"
+  // (2 = 2%), mesma convenção de margemFaixaBaixa/margemFaixaBoa acima —
+  // NUNCA aplicado automaticamente em nenhuma ContaReceber: é só a SUGESTÃO
+  // exibida na tela de baixa (ver registrarBaixaContaReceber em
+  // src/app/financeiro/contas-receber/actions.ts), sempre editável, igual
+  // ao pré-preenchimento de TaxaFormaPagamento (achado A11). multaAtrasoPercent
+  // é cobrada uma vez só (não composta); jurosMoraMensalPercent é pro-rata
+  // por dia de atraso (percentual mensal ÷ 30 × dias). Defaults 2%/1% são
+  // valores comuns de mercado pra cobrança B2B no Brasil — não afetam
+  // nenhuma ContaReceber já existente (o campo só alimenta um cálculo de UI,
+  // nunca é lido por saldoContaReceber nem por nenhum critério de "conta
+  // paga integralmente").
+  multaAtrasoPercent     Decimal @default(2) @db.Decimal(5, 2)
+  jurosMoraMensalPercent Decimal @default(1) @db.Decimal(5, 2)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

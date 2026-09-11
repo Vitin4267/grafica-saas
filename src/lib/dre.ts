@@ -68,12 +68,25 @@ export interface EntradaDRE {
   /**
    * CAIXA — despesas financeiras pagas no período (juros, tarifa bancária,
    * taxa de maquininha). Hoje sempre 0: o sistema ainda não tem uma
-   * classificação própria de "despesa financeira" nem apura taxa real de
-   * recebimento (ver achados A5 e A11 da mesma auditoria — nenhum dos dois
-   * construído). Campo existe pra manter a estrutura do DRE completa, pronto
-   * pra ganhar dado real sem mudar a forma do relatório.
+   * classificação própria de "despesa financeira" nem uma tela que lance
+   * esse tipo de gasto separado de Despesa comum. Campo existe pra manter a
+   * estrutura do DRE completa, pronto pra ganhar dado real sem mudar a forma
+   * do relatório. (Pagamento.valorTaxa, achado A11 da Parte 4, já existe
+   * como dado real, mas ainda não está plumbado aqui — fora do escopo do
+   * achado A5 abaixo.)
    */
   despesasFinanceiras: number;
+  /**
+   * CAIXA — juros de mora + multa por atraso efetivamente recebidos no
+   * período (achado A5 da Parte 4 da auditoria de abrangência, 2026-09-09:
+   * "régua de cobrança + juros/multa", fatia 2). Soma de Pagamento.valorJuros
+   * + Pagamento.valorMulta dos pagamentos criados no período (ver
+   * dre-query.ts). Dinheiro que o cliente pagou A MAIS do que o preço
+   * vendido do orçamento (Orcamento.total) — por isso entra como linha
+   * PRÓPRIA de receita financeira, nunca somado em cima da receita bruta
+   * acima (que já é só Orcamento.total).
+   */
+  receitaFinanceira: number;
 }
 
 export interface ResultadoDRE {
@@ -106,13 +119,18 @@ export function montarDRE(entrada: EntradaDRE): ResultadoDRE {
     custoFixo,
     comissoes,
     despesasFinanceiras,
+    receitaFinanceira,
   } = entrada;
 
   const receitaLiquida = receitaBruta - impostos - descontos;
   const margemContribuicao = receitaLiquida - custosVariaveis;
   const margemContribuicaoPercent = receitaLiquida !== 0 ? margemContribuicao / receitaLiquida : null;
   const resultadoOperacional = margemContribuicao - custoFixo - comissoes;
-  const resultadoLiquido = resultadoOperacional - despesasFinanceiras;
+  // Achado A5 da Parte 4 (2026-09-09) — receita financeira (juros/multa
+  // recebidos) soma, despesa financeira subtrai, ambas depois do resultado
+  // operacional (resultado financeiro clássico de DRE, separado da operação
+  // fim-do-negócio de imprimir/vender).
+  const resultadoLiquido = resultadoOperacional + receitaFinanceira - despesasFinanceiras;
 
   // Só existe ponto de equilíbrio quando cada real adicional de receita
   // realmente sobra alguma coisa depois do custo variável (%MC > 0). Com
@@ -138,6 +156,7 @@ export function montarDRE(entrada: EntradaDRE): ResultadoDRE {
       regime: "MISTO",
       detalheRegime: DETALHE_RESULTADO_OPERACIONAL,
     },
+    { rotulo: "(+) Receita financeira (juros/multa recebidos)", valor: receitaFinanceira, regime: "CAIXA" },
     { rotulo: "(−) Despesas financeiras (pagas)", valor: -despesasFinanceiras, regime: "CAIXA" },
     {
       rotulo: "= Resultado líquido",

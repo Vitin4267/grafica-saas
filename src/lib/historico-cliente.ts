@@ -78,9 +78,11 @@ export async function buscarHistoricoCliente(
         pedido: { select: { status: true } },
       },
     }),
-    // ContaReceber.clienteId — achado A10, coluna nova.
+    // ContaReceber.clienteId — achado A10, coluna nova. EM_COBRANCA (achado
+    // A5 da Parte 4, 2026-09-09) também é dívida em aberto do cliente, ver
+    // comentário em StatusContaReceber no schema.
     prisma.contaReceber.findMany({
-      where: { graficaId, clienteId, status: { in: ["PENDENTE", "PARCIAL"] } },
+      where: { graficaId, clienteId, status: { in: ["PENDENTE", "PARCIAL", "EM_COBRANCA"] } },
       orderBy: { vencimento: "asc" },
       select: {
         id: true,

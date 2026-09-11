@@ -208,13 +208,15 @@ export default async function OrcamentoDetalhePage({
     notFound();
   }
 
-  // Saldo em aberto de cada ContaReceber PARCIAL — sempre calculado (achado
-  // A8 da Parte 4), nunca armazenado. PENDENTE tem saldo igual ao valor
-  // total (nenhuma baixa ainda), por isso só busca pras PARCIAL.
+  // Saldo em aberto de cada ContaReceber PARCIAL ou EM_COBRANCA (achado A5
+  // da Parte 4, 2026-09-09 — uma conta EM_COBRANCA pode vir de uma PARCIAL,
+  // então também pode ter baixas anteriores) — sempre calculado (achado A8
+  // da Parte 4), nunca armazenado. PENDENTE tem saldo igual ao valor total
+  // (nenhuma baixa ainda), por isso não precisa buscar.
   const saldosContaReceberPorConta = new Map<string, string>();
   await Promise.all(
     orcamento.contasReceber
-      .filter((c) => c.status === "PARCIAL")
+      .filter((c) => c.status === "PARCIAL" || c.status === "EM_COBRANCA")
       .map(async (c) => {
         const saldo = await saldoContaReceber(prisma, c);
         saldosContaReceberPorConta.set(c.id, saldo.toFixed(2));

@@ -40,13 +40,14 @@ export default async function ContasReceberPage() {
   });
 
   // Saldo em aberto é sempre calculado (achado A8 da Parte 4) — só precisa
-  // ser buscado pras contas PARCIAL (PENDENTE sem baixa nenhuma tem saldo
-  // igual ao valor total, RECEBIDO/CANCELADO não aparecem no formulário de
-  // baixa).
+  // ser buscado pras contas PARCIAL ou EM_COBRANCA (achado A5, 2026-09-09 —
+  // uma conta EM_COBRANCA pode vir de uma PARCIAL, então também pode ter
+  // baixas anteriores; PENDENTE sem baixa nenhuma tem saldo igual ao valor
+  // total, RECEBIDO/CANCELADO/PERDA não aparecem no formulário de baixa).
   const saldosPorConta = new Map<string, string>();
   await Promise.all(
     contas
-      .filter((c) => c.status === "PARCIAL")
+      .filter((c) => c.status === "PARCIAL" || c.status === "EM_COBRANCA")
       .map(async (c) => {
         const saldo = await saldoContaReceber(prisma, c);
         saldosPorConta.set(c.id, saldo.toFixed(2));
@@ -66,7 +67,25 @@ export default async function ContasReceberPage() {
     percentual: t.percentual.toString(),
   }));
 
-  const pendentes = contas.filter((c) => c.status === "PENDENTE" || c.status === "PARCIAL");
+  // Achado A5 da Parte 4 da auditoria de abrangência (2026-09-09) — só
+  // alimenta o pré-preenchimento opcional de "Multa"/"Juros" em
+  // ContaReceberLinha. Fallback pros defaults do schema (2/1) quando a
+  // gráfica nunca teve ParametrosGrafica criado (upsert lazy no primeiro
+  // acesso à precificação, mesmo raciocínio de dre-query.ts).
+  const parametros = await prisma.parametrosGrafica.findUnique({
+    where: { graficaId: usuario.graficaId },
+    select: { multaAtrasoPercent: true, jurosMoraMensalPercent: true },
+  });
+  const multaAtrasoPercent = Number(parametros?.multaAtrasoPercent ?? 2);
+  const jurosMoraMensalPercent = Number(parametros?.jurosMoraMensalPercent ?? 1);
+
+  // EM_COBRANCA continua contando como "em aberto" — é dinheiro ainda
+  // esperado, só sinalizado como problemático (achado A5, ver comentário em
+  // StatusContaReceber no schema). PERDA sai da soma, mesmo critério de
+  // CANCELADO: dinheiro não é mais esperado.
+  const pendentes = contas.filter(
+    (c) => c.status === "PENDENTE" || c.status === "PARCIAL" || c.status === "EM_COBRANCA"
+  );
   const vencidas = pendentes.filter((c) => dataEhPassado(c.vencimento));
   const recebidas = contas.filter((c) => c.status === "RECEBIDO");
 
@@ -148,6 +167,8 @@ export default async function ContasReceberPage() {
               key={conta.id}
               podeEditar={podeEditar}
               taxasFormaPagamento={taxasFormaPagamento}
+              multaAtrasoPercent={multaAtrasoPercent}
+              jurosMoraMensalPercent={jurosMoraMensalPercent}
               conta={{
                 id: conta.id,
                 descricao: conta.descricao,

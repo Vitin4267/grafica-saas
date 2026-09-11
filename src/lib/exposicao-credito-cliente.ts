@@ -25,6 +25,11 @@ import { saldoContaReceber } from "@/lib/baixa-financeira";
 // limite de crédito liberar mais fôlego do que devia. PENDENTE continua
 // somado pelo valor cheio (agregação direta no banco, mais barato); PARCIAL
 // é a minoria dos casos, soma o SALDO calculado de cada uma.
+//
+// EM_COBRANCA (achado A5 da Parte 4, 2026-09-09) — semanticamente exposição
+// em aberto igual a PARCIAL (pode ter baixas anteriores, ver comentário em
+// StatusContaReceber no schema), então entra no mesmo bucket "soma o SALDO
+// calculado" abaixo, não no bucket PENDENTE (valor cheio agregado direto).
 export async function calcularExposicaoCreditoCliente(clienteId: string): Promise<number> {
   const agregadoPendente = await prisma.contaReceber.aggregate({
     where: { orcamento: { clienteId }, status: "PENDENTE" },
@@ -35,7 +40,7 @@ export async function calcularExposicaoCreditoCliente(clienteId: string): Promis
     : new D(0);
 
   const parciais = await prisma.contaReceber.findMany({
-    where: { orcamento: { clienteId }, status: "PARCIAL" },
+    where: { orcamento: { clienteId }, status: { in: ["PARCIAL", "EM_COBRANCA"] } },
     select: { id: true, valor: true, pagamentoId: true },
   });
   const saldosParciais = await Promise.all(parciais.map((c) => saldoContaReceber(prisma, c)));

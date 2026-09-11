@@ -19,8 +19,14 @@ import { montarDRE, type ResultadoDRE } from "@/lib/dre";
 export async function buscarDRE(graficaId: string, inicio: Date, fim: Date): Promise<ResultadoDRE> {
   const semPedidoCancelado = { NOT: { pedido: { status: "CANCELADO" as const } } };
 
-  const [orcamentosAprovados, parametros, custosVariaveisAgregado, custoFixoAgregado, comissoesAgregado] =
-    await Promise.all([
+  const [
+    orcamentosAprovados,
+    parametros,
+    custosVariaveisAgregado,
+    custoFixoAgregado,
+    comissoesAgregado,
+    receitaFinanceiraAgregado,
+  ] = await Promise.all([
       // Receita bruta + descontos concedidos (achado A3): precisa dos itens
       // (não só o total do orçamento) pra apurar o desconto — ver loop
       // abaixo. Mesmo escopo/exclusão de pedido cancelado de
@@ -79,6 +85,14 @@ export async function buscarDRE(graficaId: string, inicio: Date, fim: Date): Pro
         where: { graficaId, status: "PAGA", pagoEm: { gte: inicio, lt: fim } },
         _sum: { valorComissao: true },
       }),
+      // Receita financeira (achado A5 da Parte 4, 2026-09-09) — juros/multa
+      // de fato recebidos em pagamentos criados no período. CAIXA — filtra
+      // por orcamento.graficaId (Pagamento não tem graficaId direto no
+      // schema), mesmo padrão de meu-negocio.ts.
+      prisma.pagamento.aggregate({
+        where: { orcamento: { graficaId }, createdAt: { gte: inicio, lt: fim } },
+        _sum: { valorJuros: true, valorMulta: true },
+      }),
     ]);
 
   let receitaBrutaDec = new D(0);
@@ -105,6 +119,9 @@ export async function buscarDRE(graficaId: string, inicio: Date, fim: Date): Pro
   const custosVariaveisDec = new D(String(custosVariaveisAgregado._sum.valor ?? 0));
   const custoFixoDec = new D(String(custoFixoAgregado._sum.valor ?? 0));
   const comissoesDec = new D(String(comissoesAgregado._sum.valorComissao ?? 0));
+  const receitaFinanceiraDec = new D(String(receitaFinanceiraAgregado._sum.valorJuros ?? 0)).plus(
+    String(receitaFinanceiraAgregado._sum.valorMulta ?? 0)
+  );
 
   return montarDRE({
     receitaBruta: receitaBrutaDec.toNumber(),
@@ -114,7 +131,10 @@ export async function buscarDRE(graficaId: string, inicio: Date, fim: Date): Pro
     custoFixo: custoFixoDec.toNumber(),
     comissoes: comissoesDec.toNumber(),
     // Sem fonte de dado hoje — ver comentário em EntradaDRE.despesasFinanceiras
-    // (src/lib/dre.ts) e achados A5/A11 da mesma auditoria (não construídos).
+    // (src/lib/dre.ts). Despesa financeira estruturada continua fora de
+    // escopo (diferente de receita financeira abaixo, que o achado A5
+    // constrói nesta rodada).
     despesasFinanceiras: 0,
+    receitaFinanceira: receitaFinanceiraDec.toNumber(),
   });
 }

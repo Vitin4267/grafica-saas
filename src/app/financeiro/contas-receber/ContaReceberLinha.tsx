@@ -9,7 +9,12 @@ import { Select } from "@/components/ui/Select";
 import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
 import { formatoMoeda } from "@/lib/moeda";
 import { formatoData, dataEhPassado } from "@/lib/data";
-import { registrarBaixaContaReceber, cancelarContaReceber } from "./actions";
+import {
+  registrarBaixaContaReceber,
+  cancelarContaReceber,
+  marcarContaReceberEmCobranca,
+  marcarContaReceberPerda,
+} from "./actions";
 import { RetencoesContaReceber } from "./RetencoesContaReceber";
 
 // Achado A11 da Parte 4 da auditoria de abrangência (2026-09-08) — CARTAO
@@ -34,7 +39,7 @@ type ContaReceber = {
   // armazenado. Igual a `valor` pra conta PENDENTE (nenhuma baixa ainda).
   saldo: string;
   vencimento: string; // ISO
-  status: "PENDENTE" | "PARCIAL" | "RECEBIDO" | "CANCELADO";
+  status: "PENDENTE" | "PARCIAL" | "RECEBIDO" | "CANCELADO" | "EM_COBRANCA" | "PERDA";
   recebidoEm: string | null;
   orcamentoId: string;
   clienteNome: string;
@@ -67,6 +72,24 @@ function statusPill(conta: ContaReceber) {
       </span>
     );
   }
+  {/* Achado A5 da Parte 4 — status honesto: distingue calote (PERDA) de
+      erro de digitação/pedido cancelado (CANCELADO acima), e sinaliza que a
+      conta entrou num processo de cobrança (EM_COBRANCA), sem escalonamento
+      automático nenhum por trás (ver actions.ts). */}
+  if (conta.status === "PERDA") {
+    return (
+      <span className="rounded-full bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+        Perda
+      </span>
+    );
+  }
+  if (conta.status === "EM_COBRANCA") {
+    return (
+      <span className="rounded-full bg-orange-100 px-2.5 py-1 text-xs font-medium text-orange-700 dark:bg-orange-950/50 dark:text-orange-300">
+        Em cobrança
+      </span>
+    );
+  }
   if (conta.status === "PARCIAL") {
     return (
       <span className="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700 dark:bg-sky-950/50 dark:text-sky-300">
@@ -92,21 +115,60 @@ export function ContaReceberLinha({
   conta,
   podeEditar,
   taxasFormaPagamento = [],
+  multaAtrasoPercent = 0,
+  jurosMoraMensalPercent = 0,
 }: {
   conta: ContaReceber;
   podeEditar: boolean;
   // Achado A11 da Parte 4 da auditoria de abrangência (2026-09-08) — só
   // alimenta o pré-preenchimento OPCIONAL do campo "Taxa" abaixo.
   taxasFormaPagamento?: { forma: string; percentual: string }[];
+  // Achado A5 da Parte 4 da auditoria de abrangência (2026-09-09) —
+  // ParametrosGrafica.multaAtrasoPercent/jurosMoraMensalPercent, só pra
+  // pré-preencher (sempre editável) os campos "Juros"/"Multa" abaixo quando
+  // a conta já está vencida. 0 = gráfica sem parâmetro configurado, campos
+  // nascem em branco (comportamento de hoje, sem sugestão nenhuma).
+  multaAtrasoPercent?: number;
+  jurosMoraMensalPercent?: number;
 }) {
   const [estadoRecebido, acaoRecebido, marcandoRecebido] = useActionState(registrarBaixaContaReceber, null);
   const [estadoCancelar, acaoCancelar, cancelando] = useActionState(cancelarContaReceber, null);
+  const [estadoEmCobranca, acaoEmCobranca, marcandoEmCobranca] = useActionState(
+    marcarContaReceberEmCobranca,
+    null
+  );
+  const [estadoPerda, acaoPerda, marcandoPerda] = useActionState(marcarContaReceberPerda, null);
   const [confirmandoCancelamento, setConfirmandoCancelamento] = useState(false);
+  const [confirmandoPerda, setConfirmandoPerda] = useState(false);
   const [valorRecebido, setValorRecebido] = useState(conta.saldo);
   const [valorTaxa, setValorTaxa] = useState("");
 
+  // Achado A5 da Parte 4 — dias de atraso (mesmo cálculo de calcularAging em
+  // src/lib/exportacao-financeira.ts, versão local só pra sugestão de UI:
+  // não precisa da precisão de data-pura UTC exata, é sempre editável
+  // depois). <= 0 = ainda não venceu, sem sugestão.
+  const diasAtraso = Math.max(
+    0,
+    Math.round((Date.now() - new Date(conta.vencimento).getTime()) / (24 * 60 * 60 * 1000))
+  );
+  const [valorMulta, setValorMulta] = useState(() => {
+    if (diasAtraso <= 0 || multaAtrasoPercent <= 0) return "";
+    const base = Number(conta.saldo);
+    return Number.isFinite(base) && base > 0 ? ((base * multaAtrasoPercent) / 100).toFixed(2) : "";
+  });
+  const [valorJuros, setValorJuros] = useState(() => {
+    if (diasAtraso <= 0 || jurosMoraMensalPercent <= 0) return "";
+    const base = Number(conta.saldo);
+    return Number.isFinite(base) && base > 0
+      ? ((base * jurosMoraMensalPercent * diasAtraso) / 100 / 30).toFixed(2)
+      : "";
+  });
+
   useAoMudar(estadoCancelar, (estado) => {
     if (estado && !estado.ok) setConfirmandoCancelamento(false);
+  });
+  useAoMudar(estadoPerda, (estado) => {
+    if (estado && !estado.ok) setConfirmandoPerda(false);
   });
 
   // Achado A11 da Parte 4 — escolher a forma pré-preenche a taxa sugerida
@@ -167,8 +229,9 @@ export function ContaReceberLinha({
       )}
 
       {podeEditar &&
-        (conta.status === "PENDENTE" || conta.status === "PARCIAL") &&
-        !confirmandoCancelamento && (
+        (conta.status === "PENDENTE" || conta.status === "PARCIAL" || conta.status === "EM_COBRANCA") &&
+        !confirmandoCancelamento &&
+        !confirmandoPerda && (
           <div className="flex flex-wrap items-end gap-4 border-t border-slate-100 pt-3 dark:border-slate-800">
             <form action={acaoRecebido} className="flex flex-wrap items-end gap-2">
               <input type="hidden" name="id" value={conta.id} />
@@ -224,10 +287,69 @@ export function ContaReceberLinha({
                   className="w-24 rounded-md border border-slate-300 px-2 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900"
                 />
               </div>
+              {/* Achado A5 da Parte 4 — juros/multa, mesmo padrão de "Taxa
+                  cobrada" acima: pré-preenchido a partir de
+                  ParametrosGrafica.multaAtrasoPercent/jurosMoraMensalPercent
+                  quando a conta está vencida, sempre editável. "0"/vazio
+                  preserva o comportamento de hoje (nenhum juros/multa
+                  registrado). Nunca calculado/aplicado sozinho pelo servidor. */}
+              <div className="flex flex-col gap-1">
+                <label htmlFor={`multa-${conta.id}`} className="text-xs font-medium text-slate-500">
+                  Multa
+                </label>
+                <input
+                  id={`multa-${conta.id}`}
+                  type="number"
+                  name="valorMulta"
+                  step="0.01"
+                  min="0"
+                  value={valorMulta}
+                  onChange={(evento) => setValorMulta(evento.target.value)}
+                  placeholder="0,00"
+                  className="w-24 rounded-md border border-slate-300 px-2 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor={`juros-${conta.id}`} className="text-xs font-medium text-slate-500">
+                  Juros
+                </label>
+                <input
+                  id={`juros-${conta.id}`}
+                  type="number"
+                  name="valorJuros"
+                  step="0.01"
+                  min="0"
+                  value={valorJuros}
+                  onChange={(evento) => setValorJuros(evento.target.value)}
+                  placeholder="0,00"
+                  className="w-24 rounded-md border border-slate-300 px-2 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900"
+                />
+              </div>
               <Button type="submit" variant="outline" loading={marcandoRecebido}>
                 {marcandoRecebido ? "Registrando..." : "Registrar recebimento"}
               </Button>
             </form>
+            {/* Achado A5 da Parte 4 — status honesto: marcar como em
+                cobrança (só a partir de PENDENTE/PARCIAL — uma conta já em
+                cobrança não precisa do botão de novo) e marcar como perda
+                (calote reconhecido, distinto de "Cancelar" que é erro de
+                digitação/pedido cancelado). Nenhuma das duas ações dispara
+                nenhum e-mail/webhook — é só o registro manual do status. */}
+            {(conta.status === "PENDENTE" || conta.status === "PARCIAL") && (
+              <form action={acaoEmCobranca}>
+                <input type="hidden" name="id" value={conta.id} />
+                <Button type="submit" variant="outline" loading={marcandoEmCobranca} className="!py-1.5 text-xs">
+                  {marcandoEmCobranca ? "Marcando..." : "Marcar em cobrança"}
+                </Button>
+              </form>
+            )}
+            <button
+              type="button"
+              onClick={() => setConfirmandoPerda(true)}
+              className="text-xs font-medium text-slate-600 hover:underline dark:text-slate-400"
+            >
+              Marcar como perda
+            </button>
             {conta.status === "PENDENTE" && (
               <button
                 type="button"
@@ -252,8 +374,26 @@ export function ContaReceberLinha({
           />
         </div>
       )}
+      {confirmandoPerda && (
+        <div className="border-t border-slate-100 pt-3 dark:border-slate-800">
+          <ConfirmarExclusao
+            pergunta={`Marcar a conta a receber "${conta.descricao}" (${formatoMoeda.format(Number(conta.valor))}) como perda? Isso reconhece que esse dinheiro não vai mais ser recebido.`}
+            onCancelar={() => setConfirmandoPerda(false)}
+            formAction={acaoPerda}
+            campos={{ id: conta.id }}
+            rotuloBotao="Marcar como perda"
+            pendente={marcandoPerda}
+          />
+        </div>
+      )}
       {estadoCancelar && !estadoCancelar.ok && !confirmandoCancelamento && (
         <p className="text-xs text-rose-600">{estadoCancelar.mensagem}</p>
+      )}
+      {estadoEmCobranca && !estadoEmCobranca.ok && (
+        <p className="text-xs text-rose-600">{estadoEmCobranca.mensagem}</p>
+      )}
+      {estadoPerda && !estadoPerda.ok && !confirmandoPerda && (
+        <p className="text-xs text-rose-600">{estadoPerda.mensagem}</p>
       )}
     </Card>
   );

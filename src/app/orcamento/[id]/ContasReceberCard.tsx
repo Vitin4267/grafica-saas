@@ -38,7 +38,7 @@ type ContaReceber = {
   // armazenado. Igual a `valor` pra conta PENDENTE (nenhuma baixa ainda).
   saldo: string;
   vencimento: string; // ISO
-  status: "PENDENTE" | "PARCIAL" | "RECEBIDO" | "CANCELADO";
+  status: "PENDENTE" | "PARCIAL" | "RECEBIDO" | "CANCELADO" | "EM_COBRANCA" | "PERDA";
   recebidoEm: string | null;
 };
 
@@ -54,6 +54,24 @@ function statusPill(conta: ContaReceber) {
     return (
       <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
         Cancelado
+      </span>
+    );
+  }
+  {/* Achado A5 da Parte 4 (2026-09-09) — mesmos dois status novos de
+      ContaReceberLinha.tsx (/financeiro/contas-receber), só o pill aqui:
+      as ações de marcar em cobrança/perda ficam concentradas naquela tela,
+      este card só reflete o status atual. */}
+  if (conta.status === "PERDA") {
+    return (
+      <span className="rounded-full bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+        Perda
+      </span>
+    );
+  }
+  if (conta.status === "EM_COBRANCA") {
+    return (
+      <span className="rounded-full bg-orange-100 px-2.5 py-1 text-xs font-medium text-orange-700 dark:bg-orange-950/50 dark:text-orange-300">
+        Em cobrança
       </span>
     );
   }
@@ -138,7 +156,7 @@ function LinhaContaReceber({
       </div>
 
       {podeEditar &&
-        (conta.status === "PENDENTE" || conta.status === "PARCIAL") &&
+        (conta.status === "PENDENTE" || conta.status === "PARCIAL" || conta.status === "EM_COBRANCA") &&
         !confirmandoCancelamento && (
           <div className="flex flex-wrap items-end gap-3">
             <form action={acaoRecebido} className="flex flex-wrap items-end gap-2">
@@ -251,7 +269,7 @@ export function ContasReceberCard({
   // PARCIAL não continuar contando o pedaço que já foi recebido (achado A8
   // da Parte 4 — exatamente o bug que essa mudança corrige).
   const totalPendente = contas
-    .filter((c) => c.status === "PENDENTE" || c.status === "PARCIAL")
+    .filter((c) => c.status === "PENDENTE" || c.status === "PARCIAL" || c.status === "EM_COBRANCA")
     .reduce((soma, c) => soma + Number(c.saldo), 0);
   const totalRecebido = contas
     .filter((c) => c.status === "RECEBIDO")

@@ -13,11 +13,14 @@ import { calcularProjecaoFluxoCaixa, type ProjecaoFluxoCaixa } from "@/lib/fluxo
  * @returns Projeção de fluxo de caixa com buckets e alertas
  */
 export async function buscarProjecaoFluxoCaixa(graficaId: string): Promise<ProjecaoFluxoCaixa> {
-  // Busca contas a receber PENDENTES ou PARCIAIS
+  // Busca contas a receber PENDENTES, PARCIAIS ou EM_COBRANCA — os 3 ainda
+  // representam dinheiro esperado (achado A5 da Parte 4, 2026-09-09; ver
+  // comentário em StatusContaReceber no schema). PERDA fica de fora, mesmo
+  // critério de CANCELADO: dinheiro não é mais esperado.
   const contasReceber = await prisma.contaReceber.findMany({
     where: {
       graficaId,
-      status: { in: ["PENDENTE", "PARCIAL"] },
+      status: { in: ["PENDENTE", "PARCIAL", "EM_COBRANCA"] },
     },
     select: {
       vencimento: true,

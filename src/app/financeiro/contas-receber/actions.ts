@@ -169,6 +169,22 @@ const registrarBaixaSchema = z.object({
     .optional()
     .transform((v) => (v ? Number(v) : 0))
     .refine((v) => Number.isFinite(v) && v >= 0, { message: "Valor de taxa inválido." }),
+  // Achado A5 da Parte 4 da auditoria de abrangência (2026-09-09) — quanto
+  // de juros de mora / multa por atraso foi de fato cobrado neste
+  // recebimento. Opcional: ausente/vazio vira 0 (comportamento de hoje
+  // preservado 100%). Pode vir pré-preenchido no client a partir de
+  // ParametrosGrafica.jurosMoraMensalPercent/multaAtrasoPercent × dias de
+  // atraso, mas sempre editável — nunca calculado sozinho no servidor.
+  valorJuros: z
+    .string()
+    .optional()
+    .transform((v) => (v ? Number(v) : 0))
+    .refine((v) => Number.isFinite(v) && v >= 0, { message: "Valor de juros inválido." }),
+  valorMulta: z
+    .string()
+    .optional()
+    .transform((v) => (v ? Number(v) : 0))
+    .refine((v) => Number.isFinite(v) && v >= 0, { message: "Valor de multa inválido." }),
 });
 
 // Compare-and-swap via updateMany (where status: status lido) pra evitar
@@ -218,11 +234,13 @@ export async function registrarBaixaContaReceber(
     formaDetalhe: formData.get("formaDetalhe") ?? undefined,
     valor: formData.get("valor") ?? undefined,
     valorTaxa: formData.get("valorTaxa") ?? undefined,
+    valorJuros: formData.get("valorJuros") ?? undefined,
+    valorMulta: formData.get("valorMulta") ?? undefined,
   });
   if (!parsed.success) {
     return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   }
-  const { id, forma, formaDetalhe, valorTaxa } = parsed.data;
+  const { id, forma, formaDetalhe, valorTaxa, valorJuros, valorMulta } = parsed.data;
 
   const conta = await prisma.contaReceber.findFirst({
     where: { id, graficaId: usuario.graficaId },
@@ -230,8 +248,12 @@ export async function registrarBaixaContaReceber(
   if (!conta) {
     return { ok: false, mensagem: "Conta a receber não encontrada." };
   }
-  if (conta.status !== "PENDENTE" && conta.status !== "PARCIAL") {
-    return { ok: false, mensagem: "Essa conta já foi recebida ou cancelada." };
+  // Achado A5 da Parte 4 (2026-09-09) — EM_COBRANCA aceita baixa igual a
+  // PENDENTE/PARCIAL: uma conta em processo de cobrança ainda pode ser
+  // recebida (é exatamente o objetivo de cobrar). PERDA/CANCELADO/RECEBIDO
+  // continuam bloqueados.
+  if (conta.status !== "PENDENTE" && conta.status !== "PARCIAL" && conta.status !== "EM_COBRANCA") {
+    return { ok: false, mensagem: "Essa conta já foi recebida, cancelada ou marcada como perda." };
   }
 
   const saldoAtual = await saldoContaReceber(prisma, conta);
@@ -258,6 +280,8 @@ export async function registrarBaixaContaReceber(
           formaDetalhe: formaDetalhe ?? null,
           observacao: `Gerado ao registrar baixa de "${conta.descricao}"`,
           valorTaxa,
+          valorJuros,
+          valorMulta,
         },
       });
 
@@ -360,6 +384,116 @@ export async function cancelarContaReceber(
 
   revalidarContasReceber(conta.orcamentoId);
   return { ok: true, mensagem: "Conta cancelada." };
+}
+
+// Achado A5 da Parte 4 da auditoria de abrangência (2026-09-09) — "régua de
+// cobrança", fatia 1 (status honesto). Nenhuma transição automática: é
+// sempre o usuário marcando manualmente que uma conta vencida entrou em
+// processo de cobrança (negociação, ligação, escalonamento interno — o
+// MECANISMO de cobrança em si continua fora do sistema, deliberadamente —
+// ver comentário na migration sobre a fatia 3, fora de escopo). Mesmo
+// padrão CAS de registrarBaixaContaReceber: só marca se ainda estiver
+// PENDENTE/PARCIAL, pra não sobrescrever uma baixa/cancelamento que
+// aconteceu entre a leitura e a escrita.
+export async function marcarContaReceberEmCobranca(
+  _estadoAnterior: ContaReceberResult | null,
+  formData: FormData
+): Promise<ContaReceberResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "FINANCEIRO"))) {
+    return { ok: false, mensagem: MENSAGEM_SEM_PERMISSAO };
+  }
+
+  const parsed = idSchema.safeParse({ id: formData.get("id") });
+  if (!parsed.success) {
+    return { ok: false, mensagem: "Dados inválidos." };
+  }
+  const { id } = parsed.data;
+
+  const conta = await prisma.contaReceber.findFirst({
+    where: { id, graficaId: usuario.graficaId },
+  });
+  if (!conta) {
+    return { ok: false, mensagem: "Conta a receber não encontrada." };
+  }
+
+  const { count } = await prisma.contaReceber.updateMany({
+    where: { id, graficaId: usuario.graficaId, status: { in: ["PENDENTE", "PARCIAL"] } },
+    data: { status: "EM_COBRANCA" },
+  });
+  if (count === 0) {
+    return { ok: false, mensagem: "Só é possível marcar como em cobrança uma conta pendente ou parcial." };
+  }
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "conta_receber.marcar_em_cobranca",
+    entidade: "ContaReceber",
+    entidadeId: id,
+    descricao: `Conta a receber "${conta.descricao}" (${formatoMoeda.format(Number(conta.valor))}) marcada como em cobrança`,
+  });
+
+  revalidarContasReceber(conta.orcamentoId);
+  return { ok: true, mensagem: "Conta marcada como em cobrança." };
+}
+
+// Achado A5 da Parte 4 da auditoria de abrangência (2026-09-09) — "régua de
+// cobrança", fatia 1: baixa por PERDA (calote reconhecido), distinta de
+// CANCELADO (erro de digitação/pedido cancelado) — até aqui os dois casos
+// eram indistinguíveis no relatório. Soft-write-off: não deleta nada, não
+// mexe em BaixaContaReceber (baixas parciais já recebidas antes de a conta
+// ser dada como perdida continuam registradas normalmente — só o SALDO
+// remanescente é que é reconhecido como não recebível). Aceita PENDENTE,
+// PARCIAL ou EM_COBRANCA como origem — uma conta pode ir direto pra perda
+// sem passar por cobrança formal.
+export async function marcarContaReceberPerda(
+  _estadoAnterior: ContaReceberResult | null,
+  formData: FormData
+): Promise<ContaReceberResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "FINANCEIRO"))) {
+    return { ok: false, mensagem: MENSAGEM_SEM_PERMISSAO };
+  }
+
+  const parsed = idSchema.safeParse({ id: formData.get("id") });
+  if (!parsed.success) {
+    return { ok: false, mensagem: "Dados inválidos." };
+  }
+  const { id } = parsed.data;
+
+  const conta = await prisma.contaReceber.findFirst({
+    where: { id, graficaId: usuario.graficaId },
+  });
+  if (!conta) {
+    return { ok: false, mensagem: "Conta a receber não encontrada." };
+  }
+
+  const { count } = await prisma.contaReceber.updateMany({
+    where: { id, graficaId: usuario.graficaId, status: { in: ["PENDENTE", "PARCIAL", "EM_COBRANCA"] } },
+    data: { status: "PERDA" },
+  });
+  if (count === 0) {
+    return { ok: false, mensagem: "Só é possível marcar como perda uma conta pendente, parcial ou em cobrança." };
+  }
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "conta_receber.marcar_perda",
+    entidade: "ContaReceber",
+    entidadeId: id,
+    descricao: `Conta a receber "${conta.descricao}" (${formatoMoeda.format(Number(conta.valor))}) marcada como perda`,
+  });
+
+  revalidarContasReceber(conta.orcamentoId);
+  return { ok: true, mensagem: "Conta marcada como perda." };
 }
 
 // Achado A9 da Parte 4 da auditoria de abrangência (2026-09-09) — registro

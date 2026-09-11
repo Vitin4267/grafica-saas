@@ -167,11 +167,14 @@ export async function buscarDadosExportacaoFinanceira(
     // não só o que venceu dentro da janela. Sem limite inferior de
     // propósito. `lt: fimLiteral` ainda evita mostrar parcela que só vence
     // DEPOIS do período (isso é "a vencer no futuro", fora do que faz
-    // sentido apurar num extrato fechado até uma certa data).
+    // sentido apurar num extrato fechado até uma certa data). EM_COBRANCA
+    // (achado A5 da Parte 4, 2026-09-09) entra aqui também — é exatamente no
+    // relatório pro contador que "em cobrança" separado de "pendente comum"
+    // faz mais diferença (ver comentário em StatusContaReceber no schema).
     prisma.contaReceber.findMany({
       where: {
         graficaId,
-        status: { in: ["PENDENTE", "PARCIAL"] },
+        status: { in: ["PENDENTE", "PARCIAL", "EM_COBRANCA"] },
         vencimento: { lt: fimLiteral },
       },
       include: {

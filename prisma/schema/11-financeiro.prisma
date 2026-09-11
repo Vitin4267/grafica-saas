@@ -128,6 +128,27 @@ model Pagamento {
   // motor de preço do orçamento — este aqui é o valor REAL cobrado.
   valorTaxa Decimal @default(0) @db.Decimal(12, 2)
 
+  // Achado A5 da Parte 4 da auditoria de abrangência (2026-09-09) — juros de
+  // mora e multa por atraso EFETIVAMENTE cobrados (e recebidos) neste
+  // pagamento específico, quando ele quita (total ou parcialmente) uma
+  // ContaReceber vencida. @default(0) aditivo, mesmo raciocínio de valorTaxa
+  // acima: todo Pagamento existente e todo Pagamento novo que não preencher
+  // estes campos continua se comportando exatamente como hoje. NUNCA
+  // calculado/aplicado sozinho — ParametrosGrafica.multaAtrasoPercent/
+  // jurosMoraMensalPercent (01-grafica.prisma) são só a SUGESTÃO exibida na
+  // tela (percentual × dias de atraso), sempre editável pelo usuário no
+  // momento da baixa (ver registrarBaixaContaReceber em
+  // src/app/financeiro/contas-receber/actions.ts). Este valor entra como
+  // linha própria de "receita financeira" no DRE (src/lib/dre.ts/
+  // dre-query.ts) — dinheiro que o cliente pagou A MAIS do que o preço
+  // vendido do orçamento, então não pode ser somado em cima da receita
+  // normal (Orcamento.total) sem inflar a receita bruta por engano.
+  // DELIBERADAMENTE fora de escopo nesta rodada (ver pesquisa-abrangencia-
+  // modulos.md, achado A5): régua de cobrança automática (e-mail/webhook
+  // escalonado pro cliente) — isto aqui é só o valor digitado na baixa.
+  valorJuros Decimal @default(0) @db.Decimal(12, 2)
+  valorMulta Decimal @default(0) @db.Decimal(12, 2)
+
   // Achado A15 da Parte 4 da auditoria de abrangência (2026-09-04) — ONDE
   // (qual conta bancária/caixa) o dinheiro entrou, complementar a `forma`
   // (COMO). Opcional: null = "sem conta especificada" (comportamento de
@@ -410,11 +431,34 @@ model MovimentacaoContaPrepaga {
 // em src/app/orcamento/[id]/actions.ts) — um pagamento parcial ou com sobra
 // não mexia em nada, deixando o sistema contar como recebido dinheiro que
 // nunca entrou. Ver model BaixaContaReceber abaixo.
+//
+// EM_COBRANCA/PERDA — achado A5 da Parte 4 da auditoria de abrangência
+// (2026-09-09, "régua de cobrança + juros/multa" — versão de escopo
+// reduzido, ver comentário completo em registrarBaixaContaReceber e
+// marcarContaReceberEmCobranca/marcarContaReceberPerda em
+// src/app/financeiro/contas-receber/actions.ts). ADD VALUE aditivo, nenhum
+// valor antigo removido/renomeado (mesmo cuidado do achado A11,
+// CARTAO_CREDITO/CARTAO_DEBITO/CHEQUE em FormaPagamento acima) — nenhuma
+// ContaReceber existente muda de status sozinha, e nenhuma transição pra
+// estes dois valores é automática: é sempre o usuário marcando manualmente
+// que uma conta vencida entrou em processo de cobrança (EM_COBRANCA) ou que
+// o dinheiro foi dado como perdido (PERDA). Até aqui um calote só podia
+// virar CANCELADO — que também é usado pra erro de digitação/pedido
+// cancelado — deixando os dois casos indistinguíveis num relatório.
+// EM_COBRANCA continua contando como "em aberto" (dinheiro ainda esperado,
+// só sinalizado como problemático) em todo lugar que soma PENDENTE+PARCIAL
+// — ver comentário em cada call site (exposicao-credito-cliente.ts,
+// fluxo-caixa-query.ts, historico-cliente.ts, exportacao-financeira-query.ts,
+// orcamento/[id]/page.tsx, financeiro/contas-receber/page.tsx). PERDA é
+// tratado como CANCELADO nesses mesmos lugares — dinheiro não é mais
+// esperado, sai de qualquer soma de "a receber".
 enum StatusContaReceber {
   PENDENTE
   PARCIAL
   RECEBIDO
   CANCELADO
+  EM_COBRANCA
+  PERDA
 }
 
 // Uma parcela/pagamento esperado de um Orcamento aprovado — o par simétrico

@@ -13,6 +13,7 @@ function entradaBase(overrides: Partial<EntradaDRE> = {}): EntradaDRE {
     custoFixo: 30_000,
     comissoes: 5_000,
     despesasFinanceiras: 0,
+    receitaFinanceira: 0,
     ...overrides,
   };
 }
@@ -127,5 +128,41 @@ describe("montarDRE — casos de borda", () => {
 
     expect(comFinanceira.resultadoOperacional).toBe(semFinanceira.resultadoOperacional);
     expect(comFinanceira.resultadoLiquido).toBe(semFinanceira.resultadoLiquido - 2_000);
+  });
+});
+
+// Achado A5 da Parte 4 da auditoria de abrangência (2026-09-09) — "régua de
+// cobrança + juros/multa", fatia 2: juros/multa recebidos na baixa de uma
+// ContaReceber viram receita financeira, linha PRÓPRIA do DRE.
+describe("montarDRE — receita financeira (achado A5 da Parte 4)", () => {
+  it("sem receitaFinanceira (0, valor default): resultado idêntico ao caso base — regressão zero", () => {
+    const semJurosMulta = montarDRE(entradaBase());
+    expect(semJurosMulta.resultadoLiquido).toBe(19_000);
+    const porRotulo = new Map(semJurosMulta.linhas.map((l) => [l.rotulo, l]));
+    expect(porRotulo.get("(+) Receita financeira (juros/multa recebidos)")?.valor).toBe(0);
+  });
+
+  it("com receitaFinanceira preenchida: soma no resultado líquido, não mexe no resultado operacional", () => {
+    const semJurosMulta = montarDRE(entradaBase());
+    const comJurosMulta = montarDRE(entradaBase({ receitaFinanceira: 1_500 }));
+
+    expect(comJurosMulta.resultadoOperacional).toBe(semJurosMulta.resultadoOperacional);
+    expect(comJurosMulta.resultadoLiquido).toBe(semJurosMulta.resultadoLiquido + 1_500);
+    // Nunca soma em cima da receita bruta/líquida — juros/multa não é preço
+    // de venda do orçamento (Orcamento.total).
+    expect(comJurosMulta.receitaLiquida).toBe(semJurosMulta.receitaLiquida);
+  });
+
+  it("linha de receita financeira aparece com regime CAIXA e valor positivo", () => {
+    const resultado = montarDRE(entradaBase({ receitaFinanceira: 800 }));
+    const linha = resultado.linhas.find((l) => l.rotulo === "(+) Receita financeira (juros/multa recebidos)");
+
+    expect(linha?.regime).toBe("CAIXA");
+    expect(linha?.valor).toBe(800);
+  });
+
+  it("receita financeira e despesa financeira juntas: resultado líquido = operacional + financeira - despesa", () => {
+    const resultado = montarDRE(entradaBase({ receitaFinanceira: 1_000, despesasFinanceiras: 300 }));
+    expect(resultado.resultadoLiquido).toBe(resultado.resultadoOperacional + 1_000 - 300);
   });
 });
