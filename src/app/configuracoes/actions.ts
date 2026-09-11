@@ -299,6 +299,31 @@ export async function salvarParametros(
   // Cliente.vendedorId (quando preenchido) em vez de Orcamento.usuarioId.
   const comissaoSegueVendedorDoCliente = formData.get("comissaoSegueVendedorDoCliente") === "on";
 
+  // Achado A12 da Parte 4 da auditoria de abrangência (2026-09-09) —
+  // fallback de percentual pro caso "vendedor sem cadastro" (Orcamento.vendedor
+  // só texto livre). Opcional, igual custoTintaPorMl acima — em branco é um
+  // estado válido (representante sem cadastro continua sem gerar comissão,
+  // comportamento de hoje), não erro. Mesma faixa 0-1 de Usuario.comissaoPercent
+  // (fração, não percentual "humano").
+  let comissaoRepresentanteSemCadastroPercent: number | null = null;
+  const comissaoRepresentanteSemCadastroPercentBruto = formData.get(
+    "comissaoRepresentanteSemCadastroPercent"
+  );
+  if (
+    typeof comissaoRepresentanteSemCadastroPercentBruto === "string" &&
+    comissaoRepresentanteSemCadastroPercentBruto.trim() !== ""
+  ) {
+    const valor = Number(comissaoRepresentanteSemCadastroPercentBruto);
+    if (!Number.isFinite(valor) || valor < 0 || valor > 1) {
+      return {
+        ok: false,
+        mensagem:
+          'Valor inválido em "Comissão padrão pra vendedor sem cadastro" — deve ser uma fração entre 0 e 1 (ex: 0.05 = 5%).',
+      };
+    }
+    comissaoRepresentanteSemCadastroPercent = valor;
+  }
+
   // categoriaCustoConsumoPadraoId — FK opcional pra CategoriaCusto ("nenhuma"
   // = cai no fallback "primeira categoria ativa por ordem", ver
   // criarCustoAutomaticoConsumo em src/app/producao/status-transicao.ts).
@@ -500,6 +525,7 @@ export async function salvarParametros(
     data: {
       ...dados,
       comissaoVendedorBase,
+      comissaoRepresentanteSemCadastroPercent,
       custoTintaPorMl,
       termosCondicoesPdf,
       mostrarEspecificacoesTecnicas,
@@ -552,6 +578,19 @@ export async function salvarParametros(
   if ((parametrosAntes?.comissaoVendedorBase ?? "VALOR") !== comissaoVendedorBase) {
     antesTextos.push(`Base de comissão: ${ROTULO_BASE_COMISSAO[parametrosAntes?.comissaoVendedorBase ?? "VALOR"]}`);
     depoisTextos.push(`Base de comissão: ${ROTULO_BASE_COMISSAO[comissaoVendedorBase]}`);
+  }
+
+  const comissaoRepresentanteSemCadastroPercentAntes =
+    parametrosAntes?.comissaoRepresentanteSemCadastroPercent != null
+      ? Number(parametrosAntes.comissaoRepresentanteSemCadastroPercent)
+      : null;
+  if (comissaoRepresentanteSemCadastroPercentAntes !== comissaoRepresentanteSemCadastroPercent) {
+    antesTextos.push(
+      `Comissão padrão pra vendedor sem cadastro: ${comissaoRepresentanteSemCadastroPercentAntes === null ? "—" : `${(comissaoRepresentanteSemCadastroPercentAntes * 100).toFixed(2)}%`}`
+    );
+    depoisTextos.push(
+      `Comissão padrão pra vendedor sem cadastro: ${comissaoRepresentanteSemCadastroPercent === null ? "—" : `${(comissaoRepresentanteSemCadastroPercent * 100).toFixed(2)}%`}`
+    );
   }
 
   const custoTintaAntes = parametrosAntes?.custoTintaPorMl != null ? Number(parametrosAntes.custoTintaPorMl) : null;

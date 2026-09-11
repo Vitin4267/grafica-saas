@@ -66,6 +66,10 @@ export async function marcarComissaoPaga(
     return { ok: false, mensagem: "Esta comissão já está marcada como paga." };
   }
 
+  // Achado A12 da Parte 4 — usuário pode ser null (vendedor sem cadastro,
+  // ver Comissao.representanteNome) ou ter sido removido depois (SetNull).
+  const nomeVendedor = comissao.usuario?.nome ?? comissao.representanteNome ?? "vendedor removido";
+
   const agora = new Date();
   try {
     await prisma.$transaction(async (tx) => {
@@ -89,7 +93,7 @@ export async function marcarComissaoPaga(
       const despesa = await tx.despesa.create({
         data: {
           graficaId: usuario.graficaId,
-          descricao: `Comissão de ${comissao.usuario.nome} — orçamento ${comissao.orcamento.id}`,
+          descricao: `Comissão de ${nomeVendedor} — orçamento ${comissao.orcamento.id}`,
           categoria: "Comissão",
           valor: comissao.valorComissao,
           vencimento: dataInputParaUTC(agora.toISOString().slice(0, 10)),
@@ -117,7 +121,7 @@ export async function marcarComissaoPaga(
     acao: "comissao.marcar_paga",
     entidade: "Comissao",
     entidadeId: comissaoId,
-    descricao: `Comissão de ${comissao.usuario.nome} (orçamento #${comissao.orcamento.id.slice(-6)}) marcada como paga — ${formatoMoeda.format(Number(comissao.valorComissao))} via ${formaPagamento}`,
+    descricao: `Comissão de ${nomeVendedor} (orçamento #${comissao.orcamento.id.slice(-6)}) marcada como paga — ${formatoMoeda.format(Number(comissao.valorComissao))} via ${formaPagamento}`,
   });
 
   revalidatePath("/financeiro/comissoes");

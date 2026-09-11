@@ -181,6 +181,9 @@ model Grafica {
   // Achado A9 da Parte 4 da auditoria de abrangência (2026-09-09) — ver
   // model RetencaoContaReceber (11-financeiro.prisma).
   retencoesContaReceber RetencaoContaReceber[]
+  // Achado A12 da Parte 4 da auditoria de abrangência (2026-09-09) — ver
+  // model RegraComissao (11-financeiro.prisma).
+  regrasComissao        RegraComissao[]
 
   @@map("graficas")
 }
@@ -230,6 +233,22 @@ model ParametrosGrafica {
   // quem já usa o sistema — muitas gráficas pequenas não distinguem "quem
   // atende o cliente" de "quem lança no sistema".
   comissaoSegueVendedorDoCliente Boolean @default(false)
+
+  // Achado A12 da Parte 4 da auditoria de abrangência (2026-09-09) — fallback
+  // de PERCENTUAL (não confundir com comissaoVendedorBase acima, que é a
+  // BASE de cálculo — os dois se combinam) pro caso "vendedor sem cadastro":
+  // orçamento só tem Orcamento.vendedor em texto livre, sem
+  // vendedorUsuarioId nem Cliente.vendedorId, então não existe nenhum
+  // Usuario.comissaoPercent pra ler. Sem este campo (null, comportamento
+  // padrão) e sem nenhuma RegraComissao com usuarioId=null que bata, esse
+  // orçamento continua SEM gerar Comissao — mesma filosofia de regressão
+  // zero por padrão do resto da feature. Só quando a gráfica preenche este
+  // campo (ou cadastra uma RegraComissao coringa) que vendedor-sem-cadastro
+  // passa a gerar comissão de verdade, com Comissao.usuarioId=null +
+  // representanteNome (ver resolverDadosComissao em
+  // src/lib/comissao-aprovacao.ts). NUNCA usado quando existe um Usuario
+  // real pra checar — é estritamente o último recurso do caso sem cadastro.
+  comissaoRepresentanteSemCadastroPercent Decimal? @db.Decimal(5, 4)
 
   // Flags da fase "custo real" (fase-custo-real.md §1.5) — tudo que varia
   // entre gráficas nasce aqui, nunca hardcoded.

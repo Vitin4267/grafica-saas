@@ -63,7 +63,7 @@ import {
 } from "@/lib/orcamento-etiqueta";
 import { parseJsonArray } from "@/lib/form-json";
 import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
-import { calcularValorBase, calcularComissao } from "@/lib/comissao";
+import { resolverDadosComissao } from "@/lib/comissao-aprovacao";
 import {
   removerArquivo,
   resolverContextoArmazenamento,
@@ -209,7 +209,15 @@ export async function atualizarStatusOrcamento(
     const [orcamentoComItens, parametros, previsaoCusto] = await Promise.all([
       prisma.orcamentoItem.findMany({
         where: { orcamentoId, opcaoId: opcaoEscolhidaId },
-        include: { itemGrafica: { select: { precoCompra: true } } },
+        include: {
+          itemGrafica: {
+            select: {
+              precoCompra: true,
+              itemCatalogoId: true,
+              itemCatalogo: { select: { categoria: true } },
+            },
+          },
+        },
       }),
       prisma.parametrosGrafica.findUnique({
         where: { graficaId: usuario.graficaId },
@@ -217,30 +225,12 @@ export async function atualizarStatusOrcamento(
           comissaoVendedorBase: true,
           comissaoEntraNoCustoPedido: true,
           comissaoSegueVendedorDoCliente: true,
+          comissaoRepresentanteSemCadastroPercent: true,
           bloqueiaAoUltrapassarLimiteCredito: true,
         },
       }),
       calcularPrevisaoAprovacaoPedido(orcamentoId, usuario.graficaId, undefined, opcaoEscolhidaId),
     ]);
-
-    // Achado A8 da auditoria de abrangência — a quem a comissão é atribuída.
-    // Leitura tardia direto de Cliente.vendedorId (mesmo princípio de
-    // margemLucroOverride em src/lib/orcamento-precificacao.ts: nunca
-    // snapshotado em Orcamento, sempre lido do cliente no momento em que é
-    // consumido) — aqui o único ponto de consumo é a criação da Comissao,
-    // que acontece uma vez só, no momento da aprovação, então não há
-    // necessidade de um campo novo em Orcamento. Fallback pra
-    // Orcamento.usuarioId (comportamento de hoje) quando a flag está
-    // desligada OU o cliente não tem vendedor atribuído.
-    const vendedorComissaoId =
-      parametros?.comissaoSegueVendedorDoCliente && orcamento.cliente.vendedorId
-        ? orcamento.cliente.vendedorId
-        : orcamento.usuarioId;
-
-    const usuarioVendedor = await prisma.usuario.findUnique({
-      where: { id: vendedorComissaoId },
-      select: { comissaoPercent: true },
-    });
 
     // Total da opção ESCOLHIDA — nunca orcamento.total direto: antes da
     // promoção (que só acontece dentro da transação abaixo, via
@@ -276,33 +266,51 @@ export async function atualizarStatusOrcamento(
       }
     }
 
-    const percentualVendedor = usuarioVendedor?.comissaoPercent
-      ? Number(usuarioVendedor.comissaoPercent)
-      : null;
-    const dadosComissao =
-      percentualVendedor && percentualVendedor > 0
-        ? (() => {
-            const baseCalculo = parametros?.comissaoVendedorBase ?? "VALOR";
-            // Custo real só existe no motor avançado (breakdown.custoTotal, ver
-            // src/lib/pricing/compor.ts) — item SIMPLES usa o preço de compra
-            // ATUAL do produto como estimativa (não é snapshot do momento da
-            // venda; pode ter mudado desde a criação do orçamento). Sem
-            // precoCompra cadastrado, custo 0 pra esse item (conta como lucro
-            // total em vez de travar o cálculo).
-            const itensComCusto = orcamentoComItens.map((item) => {
-              const breakdown = item.breakdown as { custoTotal?: string } | null;
-              const custoTotal = breakdown?.custoTotal
-                ? Number(breakdown.custoTotal)
-                : item.itemGrafica.precoCompra
-                  ? Number(item.itemGrafica.precoCompra) * item.quantidade
-                  : 0;
-              return { precoTotal: Number(item.precoTotal), custoTotal };
-            });
-            const valorBase = calcularValorBase(totalEscolhidoNumero, itensComCusto, baseCalculo);
-            const valorComissao = calcularComissao(valorBase, percentualVendedor);
-            return { baseCalculo, valorBase, valorComissao };
-          })()
-        : null;
+    // Achado A12 da Parte 4 da auditoria de abrangência — quem é o vendedor
+    // (achado A8, cliente/vendedorUsuarioId/vendedor-texto/fallback de
+    // sempre) e quanto ele recebe (RegraComissao por especificidade, senão
+    // Usuario.comissaoPercent, senão fallback de vendedor-sem-cadastro) —
+    // tudo resolvido em src/lib/comissao-aprovacao.ts, compartilhado com
+    // responderOrcamentoPublico (src/app/o/[token]/actions.ts).
+    //
+    // Custo real só existe no motor avançado (breakdown.custoTotal, ver
+    // src/lib/pricing/compor.ts) — item SIMPLES usa o preço de compra ATUAL
+    // do produto como estimativa (não é snapshot do momento da venda; pode
+    // ter mudado desde a criação do orçamento). Sem precoCompra cadastrado,
+    // custo 0 pra esse item (conta como lucro total em vez de travar o
+    // cálculo).
+    const itensComCusto = orcamentoComItens.map((item) => {
+      const breakdown = item.breakdown as { custoTotal?: string } | null;
+      const custoTotal = breakdown?.custoTotal
+        ? Number(breakdown.custoTotal)
+        : item.itemGrafica.precoCompra
+          ? Number(item.itemGrafica.precoCompra) * item.quantidade
+          : 0;
+      return {
+        precoTotal: Number(item.precoTotal),
+        custoTotal,
+        itemCatalogoId: item.itemGrafica.itemCatalogoId,
+        categoria: item.itemGrafica.itemCatalogo.categoria,
+      };
+    });
+    const dadosComissao = await resolverDadosComissao({
+      graficaId: usuario.graficaId,
+      parametros: parametros
+        ? {
+            comissaoVendedorBase: parametros.comissaoVendedorBase,
+            comissaoSegueVendedorDoCliente: parametros.comissaoSegueVendedorDoCliente,
+            comissaoRepresentanteSemCadastroPercent: parametros.comissaoRepresentanteSemCadastroPercent
+              ? Number(parametros.comissaoRepresentanteSemCadastroPercent)
+              : null,
+          }
+        : null,
+      clienteVendedorId: orcamento.cliente.vendedorId,
+      orcamentoUsuarioId: orcamento.usuarioId,
+      orcamentoVendedorUsuarioId: orcamento.vendedorUsuarioId,
+      orcamentoVendedorTexto: orcamento.vendedor,
+      totalEscolhido: totalEscolhidoNumero,
+      itens: itensComCusto,
+    });
 
     // Compare-and-swap: só transiciona (e cria pedido/comissão) se o status
     // AINDA for o que validamos — senão duas transições concorrentes (ex: link
@@ -412,9 +420,10 @@ export async function atualizarStatusOrcamento(
           create: {
             graficaId: usuario.graficaId,
             orcamentoId,
-            usuarioId: vendedorComissaoId,
+            usuarioId: dadosComissao.usuarioId,
+            representanteNome: dadosComissao.representanteNome,
             baseCalculo: dadosComissao.baseCalculo,
-            percentualAplicado: percentualVendedor!,
+            percentualAplicado: dadosComissao.percentualAplicado,
             valorBase: dadosComissao.valorBase,
             valorComissao: dadosComissao.valorComissao,
           },

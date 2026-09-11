@@ -53,6 +53,7 @@ export default async function ConfiguracoesPage() {
     diasFuncionamento,
     diasAlertaValidadeEstoque,
     comissaoSegueVendedorDoCliente,
+    comissaoRepresentanteSemCadastroPercent,
     paginasPorCadernoPadrao,
   } = await prisma.parametrosGrafica.findUniqueOrThrow({
     where: { graficaId: usuario.graficaId },
@@ -84,6 +85,7 @@ export default async function ConfiguracoesPage() {
       diasFuncionamento: true,
       diasAlertaValidadeEstoque: true,
       comissaoSegueVendedorDoCliente: true,
+      comissaoRepresentanteSemCadastroPercent: true,
       paginasPorCadernoPadrao: true,
     },
   });
@@ -194,6 +196,9 @@ export default async function ConfiguracoesPage() {
           diasFuncionamento={diasFuncionamento}
           diasAlertaValidadeEstoque={diasAlertaValidadeEstoque}
           comissaoSegueVendedorDoCliente={comissaoSegueVendedorDoCliente}
+          comissaoRepresentanteSemCadastroPercent={
+            comissaoRepresentanteSemCadastroPercent ? Number(comissaoRepresentanteSemCadastroPercent) : null
+          }
           paginasPorCadernoPadrao={paginasPorCadernoPadrao}
           situacaoAliquotaSimples={situacaoAliquotaSimples}
         />

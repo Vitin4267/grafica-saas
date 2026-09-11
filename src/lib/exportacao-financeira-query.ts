@@ -253,7 +253,8 @@ export async function buscarDadosExportacaoFinanceira(
 
   const comissoes: LinhaComissao[] = comissoesBrutas.map((c) => ({
     id: c.id,
-    vendedorNome: c.usuario.nome,
+    // Achado A12 da Parte 4 — vendedor sem cadastro (ver Comissao.representanteNome).
+    vendedorNome: c.usuario?.nome ?? c.representanteNome ?? "Vendedor removido",
     clienteNome: c.orcamento.cliente.nome,
     filialNome: c.orcamento.filial?.nome ?? null,
     valorComissao: paraDecimal(c.valorComissao.toString()),

@@ -245,6 +245,9 @@ model ItemCatalogo {
 
   grafica      Grafica?      @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   itensGrafica ItemGrafica[]
+  // Achado A12 da Parte 4 da auditoria de abrangência (2026-09-09) — ver
+  // model RegraComissao (11-financeiro.prisma).
+  regrasComissao RegraComissao[]
 
   // Nota: como o Postgres trata NULL como distinto em índices únicos, esta
   // constraint não impede globais (graficaId=null) duplicados entre si — por

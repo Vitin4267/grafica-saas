@@ -474,9 +474,12 @@ export async function cancelarPedido(
           where: { orcamentoId: pedido.orcamentoId, status: "PENDENTE" },
         });
         if (comissaoParaCancelar) {
+          // estornadoEm: achado A12 da Parte 4 (2026-09-09) — mesmo padrão de
+          // CustoPedido.estornadoEm, carimbado JUNTO com o status pra quem
+          // precisar do "quando" sem depender de LogAuditoria.
           await tx.comissao.update({
             where: { id: comissaoParaCancelar.id },
-            data: { status: "CANCELADA" },
+            data: { status: "CANCELADA", estornadoEm: new Date() },
           });
           comissoesCanceladas = [
             { id: comissaoParaCancelar.id, valorComissao: comissaoParaCancelar.valorComissao },
