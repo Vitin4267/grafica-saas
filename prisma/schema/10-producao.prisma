@@ -98,6 +98,11 @@ model ApontamentoEtapa {
   // de ParadaPedido.apontamentoEtapaId (opcional: nem toda parada aponta pra
   // um apontamento específico, ver comentário lá).
   paradas             ParadaPedido[]
+  // Achado D1 da auditoria de abrangência (Parte 2/Produção) — lado inverso
+  // de AprovacaoProducao.apontamentoEtapaId (opcional: nem toda aprovação
+  // consegue se amarrar limpo a UM apontamento específico, ver comentário
+  // lá).
+  aprovacoesProducao  AprovacaoProducao[]
 
   @@index([graficaId])
   @@index([pedidoId])
@@ -313,6 +318,13 @@ model Pedido {
   // prisma/schema/11-financeiro.prisma). [] pra TODO pedido que nunca teve
   // uma despesa vinculada — comportamento de sempre, sem migração de dado.
   despesas            Despesa[]
+  // Achado D1 da auditoria de abrangência (Parte 2/Produção) — aprovações
+  // de qualidade registradas DENTRO da produção (OK de máquina, inspeção,
+  // prova de contrato...), ver model AprovacaoProducao. [] pra TODO pedido
+  // de gráfica que nunca ligou EtapaGrafica.exigeAprovacaoQualidade em
+  // nenhuma etapa (comportamento padrão, opt-in) ou que simplesmente nunca
+  // teve uma aprovação registrada manualmente.
+  aprovacoesProducao  AprovacaoProducao[]
 
   @@index([graficaId])
   @@map("pedidos")
@@ -453,11 +465,128 @@ model EtapaGrafica {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
+  // Achado D1 da auditoria de abrangência (Parte 2/Produção,
+  // pesquisa-abrangencia-modulos.md, 2026-09-11) — gate opt-in, MESMO
+  // formato/espírito dos dois gates de arte que já existem em
+  // avancarStatusPedido (src/app/producao/status-transicao.ts): "só bloqueia
+  // quem usa a feature". Quando true, avancarStatusPedido passa a exigir
+  // pelo menos uma AprovacaoProducao com resultado APROVADO/
+  // APROVADO_COM_RESSALVA pra este pedido antes de deixar SAIR deste
+  // status. @default(false) em TODAS as linhas (bootstrap e migração) —
+  // uma gráfica que nunca abre esta opção continua 100% igual a hoje.
+  //
+  // Deliberadamente NÃO amarrado a um model de "fluxo configurável" (a
+  // proposta original do achado D1 falava em EtapaFluxo.exigeAprovacaoQualidade,
+  // que dependeria de uma Fase 2 estrutural do achado A1 nunca construída) —
+  // EtapaGrafica já dá a granularidade certa (uma linha por etapa/status de
+  // cada gráfica), ver correção registrada no relatório desta rodada.
+  exigeAprovacaoQualidade Boolean @default(false)
+
   grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
 
   @@unique([graficaId, status])
   @@index([graficaId])
   @@map("etapas_grafica")
+}
+
+// Achado D1 da auditoria de abrangência (Parte 2/Produção,
+// pesquisa-abrangencia-modulos.md, 2026-09-11) — hoje existe aprovação de
+// ARTE (Pedido.arteUrl/arteAprovadaEm/arteLinkToken, voltada ao CLIENTE,
+// pré-produção — gate em status === "ARTE") mas nada DENTRO da produção:
+// nenhum "aprovar a primeira folha antes de rodar as outras 20 mil"
+// (prática padrão de mercado — após ajustes de máquina, roda-se uma
+// impressão de teste; só depois da aprovação desse teste a máquina roda em
+// grande quantidade), nenhuma inspeção final registrada, nenhuma foto de
+// conferência. A etapa CONFERENCIA existia só como nome de coluna no
+// Kanban, sem guardar nenhum dado de conferência — este model é esse dado.
+//
+// ESCOPO DELIBERADAMENTE REDUZIDO nesta rodada: os 5 tipos abaixo são
+// registrados INTERNAMENTE, por um usuário do sistema — nunca pelo
+// cliente. AMOSTRA_CLIENTE (BAT/boneco físico aprovado pelo CLIENTE via
+// link público, reaproveitando o padrão /a/[token] que a aprovação de arte
+// já tem) fica FORA de escopo: é uma superfície pública NOVA (token, rota,
+// e-mail) que multiplica o raio de teste/segurança por pouco ganho
+// imediato — o gate interno já resolve a parte que mais dói ("não deixar
+// rodar 20 mil folhas sem alguém aprovar a primeira"). O valor de enum fica
+// cadastrado (não custa nada, evita migration futura só pra isso), mas sem
+// nenhuma tela pública nem link/token construído pra ele — se alguém
+// registrar um AMOSTRA_CLIENTE hoje, é só um registro interno igual aos
+// outros, sem fluxo de cliente nenhum por trás.
+enum TipoAprovacaoProducao {
+  OK_MAQUINA // primeira folha/peça, aprovação interna — o caso de uso central deste achado
+  PROVA_CONTRATO // prova digital calibrada aprovada pelo cliente — registrada aqui internamente nesta rodada (sem fluxo público próprio)
+  AMOSTRA_CLIENTE // BAT/boneco físico — fluxo público/token FORA DE ESCOPO nesta rodada, ver comentário acima
+  INSPECAO_PROCESSO
+  INSPECAO_FINAL
+  OUTRO
+}
+
+enum ResultadoAprovacao {
+  APROVADO
+  APROVADO_COM_RESSALVA
+  REPROVADO
+}
+
+// Um registro de aprovação/inspeção de qualidade DENTRO da produção — não
+// confundir com a aprovação de ARTE (pré-produção, cliente, ver
+// Pedido.arteUrl acima). O gate opt-in em avancarStatusPedido (ver
+// EtapaGrafica.exigeAprovacaoQualidade) exige pelo menos um registro
+// aqui com resultado APROVADO/APROVADO_COM_RESSALVA antes de sair da
+// etapa marcada — REPROVADO nunca libera a transição.
+model AprovacaoProducao {
+  id        String @id @default(cuid())
+  graficaId String
+  pedidoId  String
+
+  // Qual passagem pela etapa gerou esta aprovação, quando dá pra amarrar
+  // limpo — resolvido pela action como "o ApontamentoEtapa ABERTO
+  // (finalizadoEm null) do pedido no momento do registro", mesmo critério
+  // já usado por ParadaPedido.apontamentoEtapaId. Opcional: pedidos sem
+  // nenhum apontamento aberto (raro, ex: dado legado) ainda podem registrar
+  // aprovação vinculada só por pedidoId — decisão de escopo desta rodada
+  // (documentada no relatório), o gate em avancarStatusPedido sempre
+  // valida por pedidoId + status atual, nunca exige o vínculo fino.
+  apontamentoEtapaId String?
+
+  tipo      TipoAprovacaoProducao
+  // Obrigatório quando tipo=OUTRO — validado em app (nunca CHECK no banco),
+  // mesmo padrão de todo xxxOutro do sistema (ex: MotivoRefugoOutro acima).
+  tipoOutro String?
+
+  resultado ResultadoAprovacao
+
+  // Usuario que registrou, quando é um usuário cadastrado logado — SetNull
+  // preserva o histórico se o usuário for removido depois.
+  aprovadoPorId String?
+  // Snapshot de nome quando NÃO é um Usuario cadastrado que registrou (ex:
+  // operador do chão de fábrica sem login próprio no sistema) — não
+  // verificado, vale como registro. Mesmo padrão de
+  // ApontamentoEtapa.operadorNomeDeclarado.
+  aprovadoPorNomeDeclarado String?
+
+  // Foto opcional da folha/peça aprovada, reaproveitando ArquivoArmazenado
+  // (razão de armazenamento/cota já usado por arte e logo — ver
+  // src/lib/billing/armazenamento.ts). referenciaId da linha em
+  // ArquivoArmazenado correspondente é O ID DESTA AprovacaoProducao (não o
+  // pedidoId) — ver comentário em TipoArquivoArmazenado.FOTO_APROVACAO_PRODUCAO
+  // pro motivo.
+  arquivoId String?
+
+  observacao String?
+
+  createdAt DateTime @default(now())
+
+  grafica          Grafica            @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  pedido           Pedido             @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  apontamentoEtapa ApontamentoEtapa?  @relation(fields: [apontamentoEtapaId], references: [id], onDelete: SetNull)
+  aprovadoPor      Usuario?           @relation(fields: [aprovadoPorId], references: [id], onDelete: SetNull)
+  arquivo          ArquivoArmazenado? @relation(fields: [arquivoId], references: [id], onDelete: SetNull)
+
+  @@index([graficaId, pedidoId])
+  @@index([apontamentoEtapaId])
+  @@index([aprovadoPorId])
+  @@index([arquivoId])
+  @@map("aprovacoes_producao")
 }
 
 enum StatusEntrega {

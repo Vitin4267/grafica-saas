@@ -83,6 +83,12 @@ export type EtapaGraficaResolvida = {
   rotulo: string;
   rotuloCustom: string | null;
   ordem: number;
+  // Achado D1 da auditoria de abrangência (Parte 2/Produção, 2026-09-11) —
+  // gate opt-in de aprovação de qualidade dentro da produção (ver model
+  // AprovacaoProducao). Lido por avancarStatusPedido a partir daqui (não
+  // uma query própria) — 0 custo extra além do que resolverEtapasGrafica já
+  // paga pra toda transição.
+  exigeAprovacaoQualidade: boolean;
 };
 
 export type EtapasGraficaResolvidas = {
@@ -129,6 +135,7 @@ export async function resolverEtapasGrafica(graficaId: string): Promise<EtapasGr
     rotulo: linha.rotulo ?? ROTULOS_STATUS_PEDIDO[linha.status],
     rotuloCustom: linha.rotulo,
     ordem: linha.ordem,
+    exigeAprovacaoQualidade: linha.exigeAprovacaoQualidade,
   }));
 
   const sequencia = todas.filter((etapa) => etapa.ativa).map((etapa) => etapa.status);

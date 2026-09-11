@@ -37,6 +37,7 @@ export default async function EtapasProducaoPage() {
     rotuloCustom: etapa.rotuloCustom,
     ordem: etapa.ordem,
     sempreAtiva: ETAPAS_SEMPRE_ATIVAS.includes(etapa.status),
+    exigeAprovacaoQualidade: etapa.exigeAprovacaoQualidade,
   }));
 
   return (

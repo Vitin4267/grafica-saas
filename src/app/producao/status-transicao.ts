@@ -31,6 +31,7 @@ import {
 } from "@/lib/apontamento-etapa";
 import { gerarContasReceberDaEntrega } from "@/lib/condicao-pagamento";
 import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
+import { resultadoLiberaTransicao } from "@/lib/aprovacao-producao-status";
 import { calcularQuantidadeConsumidaFichaProduto } from "@/lib/baixa-estoque-substrato";
 import { resolverOrigemPublica } from "@/lib/url-publica";
 import { dispararEventoEmail } from "@/lib/email/webhook-email";
@@ -610,6 +611,53 @@ export async function avancarStatusPedido(
 
   const proximoStatus = etapas.sequencia[indiceAtual + 1];
   const statusAnterior = pedido.status;
+
+  // Achado D1 da auditoria de abrangência (Parte 2/Produção) — TERCEIRO gate
+  // opt-in no mesmo formato dos dois gates de arte acima (linhas ~554-587),
+  // mas por DENTRO da produção: a etapa que o pedido está SAINDO (não a de
+  // destino) exige uma aprovação de qualidade registrada internamente antes
+  // de liberar a transição (ver EtapaGrafica.exigeAprovacaoQualidade no
+  // schema — @default(false); uma gráfica que nunca liga isso não paga
+  // nenhuma query extra além da já paga por `etapas` acima, e passa por
+  // aqui sem nenhuma mudança de comportamento). REPROVADO nunca libera.
+  const etapaAtualConfig = etapas.todas.find((etapa) => etapa.status === statusAnterior);
+  if (etapaAtualConfig?.exigeAprovacaoQualidade) {
+    // Amarra a exigência à passagem ATUAL do pedido por esta etapa (o
+    // ApontamentoEtapa aberto agora, mesmo critério de
+    // ParadaPedido.apontamentoEtapaId em parada-actions.ts) — sem isso, uma
+    // aprovação registrada numa passagem ANTERIOR por este mesmo status (ex:
+    // pedido retrabalhado — achado D2 — e reenviado à mesma etapa)
+    // liberaria a transição sem ninguém ter de fato aprovado a rodada
+    // atual. Quando não há apontamento aberto pra esta etapa (caso raro —
+    // pedido sem histórico de ApontamentoEtapa pra ela, ex: dado anterior
+    // ao achado B1/B2), cai pro fallback documentado no schema: aceita
+    // qualquer aprovação deste PEDIDO (sem amarrar por passagem) — decisão
+    // de escopo desta rodada, deliberadamente mais permissiva só nesse
+    // caso-limite, nunca mais restritiva que o caminho normal.
+    const apontamentoAtual = await prisma.apontamentoEtapa.findFirst({
+      where: { pedidoId: pedido.id, status: statusAnterior, finalizadoEm: null },
+      select: { id: true },
+    });
+    const aprovacoesDaPassagem = await prisma.aprovacaoProducao.findMany({
+      where: {
+        pedidoId: pedido.id,
+        ...(apontamentoAtual ? { apontamentoEtapaId: apontamentoAtual.id } : {}),
+      },
+      select: { resultado: true },
+    });
+    const existeAprovacaoValida = aprovacoesDaPassagem.some((a) => resultadoLiberaTransicao(a.resultado));
+    if (!existeAprovacaoValida) {
+      // Distingue "nada registrado ainda" de "só reprovação registrada" —
+      // mensagem mais clara pro operador em cada caso.
+      const existeReprovacao = aprovacoesDaPassagem.some((a) => a.resultado === "REPROVADO");
+      return {
+        ok: false,
+        mensagem: existeReprovacao
+          ? "A aprovação de qualidade desta etapa foi reprovada — registre uma nova aprovação antes de continuar."
+          : "Esta etapa exige aprovação de qualidade antes de avançar.",
+      };
+    }
+  }
 
   // Achado B3 — normaliza o refugo recebido: só há baixa a aplicar quando o
   // operador de fato reportou quantidadeRefugo > 0 (quantidadeRefugo=0 ou

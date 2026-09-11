@@ -43,6 +43,12 @@ export type PedidoKanban = {
   // pedido, mesmo indicador de PedidoLinha.tsx. null quando não há nenhuma
   // parada ativa.
   chipParada: ReactNode;
+  // Achado D1 da auditoria de abrangência (Parte 2/Produção, 2026-09-11) —
+  // "Aguardando aprovação de qualidade" quando a etapa ATUAL exige
+  // aprovação (ver EtapaGrafica.exigeAprovacaoQualidade) e ainda não existe
+  // uma válida pra passagem atual, mesmo indicador de PedidoLinha.tsx. null
+  // nos demais casos.
+  chipAprovacaoPendente: ReactNode;
   // null quando o usuário não tem CUSTOS.podeVer — mesma regra de
   // producao/page.tsx (nunca manda o valor real pro client nesse caso).
   valorTotal: number | null;
@@ -447,6 +453,7 @@ function KanbanCardConteudo({
       {pedido.chipAtraso}
       {pedido.chipTerceirizacao}
       {pedido.chipParada}
+      {pedido.chipAprovacaoPendente}
       {/* Achado C1 — crachá read-only (a edição de verdade fica na lista,
           ver PrioridadePedidoSeletor em PedidoLinha.tsx); só aparece quando
           já saiu do padrão "Normal" (0), pra não poluir todo card. */}

@@ -115,6 +115,15 @@ model Usuario {
   // Achado A12 da Parte 4 da auditoria de abrangência (2026-09-09) — ver
   // model RegraComissao (11-financeiro.prisma).
   regrasComissao                RegraComissao[]
+  // Achado D1 da Parte 2 (Produção) da auditoria de abrangência
+  // (2026-09-11) — usuários cadastrados que registraram uma
+  // AprovacaoProducao (ver aprovadoPorId no model, 10-producao.prisma).
+  // Distinto de operadorId em ApontamentoEtapa (sem FK, de propósito):
+  // aqui a decisão foi manter o vínculo formal porque quem REGISTRA uma
+  // aprovação de qualidade é sempre um usuário logado (nunca um canal sem
+  // login) — SetNull preserva o registro histórico mesmo se o usuário for
+  // removido depois.
+  aprovacoesProducaoRegistradas AprovacaoProducao[]
 
   @@index([graficaId])
   @@map("usuarios")
