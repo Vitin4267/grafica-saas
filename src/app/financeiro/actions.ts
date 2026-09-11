@@ -12,6 +12,7 @@ import { formatoMoeda } from "@/lib/moeda";
 import { despesaSchema, marcarComoPagaSchema } from "./schema";
 import { saldoDespesa } from "@/lib/baixa-financeira";
 import { paraDecimal } from "@/lib/pricing/decimal";
+import { criarCustoAutomaticoDespesa } from "@/lib/custo-pedido";
 
 export type DespesaResult = { ok: boolean; mensagem: string };
 
@@ -88,6 +89,24 @@ async function resolverFornecedorDespesa(
   return { ok: true, fornecedorId: fornecedor.id };
 }
 
+// Achado Fin-A1 da Parte 4 da auditoria de abrangência (2026-09-11) — mesma
+// validação de isolamento de tenant de resolverFilialDespesa/
+// resolverFornecedorDespesa, agora pra pedidoId. undefined = "sem pedido
+// vinculado", mesmo comportamento de hoje.
+async function resolverPedidoDespesa(
+  graficaId: string,
+  pedidoId: string | undefined
+): Promise<{ ok: true; pedidoId: string | null } | { ok: false; mensagem: string }> {
+  if (!pedidoId) {
+    return { ok: true, pedidoId: null };
+  }
+  const pedido = await prisma.pedido.findFirst({ where: { id: pedidoId, graficaId } });
+  if (!pedido) {
+    return { ok: false, mensagem: "Pedido não encontrado." };
+  }
+  return { ok: true, pedidoId: pedido.id };
+}
+
 // Achado A15 — mesma validação, agora pra contaFinanceiraId (usado só em
 // marcarComoPaga, ver comentário lá).
 async function resolverContaFinanceiraDespesa(
@@ -125,6 +144,7 @@ export async function criarDespesa(
     recorrenciaAteEm: formData.get("recorrenciaAteEm") ?? undefined,
     filialId: formData.get("filialId") ?? undefined,
     fornecedorId: formData.get("fornecedorId") ?? undefined,
+    pedidoId: formData.get("pedidoId") ?? undefined,
   });
   if (!parsed.success) {
     return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Dados inválidos." };
@@ -142,6 +162,10 @@ export async function criarDespesa(
   if (!dadosFornecedor.ok) {
     return { ok: false, mensagem: dadosFornecedor.mensagem };
   }
+  const dadosPedido = await resolverPedidoDespesa(usuario.graficaId, parsed.data.pedidoId);
+  if (!dadosPedido.ok) {
+    return { ok: false, mensagem: dadosPedido.mensagem };
+  }
 
   const recorrente = formData.get("recorrente") === "on";
   const valorVariavel = formData.get("valorVariavel") === "on";
@@ -151,7 +175,10 @@ export async function criarDespesa(
   // depois do create. Os dois ficam na mesma transação pra nunca deixar uma
   // despesa "recorrente: true" mas sem serieRecorrenciaId visível pra quem
   // ler entre o create e o update (ex: gerarDespesasRecorrentesPendentes
-  // rodando ao mesmo tempo).
+  // rodando ao mesmo tempo). Achado Fin-A1 da Parte 4 (2026-09-11): o
+  // espelho em CustoPedido (criarCustoAutomaticoDespesa) entra na MESMA
+  // transação — nunca lançar a despesa sem o custo espelhado (ou vice-versa)
+  // por causa de uma falha no meio do caminho.
   const despesa = await prisma.$transaction(async (tx) => {
     const criada = await tx.despesa.create({
       data: {
@@ -167,13 +194,25 @@ export async function criarDespesa(
         valorVariavel,
         filialId: dadosFilial.filialId,
         fornecedorId: dadosFornecedor.fornecedorId,
+        pedidoId: dadosPedido.pedidoId,
       },
     });
-    if (!recorrente) return criada;
-    return tx.despesa.update({
-      where: { id: criada.id },
-      data: { serieRecorrenciaId: criada.id },
+    const final = recorrente
+      ? await tx.despesa.update({
+          where: { id: criada.id },
+          data: { serieRecorrenciaId: criada.id },
+        })
+      : criada;
+
+    await criarCustoAutomaticoDespesa(tx, {
+      graficaId: usuario.graficaId,
+      despesaId: final.id,
+      pedidoId: dadosPedido.pedidoId,
+      categoriaCustoId: dadosCategoria.categoriaCustoId,
+      valor: parsed.data.valor,
     });
+
+    return final;
   });
 
   await registrarAuditoria({
@@ -226,6 +265,7 @@ export async function editarDespesa(
     recorrenciaAteEm: formData.get("recorrenciaAteEm") ?? undefined,
     filialId: formData.get("filialId") ?? undefined,
     fornecedorId: formData.get("fornecedorId") ?? undefined,
+    pedidoId: formData.get("pedidoId") ?? undefined,
   });
   if (!parsed.success) {
     return { ok: false, mensagem: parsed.error.issues[0]?.message ?? "Dados inválidos." };
@@ -243,30 +283,49 @@ export async function editarDespesa(
   if (!dadosFornecedor.ok) {
     return { ok: false, mensagem: dadosFornecedor.mensagem };
   }
+  const dadosPedido = await resolverPedidoDespesa(usuario.graficaId, parsed.data.pedidoId);
+  if (!dadosPedido.ok) {
+    return { ok: false, mensagem: dadosPedido.mensagem };
+  }
 
   const recorrente = formData.get("recorrente") === "on";
   const valorVariavel = formData.get("valorVariavel") === "on";
 
-  await prisma.despesa.update({
-    where: { id: despesaId },
-    data: {
-      descricao: parsed.data.descricao,
-      categoria: dadosCategoria.categoria,
+  // Achado Fin-A1 da Parte 4 (2026-09-11) — mesma transação do update:
+  // criarCustoAutomaticoDespesa decide sozinha se cria/atualiza/estorna o
+  // espelho em CustoPedido conforme pedidoId/categoriaCustoId mudaram nesta
+  // edição (ver comentário completo em src/lib/custo-pedido.ts).
+  await prisma.$transaction(async (tx) => {
+    await tx.despesa.update({
+      where: { id: despesaId },
+      data: {
+        descricao: parsed.data.descricao,
+        categoria: dadosCategoria.categoria,
+        categoriaCustoId: dadosCategoria.categoriaCustoId,
+        valor: parsed.data.valor,
+        vencimento: parsed.data.vencimento,
+        recorrente,
+        periodicidade: parsed.data.periodicidade,
+        recorrenciaAteEm: parsed.data.recorrenciaAteEm ?? null,
+        valorVariavel,
+        filialId: dadosFilial.filialId,
+        fornecedorId: dadosFornecedor.fornecedorId,
+        pedidoId: dadosPedido.pedidoId,
+        // Liga recorrência numa despesa que ainda não tinha série: essa
+        // ocorrência vira o início. Já tinha série (recorrente antes ou
+        // desligando agora): mantém o serieRecorrenciaId como estava — ver
+        // comentário no schema sobre só a ocorrência mais recente decidir.
+        serieRecorrenciaId: recorrente && !despesa.serieRecorrenciaId ? despesaId : despesa.serieRecorrenciaId,
+      },
+    });
+
+    await criarCustoAutomaticoDespesa(tx, {
+      graficaId: usuario.graficaId,
+      despesaId,
+      pedidoId: dadosPedido.pedidoId,
       categoriaCustoId: dadosCategoria.categoriaCustoId,
       valor: parsed.data.valor,
-      vencimento: parsed.data.vencimento,
-      recorrente,
-      periodicidade: parsed.data.periodicidade,
-      recorrenciaAteEm: parsed.data.recorrenciaAteEm ?? null,
-      valorVariavel,
-      filialId: dadosFilial.filialId,
-      fornecedorId: dadosFornecedor.fornecedorId,
-      // Liga recorrência numa despesa que ainda não tinha série: essa
-      // ocorrência vira o início. Já tinha série (recorrente antes ou
-      // desligando agora): mantém o serieRecorrenciaId como estava — ver
-      // comentário no schema sobre só a ocorrência mais recente decidir.
-      serieRecorrenciaId: recorrente && !despesa.serieRecorrenciaId ? despesaId : despesa.serieRecorrenciaId,
-    },
+    });
   });
 
   await registrarAuditoria({
@@ -322,10 +381,24 @@ export async function excluirDespesa(
     descricao: `Despesa "${despesa.descricao}" excluída (${formatoMoeda.format(Number(despesa.valor))})`,
   });
 
-  // Hard delete direto: Comissao.despesaId é a única FK pra Despesa (onDelete:
-  // SetNull), e já foi barrada acima — diferente de Prensa, que bloqueia por
-  // causa de ItemGrafica.prensaId.
-  await prisma.despesa.delete({ where: { id: despesaId } });
+  // Achado Fin-A1 da Parte 4 (2026-09-11) — se esta despesa tinha um
+  // CustoPedido espelhado (ver criarCustoAutomaticoDespesa em
+  // src/lib/custo-pedido.ts), ESTORNA antes de excluir (nunca deleta, mesmo
+  // padrão de cancelarPedido em src/app/producao/actions.ts) — o custo real
+  // do pedido sai da soma de lucro, mas o histórico do lançamento continua
+  // existindo pra auditoria. A FK CustoPedido.despesaId (onDelete: SetNull)
+  // cuida sozinha de zerar o vínculo quando a despesa for excluída logo
+  // abaixo, na mesma transação.
+  await prisma.$transaction(async (tx) => {
+    await tx.custoPedido.updateMany({
+      where: { despesaId, estornadoEm: null },
+      data: { estornadoEm: new Date() },
+    });
+    // Hard delete direto: Comissao.despesaId é a única outra FK pra Despesa
+    // (onDelete: SetNull), e já foi barrada acima — diferente de Prensa, que
+    // bloqueia por causa de ItemGrafica.prensaId.
+    await tx.despesa.delete({ where: { id: despesaId } });
+  });
 
   revalidarFinanceiro();
   redirect("/financeiro");

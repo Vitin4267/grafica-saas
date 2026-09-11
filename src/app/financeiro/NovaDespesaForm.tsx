@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
+import { formatoMoeda } from "@/lib/moeda";
 import { CampoCategoriaDespesa } from "./CampoCategoriaDespesa";
 import { ROTULO_PERIODICIDADE } from "./periodicidade";
 import { criarDespesa } from "./actions";
@@ -13,14 +14,26 @@ export function NovaDespesaForm({
   categoriasCusto,
   filiais = [],
   fornecedores = [],
+  pedidos = [],
 }: {
   categoriasCusto: { id: string; nome: string }[];
   filiais?: { id: string; nome: string }[];
   // Achado A5 da Parte 3 (Compras) da auditoria de abrangência (2026-09-09).
   fornecedores?: { id: string; nome: string }[];
+  // Achado Fin-A1 da Parte 4 da auditoria de abrangência (2026-09-11).
+  pedidos?: { id: string; clienteNome: string }[];
 }) {
   const [state, formAction, isPending] = useActionState(criarDespesa, null);
   const [recorrente, setRecorrente] = useState(false);
+  // Só pra decidir se mostra o aviso "isso também vai lançar um custo neste
+  // pedido" (ver criarCustoAutomaticoDespesa em src/lib/custo-pedido.ts) —
+  // nenhum dos três estados aqui é enviado ao servidor por conta própria,
+  // são os próprios campos do form (name="categoriaCustoId"/"pedidoId"/
+  // "valor") que já fazem isso.
+  const [categoriaCustoId, setCategoriaCustoId] = useState("");
+  const [pedidoId, setPedidoId] = useState("");
+  const [valorDigitado, setValorDigitado] = useState("");
+  const vaiEspelharCusto = categoriaCustoId !== "" && pedidoId !== "" && Number(valorDigitado) > 0;
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
@@ -33,9 +46,41 @@ export function NovaDespesaForm({
           required
           className="sm:col-span-2"
         />
-        <CampoCategoriaDespesa categorias={categoriasCusto} />
-        <Input label="Valor (R$)" name="valor" type="number" step="0.01" min="0.01" required />
+        <CampoCategoriaDespesa categorias={categoriasCusto} onSelecaoMudar={setCategoriaCustoId} />
+        <Input
+          label="Valor (R$)"
+          name="valor"
+          type="number"
+          step="0.01"
+          min="0.01"
+          required
+          value={valorDigitado}
+          onChange={(evento) => setValorDigitado(evento.target.value)}
+        />
         <Input label="Vencimento" name="vencimento" type="date" required className="sm:col-span-2" />
+        {pedidos.length > 0 && (
+          <Select
+            label="Vincular a um pedido (opcional)"
+            name="pedidoId"
+            value={pedidoId}
+            onChange={(evento) => setPedidoId(evento.target.value)}
+            className="sm:col-span-2"
+          >
+            <option value="">Sem pedido específico</option>
+            {pedidos.map((pedido) => (
+              <option key={pedido.id} value={pedido.id}>
+                {pedido.clienteNome} — {pedido.id.slice(-8)}
+              </option>
+            ))}
+          </Select>
+        )}
+        {vaiEspelharCusto && (
+          <div className="sm:col-span-2">
+            <Alert variant="info">
+              Isso também vai lançar um custo de {formatoMoeda.format(Number(valorDigitado))} neste pedido.
+            </Alert>
+          </div>
+        )}
         {filiais.length > 0 && (
           <Select label="Filial (opcional)" name="filialId" defaultValue="" className="sm:col-span-2">
             <option value="">Sem filial específica</option>

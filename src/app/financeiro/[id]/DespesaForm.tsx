@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { ConfirmarExclusao } from "@/components/ui/ConfirmarExclusao";
 import { CampoAjuda } from "@/components/ui/CampoAjuda";
+import { formatoMoeda } from "@/lib/moeda";
 import { CampoCategoriaDespesa } from "../CampoCategoriaDespesa";
 import { ROTULO_PERIODICIDADE } from "../periodicidade";
 import { editarDespesa, excluirDespesa, marcarComoPaga, marcarComoPendente } from "../actions";
@@ -41,6 +42,8 @@ type ValoresDespesa = {
   filialId: string | null;
   // Achado A5 da Parte 3 (Compras) da auditoria de abrangência (2026-09-09).
   fornecedorId: string | null;
+  // Achado Fin-A1 da Parte 4 da auditoria de abrangência (2026-09-11).
+  pedidoId: string | null;
 };
 
 export function DespesaForm({
@@ -49,10 +52,18 @@ export function DespesaForm({
   categoriasCusto,
   filiais = [],
   fornecedores = [],
+  pedidos = [],
   contasFinanceiras = [],
   contaFinanceiraNome,
   filialNome,
   fornecedorNome,
+  pedidoNome,
+  // Achado Fin-A1 da Parte 4 da auditoria de abrangência (2026-09-11) — se
+  // esta despesa já gerou um CustoPedido espelhado (ver
+  // criarCustoAutomaticoDespesa em src/lib/custo-pedido.ts), mostra o valor
+  // ATUAL do espelho (pode ter sido editado manualmente no pedido depois) —
+  // null quando nunca espelhou nada ou o espelho foi estornado.
+  custoPedidoEspelhado,
   status,
   saldo,
   pagoEm,
@@ -68,10 +79,14 @@ export function DespesaForm({
   filiais?: { id: string; nome: string }[];
   // Achado A5 da Parte 3 (Compras) da auditoria de abrangência (2026-09-09).
   fornecedores?: { id: string; nome: string }[];
+  // Achado Fin-A1 da Parte 4 da auditoria de abrangência (2026-09-11).
+  pedidos?: { id: string; clienteNome: string }[];
   contasFinanceiras?: { id: string; nome: string }[];
   contaFinanceiraNome: string | null;
   filialNome: string | null;
   fornecedorNome: string | null;
+  pedidoNome: string | null;
+  custoPedidoEspelhado: { valor: number } | null;
   status: "PENDENTE" | "PARCIAL" | "PAGA";
   // Saldo em aberto — sempre calculado (achado A8 da Parte 4), nunca
   // armazenado. Igual ao valor cheio pra despesa PENDENTE.
@@ -86,6 +101,12 @@ export function DespesaForm({
   const [estadoExclusao, excluirAction, excluindo] = useActionState(excluirDespesa, null);
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
   const [recorrenteAtivo, setRecorrenteAtivo] = useState(recorrente);
+  // Mesmo espírito de NovaDespesaForm — só pra decidir o aviso, os campos de
+  // verdade continuam sendo os inputs nomeados do form abaixo.
+  const [categoriaCustoId, setCategoriaCustoId] = useState(valoresIniciais.categoriaCustoId ?? "");
+  const [pedidoIdEscolhido, setPedidoIdEscolhido] = useState(valoresIniciais.pedidoId ?? "");
+  const [valorDigitado, setValorDigitado] = useState(valoresIniciais.valor);
+  const vaiEspelharCusto = categoriaCustoId !== "" && pedidoIdEscolhido !== "" && Number(valorDigitado) > 0;
 
   useAoMudar(estadoExclusao, (estadoExclusao) => {
     if (estadoExclusao && !estadoExclusao.ok) setConfirmandoExclusao(false);
@@ -104,6 +125,12 @@ export function DespesaForm({
         <p className="text-slate-500">Vencimento: {valoresIniciais.vencimento}</p>
         {filialNome && <p className="text-slate-500">Filial: {filialNome}</p>}
         {fornecedorNome && <p className="text-slate-500">Fornecedor: {fornecedorNome}</p>}
+        {pedidoNome && <p className="text-slate-500">Pedido vinculado: {pedidoNome}</p>}
+        {custoPedidoEspelhado && (
+          <p className="text-slate-500">
+            Custo espelhado no pedido: {formatoMoeda.format(custoPedidoEspelhado.valor)}
+          </p>
+        )}
         <p className="text-slate-500">
           Status:{" "}
           {status === "PAGA"
@@ -231,6 +258,7 @@ export function DespesaForm({
               categorias={categoriasCusto}
               categoriaCustoIdInicial={valoresIniciais.categoriaCustoId}
               categoriaInicial={valoresIniciais.categoria}
+              onSelecaoMudar={setCategoriaCustoId}
             />
             <Input
               label="Valor (R$)"
@@ -238,7 +266,8 @@ export function DespesaForm({
               type="number"
               step="0.01"
               min="0.01"
-              defaultValue={valoresIniciais.valor}
+              value={valorDigitado}
+              onChange={(evento) => setValorDigitado(evento.target.value)}
               required
             />
             <Input
@@ -249,6 +278,30 @@ export function DespesaForm({
               required
               className="col-span-2"
             />
+            {pedidos.length > 0 && (
+              <Select
+                label="Vincular a um pedido (opcional)"
+                name="pedidoId"
+                value={pedidoIdEscolhido}
+                onChange={(evento) => setPedidoIdEscolhido(evento.target.value)}
+                className="col-span-2"
+              >
+                <option value="">Sem pedido específico</option>
+                {pedidos.map((pedido) => (
+                  <option key={pedido.id} value={pedido.id}>
+                    {pedido.clienteNome} — {pedido.id.slice(-8)}
+                  </option>
+                ))}
+              </Select>
+            )}
+            {vaiEspelharCusto && (
+              <div className="col-span-2">
+                <Alert variant="info">
+                  Isso também vai lançar um custo de {formatoMoeda.format(Number(valorDigitado))} neste pedido
+                  {custoPedidoEspelhado ? " (atualiza o custo já lançado)" : ""}.
+                </Alert>
+              </div>
+            )}
             {filiais.length > 0 && (
               <Select
                 label="Filial (opcional)"
