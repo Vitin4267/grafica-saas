@@ -1,5 +1,6 @@
 "use server";
 
+import * as Sentry from "@sentry/nextjs";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
@@ -126,8 +127,10 @@ export async function iniciarCheckout(
       client_reference_id: usuario.graficaId,
       subscription_data: { metadata: { graficaId: usuario.graficaId } },
     });
-  } catch {
+  } catch (erro) {
     await liberarReservaCheckout(usuario.graficaId, reserva.agora);
+    Sentry.captureException(erro, { extra: { graficaId: usuario.graficaId, planoId, intervalo, stripePriceId } });
+    console.error("[assinatura] falha ao criar checkout session", { graficaId: usuario.graficaId, planoId, intervalo }, erro);
     return { ok: false, mensagem: "Não consegui iniciar o checkout no Stripe. Tente novamente." };
   }
 
