@@ -85,6 +85,22 @@ model ApontamentoEtapa {
   // banco, mesmo padrão de todo xxxOutro do sistema).
   motivoRefugoOutro String?
 
+  // Achado Prod-D2 da auditoria de abrangência (Parte 2/Produção,
+  // pesquisa-abrangencia-modulos.md, "Não existe retorno de etapa") — este
+  // apontamento nasceu de um retornarEtapa (src/app/producao/retorno-etapa-actions.ts),
+  // não do avanço normal da FSM. Gravado no apontamento que está sendo
+  // ABERTO (diferente de motivoRefugo acima, gravado no que está sendo
+  // FECHADO) — o retorno é sobre POR QUE o pedido está entrando de novo
+  // nesta etapa, não sobre a etapa que ele acabou de deixar. @default(false)
+  // preserva 100% o comportamento de todo apontamento já existente e de todo
+  // apontamento aberto pelo avanço normal (fecharEAbrirApontamento só marca
+  // true quando o chamador passa o parâmetro `retorno`).
+  ehRetrabalho       Boolean        @default(false)
+  motivoRetorno      MotivoRetorno?
+  // Obrigatório quando motivoRetorno=OUTRO — mesmo padrão de
+  // motivoRefugoOutro acima.
+  motivoRetornoOutro String?
+
   createdAt DateTime @default(now())
 
   grafica             Grafica              @relation(fields: [graficaId], references: [id], onDelete: Cascade)
@@ -139,6 +155,24 @@ enum MotivoRefugo {
   FALHA_ACABAMENTO // laminação bolhada, dobra torta, cola
   MATERIAL_DEFEITUOSO // culpa do fornecedor — ver comentário acima
   ERRO_ARTE_ARQUIVO
+  ERRO_OPERACIONAL
+  OUTRO
+}
+
+// Achado Prod-D2 da auditoria de abrangência (Parte 2/Produção,
+// pesquisa-abrangencia-modulos.md, "Não existe retorno de etapa: reprovado
+// só pode ser CANCELADO") — motivo do retorno de um Pedido pra uma etapa
+// ANTERIOR na sequência (retrabalho), registrado por retornarEtapa
+// (src/app/producao/retorno-etapa-actions.ts). Fechado + OUTRO, mesmo
+// padrão de MotivoRefugo/MotivoParada acima. Distinto de MotivoRefugo: este
+// é sobre por que o PEDIDO INTEIRO volta pra trás na FSM (decisão de quem
+// administra a produção), não sobre material refugado numa etapa
+// específica.
+enum MotivoRetorno {
+  REPROVADO_QUALIDADE
+  ERRO_ARTE
+  MUDANCA_PEDIDO_CLIENTE
+  FALTA_MATERIAL
   ERRO_OPERACIONAL
   OUTRO
 }
@@ -283,6 +317,41 @@ model Pedido {
   // Action alterarPrioridadePedido (src/app/producao/actions.ts), validada
   // contra os 4 valores fixos — nunca um número livre vindo do form.
   prioridade Int @default(0)
+
+  // Achado Prod-D2 da auditoria de abrangência (Parte 2/Produção,
+  // pesquisa-abrangencia-modulos.md, "Não existe retorno de etapa") — trava
+  // contra baixa DUPLICADA de matéria-prima. O bloco de baixa automática em
+  // avancarStatusPedido (src/app/producao/status-transicao.ts, branch
+  // `proximoStatus === "PRODUCAO"`) só verificava o DESTINO da transição, não
+  // se o pedido já tinha passado por ali antes — sem esta trava, um pedido
+  // que RETORNA de etapa (retornarEtapa, ver enum MotivoRetorno acima) e
+  // reentra em PRODUCAO pela sequência normal seria descontado uma SEGUNDA
+  // vez pelo MESMO material já consumido na primeira passagem (o material
+  // físico já saiu do estoque; retrabalho consome MAIS, não de novo do
+  // zero). Setado UMA ÚNICA VEZ, junto com o CAS que muda status pra
+  // PRODUCAO na PRIMEIRA vez — nunca tocado por retornarEtapa (que muda
+  // status livremente sem mexer neste campo) nem por nenhuma passagem
+  // seguinte por PRODUCAO. null = "ainda não baixou" (todo pedido nasce
+  // assim; o gate roda normalmente).
+  //
+  // BACKFILL (migration 20260912__retorno_etapa_producao, aditiva): todo
+  // Pedido cujo status atual já está numa etapa POSTERIOR a PRODUCAO na
+  // sequência canônica (ACABAMENTO/CONFERENCIA/EMBALAGEM/EXPEDICAO/ENTREGUE)
+  // OU que já tem QUALQUER MovimentacaoEstoque tipo SAIDA_PRODUCAO vinculada
+  // (cobre também CANCELADO que chegou a entrar em produção antes de ser
+  // cancelado, e um pedido hoje parado exatamente EM PRODUCAO com material de
+  // verdade já baixado) nasceu com este campo já preenchido — com o
+  // createdAt da PRIMEIRA SAIDA_PRODUCAO daquele pedido quando existe (fonte
+  // mais precisa: é o instante real da baixa), ou Pedido.updatedAt como
+  // aproximação documentada quando não há nenhuma SAIDA_PRODUCAO pra amarrar
+  // (caso residual: pedido chegou a uma etapa pós-PRODUCAO sem nenhum
+  // material com ficha técnica pra descontar — nada a proteger de verdade
+  // nesse caso, mas o campo nasce preenchido por consistência/segurança). Sem
+  // este backfill, TODO pedido histórico que um dia passasse por
+  // retornarEtapa e reentrasse em PRODUCAO ficaria vulnerável à baixa dupla —
+  // a trava só protege pedido NOVO se o campo não nascer retroativamente
+  // preenchido pros que já passaram por produção antes desta migration.
+  baixaEstoqueRealizadaEm DateTime?
 
   grafica   Grafica   @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   orcamento Orcamento @relation(fields: [orcamentoId], references: [id])

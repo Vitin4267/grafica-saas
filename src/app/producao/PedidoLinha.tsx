@@ -13,6 +13,7 @@ import type { AvisoPreflight } from "@/lib/preflight";
 import type { StatusPedido } from "@/generated/prisma/enums";
 import { PrinterIcon } from "@/components/icons";
 import { AvancarPedidoButton } from "./AvancarPedidoButton";
+import { RetornarEtapaBotao } from "./RetornarEtapaBotao";
 import {
   useIniciarImpressao,
   IniciarImpressaoBotao,
@@ -100,6 +101,7 @@ export function PedidoLinha({
   prioridade = 0,
   sequencia,
   rotulos,
+  ehRetrabalho = false,
 }: {
   pedidoId: string;
   orcamentoId: string;
@@ -222,6 +224,12 @@ export function PedidoLinha({
   // client component, não pode ler o banco sozinho.
   sequencia: StatusPedido[];
   rotulos: Record<StatusPedido, string>;
+  // Achado Prod-D2 da auditoria de abrangência (Parte 2/Produção, "Não
+  // existe retorno de etapa") — true quando o ApontamentoEtapa aberto ATUAL
+  // deste pedido nasceu de um retornarEtapa (retrabalho), não do avanço
+  // normal da FSM. Default false pra qualquer chamador que ainda não passe
+  // esta prop, mesmo critério de quantidadePedido/prioridade acima.
+  ehRetrabalho?: boolean;
 }) {
   const [state, formAction, isPending] = useActionState(cancelarPedido, null);
   const [confirmando, setConfirmando] = useState(false);
@@ -242,6 +250,16 @@ export function PedidoLinha({
   // editável (IniciarImpressaoBotao) em vez do botão de um clique só que
   // AvancarPedidoButton usa pros outros status.
   const baixaEstoqueAoAvancar = proximoStatus === "PRODUCAO";
+
+  // Achado Prod-D2 — etapas ATIVAS estritamente ANTERIORES à atual na
+  // sequência resolvida desta gráfica, pro dropdown de destino do retorno
+  // (RetornarEtapaBotao). [] quando o pedido está na primeira etapa ativa
+  // (indiceAtual 0) ou fora da sequência (indiceAtual -1, etapa desativada)
+  // — nesse caso o botão simplesmente não renderiza nada (ver componente).
+  const etapasAnteriores =
+    indiceAtual > 0
+      ? sequencia.slice(0, indiceAtual).map((valor) => ({ valor, rotulo: rotulos[valor] }))
+      : [];
 
   // Ver comentário completo no gate de EntregaPedidoSecao abaixo — "ainda
   // não é produção física" generalizado a partir da sequência resolvida.
@@ -334,6 +352,13 @@ export function PedidoLinha({
             )
           )}
           <StatusBadge status={status} tipo="pedido" rotulo={rotulos[status as StatusPedido]} />
+          {/* Achado Prod-D2 — o apontamento atual nasceu de um retorno de
+              etapa (retrabalho), não do avanço normal da FSM. */}
+          {ehRetrabalho && (
+            <span className="rounded-full bg-orange-50 px-2.5 py-1 text-xs font-medium text-orange-700 dark:bg-orange-950/50 dark:text-orange-300">
+              Retrabalho
+            </span>
+          )}
           {baixaEstoqueAoAvancar
             ? podeEditar && (
                 <IniciarImpressaoBotao estado={iniciarImpressao.estado} onIniciar={iniciarImpressao.iniciar} />
@@ -360,6 +385,20 @@ export function PedidoLinha({
           )}
         </div>
       </div>
+
+      {/* Achado Prod-D2 — SEMPRE PRODUCAO.podeEditar completo (nunca
+          souResponsavelDesteStatus, diferente do avanço normal acima):
+          retornar etapa é decisão de quem administra a produção, não do
+          operador atribuído a uma etapa específica. Mesmo gate de status
+          terminal de "Cancelar" (podeCancelar) — um pedido ENTREGUE/
+          CANCELADO não retorna de etapa (o servidor já rejeita, isto só
+          evita mostrar um formulário que seria recusado no submit). Bloco
+          próprio (fora da linha de botões compacta) porque o formulário
+          expandido é largo — mesmo padrão de EnviarArteForm/"Reportar
+          problema" abaixo. */}
+      {podeEditar && podeCancelar && (
+        <RetornarEtapaBotao pedidoId={pedidoId} etapasAnteriores={etapasAnteriores} />
+      )}
 
       {podeEditar && status === "ARTE" && (
         <EnviarArteForm

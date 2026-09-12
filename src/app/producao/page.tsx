@@ -356,6 +356,11 @@ export default async function ProducaoPage({
             equipamentoId: true,
             impressoraDigitalId: true,
             maquinaSetupPorPecaId: true,
+            // Achado Prod-D2 da auditoria de abrangência (Parte 2/Produção)
+            // — indicador visual "Retrabalho" no card/linha (ver badge em
+            // PedidoLinha.tsx/KanbanBoard.tsx) quando o apontamento ABERTO
+            // atual nasceu de um retornarEtapa.
+            ehRetrabalho: true,
           },
           take: 1,
         },
@@ -624,6 +629,9 @@ export default async function ProducaoPage({
         souResponsavelDesteStatus: etapasResponsavel.has(pedido.status),
         prioridade: pedido.prioridade,
         maquina,
+        // Achado Prod-D2 — mesmo sinal usado na lista abaixo (o apontamento
+        // ABERTO atual, ver `apontamentos` no `include` de cima).
+        ehRetrabalho: pedido.apontamentos[0]?.ehRetrabalho ?? false,
       };
     });
 
@@ -727,6 +735,10 @@ export default async function ProducaoPage({
                 prioridade={pedido.prioridade}
                 sequencia={etapas.sequencia}
                 rotulos={etapas.rotulos}
+                // Achado Prod-D2 — mesmo sinal usado no Kanban acima (o
+                // apontamento ABERTO atual, ver `apontamentos` no `include`
+                // de cima).
+                ehRetrabalho={pedido.apontamentos[0]?.ehRetrabalho ?? false}
                 entrega={
                   pedido.entrega
                     ? {

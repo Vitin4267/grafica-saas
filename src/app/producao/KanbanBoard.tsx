@@ -72,6 +72,14 @@ export type PedidoKanban = {
   // buscarManutencoesAtivas (src/lib/manutencao-maquina-db.ts), já usada em
   // Máquinas e no cadastro de produto.
   maquina: { nome: string; parada: boolean } | null;
+  // Achado Prod-D2 da auditoria de abrangência (Parte 2/Produção,
+  // "Não existe retorno de etapa") — true quando o ApontamentoEtapa aberto
+  // ATUAL deste pedido nasceu de um retornarEtapa (ver
+  // src/app/producao/retorno-etapa-actions.ts), não do avanço normal da
+  // FSM — mesmo indicador de PedidoLinha.tsx, resolvido em producao/page.tsx
+  // a partir do mesmo `apontamentos[0]` já buscado pra `maquina` acima
+  // (nenhuma query extra).
+  ehRetrabalho: boolean;
 };
 
 // Mesma regra de permissão que já decide se PedidoLinha.tsx mostra
@@ -454,6 +462,14 @@ function KanbanCardConteudo({
       {pedido.chipTerceirizacao}
       {pedido.chipParada}
       {pedido.chipAprovacaoPendente}
+      {/* Achado Prod-D2 — mesmo indicador de PedidoLinha.tsx: o apontamento
+          atual nasceu de um retorno de etapa (retrabalho), não do avanço
+          normal. */}
+      {pedido.ehRetrabalho && (
+        <span className="w-fit rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-700 dark:bg-orange-950/50 dark:text-orange-300">
+          Retrabalho
+        </span>
+      )}
       {/* Achado C1 — crachá read-only (a edição de verdade fica na lista,
           ver PrioridadePedidoSeletor em PedidoLinha.tsx); só aparece quando
           já saiu do padrão "Normal" (0), pra não poluir todo card. */}

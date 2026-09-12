@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
-import type { MotivoRefugo, OrigemConfirmacaoEtapa, StatusPedido } from "@/generated/prisma/enums";
+import type { MotivoRefugo, MotivoRetorno, OrigemConfirmacaoEtapa, StatusPedido } from "@/generated/prisma/enums";
 import { validarSelecaoMaquinaOpcional } from "@/lib/manutencao-maquina";
 
 // Achado B1/B2 da Parte 2 (Produção) da auditoria de abrangência: histórico
@@ -188,13 +188,27 @@ export type RefugoParaFechamento = {
   motivoRefugoOutro: string | null;
 };
 
+// Achado Prod-D2 da Parte 2 (Produção) da auditoria de abrangência
+// (pesquisa-abrangencia-modulos.md, "Não existe retorno de etapa") — quando
+// presente, marca o apontamento que está sendo ABERTO (não o fechado, ao
+// contrário de RefugoParaFechamento acima) como retrabalho: ehRetrabalho:true
+// + o motivo do retorno. Usado só por retornarEtapa
+// (src/app/producao/retorno-etapa-actions.ts) — todo call-site existente de
+// fecharEAbrirApontamento (avanço normal da FSM) nunca passa isto, então
+// `undefined` (comportamento de sempre: ehRetrabalho fica no
+// @default(false) do schema) preserva 100% o comportamento de hoje.
+export type RetornoParaAbertura = {
+  motivoRetorno: MotivoRetorno;
+  motivoRetornoOutro: string | null;
+};
+
 // Fecha o apontamento aberto (finalizadoEm=null) do pedido e abre o da etapa
 // que ele acabou de ENTRAR — chamado de DENTRO da mesma transação do CAS de
-// avancarStatusPedido, nunca fora dela (ver comentário em ApontamentoEtapa
-// no schema). `updateMany` (não `update` por id) porque, na prática, pode
-// não haver NENHUM apontamento aberto ainda (pedido criado antes desta
-// feature, sem backfill retroativo — ver achado B1) — nesse caso o updateMany
-// só não afeta nenhuma linha, sem lançar erro.
+// avancarStatusPedido OU de retornarEtapa (achado Prod-D2), nunca fora dela
+// (ver comentário em ApontamentoEtapa no schema). `updateMany` (não `update`
+// por id) porque, na prática, pode não haver NENHUM apontamento aberto ainda
+// (pedido criado antes desta feature, sem backfill retroativo — ver achado
+// B1) — nesse caso o updateMany só não afeta nenhuma linha, sem lançar erro.
 export async function fecharEAbrirApontamento(
   tx: Prisma.TransactionClient,
   params: {
@@ -202,6 +216,7 @@ export async function fecharEAbrirApontamento(
     pedidoId: string;
     proximoStatus: StatusPedido;
     refugo?: RefugoParaFechamento;
+    retorno?: RetornoParaAbertura;
   } & ContextoOrigemAvanco
 ): Promise<void> {
   await tx.apontamentoEtapa.updateMany({
@@ -220,6 +235,9 @@ export async function fecharEAbrirApontamento(
       operadorId: params.operadorId ?? null,
       operadorNomeDeclarado: params.operadorNomeDeclarado ?? null,
       ...(params.selecaoMaquina ?? SELECAO_MAQUINA_VAZIA),
+      ehRetrabalho: params.retorno !== undefined,
+      motivoRetorno: params.retorno?.motivoRetorno ?? null,
+      motivoRetornoOutro: params.retorno?.motivoRetornoOutro ?? null,
     },
   });
 }
