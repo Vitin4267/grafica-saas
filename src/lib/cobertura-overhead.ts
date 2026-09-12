@@ -38,11 +38,20 @@ export interface EntradaCoberturaOverhead {
    */
   custoFixoPago: number;
   /**
-   * COMPETENCIA — soma de `Orcamento.total` aprovado no período. MESMA base
-   * que dre-query.ts usa como `receitaBruta` (o "faturamento" do DRE) — não
-   * é uma base nova inventada aqui.
+   * Achado N20 da Parte 9 da auditoria de código (2026-09-12) — soma, em
+   * R$, de `OrcamentoItem.breakdown.custoDireto` (valor ABSOLUTO por item,
+   * `custoBase + acabamentos + embalagem + frete`, ANTES do overhead — ver
+   * `ResultadoComposicao.custoDireto` em src/lib/pricing/compor.ts) de todos
+   * os itens de orçamentos APROVADOS no período. Esta é a base REAL sobre a
+   * qual `ParametrosGrafica.overheadPercent` incide (`compor.ts:56`:
+   * `overhead = custoDireto × overheadPercent`) — o campo antigo
+   * `receitaBruta` (soma de `Orcamento.total`) NUNCA foi a base certa pra
+   * "que percentual fecharia a conta": receita inclui margem/imposto/
+   * comissão além do custo direto, então dividir custoFixoPago por receita
+   * sempre subestimava o percentual necessário (erro sistemático PRA BAIXO,
+   * empurrando a gráfica a configurar overhead insuficiente).
    */
-  receitaBruta: number;
+  custoDiretoAgregado: number;
 }
 
 export interface ResultadoCoberturaOverhead {
@@ -51,11 +60,13 @@ export interface ResultadoCoberturaOverhead {
   /** Quanto de custo fixo real foi pago no mesmo período. */
   custoFixoPago: number;
   /**
-   * Que percentual de overhead (sobre o faturamento/receita bruta do
-   * período) seria necessário pra cobrir exatamente o custo fixo pago —
-   * ou seja, "que ParametrosGrafica.overheadPercent fecharia a conta".
-   * `null` quando receitaBruta = 0 (nenhum orçamento aprovado no período —
-   * percentual indefinido, evita divisão por zero).
+   * Que percentual de overhead (sobre o CUSTO DIRETO agregado do período,
+   * a mesma base que `compor.ts` usa de verdade — ver comentário de
+   * `custoDiretoAgregado` acima) seria necessário pra cobrir exatamente o
+   * custo fixo pago — ou seja, "que ParametrosGrafica.overheadPercent
+   * fecharia a conta". `null` quando custoDiretoAgregado = 0 (nenhum
+   * orçamento com custo direto rastreado no período — percentual
+   * indefinido, evita divisão por zero).
    */
   percentualQueFecharia: number | null;
   /**
@@ -70,9 +81,11 @@ export interface ResultadoCoberturaOverhead {
 export function calcularCoberturaOverhead(
   entrada: EntradaCoberturaOverhead
 ): ResultadoCoberturaOverhead {
-  const { overheadCobrado, custoFixoPago, receitaBruta } = entrada;
+  const { overheadCobrado, custoFixoPago, custoDiretoAgregado } = entrada;
 
-  const percentualQueFecharia = receitaBruta > 0 ? (custoFixoPago / receitaBruta) * 100 : null;
+  // Achado N20 — base é custoDiretoAgregado, NUNCA receita bruta (ver
+  // comentário completo em EntradaCoberturaOverhead.custoDiretoAgregado).
+  const percentualQueFecharia = custoDiretoAgregado > 0 ? (custoFixoPago / custoDiretoAgregado) * 100 : null;
   const diferenca = custoFixoPago - overheadCobrado;
 
   return {

@@ -9,7 +9,7 @@ function entradaBase(overrides: Partial<EntradaCoberturaOverhead> = {}): Entrada
   return {
     overheadCobrado: 5_000,
     custoFixoPago: 8_000,
-    receitaBruta: 100_000,
+    custoDiretoAgregado: 40_000,
     ...overrides,
   };
 }
@@ -21,15 +21,15 @@ describe("calcularCoberturaOverhead", () => {
     expect(resultado.overheadCobrado).toBe(5_000);
     expect(resultado.custoFixoPago).toBe(8_000);
     expect(resultado.diferenca).toBe(3_000);
-    // 8.000 / 100.000 * 100 = 8%
-    expect(resultado.percentualQueFecharia).toBeCloseTo(8, 10);
+    // 8.000 / 40.000 * 100 = 20%
+    expect(resultado.percentualQueFecharia).toBeCloseTo(20, 10);
   });
 
   it("overhead cobrado cobre MAIS que o custo fixo real — diferença negativa", () => {
     const resultado = calcularCoberturaOverhead(entradaBase({ overheadCobrado: 12_000, custoFixoPago: 8_000 }));
 
     expect(resultado.diferenca).toBe(-4_000);
-    expect(resultado.percentualQueFecharia).toBeCloseTo(8, 10);
+    expect(resultado.percentualQueFecharia).toBeCloseTo(20, 10);
   });
 
   it("overhead cobrado é EXATAMENTE igual ao custo fixo real — diferença zero", () => {
@@ -42,7 +42,7 @@ describe("calcularCoberturaOverhead", () => {
     const resultado = calcularCoberturaOverhead({
       overheadCobrado: 0,
       custoFixoPago: 0,
-      receitaBruta: 0,
+      custoDiretoAgregado: 0,
     });
 
     expect(resultado.overheadCobrado).toBe(0);
@@ -51,14 +51,27 @@ describe("calcularCoberturaOverhead", () => {
     expect(resultado.percentualQueFecharia).toBeNull();
   });
 
-  it("receitaBruta zero mas custo fixo pago > 0 (ex: aluguel pago sem nenhum orçamento aprovado no mês) — percentual indefinido, não Infinity/NaN", () => {
+  it("custoDiretoAgregado zero mas custo fixo pago > 0 (ex: aluguel pago sem nenhum orçamento aprovado no mês) — percentual indefinido, não Infinity/NaN", () => {
     const resultado = calcularCoberturaOverhead({
       overheadCobrado: 0,
       custoFixoPago: 3_000,
-      receitaBruta: 0,
+      custoDiretoAgregado: 0,
     });
 
     expect(resultado.diferenca).toBe(3_000);
     expect(resultado.percentualQueFecharia).toBeNull();
+  });
+
+  it("achado N20 da Parte 9 — base é custoDireto, NUNCA receita bruta: cenário exato do achado (custo fixo R$30k, receita R$100k, custo direto R$40k) tem que dar 75%, não 30%", () => {
+    const resultado = calcularCoberturaOverhead({
+      overheadCobrado: 12_000,
+      custoFixoPago: 30_000,
+      custoDiretoAgregado: 40_000,
+    });
+
+    // Bug original: 30.000 / 100.000 (receita) * 100 = 30% — errado.
+    // Correto: 30.000 / 40.000 (custo direto) * 100 = 75%, a base que
+    // compor.ts de fato usa pra aplicar overheadPercent.
+    expect(resultado.percentualQueFecharia).toBeCloseTo(75, 10);
   });
 });

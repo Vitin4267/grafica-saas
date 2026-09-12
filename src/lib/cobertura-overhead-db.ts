@@ -28,11 +28,13 @@ export async function buscarCoberturaOverhead(
   const semPedidoCancelado = { NOT: { pedido: { status: "CANCELADO" as const } } };
 
   const [orcamentosAprovados, custoFixoAgregado] = await Promise.all([
-    // Receita bruta (mesma base/where clause de dre-query.ts: soma de
-    // Orcamento.total aprovado no período) + breakdown dos itens, pra somar
-    // o overhead cobrado (detalhes.overhead, valor absoluto por item,
-    // gravado em src/lib/pricing/compor.ts e serializado em
-    // src/lib/orcamento-precificacao.ts).
+    // Breakdown dos itens de orçamentos APROVADOS no período, pra somar o
+    // overhead cobrado (detalhes.overhead) e o custo direto agregado
+    // (custoDireto, achado N20 — ver comentário completo em
+    // cobertura-overhead.ts), ambos gravados por src/lib/pricing/compor.ts e
+    // serializados em src/lib/orcamento-precificacao.ts. Orcamento.total NÃO
+    // é mais buscado aqui — era usado como base do "percentual que
+    // fecharia" (achado N20: base errada, corrigida pra custoDireto).
     prisma.orcamento.findMany({
       where: {
         graficaId,
@@ -41,7 +43,6 @@ export async function buscarCoberturaOverhead(
         ...semPedidoCancelado,
       },
       select: {
-        total: true,
         itens: { select: { breakdown: true } },
       },
     }),
@@ -60,12 +61,12 @@ export async function buscarCoberturaOverhead(
     }),
   ]);
 
-  let receitaBrutaDec = new D(0);
   let overheadCobradoDec = new D(0);
+  let custoDiretoAgregadoDec = new D(0);
   for (const orcamento of orcamentosAprovados) {
-    receitaBrutaDec = receitaBrutaDec.plus(String(orcamento.total));
     for (const item of orcamento.itens) {
       overheadCobradoDec = overheadCobradoDec.plus(extrairOverheadDoBreakdown(item.breakdown));
+      custoDiretoAgregadoDec = custoDiretoAgregadoDec.plus(extrairCustoDiretoDoBreakdown(item.breakdown));
     }
   }
 
@@ -74,7 +75,7 @@ export async function buscarCoberturaOverhead(
   return calcularCoberturaOverhead({
     overheadCobrado: overheadCobradoDec.toNumber(),
     custoFixoPago: custoFixoPagoDec.toNumber(),
-    receitaBruta: receitaBrutaDec.toNumber(),
+    custoDiretoAgregado: custoDiretoAgregadoDec.toNumber(),
   });
 }
 
@@ -97,6 +98,25 @@ function extrairOverheadDoBreakdown(breakdown: unknown): Dec {
     const overhead = (breakdown.detalhes as { overhead: unknown }).overhead;
     if (typeof overhead === "string" || typeof overhead === "number") {
       return new D(String(overhead));
+    }
+  }
+  return new D(0);
+}
+
+/**
+ * Achado N20 — `custoDireto` é campo de TOPO de `ResultadoComposicao`
+ * (src/lib/pricing/compor.ts), irmão de `detalhes` (não aninhado dentro
+ * dele, diferente de `overhead` acima) — mesmo nível de `custoTotal`, que já
+ * é lido assim em outros lugares do repo (ex: src/app/orcamento/[id]/
+ * actions/itens.ts). Item SIMPLES nunca passa por `comporPreco` (não tem
+ * `custoDireto` nenhum) e conta 0 aqui — mesma limitação já documentada no
+ * achado N30 da Parte 9, não corrigida nesta rodada.
+ */
+function extrairCustoDiretoDoBreakdown(breakdown: unknown): Dec {
+  if (breakdown !== null && typeof breakdown === "object" && "custoDireto" in breakdown) {
+    const custoDireto = (breakdown as { custoDireto: unknown }).custoDireto;
+    if (typeof custoDireto === "string" || typeof custoDireto === "number") {
+      return new D(String(custoDireto));
     }
   }
   return new D(0);
