@@ -53,6 +53,18 @@ export type PedidoParaAvanco = {
   arteUrl: string | null;
   arteAprovadaEm: Date | null;
   producaoLinkToken: string | null;
+  // Achado Prod-D2 da auditoria de abrangência (Parte 2/Produção) — trava
+  // contra baixa DUPLICADA de matéria-prima (ver comentário completo no
+  // schema, campo Pedido.baixaEstoqueRealizadaEm, e no gate mais abaixo,
+  // dentro do branch `proximoStatus === "PRODUCAO"`). Opcional (não
+  // `Date | null` puro) só pra não obrigar os ~9 arquivos de teste
+  // pré-existentes deste módulo a passar um campo que nunca testaram —
+  // `undefined` é tratado exatamente como `null` ("ainda não baixou",
+  // comportamento de sempre); todo call-site de produção (avancarPedido,
+  // confirmarEstagioPublico, avancarStatusQr) busca o Pedido via Prisma sem
+  // `select`, então o escalar real do banco sempre viaja de graça, nunca
+  // fica `undefined` na prática.
+  baixaEstoqueRealizadaEm?: Date | null;
   orcamento: {
     // Achado R1 da auditoria de abrangência (Parte 7, 2026-09-03) — gatilho
     // ENTREGA de gerarContasReceberDaEntrega precisa desses 3 campos (ver
@@ -696,7 +708,22 @@ export async function avancarStatusPedido(
     // exatamente uma vez por pedido, não importa a configuração da gráfica.
     // Sem mecanismo de estorno automático aqui — ver cancelarPedido em
     // producao/actions.ts, que cobre isso.
-    if (proximoStatus === "PRODUCAO") {
+    //
+    // Achado Prod-D2 — o parágrafo acima descrevia esta condição como
+    // "sempre dispara exatamente uma vez por pedido", verdade até
+    // retornarEtapa (src/app/producao/retorno-etapa-actions.ts) existir: um
+    // pedido pode agora RETORNAR pra uma etapa anterior (retrabalho, ex:
+    // reprovado na conferência) e reentrar em PRODUCAO uma SEGUNDA vez pela
+    // sequência normal — `proximoStatus === "PRODUCAO"` sozinho voltaria a
+    // disparar de novo, descontando o mesmo material físico que já saiu do
+    // estoque na primeira passagem. `!pedido.baixaEstoqueRealizadaEm` é a
+    // trava: só entra neste branch (e só quem entra grava o carimbo, ver
+    // `baixaEstoqueRealizadaEm: new Date()` no update abaixo) na PRIMEIRA
+    // vez. Numa reentrada, o campo já não é mais null — o pedido cai no
+    // branch `else` (CAS + apontamento, sem baixa), avança normalmente pra
+    // PRODUCAO, só sem descontar estoque de novo. retornarEtapa NUNCA mexe
+    // neste campo (ver comentário lá) — só a entrada real em PRODUCAO seta.
+    if (proximoStatus === "PRODUCAO" && !pedido.baixaEstoqueRealizadaEm) {
       // Leitura só-consulta (ficha técnica não muda por causa de uma corrida
       // desta função) — fica FORA da transação de propósito, pra manter a
       // transação curta e reduzir chance de conflito de serialização. O
@@ -856,7 +883,12 @@ export async function avancarStatusPedido(
           // que já não está mais em CLICHE_FACA.
           const resultado = await tx.pedido.updateMany({
             where: { id: pedido.id, status: statusAnterior },
-            data: { status: proximoStatus },
+            // Achado Prod-D2 — carimba baixaEstoqueRealizadaEm JUNTO com o
+            // CAS de status, na única passagem que de fato roda este bloco
+            // (ver guard `!pedido.baixaEstoqueRealizadaEm` acima). É este
+            // carimbo que impede uma futura reentrada em PRODUCAO (depois de
+            // um retornarEtapa) de cair aqui de novo.
+            data: { status: proximoStatus, baixaEstoqueRealizadaEm: new Date() },
           });
           if (resultado.count === 0) {
             throw new ErroPedidoJaAvancado();
@@ -1199,6 +1231,16 @@ export async function avancarStatusPedido(
       // de ApontamentoEtapa sejam atômicos — nível de isolamento padrão
       // basta aqui, não há leitura prévia de estoque compartilhado como no
       // branch acima que justificasse Serializable.
+      //
+      // Achado Prod-D2 — este branch também é quem processa uma REENTRADA em
+      // PRODUCAO depois de um retornarEtapa (proximoStatus === "PRODUCAO"
+      // mas pedido.baixaEstoqueRealizadaEm já preenchido, ver guard acima):
+      // o CAS + abrir/fechar apontamento rodam normalmente, só que sem
+      // nenhuma baixa de estoque — exatamente o comportamento desejado
+      // (o pedido avança, o material não é descontado de novo). Nenhum
+      // código novo foi necessário aqui pra isso: este branch já era
+      // genérico por `proximoStatus`, nunca condicionado a PRODUCAO
+      // especificamente.
       //
       // Achado B3 — este é o branch que de fato cobre a maioria das
       // transições que reportam refugo (o pedido já ENTROU em produção antes
