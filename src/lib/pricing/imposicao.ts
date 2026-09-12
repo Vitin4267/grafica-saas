@@ -22,6 +22,19 @@ export type PedidoImposicao = {
   gapPecas?: number; // g, gap entre peças na folha, default 0.002
 };
 
+// Achado 8 da auditoria do motor M2/Offset (2026-09-12) — `sangria` aqui
+// continua sendo a fonte de verdade REAL pro Digital (digital.ts) e Chapa
+// Rígida (chapa-rigida.ts): os dois passam `sangria: pedido.sangria` direto
+// (podendo vir undefined) e deixam esta função resolver o default sozinha —
+// nenhum dos dois motores recalcula wLinha/hLinha em outro lugar com um
+// literal separado (Chapa Rígida inclusive IMPORTA esta mesma constante pra
+// resolver sua própria sangria, ver chapa-rigida.ts:98 — mesma fonte, não
+// duplicada). O Offset é o ÚNICO caso que precisava de dois usos do mesmo
+// valor de sangria em dois lugares (wLinha/hLinha do acabamento aqui,
+// nUp/chapas ali) — por isso ele resolve o PRÓPRIO valor uma vez
+// (DEFAULTS_OFFSET.sangria, em offset.ts) e sempre passa explícito pra
+// calcularImposicao, nunca dependendo deste default. Não remover este
+// default: Digital/Chapa Rígida quebrariam.
 export const DEFAULTS_IMPOSICAO = {
   sangria: 0.003,
   pinca: 0,

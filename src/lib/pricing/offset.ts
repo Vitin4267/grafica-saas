@@ -5,11 +5,18 @@ import { calcularImposicao, type ResultadoImposicao } from "./imposicao";
 import type { ContextoOffset, FormatoFolhaInput, ParametrosPrensa, PedidoOffset } from "./tipos";
 import type { OrigemPrecoPapel } from "./papel";
 
+// Achado 8 da auditoria do motor M2/Offset (2026-09-12) — antes este objeto
+// também tinha `margemLateral: 0.01` e `gapPecas: 0.002`, mas NUNCA eram
+// lidos: calcularImposicao (imposicao.ts) sempre resolveu os próprios
+// defaults pra esses dois campos (via DEFAULTS_IMPOSICAO), já que o Offset
+// nunca precisou de um valor PRÓPRIO pra eles (diferente de `sangria`, usado
+// aqui embaixo pra wLinha/hLinha — base do acabamento — e de `pinca`, que
+// não existe fisicamente fora de prensa Offset). Removidos por serem código
+// morto: editar `DEFAULTS_OFFSET.gapPecas` não mudava nada no nUp real,
+// levando quem fosse debugar pro lugar errado.
 const DEFAULTS_OFFSET = {
   sangria: 0.003,
   pinca: 0.012,
-  margemLateral: 0.01,
-  gapPecas: 0.002,
 };
 
 // Achado N4 da auditoria de código (2026-09-04) — calcularImposicao foi
@@ -69,7 +76,7 @@ export function calcularOffset(
   contexto: ContextoOffset,
   params: ParametrosPrensa
 ): ResultadoOffset {
-  validarPedidoOffset(pedido, contexto);
+  validarPedidoOffset(pedido, contexto, params);
 
   const Q = pedido.quantidade;
   const F = pedido.corFrente;
@@ -95,8 +102,20 @@ export function calcularOffset(
     // resolvendo o PRÓPRIO default (0,012) quando pedido.pinca vier ausente
     // — nunca herdar o 0 do módulo compartilhado, senão nUp fica maior do
     // que a prensa real permite.
+    //
+    // Achado 8 — mesmo raciocínio pra `sangria`: `sangria` (resolvida acima,
+    // linha 90, e já usada em wLinha/hLinha pra base do acabamento) é
+    // passada aqui EXPLICITAMENTE, nunca deixando `...pedido` repassar
+    // pedido.sangria possivelmente ausente pra calcularImposicao resolver
+    // sozinha. Antes da correção, um pedido sem `sangria` explícita fazia
+    // este cálculo usar DEFAULTS_OFFSET.sangria (wLinha/hLinha) e
+    // calcularImposicao usar DEFAULTS_IMPOSICAO.sangria (nUp/chapas) — dois
+    // literais 0,003 em arquivos diferentes, hoje iguais só por coincidência
+    // e sem nada garantindo que continuassem. Com o valor resolvido passado
+    // explícito, só existe UMA fonte de verdade (DEFAULTS_OFFSET.sangria)
+    // pra tudo que o Offset calcula.
     const imposicao = calcularImposicao(
-      { ...pedido, pinca: pedido.pinca ?? DEFAULTS_OFFSET.pinca },
+      { ...pedido, sangria: sangria.toNumber(), pinca: pedido.pinca ?? DEFAULTS_OFFSET.pinca },
       folha
     );
     if (!imposicao) continue;

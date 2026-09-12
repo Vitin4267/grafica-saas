@@ -13,6 +13,8 @@ import type {
   ContextoFlexografia,
   ContextoM2,
   ContextoOffset,
+  ParametrosMaquinaFlexo,
+  ParametrosPrensa,
   PedidoDigital,
   PedidoFlexografia,
   PedidoM2,
@@ -67,6 +69,24 @@ function contextoOffsetValido(overrides: Partial<ContextoOffset> = {}): Contexto
   };
 }
 
+// Achado 2 da auditoria do motor M2/Offset (2026-09-12) — validarPedidoOffset
+// passou a exigir `params` (perdaPercentPadrao é o campo validado, ver
+// validarPerdaPercent em validar.ts). Mesmo helper de __tests__/offset.test.ts,
+// replicado aqui pra não criar dependência cruzada entre arquivos de teste.
+function paramsPrensaValidos(overrides: Partial<ParametrosPrensa> = {}): ParametrosPrensa {
+  return {
+    custoHoraMaq: 200,
+    torres: 1,
+    custoChapa: 10,
+    folhasAcerto: 50,
+    tempoAcertoH: 0.25,
+    custoMilheiroRod: 100,
+    rodagemMinima: 1,
+    perdaPercentPadrao: 0.03,
+    ...overrides,
+  };
+}
+
 function pedidoFlexografiaValido(overrides: Partial<PedidoFlexografia> = {}): PedidoFlexografia {
   return {
     larguraM: 0.08,
@@ -83,6 +103,23 @@ function contextoFlexografiaValido(
   return {
     bobinas: [{ id: "bobina-0.30", larguraNominal: 0.3, refile: 0.01 }],
     custoM2Material: 5,
+    ...overrides,
+  };
+}
+
+// Mesmo helper de __tests__/flexografia.test.ts, replicado aqui pelo mesmo
+// motivo de paramsPrensaValidos acima.
+function paramsFlexoValidos(overrides: Partial<ParametrosMaquinaFlexo> = {}): ParametrosMaquinaFlexo {
+  return {
+    custoHoraMaq: 150,
+    numeroEstacoesCores: 6,
+    larguraMaquinaM: 0.5,
+    passoCilindroM: 0.4,
+    tempoAcertoH: 0.5,
+    metrosAcerto: 20,
+    custoMetroLinearRod: 0.8,
+    rodagemMinima: 25,
+    perdaPercentPadrao: 0.03,
     ...overrides,
   };
 }
@@ -241,7 +278,7 @@ describe("validarPedidoM2 — CUSTO_INVALIDO (custoM2Material)", () => {
 describe("validarPedidoOffset — casos válidos (sanity check, não deve lançar)", () => {
   it("não lança para pedido/contexto totalmente válidos", () => {
     expect(() =>
-      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido())
+      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido(), paramsPrensaValidos())
     ).not.toThrow();
   });
 });
@@ -249,41 +286,41 @@ describe("validarPedidoOffset — casos válidos (sanity check, não deve lança
 describe("validarPedidoOffset — QUANTIDADE_INVALIDA e DIMENSAO_INVALIDA (largura/altura, herdados de validarComum)", () => {
   it("dispara QUANTIDADE_INVALIDA com quantidade zero", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoOffset(pedidoOffsetValido({ quantidade: 0 }), contextoOffsetValido())
+      validarPedidoOffset(pedidoOffsetValido({ quantidade: 0 }), contextoOffsetValido(), paramsPrensaValidos())
     );
     expect(erro).toBe("QUANTIDADE_INVALIDA");
   });
 
   it("dispara QUANTIDADE_INVALIDA com quantidade negativa", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoOffset(pedidoOffsetValido({ quantidade: -5 }), contextoOffsetValido())
+      validarPedidoOffset(pedidoOffsetValido({ quantidade: -5 }), contextoOffsetValido(), paramsPrensaValidos())
     );
     expect(erro).toBe("QUANTIDADE_INVALIDA");
   });
 
   it("dispara QUANTIDADE_INVALIDA com quantidade fracionária", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoOffset(pedidoOffsetValido({ quantidade: 100.5 }), contextoOffsetValido())
+      validarPedidoOffset(pedidoOffsetValido({ quantidade: 100.5 }), contextoOffsetValido(), paramsPrensaValidos())
     );
     expect(erro).toBe("QUANTIDADE_INVALIDA");
   });
 
   it("fronteira válida: quantidade = 1 não lança", () => {
     expect(() =>
-      validarPedidoOffset(pedidoOffsetValido({ quantidade: 1 }), contextoOffsetValido())
+      validarPedidoOffset(pedidoOffsetValido({ quantidade: 1 }), contextoOffsetValido(), paramsPrensaValidos())
     ).not.toThrow();
   });
 
   it("dispara DIMENSAO_INVALIDA com larguraM zero", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoOffset(pedidoOffsetValido({ larguraM: 0 }), contextoOffsetValido())
+      validarPedidoOffset(pedidoOffsetValido({ larguraM: 0 }), contextoOffsetValido(), paramsPrensaValidos())
     );
     expect(erro).toBe("DIMENSAO_INVALIDA");
   });
 
   it("dispara DIMENSAO_INVALIDA com alturaM negativa", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoOffset(pedidoOffsetValido({ alturaM: -0.01 }), contextoOffsetValido())
+      validarPedidoOffset(pedidoOffsetValido({ alturaM: -0.01 }), contextoOffsetValido(), paramsPrensaValidos())
     );
     expect(erro).toBe("DIMENSAO_INVALIDA");
   });
@@ -292,7 +329,8 @@ describe("validarPedidoOffset — QUANTIDADE_INVALIDA e DIMENSAO_INVALIDA (largu
     expect(() =>
       validarPedidoOffset(
         pedidoOffsetValido({ larguraM: 0.0001, alturaM: 0.0001 }),
-        contextoOffsetValido()
+        contextoOffsetValido(),
+        paramsPrensaValidos()
       )
     ).not.toThrow();
   });
@@ -301,28 +339,28 @@ describe("validarPedidoOffset — QUANTIDADE_INVALIDA e DIMENSAO_INVALIDA (largu
 describe("validarPedidoOffset — DIMENSAO_INVALIDA (corFrente)", () => {
   it("dispara com corFrente zero", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoOffset(pedidoOffsetValido({ corFrente: 0 }), contextoOffsetValido())
+      validarPedidoOffset(pedidoOffsetValido({ corFrente: 0 }), contextoOffsetValido(), paramsPrensaValidos())
     );
     expect(erro).toBe("DIMENSAO_INVALIDA");
   });
 
   it("dispara com corFrente negativo", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoOffset(pedidoOffsetValido({ corFrente: -1 }), contextoOffsetValido())
+      validarPedidoOffset(pedidoOffsetValido({ corFrente: -1 }), contextoOffsetValido(), paramsPrensaValidos())
     );
     expect(erro).toBe("DIMENSAO_INVALIDA");
   });
 
   it("dispara com corFrente fracionário", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoOffset(pedidoOffsetValido({ corFrente: 1.5 }), contextoOffsetValido())
+      validarPedidoOffset(pedidoOffsetValido({ corFrente: 1.5 }), contextoOffsetValido(), paramsPrensaValidos())
     );
     expect(erro).toBe("DIMENSAO_INVALIDA");
   });
 
   it("fronteira válida: corFrente = 1 (mínimo permitido) não lança", () => {
     expect(() =>
-      validarPedidoOffset(pedidoOffsetValido({ corFrente: 1 }), contextoOffsetValido())
+      validarPedidoOffset(pedidoOffsetValido({ corFrente: 1 }), contextoOffsetValido(), paramsPrensaValidos())
     ).not.toThrow();
   });
 });
@@ -330,21 +368,21 @@ describe("validarPedidoOffset — DIMENSAO_INVALIDA (corFrente)", () => {
 describe("validarPedidoOffset — DIMENSAO_INVALIDA (corVerso)", () => {
   it("dispara com corVerso negativo", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoOffset(pedidoOffsetValido({ corVerso: -1 }), contextoOffsetValido())
+      validarPedidoOffset(pedidoOffsetValido({ corVerso: -1 }), contextoOffsetValido(), paramsPrensaValidos())
     );
     expect(erro).toBe("DIMENSAO_INVALIDA");
   });
 
   it("dispara com corVerso fracionário", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoOffset(pedidoOffsetValido({ corVerso: 0.5 }), contextoOffsetValido())
+      validarPedidoOffset(pedidoOffsetValido({ corVerso: 0.5 }), contextoOffsetValido(), paramsPrensaValidos())
     );
     expect(erro).toBe("DIMENSAO_INVALIDA");
   });
 
   it("fronteira válida: corVerso = 0 (mínimo permitido, frente e verso sem cor no verso) não lança", () => {
     expect(() =>
-      validarPedidoOffset(pedidoOffsetValido({ corVerso: 0 }), contextoOffsetValido())
+      validarPedidoOffset(pedidoOffsetValido({ corVerso: 0 }), contextoOffsetValido(), paramsPrensaValidos())
     ).not.toThrow();
   });
 });
@@ -352,7 +390,7 @@ describe("validarPedidoOffset — DIMENSAO_INVALIDA (corVerso)", () => {
 describe("validarPedidoOffset — MATERIAL_SEM_FOLHA", () => {
   it("dispara quando a lista de folhas está vazia", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido({ folhas: [] }))
+      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido({ folhas: [] }), paramsPrensaValidos())
     );
     expect(erro).toBe("MATERIAL_SEM_FOLHA");
   });
@@ -361,9 +399,8 @@ describe("validarPedidoOffset — MATERIAL_SEM_FOLHA", () => {
     expect(() =>
       validarPedidoOffset(
         pedidoOffsetValido(),
-        contextoOffsetValido({
-          folhas: [{ id: "f1", nome: "Folha", larguraFolha: 0.66, alturaFolha: 0.96 }],
-        })
+        contextoOffsetValido({ folhas: [{ id: "f1", nome: "Folha", larguraFolha: 0.66, alturaFolha: 0.96 }], }),
+        paramsPrensaValidos()
       )
     ).not.toThrow();
   });
@@ -372,21 +409,21 @@ describe("validarPedidoOffset — MATERIAL_SEM_FOLHA", () => {
 describe("validarPedidoOffset — CUSTO_INVALIDO (precoPorKg)", () => {
   it("dispara com precoPorKg zero", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido({ precoPorKg: 0 }))
+      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido({ precoPorKg: 0 }), paramsPrensaValidos())
     );
     expect(erro).toBe("CUSTO_INVALIDO");
   });
 
   it("dispara com precoPorKg negativo", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido({ precoPorKg: -8.5 }))
+      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido({ precoPorKg: -8.5 }), paramsPrensaValidos())
     );
     expect(erro).toBe("CUSTO_INVALIDO");
   });
 
   it("fronteira válida: precoPorKg ligeiramente acima de zero não lança", () => {
     expect(() =>
-      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido({ precoPorKg: 0.01 }))
+      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido({ precoPorKg: 0.01 }), paramsPrensaValidos())
     ).not.toThrow();
   });
 });
@@ -394,26 +431,26 @@ describe("validarPedidoOffset — CUSTO_INVALIDO (precoPorKg)", () => {
 describe("validarPedidoOffset — GRAMATURA_INVALIDA (faixa válida: 30 a 500 g/m², inclusive)", () => {
   it("dispara com gramatura abaixo de 30 (29,99)", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido({ gramaturaGm2: 29.99 }))
+      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido({ gramaturaGm2: 29.99 }), paramsPrensaValidos())
     );
     expect(erro).toBe("GRAMATURA_INVALIDA");
   });
 
   it("fronteira válida: gramatura = 30 (limite inferior inclusivo) não lança", () => {
     expect(() =>
-      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido({ gramaturaGm2: 30 }))
+      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido({ gramaturaGm2: 30 }), paramsPrensaValidos())
     ).not.toThrow();
   });
 
   it("fronteira válida: gramatura = 500 (limite superior inclusivo) não lança", () => {
     expect(() =>
-      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido({ gramaturaGm2: 500 }))
+      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido({ gramaturaGm2: 500 }), paramsPrensaValidos())
     ).not.toThrow();
   });
 
   it("dispara com gramatura acima de 500 (500,01)", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido({ gramaturaGm2: 500.01 }))
+      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido({ gramaturaGm2: 500.01 }), paramsPrensaValidos())
     );
     expect(erro).toBe("GRAMATURA_INVALIDA");
   });
@@ -429,14 +466,15 @@ describe("validarPedidoOffset — GRAMATURA_INVALIDA com faixa configurável (Pa
     expect(() =>
       validarPedidoOffset(
         pedidoOffsetValido(),
-        contextoOffsetValido({ gramaturaGm2: 550, gramaturaMinGm2: 30, gramaturaMaxGm2: 600 })
+        contextoOffsetValido({ gramaturaGm2: 550, gramaturaMinGm2: 30, gramaturaMaxGm2: 600 }),
+        paramsPrensaValidos()
       )
     ).not.toThrow();
   });
 
   it("dispara com gramatura de cartão duplex (550) quando a faixa NÃO é ampliada (default 30–500)", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido({ gramaturaGm2: 550 }))
+      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido({ gramaturaGm2: 550 }), paramsPrensaValidos())
     );
     expect(erro).toBe("GRAMATURA_INVALIDA");
   });
@@ -445,14 +483,15 @@ describe("validarPedidoOffset — GRAMATURA_INVALIDA com faixa configurável (Pa
     expect(() =>
       validarPedidoOffset(
         pedidoOffsetValido(),
-        contextoOffsetValido({ gramaturaGm2: 22, gramaturaMinGm2: 20, gramaturaMaxGm2: 500 })
+        contextoOffsetValido({ gramaturaGm2: 22, gramaturaMinGm2: 20, gramaturaMaxGm2: 500 }),
+        paramsPrensaValidos()
       )
     ).not.toThrow();
   });
 
   it("dispara com papel bíblia (22) quando a faixa NÃO é reduzida (default mínimo 30)", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido({ gramaturaGm2: 22 }))
+      validarPedidoOffset(pedidoOffsetValido(), contextoOffsetValido({ gramaturaGm2: 22 }), paramsPrensaValidos())
     );
     expect(erro).toBe("GRAMATURA_INVALIDA");
   });
@@ -461,13 +500,15 @@ describe("validarPedidoOffset — GRAMATURA_INVALIDA com faixa configurável (Pa
     expect(() =>
       validarPedidoOffset(
         pedidoOffsetValido(),
-        contextoOffsetValido({ gramaturaGm2: 20, gramaturaMinGm2: 20, gramaturaMaxGm2: 600 })
+        contextoOffsetValido({ gramaturaGm2: 20, gramaturaMinGm2: 20, gramaturaMaxGm2: 600 }),
+        paramsPrensaValidos()
       )
     ).not.toThrow();
     expect(() =>
       validarPedidoOffset(
         pedidoOffsetValido(),
-        contextoOffsetValido({ gramaturaGm2: 600, gramaturaMinGm2: 20, gramaturaMaxGm2: 600 })
+        contextoOffsetValido({ gramaturaGm2: 600, gramaturaMinGm2: 20, gramaturaMaxGm2: 600 }),
+        paramsPrensaValidos()
       )
     ).not.toThrow();
   });
@@ -476,17 +517,105 @@ describe("validarPedidoOffset — GRAMATURA_INVALIDA com faixa configurável (Pa
     const erroAbaixo = codigoDoErro(() =>
       validarPedidoOffset(
         pedidoOffsetValido(),
-        contextoOffsetValido({ gramaturaGm2: 19.99, gramaturaMinGm2: 20, gramaturaMaxGm2: 600 })
+        contextoOffsetValido({ gramaturaGm2: 19.99, gramaturaMinGm2: 20, gramaturaMaxGm2: 600 }),
+        paramsPrensaValidos()
       )
     );
     expect(erroAbaixo).toBe("GRAMATURA_INVALIDA");
     const erroAcima = codigoDoErro(() =>
       validarPedidoOffset(
         pedidoOffsetValido(),
-        contextoOffsetValido({ gramaturaGm2: 600.01, gramaturaMinGm2: 20, gramaturaMaxGm2: 600 })
+        contextoOffsetValido({ gramaturaGm2: 600.01, gramaturaMinGm2: 20, gramaturaMaxGm2: 600 }),
+        paramsPrensaValidos()
       )
     );
     expect(erroAcima).toBe("GRAMATURA_INVALIDA");
+  });
+});
+
+// Achado 2 da auditoria do motor M2/Offset (2026-09-12) — "Perda padrão (%)"
+// é gravada/informada como FRAÇÃO mas o form rotula como "%" sem hint —
+// campo mais suscetível a dedo-gordo do motor (dono digita "3" achando 3%,
+// sistema lê 300% e quadruplica o papel do pedido). Cobre o campo RESOLVIDO
+// (pedido.perdaPercent ?? params.perdaPercentPadrao — validarPerdaPercent em
+// validar.ts), então cada teste isola se o bug vem do CADASTRO (params) ou
+// do PEDIDO (override pontual).
+describe("validarPedidoOffset — PERDA_INVALIDA (perdaPercent resolvido: pedido ?? params, faixa [0,1])", () => {
+  it("dispara quando o PEDIDO informa perdaPercent=3 (dedo-gordo de 3% digitado sem dividir por 100)", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoOffset(
+        pedidoOffsetValido({ perdaPercent: 3 }),
+        contextoOffsetValido(),
+        paramsPrensaValidos()
+      )
+    );
+    expect(erro).toBe("PERDA_INVALIDA");
+  });
+
+  it("dispara quando o CADASTRO da prensa (params.perdaPercentPadrao) vem com 1.5 (150%)", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoOffset(
+        pedidoOffsetValido(),
+        contextoOffsetValido(),
+        paramsPrensaValidos({ perdaPercentPadrao: 1.5 })
+      )
+    );
+    expect(erro).toBe("PERDA_INVALIDA");
+  });
+
+  it("fronteira válida: perdaPercent = 0 (sem perda configurada) não lança", () => {
+    expect(() =>
+      validarPedidoOffset(
+        pedidoOffsetValido({ perdaPercent: 0 }),
+        contextoOffsetValido(),
+        paramsPrensaValidos()
+      )
+    ).not.toThrow();
+  });
+
+  it("fronteira válida: perdaPercent = 1 (limite superior, 100% de perda) não lança", () => {
+    expect(() =>
+      validarPedidoOffset(
+        pedidoOffsetValido({ perdaPercent: 1 }),
+        contextoOffsetValido(),
+        paramsPrensaValidos()
+      )
+    ).not.toThrow();
+  });
+
+  it("caso comum: perdaPercent = 0.03 (3%, vindo do pedido ou do cadastro) não lança", () => {
+    expect(() =>
+      validarPedidoOffset(
+        pedidoOffsetValido({ perdaPercent: 0.03 }),
+        contextoOffsetValido(),
+        paramsPrensaValidos()
+      )
+    ).not.toThrow();
+    expect(() =>
+      validarPedidoOffset(
+        pedidoOffsetValido(),
+        contextoOffsetValido(),
+        paramsPrensaValidos({ perdaPercentPadrao: 0.03 })
+      )
+    ).not.toThrow();
+  });
+
+  it("dispara logo acima do limite (1.0001) e não lança logo abaixo (0.9999)", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoOffset(
+        pedidoOffsetValido({ perdaPercent: 1.0001 }),
+        contextoOffsetValido(),
+        paramsPrensaValidos()
+      )
+    );
+    expect(erro).toBe("PERDA_INVALIDA");
+    expect(() =>
+      validarPedidoOffset(
+        pedidoOffsetValido({ perdaPercent: 0.9999 }),
+        contextoOffsetValido(),
+        paramsPrensaValidos()
+      )
+    ).not.toThrow();
   });
 });
 
@@ -513,7 +642,7 @@ describe("validarSomaEncargos — ENCARGOS_INVALIDOS (limiar: soma >= 0,85 dispa
 describe("validarPedidoFlexografia — casos válidos (sanity check, não deve lançar)", () => {
   it("não lança para pedido/contexto totalmente válidos", () => {
     expect(() =>
-      validarPedidoFlexografia(pedidoFlexografiaValido(), contextoFlexografiaValido())
+      validarPedidoFlexografia(pedidoFlexografiaValido(), contextoFlexografiaValido(), paramsFlexoValidos())
     ).not.toThrow();
   });
 });
@@ -523,7 +652,8 @@ describe("validarPedidoFlexografia — QUANTIDADE_INVALIDA e DIMENSAO_INVALIDA (
     const erro = codigoDoErro(() =>
       validarPedidoFlexografia(
         pedidoFlexografiaValido({ quantidade: 0 }),
-        contextoFlexografiaValido()
+        contextoFlexografiaValido(),
+        paramsFlexoValidos()
       )
     );
     expect(erro).toBe("QUANTIDADE_INVALIDA");
@@ -533,7 +663,8 @@ describe("validarPedidoFlexografia — QUANTIDADE_INVALIDA e DIMENSAO_INVALIDA (
     const erro = codigoDoErro(() =>
       validarPedidoFlexografia(
         pedidoFlexografiaValido({ quantidade: 10.5 }),
-        contextoFlexografiaValido()
+        contextoFlexografiaValido(),
+        paramsFlexoValidos()
       )
     );
     expect(erro).toBe("QUANTIDADE_INVALIDA");
@@ -543,7 +674,8 @@ describe("validarPedidoFlexografia — QUANTIDADE_INVALIDA e DIMENSAO_INVALIDA (
     const erro = codigoDoErro(() =>
       validarPedidoFlexografia(
         pedidoFlexografiaValido({ larguraM: 0 }),
-        contextoFlexografiaValido()
+        contextoFlexografiaValido(),
+        paramsFlexoValidos()
       )
     );
     expect(erro).toBe("DIMENSAO_INVALIDA");
@@ -553,7 +685,8 @@ describe("validarPedidoFlexografia — QUANTIDADE_INVALIDA e DIMENSAO_INVALIDA (
     const erro = codigoDoErro(() =>
       validarPedidoFlexografia(
         pedidoFlexografiaValido({ alturaM: -0.01 }),
-        contextoFlexografiaValido()
+        contextoFlexografiaValido(),
+        paramsFlexoValidos()
       )
     );
     expect(erro).toBe("DIMENSAO_INVALIDA");
@@ -565,7 +698,8 @@ describe("validarPedidoFlexografia — DIMENSAO_INVALIDA (numeroCores)", () => {
     const erro = codigoDoErro(() =>
       validarPedidoFlexografia(
         pedidoFlexografiaValido({ numeroCores: 0 }),
-        contextoFlexografiaValido()
+        contextoFlexografiaValido(),
+        paramsFlexoValidos()
       )
     );
     expect(erro).toBe("DIMENSAO_INVALIDA");
@@ -575,7 +709,8 @@ describe("validarPedidoFlexografia — DIMENSAO_INVALIDA (numeroCores)", () => {
     const erro = codigoDoErro(() =>
       validarPedidoFlexografia(
         pedidoFlexografiaValido({ numeroCores: -1 }),
-        contextoFlexografiaValido()
+        contextoFlexografiaValido(),
+        paramsFlexoValidos()
       )
     );
     expect(erro).toBe("DIMENSAO_INVALIDA");
@@ -585,7 +720,8 @@ describe("validarPedidoFlexografia — DIMENSAO_INVALIDA (numeroCores)", () => {
     const erro = codigoDoErro(() =>
       validarPedidoFlexografia(
         pedidoFlexografiaValido({ numeroCores: 1.5 }),
-        contextoFlexografiaValido()
+        contextoFlexografiaValido(),
+        paramsFlexoValidos()
       )
     );
     expect(erro).toBe("DIMENSAO_INVALIDA");
@@ -595,7 +731,8 @@ describe("validarPedidoFlexografia — DIMENSAO_INVALIDA (numeroCores)", () => {
     expect(() =>
       validarPedidoFlexografia(
         pedidoFlexografiaValido({ numeroCores: 1 }),
-        contextoFlexografiaValido()
+        contextoFlexografiaValido(),
+        paramsFlexoValidos()
       )
     ).not.toThrow();
   });
@@ -606,7 +743,8 @@ describe("validarPedidoFlexografia — MATERIAL_SEM_BOBINA", () => {
     const erro = codigoDoErro(() =>
       validarPedidoFlexografia(
         pedidoFlexografiaValido(),
-        contextoFlexografiaValido({ bobinas: [] })
+        contextoFlexografiaValido({ bobinas: [] }),
+        paramsFlexoValidos()
       )
     );
     expect(erro).toBe("MATERIAL_SEM_BOBINA");
@@ -616,7 +754,8 @@ describe("validarPedidoFlexografia — MATERIAL_SEM_BOBINA", () => {
     expect(() =>
       validarPedidoFlexografia(
         pedidoFlexografiaValido(),
-        contextoFlexografiaValido({ bobinas: [{ id: "b1", larguraNominal: 0.3, refile: 0.01 }] })
+        contextoFlexografiaValido({ bobinas: [{ id: "b1", larguraNominal: 0.3, refile: 0.01 }] }),
+        paramsFlexoValidos()
       )
     ).not.toThrow();
   });
@@ -627,7 +766,8 @@ describe("validarPedidoFlexografia — CUSTO_INVALIDO (custoM2Material)", () => 
     const erro = codigoDoErro(() =>
       validarPedidoFlexografia(
         pedidoFlexografiaValido(),
-        contextoFlexografiaValido({ custoM2Material: 0 })
+        contextoFlexografiaValido({ custoM2Material: 0 }),
+        paramsFlexoValidos()
       )
     );
     expect(erro).toBe("CUSTO_INVALIDO");
@@ -637,7 +777,8 @@ describe("validarPedidoFlexografia — CUSTO_INVALIDO (custoM2Material)", () => 
     const erro = codigoDoErro(() =>
       validarPedidoFlexografia(
         pedidoFlexografiaValido(),
-        contextoFlexografiaValido({ custoM2Material: -5 })
+        contextoFlexografiaValido({ custoM2Material: -5 }),
+        paramsFlexoValidos()
       )
     );
     expect(erro).toBe("CUSTO_INVALIDO");
@@ -647,7 +788,72 @@ describe("validarPedidoFlexografia — CUSTO_INVALIDO (custoM2Material)", () => 
     expect(() =>
       validarPedidoFlexografia(
         pedidoFlexografiaValido(),
-        contextoFlexografiaValido({ custoM2Material: 0.01 })
+        contextoFlexografiaValido({ custoM2Material: 0.01 }),
+        paramsFlexoValidos()
+      )
+    ).not.toThrow();
+  });
+});
+
+// Achado 2 — mesmo bug/mesmo campo do Offset acima, na máquina de
+// Flexografia (ParametrosMaquinaFlexo.perdaPercentPadrao/
+// PedidoFlexografia.perdaPercent).
+describe("validarPedidoFlexografia — PERDA_INVALIDA (perdaPercent resolvido: pedido ?? params, faixa [0,1])", () => {
+  it("dispara quando o PEDIDO informa perdaPercent=3 (dedo-gordo de 3% digitado sem dividir por 100)", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoFlexografia(
+        pedidoFlexografiaValido({ perdaPercent: 3 }),
+        contextoFlexografiaValido(),
+        paramsFlexoValidos()
+      )
+    );
+    expect(erro).toBe("PERDA_INVALIDA");
+  });
+
+  it("dispara quando o CADASTRO da máquina (params.perdaPercentPadrao) vem com 1.5 (150%)", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoFlexografia(
+        pedidoFlexografiaValido(),
+        contextoFlexografiaValido(),
+        paramsFlexoValidos({ perdaPercentPadrao: 1.5 })
+      )
+    );
+    expect(erro).toBe("PERDA_INVALIDA");
+  });
+
+  it("fronteira válida: perdaPercent = 0 (sem perda configurada) não lança", () => {
+    expect(() =>
+      validarPedidoFlexografia(
+        pedidoFlexografiaValido({ perdaPercent: 0 }),
+        contextoFlexografiaValido(),
+        paramsFlexoValidos()
+      )
+    ).not.toThrow();
+  });
+
+  it("fronteira válida: perdaPercent = 1 (limite superior, 100% de perda) não lança", () => {
+    expect(() =>
+      validarPedidoFlexografia(
+        pedidoFlexografiaValido({ perdaPercent: 1 }),
+        contextoFlexografiaValido(),
+        paramsFlexoValidos()
+      )
+    ).not.toThrow();
+  });
+
+  it("caso comum: perdaPercent = 0.03 (3%, vindo do pedido ou do cadastro) não lança", () => {
+    expect(() =>
+      validarPedidoFlexografia(
+        pedidoFlexografiaValido({ perdaPercent: 0.03 }),
+        contextoFlexografiaValido(),
+        paramsFlexoValidos()
+      )
+    ).not.toThrow();
+    expect(() =>
+      validarPedidoFlexografia(
+        pedidoFlexografiaValido(),
+        contextoFlexografiaValido(),
+        paramsFlexoValidos({ perdaPercentPadrao: 0.03 })
       )
     ).not.toThrow();
   });

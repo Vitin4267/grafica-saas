@@ -158,7 +158,9 @@ export function PrensaForm({
               type="number"
               step="0.0001"
               min="0"
+              max="1"
               defaultValue={valoresIniciais.perdaPercentPadrao}
+              hint="ex: 0.03 = 3% — é uma fração, não um percentual inteiro"
             />
           </div>
         </Card>

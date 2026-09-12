@@ -541,6 +541,10 @@ describe(
               itemCatalogoId: catalogoPapelAlt.id,
               modeloCalculo: "SIMPLES",
               tabelaPrecoPapel: { create: [{ gramatura: 150, precoKg: 20 }] },
+              // Mesmo formato do produto (66×96) DE PROPÓSITO neste teste —
+              // aqui o que se quer isolar é só o preço/gramatura (achado N8).
+              // O teste seguinte ("achado 9") cobre formato DIFERENTE.
+              formatosFolha: { create: [{ nome: `Fechada Alt ${s}`, larguraFolha: 0.66, alturaFolha: 0.96 }] },
             },
           });
 
@@ -556,9 +560,97 @@ describe(
           expect(contextoSemOverride.offset?.precoPorKg).toBe(11.5); // 10 + 150/100, papel do produto
           expect(contextoComOverride.offset?.precoPorKg).toBe(20); // papel alternativo escolhido no orçamento
           expect(contextoComOverride.offset?.papelIdOverride).toBe(papelAlternativo.id);
-          // Geometria de imposição (folhas) continua vindo do PRODUTO — o
-          // achado é só sobre papelId/gramaturaGm2, nunca formatosFolha.
-          expect(contextoComOverride.offset?.folhas).toEqual(contextoSemOverride.offset?.folhas);
+        },
+        TIMEOUT_MS
+      );
+
+      // Achado 9 da auditoria do motor M2/Offset (2026-09-12) — antes desta
+      // correção, "folhas" continuava vindo de item.formatosFolha (do
+      // PRODUTO) mesmo com um papel override ativo, então nUp/folhasBoas/
+      // custoPapel saíam calculados sobre um formato que a gráfica pode nem
+      // comprar de verdade. Ver decisão completa no comentário de carregar.ts
+      // (branch OFFSET): com override, "folhas" usa SEMPRE
+      // papelOverride.formatosFolha, nunca mistura ou cai de volta pro
+      // formato do produto.
+      it(
+        "achado 9: papel override troca também os FORMATOS DE FOLHA usados na imposição, não só preço/gramatura",
+        async () => {
+          const { grafica, s } = await criarGrafica();
+          // Produto cadastrado com folha 66×96 (ver criarProdutoOffset acima).
+          const produto = await criarProdutoOffset(grafica, s, {
+            gramaturasCadastradas: [150],
+            gramaturaEscolhida: 150,
+          });
+          const catalogoPapelAlt = await prisma.itemCatalogo.create({
+            data: { graficaId: grafica.id, tipo: "MATERIA_PRIMA", categoria: "Papel", nome: `Só 64x88 ${s}` },
+          });
+          // Papel alternativo só compra em 64×88 — formato DIFERENTE do
+          // 66×96 cadastrado no produto, o cenário exato do achado.
+          const papelSoCompra64x88 = await prisma.itemGrafica.create({
+            data: {
+              graficaId: grafica.id,
+              itemCatalogoId: catalogoPapelAlt.id,
+              modeloCalculo: "SIMPLES",
+              tabelaPrecoPapel: { create: [{ gramatura: 150, precoKg: 12 }] },
+              formatosFolha: { create: [{ nome: `Fechada 64x88 ${s}`, larguraFolha: 0.64, alturaFolha: 0.88 }] },
+            },
+          });
+
+          const contextoSemOverride = await carregarContextoPrecificacao(produto.id, grafica.id);
+          const contextoComOverride = await carregarContextoPrecificacao(
+            produto.id,
+            grafica.id,
+            undefined,
+            undefined,
+            { papelId: papelSoCompra64x88.id }
+          );
+
+          // Sem override: geometria do PRODUTO (66×96), comportamento de sempre.
+          expect(contextoSemOverride.offset?.folhas).toMatchObject([
+            { larguraFolha: 0.66, alturaFolha: 0.96 },
+          ]);
+          // Com override: geometria do PAPEL ESCOLHIDO (64×88), NÃO do produto —
+          // é exatamente essa troca que faltava antes da correção do achado 9.
+          expect(contextoComOverride.offset?.folhas).toMatchObject([
+            { larguraFolha: 0.64, alturaFolha: 0.88 },
+          ]);
+          expect(contextoComOverride.offset?.folhas).not.toEqual(contextoSemOverride.offset?.folhas);
+        },
+        TIMEOUT_MS
+      );
+
+      it(
+        "papel override SEM nenhum FormatoFolha cadastrado: folhas fica vazio (não cai de volta pro formato do produto em silêncio)",
+        async () => {
+          const { grafica, s } = await criarGrafica();
+          const produto = await criarProdutoOffset(grafica, s, {
+            gramaturasCadastradas: [150],
+            gramaturaEscolhida: 150,
+          });
+          const catalogoPapelSemFolha = await prisma.itemCatalogo.create({
+            data: { graficaId: grafica.id, tipo: "MATERIA_PRIMA", categoria: "Papel", nome: `Sem folha ${s}` },
+          });
+          // Papel válido, com tabela de preço, mas SEM nenhum FormatoFolha —
+          // cenário "gráfica esqueceu de cadastrar os formatos deste papel".
+          const papelSemFolha = await prisma.itemGrafica.create({
+            data: {
+              graficaId: grafica.id,
+              itemCatalogoId: catalogoPapelSemFolha.id,
+              modeloCalculo: "SIMPLES",
+              tabelaPrecoPapel: { create: [{ gramatura: 150, precoKg: 12 }] },
+            },
+          });
+
+          const contexto = await carregarContextoPrecificacao(produto.id, grafica.id, undefined, undefined, {
+            papelId: papelSemFolha.id,
+          });
+
+          // Decisão documentada no achado 9: folhas fica VAZIO — o motor não
+          // finge que o papel escolhido tem os formatos do produto original.
+          // validarPedidoOffset (validar.ts) já lança MATERIAL_SEM_FOLHA
+          // quando um pedido real é calculado contra este contexto — mesmo
+          // erro reaproveitado, sem código novo.
+          expect(contexto.offset?.folhas).toEqual([]);
         },
         TIMEOUT_MS
       );

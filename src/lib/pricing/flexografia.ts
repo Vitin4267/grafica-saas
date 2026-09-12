@@ -46,7 +46,7 @@ export function calcularFlexografia(
   params: ParametrosMaquinaFlexo,
   defaults: { margemSegurancaPadrao: number; gapPecasPadrao: number } = DEFAULTS_FLEXOGRAFIA
 ): ResultadoFlexografia {
-  validarPedidoFlexografia(pedido, contexto);
+  validarPedidoFlexografia(pedido, contexto, params);
 
   const Q = pedido.quantidade;
   const s = paraDecimal(pedido.margemSeguranca ?? defaults.margemSegurancaPadrao);
