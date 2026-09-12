@@ -93,9 +93,20 @@ async function resolverFornecedorDespesa(
 // validação de isolamento de tenant de resolverFilialDespesa/
 // resolverFornecedorDespesa, agora pra pedidoId. undefined = "sem pedido
 // vinculado", mesmo comportamento de hoje.
+// Achado N22 da Parte 9 da auditoria de código (2026-09-12) — pedidoIdAnterior
+// (o vínculo que a despesa já tinha ANTES desta submissão, undefined em
+// criarDespesa) distingue "vincular um pedido cancelado NOVO" (sempre
+// bloqueado) de "editar uma despesa que já apontava pra esse pedido antes
+// dele ser cancelado" (segue permitido — senão a gráfica não conseguiria
+// mais nem corrigir o valor/vencimento de uma despesa antiga só porque o
+// pedido foi cancelado depois). Sem esta guarda, cancelarPedido em
+// src/app/producao/actions.ts (que só estorna o CustoPedido espelho de uma
+// Despesa ainda PENDENTE) nunca vê despesas vinculadas DEPOIS do
+// cancelamento — o espelho nasceria ativo pra sempre.
 async function resolverPedidoDespesa(
   graficaId: string,
-  pedidoId: string | undefined
+  pedidoId: string | undefined,
+  pedidoIdAnterior?: string | null
 ): Promise<{ ok: true; pedidoId: string | null } | { ok: false; mensagem: string }> {
   if (!pedidoId) {
     return { ok: true, pedidoId: null };
@@ -103,6 +114,9 @@ async function resolverPedidoDespesa(
   const pedido = await prisma.pedido.findFirst({ where: { id: pedidoId, graficaId } });
   if (!pedido) {
     return { ok: false, mensagem: "Pedido não encontrado." };
+  }
+  if (pedido.status === "CANCELADO" && pedidoId !== pedidoIdAnterior) {
+    return { ok: false, mensagem: "Não é possível vincular uma despesa a um pedido cancelado." };
   }
   return { ok: true, pedidoId: pedido.id };
 }
@@ -283,7 +297,7 @@ export async function editarDespesa(
   if (!dadosFornecedor.ok) {
     return { ok: false, mensagem: dadosFornecedor.mensagem };
   }
-  const dadosPedido = await resolverPedidoDespesa(usuario.graficaId, parsed.data.pedidoId);
+  const dadosPedido = await resolverPedidoDespesa(usuario.graficaId, parsed.data.pedidoId, despesa.pedidoId);
   if (!dadosPedido.ok) {
     return { ok: false, mensagem: dadosPedido.mensagem };
   }

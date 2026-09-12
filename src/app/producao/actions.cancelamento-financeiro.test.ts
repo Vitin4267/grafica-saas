@@ -40,6 +40,7 @@ type Fixture = {
   usuarioId: string;
   orcamentoId: string;
   pedidoId: string;
+  categoriaCustoId: string;
 };
 
 async function criarFixture(opts: { comValorFaturamento?: number } = {}): Promise<Fixture> {
@@ -70,10 +71,19 @@ async function criarFixture(opts: { comValorFaturamento?: number } = {}): Promis
   const pedido = await prisma.pedido.create({
     data: { graficaId: grafica.id, orcamentoId: orcamento.id, status: "ARTE" },
   });
+  const categoriaCusto = await prisma.categoriaCusto.create({
+    data: { graficaId: grafica.id, nome: `Categoria ${s}` },
+  });
 
   graficaIdsParaLimpar.push(grafica.id);
 
-  return { graficaId: grafica.id, usuarioId: usuario.id, orcamentoId: orcamento.id, pedidoId: pedido.id };
+  return {
+    graficaId: grafica.id,
+    usuarioId: usuario.id,
+    orcamentoId: orcamento.id,
+    pedidoId: pedido.id,
+    categoriaCustoId: categoriaCusto.id,
+  };
 }
 
 function formDataDe(campos: Record<string, string>): FormData {
@@ -87,10 +97,13 @@ const graficaIdsParaLimpar: string[] = [];
 afterEach(async () => {
   for (const graficaId of graficaIdsParaLimpar) {
     await prisma.logAuditoria.deleteMany({ where: { graficaId } });
+    await prisma.custoPedido.deleteMany({ where: { graficaId } });
+    await prisma.despesa.deleteMany({ where: { graficaId } });
     await prisma.comissao.deleteMany({ where: { graficaId } });
     await prisma.contaReceber.deleteMany({ where: { graficaId } });
     await prisma.pedido.deleteMany({ where: { graficaId } });
     await prisma.orcamento.deleteMany({ where: { graficaId } });
+    await prisma.categoriaCusto.deleteMany({ where: { graficaId } });
     await prisma.cliente.deleteMany({ where: { graficaId } });
     await prisma.usuario.deleteMany({ where: { graficaId } });
     await prisma.grafica.delete({ where: { id: graficaId } }).catch(() => {});
@@ -214,6 +227,234 @@ describe("cancelarPedido desfaz financeiro (achado N2)", () => {
 
       const depois = await buscarVisaoGeralNegocio(f.graficaId);
       expect(depois.faturamentoMes.total).toBe(antes.faturamentoMes.total - 12345);
+    },
+    TIMEOUT_MS
+  );
+});
+
+// Achado N22 da Parte 9 da auditoria de código (2026-09-12): cancelarPedido
+// só estornava CustoPedido derivado de baixa de estoque — os espelhos
+// origem=COMISSAO/DESPESA ficavam ativos pra sempre, inflando custosVariaveis
+// da DRE sem receita correspondente. Decisão do dono: só reverte o que ainda
+// não foi incorrido (Comissao/Despesa ainda PENDENTE — dinheiro que já saiu
+// da gráfica não é estornado sozinho, mesmo critério já aplicado à Comissao).
+describe("cancelarPedido estorna espelhos de CustoPedido (achado N22)", () => {
+  it(
+    "estorna o CustoPedido origem=COMISSAO junto com a Comissao PENDENTE",
+    async () => {
+      const f = await criarFixture();
+      vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(
+        (await prisma.usuario.findUniqueOrThrow({ where: { id: f.usuarioId } })) as never
+      );
+
+      await prisma.comissao.create({
+        data: {
+          graficaId: f.graficaId,
+          orcamentoId: f.orcamentoId,
+          usuarioId: f.usuarioId,
+          baseCalculo: "VALOR",
+          percentualAplicado: 5,
+          valorBase: 1000,
+          valorComissao: 50,
+          status: "PENDENTE",
+        },
+      });
+      const custoComissao = await prisma.custoPedido.create({
+        data: {
+          graficaId: f.graficaId,
+          pedidoId: f.pedidoId,
+          categoriaCustoId: f.categoriaCustoId,
+          origem: "COMISSAO",
+          valor: 50,
+        },
+      });
+
+      const resultado = await cancelarPedido(null, formDataDe({ pedidoId: f.pedidoId }));
+      expect(resultado.ok).toBe(true);
+
+      const custoDepois = await prisma.custoPedido.findUniqueOrThrow({ where: { id: custoComissao.id } });
+      expect(custoDepois.estornadoEm).not.toBeNull();
+
+      const logs = await prisma.logAuditoria.findMany({ where: { graficaId: f.graficaId } });
+      expect(logs.some((l) => l.acao === "custo_pedido.estornar" && l.entidadeId === custoComissao.id)).toBe(true);
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "NÃO estorna o CustoPedido origem=COMISSAO quando a Comissao já está PAGA",
+    async () => {
+      const f = await criarFixture();
+      vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(
+        (await prisma.usuario.findUniqueOrThrow({ where: { id: f.usuarioId } })) as never
+      );
+
+      await prisma.comissao.create({
+        data: {
+          graficaId: f.graficaId,
+          orcamentoId: f.orcamentoId,
+          usuarioId: f.usuarioId,
+          baseCalculo: "VALOR",
+          percentualAplicado: 5,
+          valorBase: 1000,
+          valorComissao: 50,
+          status: "PAGA",
+          pagoEm: new Date(),
+        },
+      });
+      const custoComissao = await prisma.custoPedido.create({
+        data: {
+          graficaId: f.graficaId,
+          pedidoId: f.pedidoId,
+          categoriaCustoId: f.categoriaCustoId,
+          origem: "COMISSAO",
+          valor: 50,
+        },
+      });
+
+      const resultado = await cancelarPedido(null, formDataDe({ pedidoId: f.pedidoId }));
+      expect(resultado.ok).toBe(true);
+
+      const custoDepois = await prisma.custoPedido.findUniqueOrThrow({ where: { id: custoComissao.id } });
+      expect(custoDepois.estornadoEm).toBeNull(); // dinheiro já pago, não estorna sozinho
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "estorna o CustoPedido origem=DESPESA quando a Despesa vinculada ainda está PENDENTE",
+    async () => {
+      const f = await criarFixture();
+      vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(
+        (await prisma.usuario.findUniqueOrThrow({ where: { id: f.usuarioId } })) as never
+      );
+
+      const despesa = await prisma.despesa.create({
+        data: {
+          graficaId: f.graficaId,
+          descricao: "Frete terceirizado",
+          categoriaCustoId: f.categoriaCustoId,
+          valor: 200,
+          vencimento: new Date(),
+          status: "PENDENTE",
+          pedidoId: f.pedidoId,
+        },
+      });
+      const custoDespesa = await prisma.custoPedido.create({
+        data: {
+          graficaId: f.graficaId,
+          pedidoId: f.pedidoId,
+          categoriaCustoId: f.categoriaCustoId,
+          origem: "DESPESA",
+          despesaId: despesa.id,
+          valor: 200,
+        },
+      });
+
+      const resultado = await cancelarPedido(null, formDataDe({ pedidoId: f.pedidoId }));
+      expect(resultado.ok).toBe(true);
+
+      const custoDepois = await prisma.custoPedido.findUniqueOrThrow({ where: { id: custoDespesa.id } });
+      expect(custoDepois.estornadoEm).not.toBeNull();
+
+      // A Despesa em si (contas a pagar) não é tocada — só o espelho sai da
+      // conta de lucro/DRE do pedido cancelado.
+      const despesaDepois = await prisma.despesa.findUniqueOrThrow({ where: { id: despesa.id } });
+      expect(despesaDepois.status).toBe("PENDENTE");
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "NÃO estorna o CustoPedido origem=DESPESA quando a Despesa vinculada já está PAGA",
+    async () => {
+      const f = await criarFixture();
+      vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(
+        (await prisma.usuario.findUniqueOrThrow({ where: { id: f.usuarioId } })) as never
+      );
+
+      const despesa = await prisma.despesa.create({
+        data: {
+          graficaId: f.graficaId,
+          descricao: "Frete já pago",
+          categoriaCustoId: f.categoriaCustoId,
+          valor: 200,
+          vencimento: new Date(),
+          status: "PAGA",
+          pagoEm: new Date(),
+          pedidoId: f.pedidoId,
+        },
+      });
+      const custoDespesa = await prisma.custoPedido.create({
+        data: {
+          graficaId: f.graficaId,
+          pedidoId: f.pedidoId,
+          categoriaCustoId: f.categoriaCustoId,
+          origem: "DESPESA",
+          despesaId: despesa.id,
+          valor: 200,
+        },
+      });
+
+      const resultado = await cancelarPedido(null, formDataDe({ pedidoId: f.pedidoId }));
+      expect(resultado.ok).toBe(true);
+
+      const custoDepois = await prisma.custoPedido.findUniqueOrThrow({ where: { id: custoDespesa.id } });
+      expect(custoDepois.estornadoEm).toBeNull(); // dinheiro já pago, não estorna sozinho
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "NÃO estorna CustoPedido origem=COMPRA (já incorrido por construção — nasce só ao RECEBER a compra)",
+    async () => {
+      const f = await criarFixture();
+      vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(
+        (await prisma.usuario.findUniqueOrThrow({ where: { id: f.usuarioId } })) as never
+      );
+
+      const custoCompra = await prisma.custoPedido.create({
+        data: {
+          graficaId: f.graficaId,
+          pedidoId: f.pedidoId,
+          categoriaCustoId: f.categoriaCustoId,
+          origem: "COMPRA",
+          valor: 300,
+        },
+      });
+
+      const resultado = await cancelarPedido(null, formDataDe({ pedidoId: f.pedidoId }));
+      expect(resultado.ok).toBe(true);
+
+      const custoDepois = await prisma.custoPedido.findUniqueOrThrow({ where: { id: custoCompra.id } });
+      expect(custoDepois.estornadoEm).toBeNull();
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "NÃO estorna CustoPedido origem=TERCEIRIZACAO (já incorrido por construção — nasce só quando valorFinal é preenchido)",
+    async () => {
+      const f = await criarFixture();
+      vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(
+        (await prisma.usuario.findUniqueOrThrow({ where: { id: f.usuarioId } })) as never
+      );
+
+      const custoTerceirizacao = await prisma.custoPedido.create({
+        data: {
+          graficaId: f.graficaId,
+          pedidoId: f.pedidoId,
+          categoriaCustoId: f.categoriaCustoId,
+          origem: "TERCEIRIZACAO",
+          valor: 400,
+        },
+      });
+
+      const resultado = await cancelarPedido(null, formDataDe({ pedidoId: f.pedidoId }));
+      expect(resultado.ok).toBe(true);
+
+      const custoDepois = await prisma.custoPedido.findUniqueOrThrow({ where: { id: custoTerceirizacao.id } });
+      expect(custoDepois.estornadoEm).toBeNull();
     },
     TIMEOUT_MS
   );

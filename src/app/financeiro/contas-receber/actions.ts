@@ -474,9 +474,15 @@ export async function marcarContaReceberPerda(
     return { ok: false, mensagem: "Conta a receber não encontrada." };
   }
 
+  // perdaEm: achado N23 da Parte 9 (2026-09-12) — carimbado JUNTO com o
+  // status, mesmo padrão de Comissao.estornadoEm em cancelarPedido — é o
+  // "quando" que buscarDRE usa pra reconhecer o prejuízo no período certo
+  // (ver src/lib/dre-query.ts). limiteLiberadoEm fica null aqui de propósito:
+  // marcar como perda NUNCA libera limite de crédito sozinho por decisão do
+  // dono — ver liberarLimiteContaReceberPerda abaixo.
   const { count } = await prisma.contaReceber.updateMany({
     where: { id, graficaId: usuario.graficaId, status: { in: ["PENDENTE", "PARCIAL", "EM_COBRANCA"] } },
-    data: { status: "PERDA" },
+    data: { status: "PERDA", perdaEm: new Date() },
   });
   if (count === 0) {
     return { ok: false, mensagem: "Só é possível marcar como perda uma conta pendente, parcial ou em cobrança." };
@@ -493,7 +499,64 @@ export async function marcarContaReceberPerda(
   });
 
   revalidarContasReceber(conta.orcamentoId);
-  return { ok: true, mensagem: "Conta marcada como perda." };
+  return {
+    ok: true,
+    mensagem:
+      "Conta marcada como perda. O limite de crédito do cliente continua bloqueado por esse valor até uma revisão manual.",
+  };
+}
+
+// Achado N23 da Parte 9 da auditoria de código (2026-09-12) — ação SEPARADA
+// do write-off acima, de propósito: marcarContaReceberPerda reconhece o
+// calote (status + perdaEm, vira prejuízo na DRE), mas por decisão do dono
+// NUNCA libera limite de crédito sozinha — o caloteiro continua bloqueado
+// (ver calcularExposicaoCreditoCliente) até um humano decidir liberar,
+// explicitamente, aqui. Idempotente/CAS: só conta que já está em PERDA e
+// ainda não foi liberada (limiteLiberadoEm null) é afetada.
+export async function liberarLimiteContaReceberPerda(
+  _estadoAnterior: ContaReceberResult | null,
+  formData: FormData
+): Promise<ContaReceberResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "FINANCEIRO"))) {
+    return { ok: false, mensagem: MENSAGEM_SEM_PERMISSAO };
+  }
+
+  const parsed = idSchema.safeParse({ id: formData.get("id") });
+  if (!parsed.success) {
+    return { ok: false, mensagem: "Dados inválidos." };
+  }
+  const { id } = parsed.data;
+
+  const conta = await prisma.contaReceber.findFirst({
+    where: { id, graficaId: usuario.graficaId },
+  });
+  if (!conta) {
+    return { ok: false, mensagem: "Conta a receber não encontrada." };
+  }
+
+  const { count } = await prisma.contaReceber.updateMany({
+    where: { id, graficaId: usuario.graficaId, status: "PERDA", limiteLiberadoEm: null },
+    data: { limiteLiberadoEm: new Date() },
+  });
+  if (count === 0) {
+    return { ok: false, mensagem: "Só é possível liberar o limite de uma conta já marcada como perda." };
+  }
+
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "conta_receber.liberar_limite_perda",
+    entidade: "ContaReceber",
+    entidadeId: id,
+    descricao: `Limite de crédito liberado manualmente pra conta a receber "${conta.descricao}" (${formatoMoeda.format(Number(conta.valor))}), marcada como perda`,
+  });
+
+  revalidarContasReceber(conta.orcamentoId);
+  return { ok: true, mensagem: "Limite de crédito liberado." };
 }
 
 // Achado A9 da Parte 4 da auditoria de abrangência (2026-09-09) — registro

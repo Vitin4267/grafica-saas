@@ -177,6 +177,7 @@ export default async function ContasReceberPage() {
                 vencimento: conta.vencimento.toISOString(),
                 status: conta.status,
                 recebidoEm: conta.recebidoEm ? conta.recebidoEm.toISOString() : null,
+                limiteLiberadoEm: conta.limiteLiberadoEm ? conta.limiteLiberadoEm.toISOString() : null,
                 orcamentoId: conta.orcamentoId,
                 clienteNome: conta.orcamento.cliente.nome,
                 valorRetencoes: conta.valorRetencoes.toString(),

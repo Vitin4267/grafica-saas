@@ -14,6 +14,7 @@ function entradaBase(overrides: Partial<EntradaDRE> = {}): EntradaDRE {
     comissoes: 5_000,
     despesasFinanceiras: 0,
     receitaFinanceira: 0,
+    perdas: 0,
     ...overrides,
   };
 }
@@ -164,5 +165,44 @@ describe("montarDRE — receita financeira (achado A5 da Parte 4)", () => {
   it("receita financeira e despesa financeira juntas: resultado líquido = operacional + financeira - despesa", () => {
     const resultado = montarDRE(entradaBase({ receitaFinanceira: 1_000, despesasFinanceiras: 300 }));
     expect(resultado.resultadoLiquido).toBe(resultado.resultadoOperacional + 1_000 - 300);
+  });
+});
+
+// Achado N23 da Parte 9 da auditoria de código (2026-09-12) — write-off de
+// calote (ContaReceber marcada PERDA) passa a reduzir o resultado líquido,
+// nunca mais some do relatório em silêncio.
+describe("montarDRE — perdas com inadimplência (achado N23 da Parte 9)", () => {
+  it("sem perdas (0, valor default): resultado idêntico ao caso base — regressão zero", () => {
+    const semPerda = montarDRE(entradaBase());
+    expect(semPerda.resultadoLiquido).toBe(19_000);
+    const porRotulo = new Map(semPerda.linhas.map((l) => [l.rotulo, l]));
+    expect(porRotulo.get("(−) Perdas com inadimplência (baixadas como perda)")?.valor).toBe(-0);
+  });
+
+  it("com perdas preenchida: reduz o resultado líquido, não mexe no operacional", () => {
+    const semPerda = montarDRE(entradaBase());
+    const comPerda = montarDRE(entradaBase({ perdas: 4_000 }));
+
+    expect(comPerda.resultadoOperacional).toBe(semPerda.resultadoOperacional);
+    expect(comPerda.resultadoLiquido).toBe(semPerda.resultadoLiquido - 4_000);
+    // Nunca mexe na receita/margem — é reconhecimento de prejuízo de um
+    // calote, não desconto sobre a venda original.
+    expect(comPerda.receitaLiquida).toBe(semPerda.receitaLiquida);
+    expect(comPerda.margemContribuicao).toBe(semPerda.margemContribuicao);
+  });
+
+  it("linha de perdas aparece com regime COMPETENCIA e valor negativo", () => {
+    const resultado = montarDRE(entradaBase({ perdas: 2_500 }));
+    const linha = resultado.linhas.find((l) => l.rotulo === "(−) Perdas com inadimplência (baixadas como perda)");
+
+    expect(linha?.regime).toBe("COMPETENCIA");
+    expect(linha?.valor).toBe(-2_500);
+  });
+
+  it("perdas, receita financeira e despesa financeira juntas: resultado líquido soma/subtrai as três", () => {
+    const resultado = montarDRE(
+      entradaBase({ receitaFinanceira: 1_000, despesasFinanceiras: 300, perdas: 2_000 })
+    );
+    expect(resultado.resultadoLiquido).toBe(resultado.resultadoOperacional + 1_000 - 300 - 2_000);
   });
 });

@@ -476,4 +476,117 @@ describe("Despesa → CustoPedido (achado Fin-A1 da Parte 4)", () => {
     },
     TIMEOUT_MS
   );
+
+  // Achado N22 da Parte 9 da auditoria de código (2026-09-12) — "agrava" do
+  // achado principal (cancelarPedido não estornava os espelhos): dava pra
+  // vincular uma Despesa NOVA a um pedido JÁ cancelado, criando um espelho
+  // ativo que cancelarPedido nunca teria chance de ver/estornar (já rodou).
+  it(
+    "criarDespesa rejeita vincular a um pedido já CANCELADO",
+    async () => {
+      const f = await criarFixture();
+      await logarComo(f.usuarioId);
+      await prisma.pedido.update({ where: { id: f.pedidoId }, data: { status: "CANCELADO" } });
+
+      const resultado = await criarDespesa(
+        null,
+        formDataDe({
+          descricao: "Despesa pra pedido cancelado",
+          valor: "100",
+          vencimento: "2026-10-01",
+          categoriaCustoId: f.categoriaCustoId,
+          pedidoId: f.pedidoId,
+        })
+      );
+
+      expect(resultado.ok).toBe(false);
+      expect(resultado.mensagem).toContain("cancelado");
+      const totalDespesas = await prisma.despesa.count({ where: { graficaId: f.graficaId } });
+      expect(totalDespesas).toBe(0);
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "editarDespesa PERMITE manter o vínculo com um pedido que foi cancelado DEPOIS da despesa criada",
+    async () => {
+      const f = await criarFixture();
+      await logarComo(f.usuarioId);
+
+      await criarDespesa(
+        null,
+        formDataDe({
+          descricao: "Despesa antiga, pedido cancelado depois",
+          valor: "150",
+          vencimento: "2026-10-01",
+          categoriaCustoId: f.categoriaCustoId,
+          pedidoId: f.pedidoId,
+        })
+      );
+      const despesa = await prisma.despesa.findFirstOrThrow({
+        where: { graficaId: f.graficaId, descricao: "Despesa antiga, pedido cancelado depois" },
+      });
+
+      await prisma.pedido.update({ where: { id: f.pedidoId }, data: { status: "CANCELADO" } });
+
+      // Só corrige o valor — pedidoId reenviado sem mudar (mesmo padrão de
+      // formulário que resubmete o campo inalterado).
+      const resultado = await editarDespesa(
+        null,
+        formDataDe({
+          despesaId: despesa.id,
+          descricao: "Despesa antiga, pedido cancelado depois",
+          valor: "175",
+          vencimento: "2026-10-01",
+          categoriaCustoId: f.categoriaCustoId,
+          pedidoId: f.pedidoId,
+        })
+      );
+
+      expect(resultado.ok).toBe(true);
+      const despesaDepois = await prisma.despesa.findUniqueOrThrow({ where: { id: despesa.id } });
+      expect(despesaDepois.pedidoId).toBe(f.pedidoId);
+      expect(Number(despesaDepois.valor)).toBe(175);
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "editarDespesa rejeita TROCAR o vínculo pra um pedido diferente que já está CANCELADO",
+    async () => {
+      const f = await criarFixture();
+      await logarComo(f.usuarioId);
+
+      await criarDespesa(
+        null,
+        formDataDe({
+          descricao: "Despesa sem pedido, vai tentar trocar",
+          valor: "90",
+          vencimento: "2026-10-01",
+          categoriaCustoId: f.categoriaCustoId,
+        })
+      );
+      const despesa = await prisma.despesa.findFirstOrThrow({
+        where: { graficaId: f.graficaId, descricao: "Despesa sem pedido, vai tentar trocar" },
+      });
+
+      await prisma.pedido.update({ where: { id: f.pedidoId }, data: { status: "CANCELADO" } });
+
+      const resultado = await editarDespesa(
+        null,
+        formDataDe({
+          despesaId: despesa.id,
+          descricao: "Despesa sem pedido, vai tentar trocar",
+          valor: "90",
+          vencimento: "2026-10-01",
+          categoriaCustoId: f.categoriaCustoId,
+          pedidoId: f.pedidoId,
+        })
+      );
+
+      expect(resultado.ok).toBe(false);
+      expect(resultado.mensagem).toContain("cancelado");
+    },
+    TIMEOUT_MS
+  );
 });

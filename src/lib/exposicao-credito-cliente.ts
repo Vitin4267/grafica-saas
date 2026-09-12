@@ -46,5 +46,19 @@ export async function calcularExposicaoCreditoCliente(clienteId: string): Promis
   const saldosParciais = await Promise.all(parciais.map((c) => saldoContaReceber(prisma, c)));
   const totalParcial = saldosParciais.reduce((soma, s) => soma.plus(s), new D(0));
 
-  return totalPendente.plus(totalParcial).toNumber();
+  // Achado N23 da Parte 9 da auditoria de código (2026-09-12) — antes,
+  // marcar uma conta como PERDA (calote reconhecido) tirava ela desta soma
+  // na hora, liberando o limite de crédito do próprio caloteiro pra comprar
+  // a prazo de novo no dia seguinte. Decisão do dono: PERDA continua
+  // bloqueando limite até uma revisão manual explícita
+  // (liberarLimiteContaReceberPerda, ver src/app/financeiro/contas-receber/actions.ts)
+  // carimbar limiteLiberadoEm — write-off sozinho nunca libera mais.
+  const perdas = await prisma.contaReceber.findMany({
+    where: { orcamento: { clienteId }, status: "PERDA", limiteLiberadoEm: null },
+    select: { id: true, valor: true, pagamentoId: true },
+  });
+  const saldosPerdas = await Promise.all(perdas.map((c) => saldoContaReceber(prisma, c)));
+  const totalPerdas = saldosPerdas.reduce((soma, s) => soma.plus(s), new D(0));
+
+  return totalPendente.plus(totalParcial).plus(totalPerdas).toNumber();
 }

@@ -31,6 +31,7 @@ import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import {
   marcarContaReceberEmCobranca,
   marcarContaReceberPerda,
+  liberarLimiteContaReceberPerda,
   registrarBaixaContaReceber,
 } from "./actions";
 
@@ -217,6 +218,79 @@ describe("marcarContaReceberPerda (achado A5 da Parte 4)", () => {
       expect(resultado.ok).toBe(false);
       const conta = await prisma.contaReceber.findUniqueOrThrow({ where: { id: f.contaId } });
       expect(conta.status).toBe("CANCELADO");
+    },
+    TIMEOUT_MS
+  );
+
+  // Achado N23 da Parte 9 da auditoria de código (2026-09-12) — marcar como
+  // PERDA carimba perdaEm (buscarDRE usa isso pra reconhecer o prejuízo no
+  // período certo) e deixa limiteLiberadoEm null (o caloteiro continua
+  // bloqueado até revisão manual — ver describe abaixo).
+  it(
+    "marcar como perda carimba perdaEm e deixa limiteLiberadoEm null",
+    async () => {
+      const f = await criarFixture({ total: 1000 });
+      await logarComo(f.usuarioId);
+
+      const antes = new Date();
+      const resultado = await marcarContaReceberPerda(null, formDataDe({ id: f.contaId }));
+
+      expect(resultado.ok).toBe(true);
+      const conta = await prisma.contaReceber.findUniqueOrThrow({ where: { id: f.contaId } });
+      expect(conta.perdaEm).not.toBeNull();
+      expect(conta.perdaEm!.getTime()).toBeGreaterThanOrEqual(antes.getTime());
+      expect(conta.limiteLiberadoEm).toBeNull();
+    },
+    TIMEOUT_MS
+  );
+});
+
+describe("liberarLimiteContaReceberPerda (achado N23 da Parte 9)", () => {
+  it(
+    "libera o limite de uma conta em PERDA, carimbando limiteLiberadoEm",
+    async () => {
+      const f = await criarFixture({ total: 1000 });
+      await logarComo(f.usuarioId);
+      await marcarContaReceberPerda(null, formDataDe({ id: f.contaId }));
+
+      const antes = new Date();
+      const resultado = await liberarLimiteContaReceberPerda(null, formDataDe({ id: f.contaId }));
+
+      expect(resultado.ok).toBe(true);
+      const conta = await prisma.contaReceber.findUniqueOrThrow({ where: { id: f.contaId } });
+      expect(conta.limiteLiberadoEm).not.toBeNull();
+      expect(conta.limiteLiberadoEm!.getTime()).toBeGreaterThanOrEqual(antes.getTime());
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "rejeita liberar limite de uma conta que não está em PERDA",
+    async () => {
+      const f = await criarFixture({ total: 1000 });
+      await logarComo(f.usuarioId);
+
+      const resultado = await liberarLimiteContaReceberPerda(null, formDataDe({ id: f.contaId }));
+
+      expect(resultado.ok).toBe(false);
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "idempotente: liberar de novo uma conta já liberada não quebra, só não muda mais nada",
+    async () => {
+      const f = await criarFixture({ total: 1000 });
+      await logarComo(f.usuarioId);
+      await marcarContaReceberPerda(null, formDataDe({ id: f.contaId }));
+      await liberarLimiteContaReceberPerda(null, formDataDe({ id: f.contaId }));
+      const primeiraLiberacao = await prisma.contaReceber.findUniqueOrThrow({ where: { id: f.contaId } });
+
+      const resultado = await liberarLimiteContaReceberPerda(null, formDataDe({ id: f.contaId }));
+
+      expect(resultado.ok).toBe(false); // já não está mais com limiteLiberadoEm null
+      const contaDepois = await prisma.contaReceber.findUniqueOrThrow({ where: { id: f.contaId } });
+      expect(contaDepois.limiteLiberadoEm!.getTime()).toBe(primeiraLiberacao.limiteLiberadoEm!.getTime());
     },
     TIMEOUT_MS
   );

@@ -14,6 +14,7 @@ import {
   cancelarContaReceber,
   marcarContaReceberEmCobranca,
   marcarContaReceberPerda,
+  liberarLimiteContaReceberPerda,
 } from "./actions";
 import { RetencoesContaReceber } from "./RetencoesContaReceber";
 
@@ -41,6 +42,11 @@ type ContaReceber = {
   vencimento: string; // ISO
   status: "PENDENTE" | "PARCIAL" | "RECEBIDO" | "CANCELADO" | "EM_COBRANCA" | "PERDA";
   recebidoEm: string | null;
+  // Achado N23 da Parte 9 da auditoria de código (2026-09-12) — null enquanto
+  // ninguém revisou manualmente: a conta continua bloqueando limite de
+  // crédito do cliente mesmo já marcada como PERDA (ver
+  // calcularExposicaoCreditoCliente). Só relevante quando status=PERDA.
+  limiteLiberadoEm: string | null;
   orcamentoId: string;
   clienteNome: string;
   // Achado A9 da Parte 4 da auditoria de abrangência (2026-09-09) — versão
@@ -138,6 +144,10 @@ export function ContaReceberLinha({
     null
   );
   const [estadoPerda, acaoPerda, marcandoPerda] = useActionState(marcarContaReceberPerda, null);
+  const [estadoLiberarLimite, acaoLiberarLimite, liberandoLimite] = useActionState(
+    liberarLimiteContaReceberPerda,
+    null
+  );
   const [confirmandoCancelamento, setConfirmandoCancelamento] = useState(false);
   const [confirmandoPerda, setConfirmandoPerda] = useState(false);
   const [valorRecebido, setValorRecebido] = useState(conta.saldo);
@@ -361,6 +371,36 @@ export function ContaReceberLinha({
             )}
           </div>
         )}
+
+      {/* Achado N23 da Parte 9 da auditoria de código (2026-09-12) — revisão
+          manual explícita, separada do write-off (botão "Marcar como
+          perda" acima): só a partir daqui a conta some de
+          calcularExposicaoCreditoCliente e o cliente pode comprar a prazo
+          de novo. Marcar como PERDA nunca libera limite sozinho. */}
+      {podeEditar && conta.status === "PERDA" && (
+        <div className="border-t border-slate-100 pt-3 dark:border-slate-800">
+          {conta.limiteLiberadoEm ? (
+            <p className="text-xs text-slate-500">
+              Limite de crédito liberado em {formatoData.format(new Date(conta.limiteLiberadoEm))}.
+            </p>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-xs text-slate-500">
+                Limite de crédito do cliente continua bloqueado por este valor até revisão manual.
+              </p>
+              <form action={acaoLiberarLimite}>
+                <input type="hidden" name="id" value={conta.id} />
+                <Button type="submit" variant="outline" loading={liberandoLimite} className="!py-1.5 text-xs">
+                  {liberandoLimite ? "Liberando..." : "Liberar limite de crédito"}
+                </Button>
+              </form>
+            </div>
+          )}
+          {estadoLiberarLimite && !estadoLiberarLimite.ok && (
+            <p className="mt-1 text-xs text-rose-600">{estadoLiberarLimite.mensagem}</p>
+          )}
+        </div>
+      )}
 
       {confirmandoCancelamento && (
         <div className="border-t border-slate-100 pt-3 dark:border-slate-800">

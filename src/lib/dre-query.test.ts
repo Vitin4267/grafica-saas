@@ -76,6 +76,9 @@ afterEach(async () => {
     await prisma.custoPedido.deleteMany({ where: { graficaId } });
     await prisma.comissao.deleteMany({ where: { graficaId } });
     await prisma.despesa.deleteMany({ where: { graficaId } });
+    await prisma.baixaContaReceber.deleteMany({ where: { contaReceber: { graficaId } } });
+    await prisma.contaReceber.deleteMany({ where: { graficaId } });
+    await prisma.pagamento.deleteMany({ where: { orcamento: { graficaId } } });
     await prisma.pedido.deleteMany({ where: { graficaId } });
     await prisma.orcamentoItem.deleteMany({ where: { orcamento: { graficaId } } });
     await prisma.orcamento.deleteMany({ where: { graficaId } });
@@ -322,6 +325,126 @@ describe("buscarDRE — achado A3 da Parte 4", () => {
       const dre = await buscarDRE(f.graficaId, inicio, fim);
 
       expect(dre.linhas.find((l) => l.rotulo === "Receita bruta")?.valor).toBe(0);
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "exclui CustoPedido de pedido CANCELADO do custo variável, mesmo não estornado (achado N22)",
+    async () => {
+      const f = await criarFixtureBase();
+      const { inicio, fim } = janelaHoje();
+
+      const orcamento = await prisma.orcamento.create({
+        data: {
+          graficaId: f.graficaId,
+          clienteId: f.clienteId,
+          usuarioId: f.usuarioId,
+          status: "APROVADO",
+          total: 5_000,
+        },
+      });
+      const pedidoCancelado = await prisma.pedido.create({
+        data: { graficaId: f.graficaId, orcamentoId: orcamento.id, status: "CANCELADO" },
+      });
+      // Simula exatamente o cenário do achado N22: um CustoPedido de origem
+      // automática (aqui MANUAL simplifica o fixture, o bug era o mesmo pra
+      // qualquer origem) continua com estornadoEm null porque cancelarPedido
+      // não estornou — a DRE precisa excluir pelo PEDIDO cancelado, não só
+      // confiar em estornadoEm.
+      await prisma.custoPedido.create({
+        data: {
+          graficaId: f.graficaId,
+          pedidoId: pedidoCancelado.id,
+          categoriaCustoId: f.categoriaVariavelId,
+          valor: 3_000,
+          origem: "MANUAL",
+        },
+      });
+
+      const dre = await buscarDRE(f.graficaId, inicio, fim);
+
+      expect(dre.linhas.find((l) => l.rotulo === "(−) Custos variáveis")?.valor).toBe(-0);
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "perdas com inadimplência: soma o SALDO de ContaReceber marcada PERDA no período (achado N23)",
+    async () => {
+      const f = await criarFixtureBase();
+      const { inicio, fim } = janelaHoje();
+
+      const orcamento = await prisma.orcamento.create({
+        data: {
+          graficaId: f.graficaId,
+          clienteId: f.clienteId,
+          usuarioId: f.usuarioId,
+          status: "APROVADO",
+          total: 1_000,
+        },
+      });
+      const conta = await prisma.contaReceber.create({
+        data: {
+          graficaId: f.graficaId,
+          orcamentoId: orcamento.id,
+          descricao: "Calote parcial",
+          valor: 1_000,
+          vencimento: new Date("2026-01-01T00:00:00Z"),
+          status: "PERDA",
+          perdaEm: new Date(),
+        },
+      });
+      const pagamento = await prisma.pagamento.create({
+        data: { orcamentoId: orcamento.id, valor: 400, forma: "PIX" },
+      });
+      await prisma.baixaContaReceber.create({
+        data: { contaReceberId: conta.id, pagamentoId: pagamento.id, valor: 400 },
+      });
+
+      const dre = await buscarDRE(f.graficaId, inicio, fim);
+
+      // Só o saldo remanescente (1.000 - 400 já recebidos antes da perda).
+      expect(dre.linhas.find((l) => l.rotulo === "(−) Perdas com inadimplência (baixadas como perda)")?.valor).toBe(
+        -600
+      );
+      expect(dre.resultadoLiquido).toBe(dre.resultadoOperacional - 600);
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "perda marcada FORA do período não entra (fronteira de perdaEm respeitada)",
+    async () => {
+      const f = await criarFixtureBase();
+      const { inicio, fim } = janelaHoje();
+
+      const orcamento = await prisma.orcamento.create({
+        data: {
+          graficaId: f.graficaId,
+          clienteId: f.clienteId,
+          usuarioId: f.usuarioId,
+          status: "APROVADO",
+          total: 1_000,
+        },
+      });
+      await prisma.contaReceber.create({
+        data: {
+          graficaId: f.graficaId,
+          orcamentoId: orcamento.id,
+          descricao: "Calote antigo",
+          valor: 1_000,
+          vencimento: new Date("2020-01-01T00:00:00Z"),
+          status: "PERDA",
+          perdaEm: FORA_DA_JANELA,
+        },
+      });
+
+      const dre = await buscarDRE(f.graficaId, inicio, fim);
+
+      expect(dre.linhas.find((l) => l.rotulo === "(−) Perdas com inadimplência (baixadas como perda)")?.valor).toBe(
+        -0
+      );
     },
     TIMEOUT_MS
   );

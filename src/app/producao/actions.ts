@@ -484,6 +484,65 @@ export async function cancelarPedido(
           comissoesCanceladas = [
             { id: comissaoParaCancelar.id, valorComissao: comissaoParaCancelar.valorComissao },
           ];
+
+          // Achado N22 da Parte 9 da auditoria de código (2026-09-12) —
+          // espelho origem=COMISSAO em CustoPedido (criarCustoAutomaticoComissao
+          // em src/lib/custo-pedido.ts) nunca era tocado aqui: a Comissao em
+          // si já era cancelada acima, mas o custo mirror continuava ativo
+          // pra sempre, inflando custosVariaveis da DRE sem receita
+          // correspondente. Mesma regra "só reverte o que ainda não foi
+          // incorrido" já aplicada à Comissao acima (só PENDENTE) — o
+          // mirror só existe pra uma Comissao que acabou de ser cancelada
+          // NESTE bloco (ainda não paga), então sempre pode ser estornado
+          // junto.
+          const custoComissao = await tx.custoPedido.findFirst({
+            where: { pedidoId, origem: "COMISSAO", estornadoEm: null },
+            include: { categoriaCusto: true },
+          });
+          if (custoComissao) {
+            await tx.custoPedido.update({
+              where: { id: custoComissao.id },
+              data: { estornadoEm: new Date() },
+            });
+            custosEstornados.push({
+              id: custoComissao.id,
+              valor: custoComissao.valor,
+              categoriaNome: custoComissao.categoriaCusto.nome,
+            });
+          }
+        }
+
+        // Achado N22 da Parte 9 — espelho origem=DESPESA (Fin-A1,
+        // criarCustoAutomaticoDespesa) também nunca era tocado. Diferente de
+        // TERCEIRIZACAO/COMPRA (que só nascem DEPOIS que o serviço já foi
+        // prestado/o material já chegou — sempre já incorridos por
+        // construção, nunca estornados aqui de propósito) e de COMISSAO
+        // acima (decidido pelo status da própria Comissao), uma Despesa tem
+        // seu próprio ciclo de pagamento: só estorna o mirror de uma Despesa
+        // que ainda está PENDENTE (nada pago ainda) — PARCIAL/PAGA
+        // continuam intactos, mesmo critério "não reverte o que já saiu do
+        // caixa" de todo o resto desta função.
+        const custosDespesaPendente = await tx.custoPedido.findMany({
+          where: {
+            pedidoId,
+            origem: "DESPESA",
+            estornadoEm: null,
+            despesa: { status: "PENDENTE" },
+          },
+          include: { categoriaCusto: true },
+        });
+        if (custosDespesaPendente.length > 0) {
+          await tx.custoPedido.updateMany({
+            where: { id: { in: custosDespesaPendente.map((c) => c.id) } },
+            data: { estornadoEm: new Date() },
+          });
+          for (const custo of custosDespesaPendente) {
+            custosEstornados.push({
+              id: custo.id,
+              valor: custo.valor,
+              categoriaNome: custo.categoriaCusto.nome,
+            });
+          }
         }
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }

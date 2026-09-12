@@ -87,6 +87,18 @@ export interface EntradaDRE {
    * acima (que já é só Orcamento.total).
    */
   receitaFinanceira: number;
+  /**
+   * COMPETENCIA — soma do SALDO (não o valor cheio — baixas parciais
+   * recebidas antes do write-off continuam contadas normalmente) de
+   * ContaReceber marcada como PERDA (perdaEm) no período. Achado N23 da
+   * Parte 9 da auditoria de código (2026-09-12): antes desta linha, um
+   * calote reconhecido pelo próprio sistema (marcarContaReceberPerda) só
+   * saía de todos os relatórios sem nunca virar prejuízo em nenhum — a
+   * receita ficava contando os R$ como se tivessem entrado pra sempre.
+   * Reconhecida no período em que a PERDA foi marcada, não no período da
+   * venda original (que pode ser um mês completamente diferente).
+   */
+  perdas: number;
 }
 
 export interface ResultadoDRE {
@@ -120,6 +132,7 @@ export function montarDRE(entrada: EntradaDRE): ResultadoDRE {
     comissoes,
     despesasFinanceiras,
     receitaFinanceira,
+    perdas,
   } = entrada;
 
   const receitaLiquida = receitaBruta - impostos - descontos;
@@ -130,7 +143,12 @@ export function montarDRE(entrada: EntradaDRE): ResultadoDRE {
   // recebidos) soma, despesa financeira subtrai, ambas depois do resultado
   // operacional (resultado financeiro clássico de DRE, separado da operação
   // fim-do-negócio de imprimir/vender).
-  const resultadoLiquido = resultadoOperacional + receitaFinanceira - despesasFinanceiras;
+  // Achado N23 da Parte 9 (2026-09-12) — write-off de calote entra depois do
+  // resultado financeiro, mesmo raciocínio de receita/despesa financeira: é
+  // um evento fora da operação fim-do-negócio de imprimir/vender, mas ainda
+  // precisa reduzir o resultado líquido de verdade (nunca ficou de fora de
+  // propósito, era ausência por bug — ver comentário em EntradaDRE.perdas).
+  const resultadoLiquido = resultadoOperacional + receitaFinanceira - despesasFinanceiras - perdas;
 
   // Só existe ponto de equilíbrio quando cada real adicional de receita
   // realmente sobra alguma coisa depois do custo variável (%MC > 0). Com
@@ -158,6 +176,11 @@ export function montarDRE(entrada: EntradaDRE): ResultadoDRE {
     },
     { rotulo: "(+) Receita financeira (juros/multa recebidos)", valor: receitaFinanceira, regime: "CAIXA" },
     { rotulo: "(−) Despesas financeiras (pagas)", valor: -despesasFinanceiras, regime: "CAIXA" },
+    {
+      rotulo: "(−) Perdas com inadimplência (baixadas como perda)",
+      valor: -perdas,
+      regime: "COMPETENCIA",
+    },
     {
       rotulo: "= Resultado líquido",
       valor: resultadoLiquido,

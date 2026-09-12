@@ -3,6 +3,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { D } from "@/lib/pricing/decimal";
 import { montarDRE, type ResultadoDRE } from "@/lib/dre";
+import { saldoContaReceber } from "@/lib/baixa-financeira";
 
 /**
  * Camada de consulta do DRE (achado A3 da Parte 4 da auditoria de
@@ -55,12 +56,21 @@ export async function buscarDRE(graficaId: string, inicio: Date, fim: Date): Pro
       // = VARIAVEL (achado A2, pré-requisito), não estornado, lançado no
       // período. COMPETÊNCIA — lançado na produção, não necessariamente pago
       // (ex: origem CONSUMO_ESTOQUE nunca corresponde a um pagamento).
+      //
+      // Achado N22 da Parte 9 (2026-09-12) — mesmo `semPedidoCancelado` da
+      // receita acima, agora no custo: antes, cancelar um pedido tirava a
+      // RECEITA da DRE mas o CustoPedido de origem automática (comissão/
+      // terceirização/compra/despesa — nunca estornado por
+      // cancelarPedido, ver src/app/producao/actions.ts) continuava somando
+      // aqui pra sempre, derrubando o resultado do mês sem contrapartida
+      // nenhuma de receita.
       prisma.custoPedido.aggregate({
         where: {
           graficaId,
           createdAt: { gte: inicio, lt: fim },
           estornadoEm: null,
           categoriaCusto: { natureza: "VARIAVEL" },
+          ...semPedidoCancelado,
         },
         _sum: { valor: true },
       }),
@@ -94,6 +104,19 @@ export async function buscarDRE(graficaId: string, inicio: Date, fim: Date): Pro
         _sum: { valorJuros: true, valorMulta: true },
       }),
     ]);
+
+  // Achado N23 da Parte 9 (2026-09-12) — perdas com inadimplência (ver
+  // comentário em EntradaDRE.perdas, src/lib/dre.ts). Não dá pra ser um
+  // aggregate simples: o valor reconhecido é o SALDO em aberto no momento
+  // do write-off (mesmo cálculo de calcularExposicaoCreditoCliente), não
+  // ContaReceber.valor cheio — uma conta que já tinha recebido uma baixa
+  // parcial antes de virar PERDA só reconhece o restante como prejuízo.
+  const contasPerda = await prisma.contaReceber.findMany({
+    where: { graficaId, status: "PERDA", perdaEm: { gte: inicio, lt: fim } },
+    select: { id: true, valor: true, pagamentoId: true },
+  });
+  const saldosPerda = await Promise.all(contasPerda.map((c) => saldoContaReceber(prisma, c)));
+  const perdasDec = saldosPerda.reduce((soma, s) => soma.plus(s), new D(0));
 
   let receitaBrutaDec = new D(0);
   let descontosDec = new D(0);
@@ -136,5 +159,6 @@ export async function buscarDRE(graficaId: string, inicio: Date, fim: Date): Pro
     // constrói nesta rodada).
     despesasFinanceiras: 0,
     receitaFinanceira: receitaFinanceiraDec.toNumber(),
+    perdas: perdasDec.toNumber(),
   });
 }

@@ -476,8 +476,12 @@ model MovimentacaoContaPrepaga {
 // — ver comentário em cada call site (exposicao-credito-cliente.ts,
 // fluxo-caixa-query.ts, historico-cliente.ts, exportacao-financeira-query.ts,
 // orcamento/[id]/page.tsx, financeiro/contas-receber/page.tsx). PERDA é
-// tratado como CANCELADO nesses mesmos lugares — dinheiro não é mais
-// esperado, sai de qualquer soma de "a receber".
+// tratado como CANCELADO na maioria desses lugares — dinheiro não é mais
+// esperado, sai de qualquer soma de "a receber". EXCEÇÃO deliberada (achado
+// N23 da Parte 9 da auditoria de código, 2026-09-12): em
+// calcularExposicaoCreditoCliente, PERDA sem `limiteLiberadoEm` CONTINUA
+// contando — write-off reconhece o calote, mas não libera limite de crédito
+// pro caloteiro comprar a prazo de novo sem revisão manual.
 enum StatusContaReceber {
   PENDENTE
   PARCIAL
@@ -545,6 +549,26 @@ model ContaReceber {
   // A8) pra fechar a conta — este campo só explica visualmente o porquê da
   // diferença, nunca decide nada sozinho.
   valorRetencoes Decimal @default(0) @db.Decimal(12, 2)
+
+  // Achado N23 da Parte 9 da auditoria de código (2026-09-12) — write-off
+  // (marcarContaReceberPerda) reconhecia o calote SÓ mudando o status pra
+  // PERDA: a conta sumia de calcularExposicaoCreditoCliente (liberando o
+  // limite do caloteiro pra comprar a prazo de novo, no dia seguinte) e o
+  // prejuízo nunca aparecia em nenhuma linha da DRE. Decisão do dono:
+  // marcar como PERDA reconhece o calote no relatório, mas NÃO libera limite
+  // de crédito sozinho — precisa de uma revisão manual explícita.
+  //
+  // perdaEm: carimbado junto com status=PERDA (mesmo padrão de recebidoEm) —
+  // é o "quando" que buscarDRE usa pra filtrar a perda dentro do período
+  // certo (ver src/lib/dre-query.ts), sem depender de LogAuditoria.
+  perdaEm DateTime?
+  // limiteLiberadoEm: null enquanto ninguém revisou — calcularExposicaoCreditoCliente
+  // (src/lib/exposicao-credito-cliente.ts) continua somando o saldo desta
+  // conta na exposição do cliente mesmo com status=PERDA, bloqueando novo
+  // crédito. Só depois que um humano chama liberarLimiteContaReceberPerda
+  // (ação SEPARADA do write-off em si, src/app/financeiro/contas-receber/actions.ts)
+  // este campo é carimbado e a conta some da exposição.
+  limiteLiberadoEm DateTime?
 
   // Pagamento gerado quando a conta é quitada NUM SÓ pagamento de valor
   // EXATO (caminho antigo, preservado 100% — ver registrarPagamento em
