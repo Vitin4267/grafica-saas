@@ -1,0 +1,31 @@
+version: 2
+updates:
+  # Dependências npm (package.json) — checagem semanal, PR automático
+  # quando existir versão nova ou correção de vulnerabilidade conhecida
+  # (CVE). Item 1 do checklist de segurança de 2026-08-29
+  # (security_grafica_saas.md) — até aqui só era feito manualmente via
+  # `npm audit` durante auditorias pontuais.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    # Agrupa updates de patch/minor num PR só, pra não inundar o repo —
+    # major version sempre isolado (pode ter breaking change, precisa de
+    # revisão própria, ex: o próprio Next.js já quebrou API entre versões
+    # neste projeto, ver AGENTS.md).
+    groups:
+      producao-patch-minor:
+        dependency-type: "production"
+        update-types: ["patch", "minor"]
+      dev-patch-minor:
+        dependency-type: "development"
+        update-types: ["patch", "minor"]
+
+  # GitHub Actions usadas em .github/workflows (ex: actions/checkout,
+  # setup-node) — mesmo raciocínio, versões desatualizadas de Action também
+  # são superfície de segurança (supply chain).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
