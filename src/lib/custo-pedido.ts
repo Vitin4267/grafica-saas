@@ -487,13 +487,15 @@ export async function criarCustoAutomaticoDespesa(
     return;
   }
 
-  // Mesmo cuidado de criarCustoAutomaticoComissao/criarCustoAutomaticoCompra/
-  // criarCustoAutomaticoTerceirizacao: nunca soma calado em cima de um custo
-  // MANUAL já lançado na mesma categoria — só marca possivelDuplicidade pra
-  // UI resolver (ex: a gráfica já tinha lançado o custo desta terceirização
-  // manualmente antes de vincular a Despesa a este pedido).
-  const existeManualMesmaCategoria = await tx.custoPedido.findFirst({
-    where: { pedidoId, categoriaCustoId, origem: "MANUAL" },
+  // Diferente de criarCustoAutomaticoComissao/Compra/Terceirização (que só
+  // checam MANUAL, porque cada uma delas já tem sua própria FK única de
+  // dedup contra reentrância própria — movimentacaoEstoqueId/
+  // solicitacaoCompraId/etapaTerceirizadaId), esta função checa QUALQUER
+  // origem: a Despesa pode ser vinculada a um pedido que JÁ tem custo
+  // automático de outra origem na mesma categoria (ex: terceirização), e os
+  // dois precisam disparar possivelDuplicidade um pro outro.
+  const existeCustoMesmaCategoria = await tx.custoPedido.findFirst({
+    where: { pedidoId, categoriaCustoId, estornadoEm: null },
     select: { id: true },
   });
 
@@ -506,7 +508,7 @@ export async function criarCustoAutomaticoDespesa(
       despesaId: params.despesaId,
       valor: params.valor,
       valorCalculado: params.valor,
-      possivelDuplicidade: existeManualMesmaCategoria !== null,
+      possivelDuplicidade: existeCustoMesmaCategoria !== null,
     },
   });
 }
