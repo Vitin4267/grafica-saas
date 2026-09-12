@@ -283,6 +283,43 @@ describe("buscarDadosExportacaoFinanceira — achado A16 da Parte 4", () => {
   );
 
   it(
+    "conta a receber com status EM_COBRANCA (marcada em cobrança após baixa parcial) exporta o saldo em aberto, não o valor cheio",
+    async () => {
+      const f = await criarFixtureBase();
+      const periodo = periodoHoje();
+
+      const orcamento = await criarOrcamentoAprovado(f, 10_000);
+      const vencimentoHoje = new Date();
+      vencimentoHoje.setUTCHours(0, 0, 0, 0);
+      const conta = await prisma.contaReceber.create({
+        data: {
+          graficaId: f.graficaId,
+          orcamentoId: orcamento.id,
+          clienteId: f.clienteId,
+          descricao: "Parcela em cobrança",
+          valor: 10_000,
+          vencimento: vencimentoHoje,
+          status: "EM_COBRANCA",
+        },
+      });
+      // Simula que R$ 7.000 já foram recebidos (baixa anterior)
+      const pagamentoBaixa = await prisma.pagamento.create({
+        data: { orcamentoId: orcamento.id, valor: 7_000, forma: "PIX" },
+      });
+      await prisma.baixaContaReceber.create({
+        data: { contaReceberId: conta.id, pagamentoId: pagamentoBaixa.id, valor: 7_000 },
+      });
+
+      const dados = await buscarDadosExportacaoFinanceira(f.graficaId, periodo);
+
+      expect(dados.contasAReceber).toHaveLength(1);
+      expect(dados.contasAReceber[0].saldo.toNumber()).toBe(3_000); // 10000 - 7000 já baixado, NÃO 10000
+      expect(dados.contasAReceber[0].status).toBe("EM_COBRANCA");
+    },
+    TIMEOUT_MS
+  );
+
+  it(
     "detecta candidato a duplicidade: Pagamento manual + baixa de ContaReceber pro mesmo orçamento somam mais que o total",
     async () => {
       const f = await criarFixtureBase();

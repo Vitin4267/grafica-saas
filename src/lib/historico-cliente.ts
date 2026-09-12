@@ -106,12 +106,12 @@ export async function buscarHistoricoCliente(
   }));
 
   // Mesmo padrão de /financeiro/contas-receber: saldo em aberto só precisa
-  // ser calculado (via BaixaContaReceber) pras contas PARCIAL — PENDENTE sem
-  // baixa nenhuma tem saldo igual ao valor cheio.
+  // ser calculado (via BaixaContaReceber) pras contas PARCIAL e EM_COBRANCA —
+  // PENDENTE sem baixa nenhuma tem saldo igual ao valor cheio.
   const saldosPorConta = new Map<string, string>();
   await Promise.all(
     contasEmAbertoBrutas
-      .filter((c) => c.status === "PARCIAL")
+      .filter((c) => c.status === "PARCIAL" || c.status === "EM_COBRANCA")
       .map(async (c) => {
         const saldo = await saldoContaReceber(prisma, c);
         saldosPorConta.set(c.id, saldo.toFixed(2));

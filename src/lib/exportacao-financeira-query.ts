@@ -237,7 +237,10 @@ export async function buscarDadosExportacaoFinanceira(
   const hoje = hojeLiteralUTC();
   const contasAReceber: LinhaContaReceber[] = await Promise.all(
     contasAReceberBrutas.map(async (c) => {
-      const saldo = c.status === "PARCIAL" ? await saldoContaReceber(prisma, c) : paraDecimal(c.valor.toString());
+      const saldo =
+        c.status === "PARCIAL" || c.status === "EM_COBRANCA"
+          ? await saldoContaReceber(prisma, c)
+          : paraDecimal(c.valor.toString());
       const { diasAtraso, faixa } = calcularAging(c.vencimento, hoje);
       return {
         id: c.id,

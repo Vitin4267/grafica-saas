@@ -146,6 +146,26 @@ async function criarFixture() {
     },
   });
 
+  // Conta EM_COBRANCA com baixa parcial anterior — saldo esperado 3000,
+  // aparece em contasEmAberto E totalVencido.
+  const contaEmCobranca = await prisma.contaReceber.create({
+    data: {
+      graficaId: grafica.id,
+      orcamentoId: orcamentoAprovado.id,
+      clienteId: clienteAlvo.id,
+      descricao: "Parcela em cobrança",
+      valor: 10_000,
+      vencimento: new Date("2020-01-01T00:00:00Z"),
+      status: "EM_COBRANCA",
+    },
+  });
+  const pagamentoEmCobranca = await prisma.pagamento.create({
+    data: { orcamentoId: orcamentoAprovado.id, valor: 7_000, forma: "PIX" },
+  });
+  await prisma.baixaContaReceber.create({
+    data: { contaReceberId: contaEmCobranca.id, pagamentoId: pagamentoEmCobranca.id, valor: 7_000 },
+  });
+
   // Conta do OUTRO cliente — nunca deve vazar pro histórico do cliente-alvo.
   await prisma.contaReceber.create({
     data: {
@@ -192,9 +212,10 @@ describe("buscarHistoricoCliente (achado A10 da Parte 5)", () => {
       expect(recenteRascunho.status).toBe("RASCUNHO");
 
       // Contas em aberto: PENDENTE (300) + PARCIAL com saldo 250 (400 - 150)
-      // = 550 — nunca a RECEBIDA (100) nem a do outro cliente (9999).
-      expect(historico.contasEmAberto).toHaveLength(2);
-      expect(historico.totalEmAberto).toBeCloseTo(550, 2);
+      // + EM_COBRANCA com saldo 3000 (10000 - 7000)
+      // = 3550 — nunca a RECEBIDA (100) nem a do outro cliente (9999).
+      expect(historico.contasEmAberto).toHaveLength(3);
+      expect(historico.totalEmAberto).toBeCloseTo(3550, 2);
 
       const parcial = historico.contasEmAberto.find((c) => c.descricao === "Parcela vencida parcial")!;
       expect(parcial.saldo).toBeCloseTo(250, 2);
@@ -203,8 +224,12 @@ describe("buscarHistoricoCliente (achado A10 da Parte 5)", () => {
       const aVencer = historico.contasEmAberto.find((c) => c.descricao === "Parcela a vencer")!;
       expect(aVencer.vencida).toBe(false);
 
-      // Vencido: só a parcial (saldo 250) — a "a vencer" não conta.
-      expect(historico.totalVencido).toBeCloseTo(250, 2);
+      const emCobranca = historico.contasEmAberto.find((c) => c.descricao === "Parcela em cobrança")!;
+      expect(emCobranca.saldo).toBeCloseTo(3_000, 2); // 10000 - 7000, NÃO 10000
+      expect(emCobranca.vencida).toBe(true);
+
+      // Vencido: parcial (250) + em cobrança (3000) = 3250 — a "a vencer" não conta.
+      expect(historico.totalVencido).toBeCloseTo(3250, 2);
     },
     TIMEOUT_MS
   );
