@@ -1,4 +1,4 @@
-import { type Dec, paraDecimal, arredondarParaIncremento, maiorDec } from "./decimal";
+import { D, type Dec, paraDecimal, arredondarParaIncremento, maiorDec } from "./decimal";
 import { ErroPrecificacao } from "./erros";
 import { validarSomaEncargos } from "./validar";
 import type { ParametrosTenant } from "./tipos";
@@ -93,7 +93,19 @@ export function comporPreco(params: {
   // duas colunas sempre batem entre si quando gravadas no banco — inclusive
   // pra validação de unitário × quantidade da NF-e. Ver calcularPreco em
   // src/lib/orcamento.ts, que segue a mesma ordem.
-  const precoUnitario = precoFinalAlvo.div(params.quantidade).toDecimalPlaces(2);
+  //
+  // Achado 4 da auditoria do motor M2/Offset (2026-09-12) — CORRIGIDO:
+  // `.toDecimalPlaces(2)` sozinho usa o rounding padrão de `D`
+  // (ROUND_HALF_UP), que pode arredondar PRA BAIXO (ex: 0,12345 → 0,12) e
+  // cancelar silenciosamente o ceil que `arredondarParaIncremento` acabou de
+  // fazer duas linhas acima — o preço final podia sair abaixo do alvo
+  // comercial (chegou a perder 2,8% do preço num cenário real de tiragem
+  // alta) e, no limite, zerar o unitário e abortar o orçamento inteiro em
+  // PRECO_ABAIXO_DO_CUSTO mesmo com preço bruto positivo. `ROUND_UP`
+  // (arredonda pra cima, nunca pra baixo) preserva a garantia que o ceil de
+  // `precoFinalAlvo` já tinha dado: `precoFinal` nunca fica abaixo do alvo
+  // arredondado no incremento comercial.
+  const precoUnitario = precoFinalAlvo.div(params.quantidade).toDecimalPlaces(2, D.ROUND_UP);
   const precoFinal = precoUnitario.times(params.quantidade);
 
   if (precoFinal.lt(custoDireto)) {

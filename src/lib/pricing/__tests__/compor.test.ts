@@ -83,6 +83,27 @@ describe("comporPreco", () => {
     expect(Math.round(unitarioGravado * 7 * 100) / 100).toBe(totalGravado);
   });
 
+  it("achado 4 da auditoria do motor M2/Offset (2026-09-12) — arredondamento do unitário nunca desfaz o ceil do incremento comercial", () => {
+    // Sem encargos nenhum (overhead/margem/imposto/comissao/taxaFinanceira
+    // todos 0) pra isolar só o arredondamento: precoBruto = custoDireto =
+    // 12.34, incremento 0.1 → arredondarParaIncremento faz ceil(123.4)*0.1 =
+    // 12.4 (precoFinalAlvo). Dividido por 100 unidades: 12.4/100 = 0.124 —
+    // na 3ª casa decimal (4, abaixo de 5), o rounding padrão ROUND_HALF_UP
+    // arredondaria pra BAIXO (0.12), e 0.12 × 100 = 12.00 fica ABAIXO do
+    // alvo de 12.4 — exatamente o bug do achado 4. Com ROUND_UP, 0.124 vira
+    // 0.13 (sempre pra cima), e 0.13 × 100 = 13.00 nunca fica abaixo do alvo.
+    const resultado = comporPreco({
+      quantidade: 100,
+      custoBase: paraDecimal(12.34),
+      parametros: { ...PARAMS, overheadPercent: 0, margemPadrao: 0, impostoPercent: 0, incrementoArredondamento: 0.1 },
+    });
+
+    expect(resultado.precoUnitario.toNumber()).toBe(0.13);
+    expect(resultado.precoFinal.toNumber()).toBe(13);
+    // A garantia que importa: nunca abaixo do alvo comercial arredondado (12.4).
+    expect(resultado.precoFinal.toNumber()).toBeGreaterThanOrEqual(12.4);
+  });
+
   it("custoCliche e custoFaca somam em custoDireto uma única vez, sem escalar com a quantidade", () => {
     const semExtras = comporPreco({
       quantidade: 1000,
