@@ -127,6 +127,46 @@ describe("emenda de painéis (achado A9) — calcularM2 via precificar", () => {
     );
   });
 
+  // Achado 3 da auditoria do motor M2/Offset (2026-09-12) — cenário exato do
+  // achado: banner quadrado 3,00×3,00m (piece quadrada pra eliminar qualquer
+  // ambiguidade de escolha de orientação — a=b nos dois sentidos), bobina
+  // 1,60m com refile 0,02m (wUtil=1,56m), sobreposição 0,05m cadastrada.
+  // ANTES: nºPainéis = ceil((3,00+0,04)/1,56) = ceil(1,949) = 2 painéis de
+  // 1,52m cada — que, com a sobreposição de 0,05m, precisariam de 1,57m >
+  // 1,56m (wUtil): fisicamente IMPOSSÍVEL, o motor orçava o impossível.
+  // AGORA: ceil(3,04/(1,56−0,05)) = ceil(3,04/1,51) = 3 painéis — o valor
+  // fisicamente correto.
+  it("achado 3: sobreposição de emenda aumenta nºPainéis (2→3) E a área impressa (dupla nas faixas de sobreposição)", () => {
+    const resultado = precificar(
+      pedidoBackdrop(3.0, 3.0),
+      contextoBackdrop({
+        m2: {
+          bobinas: [{ id: "bobina-1.6", larguraNominal: 1.6, refile: 0.02 }],
+          custoM2Material: 20,
+          custoImpressaoM2: 8,
+          areaMinimaFaturavel: 0.5,
+          configuracaoEmenda: { custoPorMetroLinear: 15, sobreposicaoM: 0.05 },
+        },
+      })
+    );
+
+    // 3 painéis, NÃO 2 — a prova central do achado.
+    expect(resultado.metricas.numPaineis).toBe(3);
+
+    // areaPecaComMargem = wLinha×hLinha = 3,04×3,04 = 9,2416
+    // areaImpressaoExtraPorPeca = sobreposicaoM(0,05) × b(3,04) × (nPainéis−1=2) = 0,304
+    // areaImpressaoPorPeca = 9,2416 + 0,304 = 9,5456 (acima do piso de 0,5, não afeta)
+    // custoImpressao = Q(1) × 9,5456 × custoImpressaoM2(8) = 76,3648
+    expect(resultado.metricas.custoImpressao).toBeCloseTo(76.3648, 4);
+
+    // custoEmenda = custoPorMetroLinear(15) × b(3,04) × (nPainéis−1=2) × Q(1) = 91,2
+    expect(resultado.metricas.custoEmenda).toBeCloseTo(91.2, 6);
+
+    // custoMaterial: numFaixas=1×3=3; lConsumido=3×(3,04+gapPecasPadrao 0,008)=9,144;
+    // areaFaturavel=larguraNominal(1,6)×9,144=14,6304; custoMaterial=14,6304×20=292,608
+    expect(resultado.metricas.custoMaterial).toBeCloseTo(292.608, 4);
+  });
+
   it("nenhuma bobina cadastrada tem largura útil positiva mesmo com ConfiguracaoEmenda: continua lançando PECA_EXCEDE_BOBINA", () => {
     const contexto = contextoBackdrop({
       m2: {

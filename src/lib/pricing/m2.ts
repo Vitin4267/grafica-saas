@@ -106,6 +106,10 @@ export function calcularM2(
   let escolhido: Candidato;
   let custoEmenda = paraDecimal(0);
   let numPaineis: number | undefined;
+  // Achado 3 da auditoria do motor M2/Offset (2026-09-12) — 0 no caminho
+  // normal (sem emenda, sem sobreposição nenhuma); só o caminho de emenda
+  // abaixo preenche com a área extra impressa nas faixas de sobreposição.
+  let areaImpressaoExtraPorPeca = paraDecimal(0);
   const avisos: string[] = [];
 
   if (candidatos.length === 0) {
@@ -127,6 +131,12 @@ export function calcularM2(
     type CandidatoEmenda = Candidato & {
       numPaineis: number;
       custoEmendaTotal: Dec;
+      // Achado 3 da auditoria do motor M2/Offset (2026-09-12) — área extra
+      // IMPRESSA por peça só por causa da sobreposição entre painéis
+      // vizinhos (cada emenda imprime a faixa de sobreposição DUAS vezes,
+      // uma em cada painel que se encosta ali) — ver uso em custoImpressao
+      // mais abaixo, fora deste bloco de emenda.
+      areaImpressaoExtraPorPeca: Dec;
       custoTotal: Dec;
     };
     const candidatosEmenda: CandidatoEmenda[] = [];
@@ -135,22 +145,39 @@ export function calcularM2(
       const larguraNominal = paraDecimal(bobina.larguraNominal);
       const refile = paraDecimal(bobina.refile);
       const wUtil = larguraNominal.minus(refile.times(2));
-      if (wUtil.lte(0)) continue; // bobina sem largura útil positiva não serve nem pra painel
+      // Achado 3 — bobina só serve pra emenda se sobrar largura útil MAIOR
+      // que a própria sobreposição (senão nenhum painel individual consegue
+      // carregar a margem de colagem) — generaliza o guard antigo
+      // (wUtil.lte(0)), que era o caso degenerado sobreposicaoM=0.
+      if (wUtil.lte(sobreposicaoM)) continue;
 
       for (const { a, b, rotacionado } of orientacoes) {
-        // nºPainéis = ceil(a / wUtil) — a é a dimensão que corre ao longo da
-        // largura da bobina (achado propõe ceil(w/wUtil); usamos a dimensão
-        // JÁ ajustada pela margem de segurança, mesma base que o resto da
-        // função usa). Se candidatos ficou vazio, a > wUtil garantidamente
-        // pras 2 orientações em toda bobina (senão teria virado candidato
-        // normal acima) — nºPainéis sempre >= 2 aqui.
-        const numPaineisOrientacao = tetoInteiro(a.div(wUtil));
+        // Achado 3 da auditoria do motor M2/Offset (2026-09-12) — ANTES:
+        // nºPainéis = ceil(a / wUtil), como se cada painel cobrisse wUtil
+        // inteiro de área NOVA. Mas painéis vizinhos se sobrepõem em
+        // sobreposicaoM pra ter onde colar — cada painel além do primeiro
+        // só acrescenta (wUtil − sobreposicaoM) de cobertura NOVA. Dividindo
+        // a peça em N painéis nominalmente iguais (a/N cada) e alargando
+        // cada um pela sobreposição pra ter material de colagem, o painel
+        // real fica (a/N + sobreposicaoM) — que precisa caber em wUtil:
+        //   a/N + sobreposicaoM <= wUtil  ⟺  N >= a / (wUtil − sobreposicaoM)
+        // Cenário do achado: banner 3,00m (a=3,04 com margem), bobina 1,60
+        // com refile 0,02 (wUtil=1,56), sobreposição 0,05m cadastrada —
+        // ANTES dava ceil(3,04/1,56)=2 painéis de 1,52m, que com a
+        // sobreposição de 0,05m cada precisariam de 1,57m > 1,56 (wUtil) —
+        // fisicamente IMPOSSÍVEL, o motor orçava o impossível e cobrava a
+        // menos. AGORA: ceil(3,04/(1,56−0,05)) = ceil(3,04/1,51) = 3 painéis
+        // — o valor fisicamente correto.
+        const numPaineisOrientacao = tetoInteiro(a.div(wUtil.minus(sobreposicaoM)));
         if (numPaineisOrientacao < 2) continue;
 
         // Cada painel ocupa sua própria "faixa" ao longo do comprimento da
         // bobina (um painel tem até wUtil de largura, então só 1 cabe por
         // corte) — Q peças × nºPainéis painéis cada, cada painel com
-        // comprimento "b" (a dimensão perpendicular à que foi dividida).
+        // comprimento "b" (a dimensão perpendicular à que foi dividida). A
+        // área de material (e, portanto, seu custo) já reflete o nºPainéis
+        // corrigido acima — mais painéis = mais faixas = mais m² de bobina
+        // consumidos, sem precisar de nenhum ajuste extra aqui.
         const numFaixas = Q * numPaineisOrientacao;
         const lConsumido = paraDecimal(numFaixas).times(b.plus(g));
         const areaFaturavel = larguraNominal.times(lConsumido);
@@ -164,6 +191,13 @@ export function calcularM2(
           .times(numPaineisOrientacao - 1)
           .times(Q);
 
+        // Achado 3 (consequência 3) — cada emenda IMPRIME a faixa de
+        // sobreposição duas vezes (uma por painel que se encosta ali), então
+        // a área impressa real por peça é maior que w×h nominal em
+        // (nºPainéis−1) × sobreposicaoM × b — aplicado em custoImpressao
+        // fora deste bloco (só quando o pedido veio pelo caminho de emenda).
+        const areaImpressaoExtraPorPeca = sobreposicaoM.times(b).times(numPaineisOrientacao - 1);
+
         candidatosEmenda.push({
           bobina,
           rotacionado,
@@ -173,6 +207,7 @@ export function calcularM2(
           custoMaterial,
           numPaineis: numPaineisOrientacao,
           custoEmendaTotal,
+          areaImpressaoExtraPorPeca,
           custoTotal: custoMaterial.plus(custoEmendaTotal),
         });
       }
@@ -195,6 +230,7 @@ export function calcularM2(
     escolhido = escolhidoEmenda;
     custoEmenda = escolhidoEmenda.custoEmendaTotal;
     numPaineis = escolhidoEmenda.numPaineis;
+    areaImpressaoExtraPorPeca = escolhidoEmenda.areaImpressaoExtraPorPeca;
     avisos.push(
       `Peça de ${w.toFixed(2)}m × ${h.toFixed(2)}m excede a largura útil de todas as bobinas cadastradas — ` +
         `dividida em ${numPaineis} painéis com emenda (sobreposição recomendada de ${sobreposicaoM.toFixed(3)}m por emenda). ` +
@@ -217,7 +253,16 @@ export function calcularM2(
   // regressão pra quem nunca configurou o campo.
   const areaMinimaFaturavel = paraDecimal(contexto.areaMinimaFaturavel);
   const areaPecaComMargem = wLinha.times(hLinha);
-  const areaImpressaoPorPeca = maiorDec(areaPecaComMargem, areaMinimaFaturavel);
+  // Achado 3 da auditoria do motor M2/Offset (2026-09-12) — piso comercial
+  // primeiro (área mínima faturável, achado N18), SOMA da área extra
+  // impressa por sobreposição de emenda DEPOIS: são dois ajustes
+  // independentes (um é preço mínimo de venda, o outro é consumo físico
+  // real de tinta/impressão) — areaImpressaoExtraPorPeca é 0 em todo pedido
+  // que não passou pelo caminho de emenda (ver declaração acima), então
+  // nenhuma regressão pra quem nunca precisou emendar.
+  const areaImpressaoPorPeca = maiorDec(areaPecaComMargem, areaMinimaFaturavel).plus(
+    areaImpressaoExtraPorPeca
+  );
 
   const custoImpressaoM2 = paraDecimal(contexto.custoImpressaoM2);
   const custoImpressao = paraDecimal(Q).times(areaImpressaoPorPeca).times(custoImpressaoM2);
