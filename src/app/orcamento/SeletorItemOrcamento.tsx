@@ -809,7 +809,7 @@ export function SeletorItemOrcamento({
         <Input
           label="Horas estimadas"
           type="number"
-          min={0.01}
+          min={0.25}
           step="0.25"
           value={valores.horasEstimadas}
           onChange={set("horasEstimadas")}

@@ -730,7 +730,7 @@ export function EditarOrcamentoForm({
             label="Horas estimadas"
             name="horasEstimadas"
             type="number"
-            min={0.01}
+            min={0.25}
             step="0.25"
             defaultValue={valoresIniciais.horasEstimadas}
             placeholder="opcional"
