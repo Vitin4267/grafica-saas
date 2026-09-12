@@ -42,8 +42,9 @@ fonte externa aplicável, o relatório marca explicitamente
 "(inferência minha)".
 
 **Total catalogado:** 88 achados nas Partes 1-6 + 24 achados na Parte 7
-seções A-E (haiku) + 9 achados na Parte 7 seção F (Opus, 2026-08-31) =
-**121 achados**.
+seções A-E (haiku) + 9 achados na Parte 7 seção F (Opus, 2026-08-31) +
+20 achados na Parte 8 (auditoria de código, Opus, 2026-09-02 — 18 novos
+N1-N18 + resíduos R1/R3; R2 é ponteiro pra N7) = **141 achados**.
 
 **Nada aqui foi implementado ainda** — é material bruto de pesquisa, a
 base pra decidir o que atacar. Duas exceções: os achados "motor de preço
@@ -641,6 +642,8 @@ Placar depois desta rodada: Parte 7 com 11 dos 33 achados construídos, 22 pende
 
 Placar depois desta rodada: Parte 7 com 18 dos 33 achados construídos, 15 pendentes; Parte 6 A9 fechado (com a ressalva COBRANCA documentada acima).
 
+**Atualização 2026-09-02 (rodada 20 já registrada só no "Resumo de custo") — Parte 8 adicionada, 20 achados, NADA construído.** A pedido do usuário ("dispare um subagente opus e fale pra ele ler e apontar tudo que está ruim no código"), 1 subagente Opus fez uma revisão de código pura — leu `arquitetura-resumo.md` + este documento inteiro + `schema.prisma`, depois mergulhou em `src/lib/` e `src/app/*/actions.ts`. Diferente das Partes 1-7 (pesquisa "o módulo cobre o universo de gráficas?"), a Parte 8 é "o que está errado no código que já existe": 18 achados novos (N1-N18: 6 🔴 / 8 🟡 / 4 🟢) + 3 resíduos em achados já marcados CONSTRUÍDO (R1-R3). Cada um tem `arquivo:linha`, confirmado por leitura de código e rastreamento de call-site (sem rodar teste). O relatório bruto, com números e cenários, está em `auditoria-codigo-2026-09-02.md` na raiz do repo. Os 3 piores, todos com dinheiro em jogo e alcançáveis pela UI hoje: **N1** (`SIMPLES` divide o preço pela área quando o vendedor digita largura/altura), **N2** (cancelar pedido não desfaz `ContaReceber`/`Comissao` e o orçamento segue como faturamento), **N3** (pedido mínimo aplicado por item, não por pedido).
+
 ## Como ler cada parte
 
 Cada uma das 6 partes abaixo cobre um módulo (ou par de módulos muito
@@ -709,7 +712,7 @@ Pesquisei como sete perfis de gráfica brasileira realmente cotam (comunicação
 - `ProcessoSetupPorPeca`: adicionar `TAMPOGRAFIA`, `GRAVACAO_LASER`, `DTG`, `TRANSFER`, `OUTRO` + `MaquinaSetupPorPeca.tipoProcessoOutro String?`.
 - Regra de filtro: `PERSONALIZACAO` aceita qualquer máquina cujo `tipoProcesso` não seja um dos 3 já mapeados 1:1.
 
-### A4. Bordado não tem modelo — o driver de custo (pontos) não existe em lugar nenhum
+### A4. Bordado não tem modelo — o driver de custo (pontos) não existe em lugar nenhum — **CONSTRUÍDO (commit dd7d17d, 2026-09-03; rodada não documentada corretamente aqui; verificado 2026-09-09, tsc + 138 testes dedicados passando)**
 
 **Custo estimado:** 🔴 Caro — novo `ModeloCalculo`, novo model `MaquinaBordado` e nova fórmula de custo por pontos em `src/lib/pricing/*`.
 
@@ -719,7 +722,7 @@ Pesquisei como sete perfis de gráfica brasileira realmente cotam (comunicação
 
 **Proposta:** `ModeloCalculo.BORDADO` + `model MaquinaBordado { custoPorMilPontos, custoMatrizDigitalizacao, cabecas Int, custoHoraMaq?, custoMinimo }` + `OrcamentoItem.numeroPontos Int?` + o substrato de A2. `custoBase = custoMatrizDigitalizacao (1×, não escala com tiragem — mesmo princípio já provado no clichê de etiqueta) + Q × (pontos/1000 × custoPorMilPontos) + Q × custoSubstrato`.
 
-### A5. DTF está classificado como o processo errado
+### A5. DTF está classificado como o processo errado — **CONSTRUÍDO (rodada anterior não documentada corretamente aqui; verificado 2026-09-08, migration 20260905090000_dtf_modelo_calculo já aplicada, tsc + 13 testes dedicados de DTF passando contra o banco real)**
 
 **Custo estimado:** 🟡 Médio — novo rótulo `ModeloCalculo.DTF` reaproveitando `calcularM2` existente, mais dois campos de contexto novos em `carregar.ts`/`m2.ts`, sem model novo.
 
@@ -729,7 +732,7 @@ Pesquisei como sete perfis de gráfica brasileira realmente cotam (comunicação
 
 **Proposta:** `ModeloCalculo.DTF` como **rótulo apontando para `calcularM2`** (mesmo precedente dos 3 rótulos que compartilham `calcularSetupPorPeca`), com dois extras: `custoSubstratoPorPeca` (a camiseta) e `custoPrensagemPorPeca` (a prensa térmica). Não precisa de motor novo — precisa parar de mandar DTF pro motor errado.
 
-### A6. Nenhum modelo cobra por TEMPO DE MÁQUINA
+### A6. Nenhum modelo cobra por TEMPO DE MÁQUINA — **CONSTRUÍDO (commit dd7d17d, 2026-09-03; rodada não documentada corretamente aqui; verificado 2026-09-09, tsc + 15 testes dedicados passando)**
 
 **Custo estimado:** 🔴 Caro — novo `ModeloCalculo`, novo model `MaquinaTempo` e nova fórmula de custo por tempo/corte no motor de precificação.
 
@@ -739,7 +742,7 @@ Pesquisei como sete perfis de gráfica brasileira realmente cotam (comunicação
 
 **Proposta:** `ModeloCalculo.TEMPO_MAQUINA` + `model MaquinaTempo { custoHoraMaq, custoSetupPorJob, custoMinimo, custoPorMetroCorte? }` + `OrcamentoItem.tempoEstimadoMin Decimal?` e `OrcamentoItem.metrosCorte Decimal?` (a gráfica escolhe a base na máquina). Combinar com A7 pro consumo de chapa.
 
-### A7. Não existe nesting em CHAPA RÍGIDA — a categoria "Placas e Chapas" não fecha custo
+### A7. Não existe nesting em CHAPA RÍGIDA — a categoria "Placas e Chapas" não fecha custo — **CONSTRUÍDO (commit efe84b8, 2026-09-09; reaproveita imposição 2D do Offset/Digital + corte opcional via MaquinaTempo do A6)**
 
 **Custo estimado:** 🔴 Caro — novo `ModeloCalculo` que reaproveita o nesting do Offset mas precisa de fórmula de custo própria, e depende de A6 (também 🔴) para o tempo de corte.
 
@@ -774,9 +777,11 @@ Três limitações que andam juntas, todas em `carregar.ts:162-204`:
 
 **Proposta:** quando nenhuma orientação couber, calcular `nºPainéis = ceil(w / wUtil)` e adicionar `custoEmendaPorMetroLinear × comprimento da emenda × (nºPainéis − 1)` — com `ConfiguracaoEmenda { itemGraficaId, custoPorMetroLinear, sobreposicaoM }` — devolvendo **aviso** no breakdown em vez de erro. Depende de A1 estar resolvido se for implementado via acabamento METRO_LINEAR.
 
-### A10. Editorial multipágina não é representável — 7 produtos do catálogo mestre são inutilizáveis no motor
+### A10. Editorial multipágina não é representável — 7 produtos do catálogo mestre são inutilizáveis no motor — **PARCIALMENTE CONSTRUÍDO (Rota 1 fechada 2026-09-06, commit 1bb7281; Rota 2 segue de propósito fora de escopo)**
 
-**Custo estimado:** 🔴 Caro — a própria proposta lista duas rotas alternativas e recomenda a mais estrutural (item de orçamento composto, `itemPaiId`), que é uma mudança transversal ao modelo central de orçamento.
+**Custo estimado (restante pendente):** 🔴 Caro — a Rota 2 (item de orçamento composto, `itemPaiId`) é uma mudança transversal ao modelo central de orçamento (dezenas de call-sites: PDF, breakdown, produção, nota fiscal), não tentada nesta rodada por decisão deliberada.
+
+**Status:** `ModeloCalculo.EDITORIAL` construído (Rota 1/específica) — `src/lib/pricing/editorial.ts`: custo do miolo (peso do papel + área impressa, arredondando páginas pra cima pro próximo múltiplo do caderno) + custo da capa (capa aberta = 2× largura do miolo + orelhas, sem lombada — gap documentado) + encadernação fixa por peça, passando por `comporPreco` como todo modelo. `OrcamentoItem` ganhou papel/gramatura/cores do MIOLO e da CAPA como campos diretos (sufixo `Miolo`/`Capa`, sem model de override — Editorial não tem papel fixo no produto pra sobrepor). `ParametrosGrafica.paginasPorCadernoPadrao` (default 16, configurável). 16 testes cobrindo arredondamento de caderno e composição de custo. **Gaps aceitos conscientemente**: criar orçamento novo com EDITORIAL como primeiro item (fluxo Calculadora) não está cabeado (falha segura com erro de validação, workaround via "+ Adicionar item" funciona 100%); duplicação/"Pedir de novo" não recopia papel/gramatura/páginas (mesmo padrão do gap já aceito em N8/Offset); capa não soma lombada. **Rota 2 (item composto) permanece não construída** — é o gap estrutural mais transversal do módulo, deliberadamente não tentada numa única rodada de subagente por risco de blast radius.
 
 **O que falta:** o modelo OFFSET assume **uma peça plana** (`larguraM`, `alturaM`, um `papelId`, uma `gramaturaGm2`, `corFrente`/`corVerso`). Revista, Catálogo, Livro Brochura, Livro Capa Dura, Apostila, Encadernação Espiral e Wire-o já estão no catálogo mestre — nenhum deles pode ser precificado, porque falta: **número de páginas**, cálculo de **cadernos/signatures**, e principalmente **papel/gramatura/cores do MIOLO separados dos da CAPA**.
 
@@ -786,7 +791,7 @@ Três limitações que andam juntas, todas em `carregar.ts:162-204`:
 1. *Específica:* `ModeloCalculo.EDITORIAL` + `OrcamentoItem.numeroPaginas` + `enum TipoEncadernacao { COLADA_HOTMELT, PUR, COSTURADA, GRAMPO_CANOA, WIRE_O, ESPIRAL, CAPA_DURA, OUTRO }` + `tipoEncadernacaoOutro` + `temOrelhas`/`larguraOrelhaCm` + tabela de componentes (MIOLO/CAPA/GUARDA/SOBRECAPA) com papel+gramatura+cores próprios.
 2. *Genérica e mais valiosa:* **item de orçamento composto** — `OrcamentoItem.itemPaiId String?`, permitindo que uma linha do orçamento seja a soma de sub-linhas, cada uma com **seu próprio `modeloCalculo`**. Isso resolve num só golpe: livro (capa OFFSET + miolo OFFSET + encadernação), caixa (caixa CHAPA + berço + luva), kit de brinde (caneca REVENDA + gravação PERSONALIZACAO), letreiro (chapa cortada + iluminação + instalação). É o gap estrutural mais transversal do módulo.
 
-### A11. Embalagem/cartonagem: a dimensão que importa é a planificação, não o produto acabado
+### A11. Embalagem/cartonagem: a dimensão que importa é a planificação, não o produto acabado — ✅ CONSTRUÍDO (commit 87c053d, rodada 21; tipo de onda/resistência do papelão ondulado ficou de fora, gap documentado)
 
 **Custo estimado:** 🟡 Médio — campos novos nullable em `OrcamentoItem`, mas exigem alterar a chamada de nesting existente pra preferir a dimensão planificada quando presente.
 
@@ -834,7 +839,7 @@ Três limitações que andam juntas, todas em `carregar.ts:162-204`:
 
 **Proposta:** `ParametrosGrafica.toleranciaTiragemPadraoPercent Decimal? @default(0.10)` + `Orcamento.toleranciaTiragemPercent Decimal?` (snapshot no envio, igual `validoAteEm`), impresso no PDF e usado como aviso no momento de faturar quantidade divergente.
 
-### B3. Entrega programada / parcelada não existe
+### B3. Entrega programada / parcelada não existe — **PARCIALMENTE CONSTRUÍDO (commit 632aa62, 2026-09-09; versão contratual/declarativa via `OrcamentoEntregaProgramada` — herdar como N `Entrega` físicas na aprovação depende de relaxar `Entrega.pedidoId @unique`, junto do achado F2/Produção, fora de escopo)**
 
 **Custo estimado:** 🔴 Caro — novo model relacionado a `Entrega`/`Pedido`, relaxar `Entrega.pedidoId` de `@unique` pra N:1, e a própria proposta avisa que interage com o financeiro (faturamento por entrega) e pede avaliação antes de implementar.
 
@@ -844,7 +849,7 @@ Três limitações que andam juntas, todas em `carregar.ts:162-204`:
 
 **Proposta:** `model OrcamentoEntregaProgramada { orcamentoId, ordem Int, quantidade Int, dataPrevista DateTime?, localEntrega String? }` (soma validada = quantidade total do item/orçamento), e relaxar `Entrega.pedidoId` de `@unique` para N:1, herdando as parcelas na aprovação. Interage com o financeiro (`ContaReceber` por parcela de entrega) — vale checar antes de implementar.
 
-### B4. Prazo é por orçamento, nunca por item
+### B4. Prazo é por orçamento, nunca por item — **CONSTRUÍDO 2026-09-04 (rodada 21)**
 
 **Custo estimado:** 🟢 Barato — campo nullable novo em `OrcamentoItem` (model já existente), com o cabeçalho passando a exibir o máximo dos itens; o enum de início de contagem é só um complemento opcional.
 
@@ -854,7 +859,7 @@ Três limitações que andam juntas, todas em `carregar.ts:162-204`:
 
 **Proposta:** `OrcamentoItem.prazoEstimadoDias Int?` opcional; o campo do cabeçalho passa a exibir o máximo dos itens quando algum estiver preenchido (sem quebrar quem só usa o cabeçalho). Complemento útil: `enum InicioContagemPrazo { APROVACAO_ORCAMENTO, APROVACAO_ARTE, APROVACAO_BAT, RECEBIMENTO_MATERIAL }` — "o prazo conta a partir da aprovação da arte" é cláusula padrão e o sistema já tem os marcos (`etapaAprovacaoEm`, aprovação de BAT) pra ancorar isso. *Esse enum é inferência minha* apoiada na existência dos marcos, não achei fonte que o formalize.
 
-### B5. Não há tabela de faixas de quantidade no mesmo item
+### B5. Não há tabela de faixas de quantidade no mesmo item — ✅ CONSTRUÍDO (commit f9c1a9b, rodada 21; promoção da faixa escolhida na aprovação é manual, ver limitação documentada no schema)
 
 **Custo estimado:** 🟡 Médio — 1 model novo com FK direta pra `OrcamentoItem`, reaproveitando o mesmo motor de cálculo e o mesmo mecanismo de promoção na aprovação que `OrcamentoOpcao` já usa.
 
@@ -869,6 +874,8 @@ Três limitações que andam juntas, todas em `carregar.ts:162-204`:
 **Custo estimado (restante pendente):** 🔴 Caro — tornar `itemGraficaId` opcional mexe numa FK central que o motor de precificação e todo o resto do sistema assume presente, e exige derivar `custoAquisicaoUnitario` corretamente pra não mentir a margem.
 
 **Status:** `OrcamentoItem.descricaoLivre` sobrepõe o nome do catálogo no PDF e no link público quando preenchido — resolve o caso "80% do incômodo" citado abaixo. **Fora de escopo de propósito**: `itemGraficaId` continua obrigatório — a parte opcional do achado (permitir item sem catálogo, nome+preço digitados) não foi construída.
+
+**Investigado em profundidade e descartado (rodada 21, 2026-09-06):** um subagente levantou o raio de impacto real de tornar `itemGraficaId` nullable, com grep exaustivo — é maior e mais arriscado do que a proposta original sugeria, **não recomendado fazer numa rodada normal**: pelo menos 8 call-sites substantivos em 4 módulos diferentes, vários com acesso non-null direto (`item.itemGrafica.fichaTecnica` sem `?.`) que quebraria em RUNTIME, não em compile-time (`tsc` não pegaria, já que o tipo Prisma assume o campo presente). Pontos concretos: `actions/itens.ts` (precisaria de branch inteiro "sem catálogo"), `orcamento-precificacao.ts`/`pricing/{precificar,carregar,compor}.ts` (`carregarContextoPrecificacao` não tem NENHUM caminho sem `ItemGrafica`; o precedente REVENDA/A12 sugerido como caminho barato NÃO elimina a necessidade de `ItemGrafica` — REVENDA ainda tem NCM/unidade/categoria de custo do catálogo por trás), `pedido-aprovacao.ts` e `status-transicao.ts` (acesso non-null a `fichaTecnica`, quebraria aprovação e baixa de estoque), `pdf/mapear-dados.ts` (acesso non-null a `unidadeContagem`/`fatorConversao`). **Achado novo, fora do escopo original:** `actions/nfe.ts` usa `item.itemGrafica.itemCatalogo.ncm!` — NCM é campo fiscal OBRIGATÓRIO por lei na NF-e; um item avulso sem `ItemGrafica` não tem NCM nenhum, um problema de compliance que precisaria de decisão de produto própria (bloquear NF-e com item avulso? exigir NCM digitado?) antes de qualquer implementação. Se retomar este achado no futuro, começar pela decisão de NCM, não pelo schema.
 
 **O que falta:** `OrcamentoItem.itemGraficaId String` é NOT NULL, e o único texto livre por item é `acabamento String?` (documentado como "modo SIMPLES apenas"). Um serviço avulso, uma terceirização pontual ou uma linha "montagem e instalação no local" exige criar item privado de catálogo antes. E o PDF mostra o nome genérico do catálogo ("Banner em Lona"), não "Banner 3×1m lona 440g com bastão e corda".
 
@@ -948,7 +955,7 @@ enum TipoEtapaProducao {
 
 **Ponto de atenção que a implementação vai encontrar:** três constantes hard-coded se tornam incorretas com fluxo configurável e precisam virar consultas ao fluxo — `ESTAGIOS_PRE_PRODUCAO` (gate do módulo Entrega, `producao-estagios.ts:40`), `ESTAGIOS_ATRIBUIVEIS` (`:49`, também usado por `ResponsavelEstagio` e pelo bypass de permissão em `podeConfirmarEstagio`), e a condição literal `pedido.status === "CLICHE_FACA" && proximoStatus === "PRODUCAO"` que dispara a baixa de estoque (`status-transicao.ts:272`) — esta última deve virar `etapaAnterior.baixaEstoque === true`.
 
-#### A2 — `CLICHE_FACA` embute o perfil da gráfica de referência no nome do estado
+#### A2 — `CLICHE_FACA` embute o perfil da gráfica de referência no nome do estado — ✅ CONSTRUÍDO (commit 2d671ec, rodada 21; mecanismo de rótulo por tenant já existia, faltava só o PDF de ordem de produção usar ele)
 **Custo estimado:** 🟡 Médio — a proposta usa exclusivamente o campo `rotulo` do model novo `EtapaGrafica` da Fase 1 de A1; sem esse model construído primeiro, A2 não tem onde guardar o rótulo por tenant.
 
 **O que falta.** O nome do estado (visível no Kanban, no e-mail ao responsável, no webhook de automação, no PDF) assume matriz física de flexografia/corte-e-vinco. Offset usa chapa (CTP), serigrafia usa tela, rotogravura usa cilindro, digital não usa nada.
@@ -1003,8 +1010,11 @@ Esse único model destrava: lead time por etapa, gargalo por coluna do Kanban, p
 
 **Proposta.** As 5 FKs opcionais em `ApontamentoEtapa`, **exatamente no padrão já estabelecido por `RegistroManutencao`** (5 FKs nullable, "exatamente 1 preenchida", validado em app não no banco) — reaproveitando literalmente `validarSelecaoMaquina` de `src/lib/manutencao-maquina.ts`, mais `equipamentoId` (guilhotina, laminadora, plotter etc., que hoje só serve pra manutenção e nunca aparece em produção). Sugestão padrão pré-preenchida a partir da máquina que o `ItemGrafica` usou na precificação, editável pelo operador. Quando divergir, gerar aviso na tela de custos do pedido ("rodou em máquina diferente da orçada") — encaixa no campo `possivelDuplicidade`/aviso que `CustoPedido` já sabe renderizar.
 
-#### B3 — Refugo só existe uma vez, no lugar errado, e como perda de MATERIAL
-**Custo estimado:** 🟡 Médio — campos novos em `ApontamentoEtapa` (model já existente de B1) mais 1 enum novo fechado+`OUTRO` (`MotivoRefugo`), reaproveitando o motor de baixa de estoque que `perda-fixa-producao.ts` já implementa.
+#### B3 — Refugo só existe uma vez, no lugar errado, e como perda de MATERIAL — **✅ CONSTRUÍDO (commit b9e3fc6, 2026-09-07)**
+
+**Status:** `ApontamentoEtapa` ganhou `quantidadeBoa`/`quantidadeRefugo`/`motivoRefugo` (enum `MotivoRefugo`, 9 valores) + `motivoRefugoOutro`, gravados no apontamento que está sendo FECHADO (o refugo aconteceu durante a etapa que o pedido está saindo). Baixa de estoque adicional OPCIONAL (operador decide, nunca imposta) reaproveita literalmente o motor da perda fixa de calibragem — mesma `snapshotCustoFicha`/`snapshotLoteFicha`/`criarCustoAutomaticoConsumo`, quantidade proporcional (consumo-por-unidade × refugo reportado). `MATERIAL_DEFEITUOSO` nunca gera `CustoPedido` automático (custo potencialmente recuperável do fornecedor) mas sempre gera a `MovimentacaoEstoque` (material saiu fisicamente). **Escopo desta rodada:** só a ficha técnica do PRODUTO, não de acabamentos anexados.
+
+**Custo estimado (histórico):** 🟡 Médio — campos novos em `ApontamentoEtapa` (model já existente de B1) mais 1 enum novo fechado+`OUTRO` (`MotivoRefugo`), reaproveitando o motor de baixa de estoque que `perda-fixa-producao.ts` já implementa.
 
 **O que falta.** O sistema captura perda exatamente **uma** vez: na transição `CLICHE_FACA → PRODUCAO`, via `resolverPerdasConfirmadas` / `perdaFixaPadrao`, e o que ele modela é *perda de calibragem/acerto de máquina* (folhas de acerto), lançada como `MovimentacaoEstoque` + `CustoPedido`. Depois disso, **nada**: 300 folhas cortadas errado na guilhotina, 80 camisetas com cura mal feita, 40 metros de lona com falha de tinta no meio da bobina — nenhum desses tem onde ser registrado. E como o refugo pós-produção normalmente exige *reimprimir* (consumindo material de novo), o custo real do pedido fica sistematicamente subestimado, o que ataca diretamente o diferencial do produto.
 
@@ -1030,8 +1040,11 @@ enum MotivoRefugo {
 
 ### C. Fila, capacidade e paradas
 
-#### C1 — Fila é única e sem ordem; não há noção de "fila por máquina"
-**Custo estimado:** 🟡 Médio — campo `prioridade` novo em `Pedido` (barato isolado), mas as sub-raias por máquina e o badge de máquina parada são lógica nova moderada no Kanban existente.
+#### C1 — Fila é única e sem ordem; não há noção de "fila por máquina" — **✅ CONSTRUÍDO (commit 7354aeb, 2026-09-07)**
+
+**Status:** `Pedido.prioridade` (4 níveis fixos: Baixa/Normal/Alta/Urgente) — Kanban ordena por `prioridade desc, prazoEntrega asc, createdAt asc`. Sub-raias por máquina na coluna PRODUCAO: sinal é o `ApontamentoEtapa` aberto da etapa atual, com fallback pra `sugerirMaquinaPedido` (achado B2). Badge "máquina parada" reaproveita `buscarManutencoesAtivas`, agora de fato extraída num único lugar (`src/lib/manutencao-maquina-db.ts` — antes era reescrita igual em 3 telas). Capacidade finita/Gantt continua fora de escopo (MVP deliberado).
+
+**Custo estimado (histórico):** 🟡 Médio — campo `prioridade` novo em `Pedido` (barato isolado), mas as sub-raias por máquina e o badge de máquina parada são lógica nova moderada no Kanban existente.
 
 **O que falta.** No `KanbanBoard.tsx`, cada coluna é uma etapa e os cards são renderizados na ordem de `createdAt` da query (`page.tsx:125`), sem prioridade, sem reordenação, sem raia por máquina. Com duas prensas offset, os dois jobs aparecem no mesmo balde "Produção" e quem decide o que roda primeiro é a memória do encarregado. Também não há como o Kanban avisar que a máquina onde o job vai rodar está parada — apesar de `buscarManutencoesAtivas` já existir e ser usada nas telas de Máquinas e de cadastro de produto.
 
@@ -1039,7 +1052,7 @@ enum MotivoRefugo {
 
 **Proposta MVP, sem construir um Gantt.** (a) `Pedido.prioridade Int @default(0)` + ordenação por `prioridade desc, prazoEntrega asc, createdAt asc` — resolve 80% da dor com uma coluna. (b) Sub-raias por máquina dentro da coluna `PRODUCAO`, agrupando pela máquina prevista (derivada do `ItemGrafica` do pedido, ou da máquina já apontada em `ApontamentoEtapa`). (c) Badge "máquina parada" na raia reaproveitando `buscarManutencoesAtivas` — dado já existe, custo quase zero. Capacidade finita / Gantt fica explicitamente fora de escopo v1.
 
-#### C2 — Não existe "pedido parado esperando alguma coisa"
+#### C2 — Não existe "pedido parado esperando alguma coisa" — ✅ CONSTRUÍDO (commit c67924a, rodada 21)
 **Custo estimado:** 🟡 Médio — 1 model novo (`ParadaPedido`) com poucos campos e FKs diretas (`Pedido`, opcionalmente `ApontamentoEtapa` e `SolicitacaoCompra`), sem workflow de múltiplas etapas, mais 1 enum novo fechado+`OUTRO`.
 
 **O que falta.** Um job travado esperando papel chegar, ou esperando o cliente responder uma dúvida, é indistinguível de um job sendo produzido — ambos estão simplesmente "em Produção". Isso envenena qualquer métrica de lead time (B1) e faz o alerta de atraso (`alertaAtrasoEnviadoEm`, `alertaPrazoUltimoLimiarDias`) culpar a produção por espera que não é dela. `RegistroManutencao` cobre "a máquina parou", nunca "o pedido parou".
@@ -1050,7 +1063,7 @@ enum MotivoRefugo {
 
 ### D. Qualidade
 
-#### D1 — Não existe aprovação intermediária dentro da produção (OK de máquina / prova de máquina)
+#### D1 — Não existe aprovação intermediária dentro da produção (OK de máquina / prova de máquina) — **PARCIALMENTE CONSTRUÍDO (commit 3d1be70, 2026-09-11; gate movido pra `EtapaGrafica.exigeAprovacaoQualidade`, já existente, em vez de `EtapaFluxo` — Fase 2 nunca construída; 5 tipos internos completos, `AMOSTRA_CLIENTE` cadastrado no enum mas sem tela pública/token, deliberadamente fora de escopo)**
 **Custo estimado:** 🔴 Caro — o gate proposto depende de `EtapaFluxo.exigeAprovacaoQualidade`, campo que só existe na Fase 2 (estrutural, 🔴) de A1; sem ela, é model novo + 2 enums novos sem onde pendurar o gate opt-in.
 
 **O que falta.** Aprovação de arte existe (`arteUrl` / `arteAprovadaEm` / `arteLinkToken` / `/a/[token]`), é voltada ao **cliente** e é **pré-produção** — o gate está literalmente em `status === "ARTE"` (`status-transicao.ts:241`). Dentro da produção não há nada: nenhum "aprovar a primeira folha antes de rodar os outros 20 mil", nenhuma inspeção final registrada, nenhuma foto de conferência, nenhum registro de não-conformidade. A etapa `CONFERENCIA` existe como *nome de coluna*, mas não guarda **nenhum dado de conferência** — só a passagem do card.
@@ -1073,7 +1086,7 @@ enum ResultadoAprovacao { APROVADO, APROVADO_COM_RESSALVA, REPROVADO }
 
 Gate opt-in **no mesmo formato do gate de arte que já existe** (elegante justamente por ser opt-in: "só bloqueia se ESTA gráfica enviou uma arte"): a etapa exige aprovação só se `EtapaFluxo.exigeAprovacaoQualidade` estiver ligada. `arquivoId` reaproveita `ArquivoArmazenado` (foto da folha aprovada tirada do celular no chão de fábrica). `AMOSTRA_CLIENTE` deve reaproveitar o padrão de link público token + `/a/[token]` que a aprovação de arte já implementou.
 
-#### D2 — Não existe retorno de etapa: reprovado só pode ser CANCELADO
+#### D2 — Não existe retorno de etapa: reprovado só pode ser CANCELADO — **CONSTRUÍDO (commit 4c025aa, 2026-09-12; `retornarEtapa` nunca estorna estoque, trava `Pedido.baixaEstoqueRealizadaEm` protege contra baixa duplicada numa reentrada em PRODUCAO)**
 **Custo estimado:** 🔴 Caro — nova action mexe diretamente na máquina de transição de status (`avancarStatusPedido`/CAS), área sensível de concorrência, além de 1 enum novo e de alterar a semântica de estorno de estoque.
 
 **O que falta.** Confirmado em três camadas: `avancarStatusPedido` só calcula `indice + 1`; o Kanban só habilita como droppable a coluna imediatamente seguinte; e as únicas server actions de mudança de estado são `avancarPedido` e `cancelarPedido`. Se a conferência reprova, a única saída modelada é cancelar o pedido inteiro — o que estorna todo o estoque e apaga o job, quando a realidade é "volta pra impressão e roda de novo os 300 que saíram errados". O FSM estritamente linear também é premissa explícita do `producaoLinkToken`.
@@ -1114,7 +1127,7 @@ Efeitos: (a) quando existe uma terceirização `ENVIADO`, o card mostra "no terc
 
 ### F. Escopo travado no perfil da gráfica de referência
 
-#### F1 — Gang run só existe para OFFSET
+#### F1 — Gang run só existe para OFFSET — **CONSTRUÍDO (commit e826bad, 2026-09-08; FOLHA_2D+BOBINA_1D, TELA_MATRIZ/MESA_PLANA reservados sem lógica ainda, próximo passo)**
 **Custo estimado:** 🟡 Médio — sem model novo (generaliza `FilaGangRun`/`GrupoGangRun` existentes com o padrão de 5 FKs opcionais já usado em `RegistroManutencao`) mais 1 enum novo fechado+`OUTRO`, mas exige lógica nova moderada pra chave de compatibilidade por tipo de agrupamento.
 
 **O que falta.** `FilaGangRun.prensaId` é **não-nullable**, a chave de compatibilidade é `papel + gramatura + prensa + folha + corFrente + corVerso`, e os candidatos só são registrados para `modeloCalculo=OFFSET`. Toda a UI fala em "chapa". Uma gráfica digital, uma de grande formato ou uma serigrafia não têm acesso à funcionalidade.
@@ -1171,8 +1184,11 @@ Achado transversal importante: **`SolicitacaoCompra` não aparece em NENHUM arqu
 
 ## Achados
 
-### A1 — Só dá pra comprar MATÉRIA-PRIMA do próprio catálogo (bloqueia perfis inteiros de gráfica)
-**Custo estimado:** 🟡 Médio — sem model novo (`itemGraficaId` vira nullable + `descricaoLivre` em `SolicitacaoCompra` já existente), mas soma 1 enum novo fechado+`OUTRO` e lógica condicional nova em `avancarStatusCompra` pra decidir quando gera `MovimentacaoEstoque`.
+### A1 — Só dá pra comprar MATÉRIA-PRIMA do próprio catálogo (bloqueia perfis inteiros de gráfica) — **CONSTRUÍDO (commit 9f2a58c, 2026-09-06)**
+
+**Status:** construído conforme a proposta — `itemGraficaId` nullable + `descricaoLivre`, enum `TipoCompra` com `OUTRO`, `MovimentacaoEstoque` em RECEBIDO condicional a `tipoCompra === MATERIA_PRIMA` e `itemGraficaId` preenchido. `criarCustoAutomaticoCompra` aceita `itemGraficaId` nulo (compra de serviço pra um pedido específico ainda gera `CustoPedido`). `CONTRATO_PROGRAMADO` continua exigindo item resolvido do catálogo (contrato é sempre sobre um item). Gancho pra `RegistroManutencao`/`Equipamento` fica de fora desta rodada (não pedido).
+
+**Custo estimado (histórico):** 🟡 Médio — sem model novo (`itemGraficaId` vira nullable + `descricaoLivre` em `SolicitacaoCompra` já existente), mas soma 1 enum novo fechado+`OUTRO` e lógica condicional nova em `avancarStatusCompra` pra decidir quando gera `MovimentacaoEstoque`.
 
 **O que falta.** `resolverItemMateriaPrima` (`src/app/compras/actions.ts`) filtra rigidamente `itemCatalogo: { tipo: "MATERIA_PRIMA" }`, e o schema torna `itemGraficaId` obrigatório e não-nulo. Consequência: **é impossível registrar em Compras** clichê de clicheria, tela/emulsão de serigrafia terceirizada, corte a laser externo, acabamento terceirizado, peça de manutenção de máquina, EPI, ferramenta, ou qualquer compra pontual não cadastrada no catálogo. `TipoItemCatalogo` tem `SERVICO`, mas o módulo de compras o rejeita.
 
@@ -1184,8 +1200,11 @@ Achado transversal importante: **`SolicitacaoCompra` não aparece em NENHUM arqu
 - Em `avancarStatusCompra`, a geração de `MovimentacaoEstoque` em RECEBIDO passa a ser **condicional a `tipoCompra === MATERIA_PRIMA` com `itemGraficaId` preenchido**. Compra de serviço não vira estoque; vira custo (ver A3).
 - `SERVICO_TERCEIRIZADO`/`PECA_MANUTENCAO` também abrem gancho natural pra `RegistroManutencao`/`Equipamento`, que já existem.
 
-### A2 — Uma solicitação = um item; não existe pedido de compra multi-linha, nem frete, nem impostos
-**Custo estimado:** 🟢 Barato — pela rota que a própria proposta recomenda pra agora (a completa fica pra depois): campos `Decimal?` aditivos em `SolicitacaoCompra` (model já existente) mais um campo derivado, sem model nem enum novo.
+### A2 — Uma solicitação = um item; não existe pedido de compra multi-linha, nem frete, nem impostos — **PARCIALMENTE CONSTRUÍDO (Rota curta fechada 2026-09-06, commit 9f2a58c; Rota completa segue de propósito fora de escopo)**
+
+**Status:** Rota curta construída conforme a proposta — `valorFrete`/`valorIpi`/`valorIcmsCreditavel`/`valorDesconto` (`Decimal?`) + `calcularCustoAquisicaoTotal` (função pura, não persistida, em `src/lib/custo-aquisicao-compra.ts`). Toda derivação de `custoUnitario`/`custoTotal` que usava `valorFinal/quantidade` agora usa `custoAquisicaoTotal/quantidade` — inclui `MovimentacaoEstoque` E o `CustoPedido` gerado (origem COMPRA), decisão deliberada (sem isso os campos novos existiriam sem efeito no lucro do pedido). **Rota completa (multi-linha por nota) segue não construída** — continua exigindo 1 solicitação por item.
+
+**Custo estimado (histórico):** 🟢 Barato — pela rota que a própria proposta recomenda pra agora (a completa fica pra depois): campos `Decimal?` aditivos em `SolicitacaoCompra` (model já existente) mais um campo derivado, sem model nem enum novo.
 
 **O que falta.** `SolicitacaoCompra` tem `itemGraficaId`, `quantidade`, `valorFinal` como escalares. Comprar 3 papéis + 2 tintas do mesmo fornecedor na mesma nota exige 5 solicitações desconectadas, o mesmo `documento` digitado 5 vezes, e ratear o valor total à mão. Não há **nenhum** campo pra frete, IPI, ICMS-ST ou desconto — só `valorFinal`. Isso ataca o diferencial do produto: `custoUnitario = valorFinal / quantidade` — R$ 400 de frete numa compra de R$ 8.000 ou infla `valorFinal` (contaminando o custo se a nota tiver outros itens) ou some do custo real.
 
@@ -1215,7 +1234,7 @@ Achado transversal importante: **`SolicitacaoCompra` não aparece em NENHUM arqu
 
 **Proposta.** `model CotacaoFornecedor { solicitacaoCompraId, fornecedorId, precoUnitario, valorTotal, prazoEntregaDias?, condicaoPagamento, validaAte?, frete?, observacao, vencedora Boolean @default(false), registradaPorId, createdAt, @@unique([solicitacaoCompraId, fornecedorId]) }`. Ao avançar COTANDO→APROVADO, exigir escolher a vencedora e copiar pra solicitação. Pré-preencher com o último preço de cada fornecedor.
 
-### A5 — `Fornecedor` é um cadastro-esqueleto e não conversa com o financeiro
+### A5 — `Fornecedor` é um cadastro-esqueleto e não conversa com o financeiro — **PARCIALMENTE CONSTRUÍDO (commit e3cea80, 2026-09-09; só cadastro enriquecido + vínculo Despesa.fornecedorId — geração automática de parcela de contas a pagar deliberadamente fora de escopo, próximo passo)**
 **Custo estimado:** 🔴 Caro — os campos e enums novos em `Fornecedor` seriam baratos isolados, mas a proposta inclui gerar automaticamente parcelas de contas a pagar ao avançar pra COMPRADO, mudança de comportamento em área financeira sensível (dinheiro).
 
 **O que falta.** `Fornecedor` tem só `id, graficaId, nome, contato (texto livre), ativo, createdAt`. Sem CNPJ, categoria, prazo/forma de pagamento, lead time, lote mínimo. E `Despesa` não tem `fornecedorId` (comentário do próprio schema admite: "só não tem vínculo com Despesa ainda") — nenhuma transição de compra cria `Despesa`. Uma compra de R$20.000 em boleto 30/60/90 nunca aparece no contas a pagar.
@@ -1234,8 +1253,11 @@ Achado transversal importante: **`SolicitacaoCompra` não aparece em NENHUM arqu
 
 **Proposta.** Em `SolicitacaoCompra`: `unidadeCompra`/`unidadeCompraOutro`, `quantidadeCompra`, `fatorConversaoCompra`, `precoUnitarioCompra` — `quantidade` (unidade de estoque) vira derivada. Em `ItemGrafica`: `unidadeCompraPadrao`, `fatorConversaoCompraPadrao`, `loteMinimoCompra`, `multiploCompra`, pra pré-preencher e avisar arredondamento.
 
-### A7 — Recebimento é tudo-ou-nada; não existe entrega parcial nem divergência
-**Custo estimado:** 🟡 Médio — campos novos em `SolicitacaoCompra` mais 1 valor novo de status (`RECEBIDO_PARCIAL`), mas exige relaxar `MovimentacaoEstoque.solicitacaoCompraId` de `@unique` e nova lógica de recebimento parcial.
+### A7 — Recebimento é tudo-ou-nada; não existe entrega parcial nem divergência — **✅ CONSTRUÍDO (commit 39eefef, 2026-09-07)**
+
+**Status:** novo status `RECEBIDO_PARCIAL` (entre COMPRADO e RECEBIDO). `SolicitacaoCompra.quantidadeRecebida` (CUMULATIVO, soma de todas as confirmações) + `valorNotaFiscal` + `divergenciaObservacao` (exigida quando a quantidade informada diverge do restante esperado). `MovimentacaoEstoque.solicitacaoCompraId` deixou de ser `@unique` — cada confirmação de recebimento (parcial ou final) gera sua própria movimentação. Fluxo: a UI sempre reabre a mesma ação "Confirmar recebimento"; `avancarStatusCompra` decide o status real comparando acumulado × total. `custoUnitario` fica constante entre recebimentos parciais (custo total da nota ÷ quantidade TOTAL solicitada); `CustoPedido`/`ContratoFornecimento.quantidadeConsumida` só disparam na confirmação que FECHA o total (evita duplicar/fragmentar, já que `CustoPedido.solicitacaoCompraId` é `@unique`).
+
+**Custo estimado (histórico):** 🟡 Médio — campos novos em `SolicitacaoCompra` mais 1 valor novo de status (`RECEBIDO_PARCIAL`), mas exige relaxar `MovimentacaoEstoque.solicitacaoCompraId` de `@unique` e nova lógica de recebimento parcial.
 
 **O que falta.** RECEBIDO soma **`solicitacao.quantidade` inteira** ao estoque, sem informar quanto chegou de fato. Sem `quantidadeRecebida`, sem estado de recebimento parcial. `CONFERIDO` é "só auditoria do que já entrou, nunca gera segunda entrada" — se a conferência achar diferença, não há pra onde ir.
 
@@ -1243,7 +1265,7 @@ Achado transversal importante: **`SolicitacaoCompra` não aparece em NENHUM arqu
 
 **Proposta.** `quantidadeRecebida`/`valorNotaFiscal` na solicitação. Transição pra RECEBIDO passa a pedir quantidade efetivamente conferida — a `MovimentacaoEstoque` usa essa, não a solicitada. Novo status `RECEBIDO_PARCIAL`. `divergenciaObservacao` + flag derivada. Atenção: `MovimentacaoEstoque.solicitacaoCompraId` hoje é `@unique` — precisaria virar não-único.
 
-### A8 — Sugestão de compra existe, mas o ponto de pedido é um número mágico e o lead time não existe em lugar nenhum
+### A8 — Sugestão de compra existe, mas o ponto de pedido é um número mágico e o lead time não existe em lugar nenhum — ✅ CONSTRUÍDO (commit 5182a6e, rodada 21; lead time por ItemGrafica, não por Fornecedor — ver decisão no schema; aprendizado de lead time real a partir do histórico ficou de fora)
 **Custo estimado:** 🟡 Médio — campos novos em `ParametrosGrafica`/`ItemGrafica` são baratos isolados, mas a fórmula de ponto de pedido e o aprendizado de lead time real por fornecedor são lógica nova moderada.
 
 **O que confirmei.** A sugestão **existe** e é manual: `src/app/compras/page.tsx` calcula a partir de `calcularPrevisaoEstoque`, filtro `abaixoDoMinimo || diasRestantes <= 30` — "reduz fricção, não cria nada sozinho" (decisão de produto defensável).
@@ -1264,7 +1286,7 @@ Achado transversal importante: **`SolicitacaoCompra` não aparece em NENHUM arqu
 
 **Proposta (média prioridade).** `model ContratoFornecimento { graficaId, fornecedorId, itemGraficaId?/varianteId?, precoUnitario, unidadeCompra, vigenciaInicio, vigenciaFim, quantidadeContratada?, quantidadeConsumida, condicaoPagamento, ativo }`. Solicitação com `origem = CONTRATO_PROGRAMADO` pula COTANDO. Alerta quando quantidade/vigência está esgotando.
 
-### A10 — Sem alçada de aprovação e sem segregação de funções
+### A10 — Sem alçada de aprovação e sem segregação de funções — **JÁ CONSTRUÍDO (achado A4/Parte 6, `AlcadaAprovacao` genérico cobre APROVACAO_COMPRA — verificado 2026-09-04, `src/lib/alcada-aprovacao.ts`)**
 **Custo estimado:** 🟢 Barato — 2 campos opt-in em `ParametrosGrafica` (model já existente), com precedente idêntico já construído (`descontoMaxSemAprovacao` do orçamento).
 
 **O que falta.** Única checagem é permissão de módulo. APROVADO grava `usuarioAprovadorId` sem checar que seja diferente do solicitante. Sem teto de valor — R$200 e R$200.000 passam pelo mesmo caminho. `ParametrosGrafica.descontoMaxSemAprovacao` já existe pra orçamento; o análogo de compras não foi feito.
@@ -1273,8 +1295,11 @@ Achado transversal importante: **`SolicitacaoCompra` não aparece em NENHUM arqu
 
 **Proposta.** `ParametrosGrafica.valorMaxCompraSemAprovacao?` (null = sem trava) + `exigirAprovadorDiferenteDoSolicitante @default(false)` — opt-in, gráfica pequena não tem como segregar.
 
-### A11 — Fornecedor não tem histórico de desempenho, só de preço
-**Custo estimado:** 🟢 Barato — a própria proposta diz "nenhuma tabela nova", só derivar métricas por query e exibir coluna extra no card comparativo existente; depende de A7/A8 (Médios) estarem construídos pra ter os dados de origem.
+### A11 — Fornecedor não tem histórico de desempenho, só de preço — **✅ CONSTRUÍDO (commit a363eea, 2026-09-07)**
+
+**Status:** `calcularDesempenhoFornecedores` (`src/lib/desempenho-fornecedor.ts`, função pura) deriva % no prazo, % completo, OTIF combinado e nº com divergência a partir de `SolicitacaoCompra` — sem tabela nova, como previsto. Compra sem cotação vencedora vinculada fica fora do denominador de "no prazo"/"OTIF" (sem promessa, não há o que confrontar) mas entra no de "completo". Amostra mínima de 3 pra exibir percentual (abaixo disso, "dado insuficiente"). Exibido como 4 colunas novas no comparativo de fornecedores em `/compras/nova`.
+
+**Custo estimado (histórico):** 🟢 Barato — a própria proposta diz "nenhuma tabela nova", só derivar métricas por query e exibir coluna extra no card comparativo existente; depende de A7/A8 (Médios) estarem construídos pra ter os dados de origem.
 
 **O que falta.** Único "score" é preço. Sem pontualidade, taxa de divergência, índice de qualidade.
 
@@ -1315,14 +1340,14 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 
 ### A. O eixo "quanto lucrei"
 
-#### A1 — `Despesa` e `CustoPedido` são universos paralelos: o mesmo gasto precisa ser digitado duas vezes e nada detecta a divergência
+#### A1 — `Despesa` e `CustoPedido` são universos paralelos: o mesmo gasto precisa ser digitado duas vezes e nada detecta a divergência — **PARCIALMENTE CONSTRUÍDO (commit 3d1be70, 2026-09-11; só direção Despesa→CustoPedido, FK corrigida pra `CustoPedido.despesaId` seguindo o precedente já maduro no schema; direção inversa (gerar Despesa a partir de CustoPedido manual) deliberadamente fora de escopo)**
 **Custo estimado:** 🔴 Caro — os campos novos em `Despesa` são baratos isolados, mas a proposta gera `CustoPedido` automaticamente numa transação a partir de `Despesa`, mudança de comportamento em área financeira sensível (custo/lucro do pedido).
 
 **O que falta.** `CustoPedido` é o custo real por pedido e alimenta `lucroDoPedido` (`src/lib/custo-pedido.ts`). `Despesa` é o dinheiro que de fato saiu. **Não existe nenhum vínculo entre os dois.** Quando a gráfica terceiriza a laminação de um pedido por R$800, o correto é lançar `CustoPedido` (lucro do pedido certo) **e** `Despesa` (contas a pagar certo) — dois formulários, zero validação cruzada. Na prática só um dos dois será preenchido. O número de lucro por pedido e o resultado do mês nunca fecham entre si, e o sistema não sabe disso. O padrão pra resolver já existe e está maduro: `Despesa.comissao`, `Despesa.movimentacaoContaPrepaga`, `CustoPedido.movimentacaoEstoqueId @unique` — "um lançamento espelhado em outro modelo, com FK única pra nunca duplicar".
 
 **Proposta.** `Despesa.pedidoId String?` (`onDelete: SetNull`) + `Despesa.custoPedidoId String? @unique`. Quando o usuário informa `pedidoId` e `categoriaCustoId` numa despesa, gerar o `CustoPedido` espelhado na mesma transação, com novo `OrigemCusto.DESPESA`. Caminho inverso: checkbox "essa despesa ainda vai ser paga" no formulário de `CustoPedido`. Reaproveitar `possivelDuplicidade` (já existe em `CustoPedido`).
 
-#### A2 — O custo fixo real nunca é confrontado com o `overheadPercent` embutido no preço
+#### A2 — O custo fixo real nunca é confrontado com o `overheadPercent` embutido no preço — **PARCIALMENTE CONSTRUÍDO (commit 0d7b695, 2026-09-09; relatório de leitura em /financeiro/dre — `ParametrosGrafica.overheadModo`, que mudaria o motor de preço, deliberadamente fora de escopo)**
 **Custo estimado:** 🔴 Caro — o campo `CategoriaCusto.natureza` e o relatório de cobertura seriam baratos/médios isolados, mas a proposta de abrangência inclui `ParametrosGrafica.overheadModo`, que muda o cálculo de overhead dentro de `comporPreco` — mudança no motor de precificação.
 
 **O que falta.** `comporPreco` aplica `overheadPercent` (default 15%) sobre o custo direto e já grava o valor absoluto em `detalhes.overhead` no breakdown persistido. O lado "quanto meu custo fixo realmente foi" também está no banco (`Despesa` de aluguel, salário administrativo). **Ninguém compara os dois.** Uma gráfica pode faturar o ano inteiro com 15% de overhead embutido enquanto o custo fixo consome 26%, sem nenhum ruído. Obstáculo estrutural: `CategoriaCusto` não tem classificação de natureza (fixo/variável) — sem isso não dá pra calcular custo fixo total, margem de contribuição nem ponto de equilíbrio.
@@ -1331,7 +1356,7 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 
 **Proposta.** `CategoriaCusto.natureza` — enum `NaturezaCusto { VARIAVEL, FIXO, SEMIVARIAVEL }`, default `VARIAVEL`. Relatório "cobertura de overhead" em `/financeiro`: `Σ Despesa PAGA categoria FIXO` vs `Σ overhead cobrado nos pedidos faturados` — se o segundo for menor, mostrar "seu overhead de 15% cobriu R$42 mil, mas seu custo fixo foi R$61 mil — o percentual que fecharia é 21,8%". **Essa frase sozinha é a funcionalidade mais defensável do módulo inteiro.** Abrangência: `ParametrosGrafica.overheadModo` — `PERCENTUAL_CUSTO_DIRETO | VALOR_POR_HORA_MAQUINA | VALOR_FIXO_POR_PEDIDO` — 15% sobre custo direto de serigrafia/bordado (material barato, mão de obra cara) cobre uma fração do custo fixo real.
 
-#### A3 — Não existe DRE; o "saldo real" hoje mistura competência com caixa
+#### A3 — Não existe DRE; o "saldo real" hoje mistura competência com caixa — ✅ CONSTRUÍDO (commit 8255d21, rodada 21; só pré-requisito mínimo do A2/Parte4 — CategoriaCusto.natureza — implementado junto, overheadModo fica de fora)
 **Custo estimado:** 🟡 Médio — sem model novo (função pura + página nova), mas monta um motor de cálculo próprio (linhas de DRE) e corrige `saldoReal`, cálculo já usado em outro lugar do Meu Negócio.
 
 **O que falta.** `meu-negocio.ts` calcula `saldoReal: faturamentoTotal - despesasPagasTotal`, comentado como "caixa de verdade" — mas `faturamentoTotal` vem de orçamentos **aprovados** pela data de **criação**, não de pagamento recebido. Um orçamento de R$80 mil parcelado em 90 dias entra 100% no "caixa de verdade" deste mês. O lado da despesa é caixa puro. Os dois lados da subtração estão em regimes diferentes — o rótulo mente.
@@ -1342,7 +1367,7 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 
 ### B. Fluxo de caixa e cobrança
 
-#### A4 — Não existe fluxo de caixa projetado, embora todos os dados já estejam no banco
+#### A4 — Não existe fluxo de caixa projetado, embora todos os dados já estejam no banco — **CONSTRUÍDO 2026-09-04 (rodada 21)**
 **Custo estimado:** 🟢 Barato — a própria proposta diz "custo baixíssimo, valor altíssimo": função pura que só agrega `ContaReceber`/`Despesa` já existentes, sem model novo, sem mutar nenhum saldo.
 
 **O que falta.** `ContaReceber.vencimento` e `Despesa.vencimento` pendentes dão exatamente as duas curvas necessárias. Nada agrega isso — ninguém responde "no dia 12 eu fico negativo".
@@ -1351,7 +1376,7 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 
 **Proposta.** `src/lib/fluxo-caixa.ts` puro: saldo inicial + entradas/saídas previstas → buckets (semanal 30 dias, mensal até 90) com saldo acumulado e o primeiro dia em que fica negativo. Custo baixíssimo, valor altíssimo. Depende de saldo inicial (ver A15) e melhora com prazos de compensação por forma de pagamento (A11).
 
-#### A5 — Não existe régua de cobrança nem juros/multa por atraso
+#### A5 — Não existe régua de cobrança nem juros/multa por atraso — **PARCIALMENTE CONSTRUÍDO (commit ec02d7b, 2026-09-09; status EM_COBRANCA/PERDA + juros/multa manual na baixa; disparo automático de e-mail/webhook escalonado deliberadamente fora de escopo, decisão de produto sensível)**
 **Custo estimado:** 🔴 Caro — model novo `ReguaCobrancaEtapa` com workflow de escalonamento, mais permitir informar `valorJuros`/`valorMulta` na baixa é mudança de comportamento em área financeira sensível (valor efetivamente recebido).
 
 **O que falta.** Vencido hoje = pill vermelha, sem lembrete, sem escalonamento, sem juros/multa, sem status de negociação, sem baixa por perda. Infraestrutura pronta e não usada: cron diário, e-mail, webhook por evento, padrão CAS de idempotência (`Pedido.alertaAtrasoEnviadoEm`). `ContaReceber` só tem `valor` — quando cliente paga com juros, o `Pagamento` copia o valor literal e o dinheiro extra some.
@@ -1367,11 +1392,13 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 
 **Proposta.** `Cliente.limiteCredito Decimal?` (null = sem limite), `prazoPagamentoPadraoDias Int?`, `bloqueadoParaFaturamento Boolean @default(false)` + motivo. Aviso não-bloqueante por padrão na aprovação (flag em `ParametrosGrafica` decide se vira trava, mesmo espírito de `descontoMaxSemAprovacao`).
 
-#### A7 — Parcelas de contas a receber são 100% manuais; `condicoesPagamento` é texto livre morto — **PARCIALMENTE CONSTRUÍDO 2026-08-28 (rodada 13)**
+#### A7 — Parcelas de contas a receber são 100% manuais; `condicoesPagamento` é texto livre morto — **✅ CONSTRUÍDO (gatilhos das 3 âncoras + UI, verificado 2026-09-06)**
 
-**Custo estimado (restante pendente):** 🟡 Médio — os models já foram construídos; o que falta é só a UI (1 tela de CRUD de condições de pagamento + seletor no formulário de orçamento), sem schema novo.
+**Custo estimado:** — nada pendente.
 
-**Status:** `model CondicaoPagamento`/`CondicaoPagamentoParcela` construídos, com bootstrap lazy das 4 condições comuns da pesquisa. `ContaReceber` gerada automaticamente (snapshot) na aprovação do orçamento, nos dois caminhos (painel e link público) — mas só pra âncora `APROVACAO`; `EMISSAO_NOTA`/`ENTREGA` ficam com enum pronto e sem gatilho. **Gap real: nenhuma UI foi construída** — hoje só é possível vincular uma condição ao orçamento via Prisma direto. Fica pra uma rodada futura: tela de configuração de condições + seletor no formulário de orçamento.
+**Status:** `model CondicaoPagamento`/`CondicaoPagamentoParcela` construídos, com bootstrap lazy das 4 condições comuns da pesquisa. `ContaReceber` gerada automaticamente (snapshot) pras 3 âncoras do enum `AncoraVencimento` — `APROVACAO` na aprovação do orçamento (painel e link público), `EMISSAO_NOTA` na autorização da NF-e (síncrona em `emitirNotaFiscal` e por reconsulta em `atualizarStatusNotaFiscal`, `src/app/orcamento/[id]/actions/nfe.ts`) e `ENTREGA` na transição do pedido pra `ENTREGUE` (`avancarStatusPedido`, `src/app/producao/status-transicao.ts`) — todas roteadas por um núcleo comum (`gerarContasReceberPorAncora` em `src/lib/condicao-pagamento.ts`), cada chamada dentro da mesma transação do evento que dispara, com idempotência via marcador na descrição da `ContaReceber`. Cobertos por teste de integração dedicado (`actions.nfe-conta-receber.test.ts`, `status-transicao.conta-receber.test.ts`). **UI construída (achado A7/Parte 4, commit 6a30f82):** tela de CRUD em `/configuracoes/condicoes-pagamento` (criar/editar/ativar-desativar, validação de soma de parcelas = 100%) + seletor opcional `Orcamento.condicaoPagamentoId` em `EditarDadosGeraisOrcamentoForm.tsx`, pré-preenchendo o texto livre `condicoesPagamento` (mesmo padrão de `contatoClienteId`/`transportadoraId`).
+
+**Nota de verificação (2026-09-06):** esta entrada chegou a registrar "gap residual de âncora segue aberto" (`EMISSAO_NOTA`/`ENTREGA` sem gatilho) depois do merge do A7/Parte 4 — mas isso já não era verdade: os dois gatilhos foram construídos 3 dias antes pelo achado R1 (Parte 8, commit 0b74f9b, 2026-09-03), só não tinham sido cruzados com esta entrada. Confirmado por subagente dedicado: nenhuma mudança de código foi necessária, só esta correção de documentação.
 
 **O que falta.** `Orcamento.condicoesPagamento` é texto livre exibido no PDF e não gera nada. Parcelas são cadastradas à mão — metade não será cadastrada, e o fluxo de caixa (A4) fica cego proporcionalmente.
 
@@ -1389,7 +1416,7 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 
 ### C. Tributos e encargos
 
-#### A9 — Retenção de impostos na fonte não existe em lugar nenhum
+#### A9 — Retenção de impostos na fonte não existe em lugar nenhum — **PARCIALMENTE CONSTRUÍDO (commit bf0e2b3, 2026-09-09; versão declarativa — cadastro + registro + exibição de líquido esperado; conciliação automática do valor líquido deliberadamente fora de escopo)**
 **Custo estimado:** 🔴 Caro — model novo `RetencaoContaReceber` com relação direta seria médio isolado, mas muda o valor líquido esperado usado na conciliação de pagamento (A8), mudança de comportamento em área financeira sensível.
 
 **O que falta.** `ContaReceber.valor`/`Pagamento.valor` são sempre valor cheio. Quando o tomador é PJ/órgão público, ele retém parte — hoje isso seria tratado como parcela paga a menor (que nem existe, por A8), inflando receita.
@@ -1398,8 +1425,11 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 
 **Proposta.** `Cliente.tipoTomador` + `retemImpostos Boolean`. `ContaReceber.valorRetencoes` + `model RetencaoContaReceber { tributo TributoRetido, percentual, valor }`, `enum TributoRetido { IRRF, CSRF, PIS, COFINS, CSLL, ISS, INSS, OUTRO }`. Valor líquido esperado vira alvo da conciliação (A8).
 
-#### A10 — `impostoPercent` é um número solto que não conhece o regime tributário nem o faturamento
-**Custo estimado:** 🟢 Barato — a própria proposta descarta motor tributário e usa o mecanismo de pendência de configuração que já existe, só exibindo faixa de referência e aviso quando o RBT12 apurado supera o `impostoPercent` configurado.
+#### A10 — `impostoPercent` é um número solto que não conhece o regime tributário nem o faturamento — **✅ CONSTRUÍDO (commit 942eabe, 2026-09-07)**
+
+**Status:** `calcularAliquotaEfetivaSimples` (`src/lib/simples-nacional.ts`, função pura) aplica a fórmula oficial do Anexo III sobre a tabela de faixas da LC 123/2006. RBT12 apurado a partir de `Orcamento` aprovado dos últimos 12 meses (regime de competência, mesmo conceito de `faturamentoTotal`). Pendência de configuração nova quando a alíquota efetiva supera o `impostoPercent` configurado; referência exibida em `/configuracoes` ao lado do campo. **Limitação documentada:** sempre assume Anexo III (não distingue Anexo/Fator R, que o schema hoje não captura).
+
+**Custo estimado (histórico):** 🟢 Barato — a própria proposta descarta motor tributário e usa o mecanismo de pendência de configuração que já existe, só exibindo faixa de referência e aviso quando o RBT12 apurado supera o `impostoPercent` configurado.
 
 **O que falta.** `ParametrosGrafica.impostoPercent @default(0.06)` é fixo, sem relação com `DadosFiscaisGrafica.regimeTributario` (existe desde a correção de NF-e de hoje) nem com faturamento acumulado. 0,06 é a alíquota nominal da 1ª faixa do Anexo III — razoável como default, perigoso como regra permanente.
 
@@ -1407,7 +1437,7 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 
 **Proposta.** Não implementar motor tributário — fechar a lacuna de percepção: mostrar a faixa de referência do regime na tela de parâmetros. Pendência de configuração (mecanismo já existe) quando o RBT12 apurado (calculável a partir dos orçamentos/pagamentos dos últimos 12 meses) indicar alíquota efetiva acima do `impostoPercent` configurado.
 
-#### A11 — Custo financeiro de receber (maquininha, antecipação) não é apurado; formas de pagamento sem prazo de compensação
+#### A11 — Custo financeiro de receber (maquininha, antecipação) não é apurado; formas de pagamento sem prazo de compensação — **CONSTRUÍDO (commit dcbc62a, 2026-09-08)**
 **Custo estimado:** 🟡 Médio — `Pagamento.valorTaxa` aditivo mais 1 model novo simples (`TaxaFormaPagamento`), sem relação complexa, mais 2-3 valores novos de enum de forma de pagamento.
 
 **O que falta.** `taxaFinanceiraPercent` é só estimativa no preço — quando o pagamento chega por cartão/antecipação, a taxa real não é registrada, os ~3,5% de MDR simplesmente desaparecem do resultado. `FormaPagamento` não carrega prazo de compensação — PIX e cartão em 30 dias são radicalmente diferentes pro fluxo de caixa (A4) e hoje indistinguíveis.
@@ -1416,7 +1446,7 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 
 ### D. Comissão
 
-#### A12 — Comissão é um único percentual por vendedor, sobre base global, gerada na aprovação
+#### A12 — Comissão é um único percentual por vendedor, sobre base global, gerada na aprovação — **PARCIALMENTE CONSTRUÍDO (commit ff42635, 2026-09-11; RegraComissao por especificidade + vendedor sem cadastro; gatilho por recebimento e fator por faixa de desconto deliberadamente fora de escopo, mudança de comportamento financeiro sensível)**
 **Custo estimado:** 🔴 Caro — 2 models novos (`RegraComissao`, `FatorComissaoDesconto`) com resolução por especificidade, mais liberação proporcional conforme baixas de `ContaReceber`; mudança de comportamento em área financeira sensível (comissão).
 
 **Confirmado.** Mais rígido que o esperado: um único `Usuario.comissaoPercent` (sem variação por produto/categoria/faixa), base global da gráfica (não por vendedor), gatilho fixo na aprovação (sem relação com o cliente ter pagado), `Comissao.usuarioId` obrigatório (vendedor cadastrado só como texto livre em `Orcamento.vendedor` não gera comissão, silenciosamente).
@@ -1444,15 +1474,18 @@ Um segundo eixo, específico do mandato de abrangência: várias regras estão c
 
 **Proposta.** Corrigir a cópia de `categoriaCustoId` primeiro (uma linha, pré-requisito de A2/A3). `Despesa.periodicidade` — `SEMANAL|QUINZENAL|MENSAL|BIMESTRAL|TRIMESTRAL|SEMESTRAL|ANUAL`. `recorrenciaAteEm DateTime?`. `valorVariavel Boolean` (gera ocorrência com valor 0, "a confirmar", em vez de mentir um valor).
 
-#### A15 — Não existe conta bancária/caixa, e nada é atribuível a conta ou filial
+#### A15 — Não existe conta bancária/caixa, e nada é atribuível a conta ou filial — ✅ CONSTRUÍDO (commit 6eeda70, rodada 21; só cadastro + vínculo, sem cálculo de saldo por conta)
 **Custo estimado:** 🟡 Médio — 1 model novo (`ContaFinanceira`) com poucos campos e FK opcional direta em `Pagamento`/`Despesa`, mais `Despesa.filialId` aditivo; é cadastro de referência, não muta cálculo de saldo existente.
 
 **O que falta.** Nenhum `ContaBancaria`/`Caixa`. `Pagamento`/`Despesa` sabem a forma, não o destino — gráfica com 2 contas + caixa não consegue dizer onde o dinheiro está, e o fluxo de caixa projetado (A4) não tem saldo inicial. `Despesa` não tem `filialId` (mas `Orcamento.filialId` existe) — impossível resultado por filial mesmo do lado da receita.
 
 **Proposta.** `model ContaFinanceira { nome, tipo CONTA_CORRENTE|CAIXA|POUPANCA|CARTEIRA_DIGITAL|OUTRO, saldoInicial, saldoInicialEm, ativa }` + FK opcional em `Pagamento`/`Despesa`. `Despesa.filialId String?`.
 
-#### A16 — Exportação pro contador é foto mensal fixa, com risco de dupla contagem declarado no próprio código
-**Custo estimado:** 🟡 Médio — sem schema novo, é extensão de tela/exportação existente com lógica nova moderada (intervalo livre, blocos novos, agrupamento, bloco de possíveis duplicidades).
+#### A16 — Exportação pro contador é foto mensal fixa, com risco de dupla contagem declarado no próprio código — **✅ CONSTRUÍDO (commit ad87de5, 2026-09-07)**
+
+**Status:** intervalo livre de datas (`?de=&ate=`, `?mes=` antigo continua funcionando). Blocos novos: contas a receber com aging (5 faixas), comissões, custos por pedido, agrupamento por `CategoriaCusto` com subtotal por `natureza`, DRE do período (reaproveita `buscarDRE` de `dre-query.ts`) e "possíveis duplicidades" — heurística que soma `Pagamento` por orçamento no período (excluindo o que financiou depósito de `CreditoCliente`) e sinaliza quando a soma ultrapassa o total do orçamento com 2+ pagamentos. Não resolve a causa raiz (`registrarPagamento` só reconcilia automático quando o valor bate exato) — só torna visível, que era o pedido explícito do achado.
+
+**Custo estimado (histórico):** 🟡 Médio — sem schema novo, é extensão de tela/exportação existente com lógica nova moderada (intervalo livre, blocos novos, agrupamento, bloco de possíveis duplicidades).
 
 **O que falta.** Só mês fechado, sem intervalo livre. Só 3 blocos (pagamentos, despesas pagas/pendentes) — não exporta contas a receber, comissões, custos por pedido. Não agrupa por `CategoriaCusto` estruturada. O comentário em `Pagamento.contaReceber` declara risco aceito sem mitigação: lançar `Pagamento` manual + marcar `ContaReceber` recebida conta o dinheiro duas vezes, sem deduplicação.
 
@@ -1518,7 +1551,7 @@ enum IndicadorInscricaoEstadual { CONTRIBUINTE, ISENTO, NAO_CONTRIBUINTE }
 - Em `verificarProntidaoFiscal`: nova pendência "Cliente marcado como contribuinte de ICMS sem Inscrição Estadual" — mesmo padrão das pendências que já existem lá, bloqueando **antes** de bater na Focus e tomar 422.
 - Em `focus-nfe.ts`: enviar `indicador_inscricao_estadual_destinatario` sempre e `inscricao_estadual_destinatario` **apenas** quando indicador = CONTRIBUINTE (é exatamente a regra que gera a rejeição 791 quando violada).
 
-### A2. `documento` é texto livre não normalizado — e o CNPJ alfanumérico (vigente desde 31/07/2026) já quebra a emissão hoje — **BUG CORRIGIDO 2026-08-24 (parcial)**
+### A2. `documento` é texto livre não normalizado — e o CNPJ alfanumérico (vigente desde 31/07/2026) já quebra a emissão hoje — **CONSTRUÍDO (commit 95d9d72, 2026-09-09; "Fase A" — validação de DV + normalização silenciosa + relatório de duplicados; migração de dado em massa nos cadastros legados deliberadamente fora de escopo)**
 
 **Custo estimado (restante pendente):** 🟡 Médio — sem model novo, mas soma normalização/validação de DV + uma migração de dado one-off com risco de colisão (a própria proposta avisa que precisa tratar duplicata revelada, não é puramente aditiva) + um botão novo reaproveitando o padrão do ViaCEP já no repo.
 
@@ -1538,7 +1571,7 @@ enum IndicadorInscricaoEstadual { CONTRIBUINTE, ISENTO, NAO_CONTRIBUINTE }
 - Em `focus-nfe.ts`, trocar a heurística `replace(/\D/g,"").length === 14` por decisão explícita a partir de `Cliente.tipoPessoa` (A1), com fallback pelo comprimento do documento **normalizado** (14 = CNPJ, 11 = CPF).
 - Botão "buscar dados pelo CNPJ" no `ClienteForm`, preenchendo razão social/nome fantasia/endereço/IE — **precedente já existe no próprio repo**: `EnderecoFields.tsx:66` faz exatamente isso com o ViaCEP, client-side, sem chave de API.
 
-### A3. O CFOP é fixo por gráfica e ignora a UF e o status de contribuinte do cliente — **PARCIALMENTE CONSTRUÍDO 2026-08-24 (rodada 5)**
+### A3. O CFOP é fixo por gráfica e ignora a UF e o status de contribuinte do cliente — ✅ CONSTRUÍDO (fechado pelo achado N7/Parte 8, commit 7acc9bf, 2026-09-04 — marcador desta entrada estava desatualizado)
 
 **Custo estimado (restante pendente):** 🟡 Médio — sem model/campo novo (o indicador de contribuinte já veio do A1), é lógica nova moderada dentro de `resolverCfop`, função pura já existente, mais a pendência de configuração correspondente.
 
@@ -1726,11 +1759,9 @@ Cliente.margemPadraoOverride Decimal? @db.Decimal(5,4)
 - `Orcamento.notaEmpenho String?` e `Orcamento.processoLicitatorio String?` — dois campos texto no orçamento, exibíveis no PDF e na nota. Não é modelagem de licitação; é o mínimo para o faturamento não travar.
 - **(inferência minha)** um `model Contrato`/`AtaRegistroPreco` com vigência e saldo de quantidade por item seria o caminho completo (fornecimento parcelado ao longo de 12 meses é o normal em ARP), mas isso só se justifica quando existir uma gráfica cliente que viva de licitação — hoje é especulativo.
 
-### A13. A listagem de clientes não escala: sem busca, sem paginação, e 4 telas carregam a base inteira — **PARCIALMENTE CONSTRUÍDO 2026-08-24 (rodada 4)**
+### A13. A listagem de clientes não escala: sem busca, sem paginação, e 4 telas carregam a base inteira — **✅ CONSTRUÍDO (fechado pelo achado A13/Parte 5, commit 5ea3180, 2026-09-06)**
 
-**Custo estimado (restante pendente):** 🟡 Médio — sem schema novo, é trocar `findMany` completo por combobox com busca server-side em 4 telas existentes, lógica nova moderada repetida.
-
-**Status:** `/clientes` (`src/app/clientes/page.tsx`) ganhou busca por nome/documento + paginação real (50/página) via `searchParams`, mantendo o filtro `desativadoEm: null`. **Ficou de fora, de propósito**: os outros 4 lugares que ainda carregam a base inteira pra popular `<select>` (`/orcamento`, `/orcamento/[id]`, `/producao`, `/meu-negocio/relatorios`) — isso é combobox com busca server-side, escopo maior, continua gap.
+**Status:** `/clientes` (`src/app/clientes/page.tsx`) já tinha busca por nome/documento + paginação real (50/página) via `searchParams` desde a rodada 4. Os 4 lugares que ainda carregavam a base inteira pra popular `<select>` (`/orcamento`, `/orcamento/[id]`, `/producao`, `/meu-negocio/relatorios`) ganharam `take: 200` — escopo deliberadamente contido (guarda de escala simples, não combobox com busca server-side): 3 são filtro (seguro truncar, o filtro em si usa o id do `searchParams`, não depende de o cliente estar na lista) e 1 é seleção (`/orcamento/[id]`, troca de cliente do orçamento — o `<select>` usa `defaultValue=clienteAtualId`, então o cliente ATUAL é garantido presente na lista mesmo se cair fora do corte alfabético de 200, senão salvar o form sem mexer na seleção trocaria de cliente silenciosamente).
 
 **O que falta (nos 4 lugares acima):** `/clientes` faz `prisma.cliente.findMany({ where: { graficaId } })` sem `take`, sem busca, sem filtro, e renderiza todos numa lista. E não é só ali: `/orcamento` (`page.tsx:60`), `/orcamento/[id]` (`page.tsx:116`), `/producao` (`page.tsx:127`) e `/meu-negocio/relatorios` (`page.tsx:80`) também carregam **todos** os clientes da gráfica para montar `<select>`s. Uma gráfica de bairro com 60 clientes não sente; uma gráfica com 5 anos de histórico e 1.500 cadastros transforma cada uma dessas páginas num payload enorme e num `<select>` inutilizável.
 
@@ -1892,9 +1923,11 @@ model AlcadaAprovacao {
 
 Resolução: alçada do usuário > alçada do papel > `descontoMaxSemAprovacao` (fallback, mantendo o comportamento atual pra quem nunca configurar nada). Aprovação em múltiplos níveis encadeados eu deixaria **fora** do escopo — é o que ERP grande faz, mas gráfica de 5 a 30 pessoas resolve com um nível e um teto (inferência minha, mas coerente com o porte do cliente-alvo).
 
-## A5 — Permissão é por usuário, não por cargo; ADMIN passa por cima de tudo
+## A5 — Permissão é por usuário, não por cargo; ADMIN passa por cima de tudo — **✅ CONSTRUÍDO (marcador corrigido 2026-09-07 — `PerfilAcesso`/`PermissaoPerfil` já existiam há tempos sem esta entrada ser atualizada; multi-cargo fechou o resto)**
 
-**Custo estimado:** 🔴 Caro — 2 models novos (`PerfilAcesso`/`PermissaoPerfil`) mudando o comportamento do sistema de permissões, área sensível de autorização.
+**Status:** `model PerfilAcesso`/`PermissaoPerfil` construídos conforme a proposta original (rodada anterior, sem data exata registrada aqui — este cabeçalho só nunca foi atualizado). **Fechado por completo em 2026-09-06** (feature de produto, pedido direto do dono, não desta auditoria): `Usuario.perfilAcessoId` (FK única) virou `PerfilUsuario` (N:N) — um usuário pode ter VÁRIOS cargos ao mesmo tempo (ex: Vendedor E Financeiro, 1 login só), permissão somada por união entre todos os cargos, override individual continua vencendo sempre. 6 cargos pré-semeados (Vendedor/Financeiro/Produção/Compras/Administrativo/Atendimento — `garantirPerfisAcessoPadrao`) com permissão sensata por padrão, editável depois na mesma tela `/configuracoes/perfis-acesso`. `ADMIN` continua com acesso irrestrito por decisão de produto (não é o gap que o achado original apontava — o gap era "sem perfil reutilizável", não "ADMIN restrito"), `ResponsavelEstagio` continua uma segunda dimensão separada, fora de escopo.
+
+**Custo estimado (histórico):** 🔴 Caro — 2 models novos (`PerfilAcesso`/`PermissaoPerfil`) mudando o comportamento do sistema de permissões, área sensível de autorização.
 
 **O que falta.** `PermissaoUsuario` é `[usuarioId, modulo]` e, por `src/lib/auth/permissoes.ts:36` e `:45`, o controle fino **só se aplica a OPERADOR** — DONO e ADMIN retornam `true` sem consultar o banco. Consequências pra gráfica de porte médio: (a) admitir 3 operadores de acabamento no mesmo turno exige configurar 8 módulos × 3 usuários na mão, sem "copiar de outro usuário" nem perfil reutilizável; (b) não existe papel intermediário — quem precisa de mais que OPERADOR vira ADMIN e ganha acesso irrestrito, inclusive a `/configuracoes` (motor de preço) e à aprovação de desconto ilimitada; (c) `ResponsavelEstagio` (por status de pedido) já é uma segunda dimensão de permissão que vive fora desse modelo, com regra própria em `podeConfirmarEstagio`.
 
@@ -1981,11 +2014,9 @@ Vale dizer que a escolha original foi consciente e bem justificada no schema (`:
 
 Prioridade média — é dívida de arquitetura que ainda não sangra, mas o momento certo de pagar é *antes* do 6º motor, não depois do 10º.
 
-## A8 — Identidade visual e dados de contato: só existem no nível da gráfica, e o PDF nem tem CNPJ/endereço/telefone — **PARCIALMENTE CONSTRUÍDO 2026-08-24 (rodada 9)**
+## A8 — Identidade visual e dados de contato: só existem no nível da gráfica, e o PDF nem tem CNPJ/endereço/telefone — **✅ CONSTRUÍDO (restante fechado 2026-09-06, commit 62ef4a3)**
 
-**Custo estimado (restante pendente):** 🟢 Barato — campos aditivos nullable em `Filial` (model já existente), com resolução por fallback no mesmo padrão que `resolverDadosFiscais` já implementa.
-
-**Status:** construído o bloco de contato comercial no nível da GRÁFICA (`telefone`/`emailContato`/`site`/`enderecoResumido`, editável em `/configuracoes/identidade`, impresso no rodapé do PDF de orçamento). **Fora de escopo de propósito** (a própria pesquisa já marcava como prioridade baixa): identidade por filial (`logoUrl`/`corPrimaria`/contato próprios de `Filial`) continua gap.
+**Status:** construído o bloco de contato comercial no nível da GRÁFICA (`telefone`/`emailContato`/`site`/`enderecoResumido`, editável em `/configuracoes/identidade`, impresso no rodapé do PDF de orçamento) desde a rodada 9. **Restante fechado agora:** `Filial` ganhou `telefone`/`emailContato`/`logoUrl`/`corPrimaria` (opcionais, sobrepõem o da Grafica só quando preenchidos) — `resolverIdentidadeVisual` (`src/lib/pdf/mapear-dados.ts`) resolve campo a campo com o mesmo espírito de `resolverDadosFiscais`. As 2 rotas de PDF (autenticada e link público) incluem a filial via `select` (não `include`, deliberado — nunca vaza dado fiscal/endereço da filial pro PDF). `site`/`enderecoResumido` continuam só no nível da Grafica (Filial não tem campo equivalente).
 
 
 **O que falta.** Dois problemas na mesma tela:
@@ -2353,7 +2384,7 @@ documento inteiro.
 
 **Proposta.** Campo `tipoEfeitoHotStamping` opcional (holográfico/espelhado/metalizado/colorido/outro).
 
-### C5 — Sem NENHUM enum de acabamento fora de etiquetas (dobra, encadernação, colagem) — **gap estrutural, maior que C1-C4**
+### C5 — Sem NENHUM enum de acabamento fora de etiquetas (dobra, encadernação, colagem) — **gap estrutural, maior que C1-C4** — ✅ CONSTRUÍDO (commit afc405f, rodada 21)
 **Custo estimado:** 🟡 Médio — 3 enums novos fechado+escape (`TipoDobra`/`TipoEncadernacao`/`TipoColagem`) mais lógica condicional de exibição por tipo de serviço; sem model novo e sem tocar o motor de preço (seção é "opção existir, não precificação").
 
 **O que falta.** `TipoAdesivo`/`TipoSerrilha`/`TipoLaminacao`/`TipoAcabamentoVerniz`/`TipoHotStamping` só existem em `OrcamentoItemEtiqueta` (motor M2/flexografia de rótulo). Pra embalagem, livro/editorial, comunicação visual, brinde — não existe NENHUM dropdown estruturado de acabamento; a gráfica cria um "serviço" com nome livre. Uma gráfica desses perfis vê seleção estruturada só pra etiqueta e assume que falta a feature pro resto.
@@ -2364,7 +2395,7 @@ documento inteiro.
 
 ## D. Equipe e prestadores externos
 
-### D1 — Sem conceito de "colaborador sem login" (motorista, operador de chão de fábrica)
+### D1 — Sem conceito de "colaborador sem login" (motorista, operador de chão de fábrica) — **CONSTRUÍDO (commit 2917616, 2026-09-08)**
 **Custo estimado:** 🟡 Médio — a proposta original (relaxar `email`/`senhaHash` de `Usuario`) está ERRADA segundo a revisão Opus, por contaminar toda a cadeia de auth/sessão/billing; a corrigida é um model novo simples `Colaborador` (ou reaproveitar o padrão de nome declarado já usado em `ApontamentoEtapa`/`Entrega.motorista`) — nunca mexer em `Usuario`.
 
 **O que falta.** `Usuario` é 100% acoplado a autenticação (`email`/`senhaHash` obrigatórios). `Entrega.motorista` é texto livre sem histórico auditado; `ApontamentoEtapa.operadorNomeDeclarado` (já construído, rodada 15) prova que o sistema já aceita "pessoa sem login" nesse ponto específico, mas não generalizou o conceito.
@@ -2373,7 +2404,7 @@ documento inteiro.
 
 **Proposta.** `Entrega.motoristaUsuarioId String?` (FK opcional pra `Usuario` com `email`/`senhaHash` nulos — exige relaxar as colunas obrigatórias, mudança não-trivial) — **avaliar com cuidado antes de construir**, é mudança estrutural em `Usuario`, não um campo aditivo simples como o resto do documento.
 
-### D2 — Prestador de serviço recorrente (≠ Fornecedor de insumo)
+### D2 — Prestador de serviço recorrente (≠ Fornecedor de insumo) — ✅ CONSTRUÍDO (commit 91e7558, rodada 21; só cadastro, vínculo com Despesa fica pra rodada futura)
 **Custo estimado:** 🟡 Médio — 1 model novo (`PrestadorServico`) com poucos campos, análogo a `Fornecedor`, sem relação complexa.
 
 **O que falta.** `Fornecedor` é só pra compra de material. Acabamento terceirizado (laminação, encadernação feita por terceiro), logística/despachante, freelancer de design — não têm onde ser cadastrados como prestador recorrente; viram `Despesa` genérica sem estrutura.
@@ -2382,7 +2413,7 @@ documento inteiro.
 
 **Proposta.** `model PrestadorServico` (nome, tipo fechado+OUTRO: ACABAMENTO/LOGISTICA/DESIGN/OUTRO, CPF/CNPJ, contato) — parecido com `Fornecedor` mas pra serviço, não insumo.
 
-### D3 — Dados de pessoa incompletos pra pagamento (CPF, PIX, especialidade)
+### D3 — Dados de pessoa incompletos pra pagamento (CPF, PIX, especialidade) — **CONSTRUÍDO (commit 3d67109, 2026-09-09; confirmado sem sobreposição real com F6/A15 — os três são coisas diferentes, ver comentário no schema)**
 **Custo estimado:** 🔴 Caro — os campos aditivos em si seriam baratos, mas a revisão Opus aponta que este achado se sobrepõe a F6 e ao A15/Parte 4 (3 achados de "dado de pagamento" chegando em lugares diferentes do schema) e pede explicitamente decidir 1 modelo antes de construir qualquer um dos três.
 
 **O que falta.** `Usuario` não tem CPF, dados bancários/PIX nem especialidade — necessário pra gerar recibo de comissão/serviço e saber pra onde pagar.
@@ -2395,7 +2426,7 @@ documento inteiro.
 
 ## E. Primeira experiência (onboarding) de uma gráfica atípica
 
-### E1 — Dashboard mostra "Pipeline de produção" mesmo pra quem não produz
+### E1 — Dashboard mostra "Pipeline de produção" mesmo pra quem não produz — **CONSTRUÍDO 2026-09-04 (rodada 21)**
 **Custo estimado:** 🟢 Barato — mas só pela versão CORRIGIDA pela revisão Opus: condicionar por USO real (ex.: "0 pedidos em produção nos últimos N dias"), não por `Grafica.segmento`, que é descritivo/opcional/mono-valorado e a própria revisão chama de potencialmente perigoso pra esse fim. É lógica condicional de UI sobre consulta que já existe, sem schema novo.
 
 **O que falta.** `/meu-negocio` sempre mostra os cards "Pipeline de produção" e "Previsão de estoque", mesmo pra uma gráfica REVENDA pura (achado A12/Parte 1, já construído — terceiriza 100%) que nunca vai ter nada nesses cards. Fica eternamente "Nenhum pedido em produção", confundindo mais que ajudando.
@@ -2404,28 +2435,28 @@ documento inteiro.
 
 **Proposta.** Condicionar os 2 cards a `Grafica.segmento` — omitir ou trocar por "Últimas compras/terceirizações" quando o segmento for REVENDA/BRINDES_PERSONALIZADOS.
 
-### E2 — Link "Produção" no menu oferecido mesmo pra quem não usa
+### E2 — Link "Produção" no menu oferecido mesmo pra quem não usa — **CONSTRUÍDO 2026-09-04 (rodada 21)**
 **Custo estimado:** 🟢 Barato — mesma correção de E1 (sinal de uso real, não `segmento`); reaproveita a mesma lógica condicional, só aplicada ao menu.
 
 **O que falta.** Mesmo problema de E1, no menu de navegação (`UserNav.tsx`) — o link é condicionado só a permissão de módulo, não a segmento.
 
 **Proposta.** Mesma condição de E1.
 
-### E3 — Segmento é respondido DEPOIS do onboarding — dados de exemplo saem errados
+### E3 — Segmento é respondido DEPOIS do onboarding — dados de exemplo saem errados — **CONSTRUÍDO 2026-09-04 (rodada 21)**
 **Custo estimado:** 🟢 Barato — checagem condicional simples (`segmento === null`) + banner, sem schema novo; a revisão Opus pede só confirmar contra `onboarding.ts`/`dados-exemplo.ts` antes de construir (é o melhor achado da seção E, ainda não conferido).
 
 **O que falta.** `/comecar` carrega dados de exemplo a partir de `Grafica.segmento`, mas responder o segmento é uma tela opcional em Configurações, fora do fluxo inicial. Uma gráfica de estamparia que passa por `/comecar` antes de configurar o segmento recebe exemplos de Offset/Etiqueta (pacote padrão) — cria confusão de identidade logo na primeira experiência.
 
 **Proposta.** Checar `segmento === null` antes de carregar exemplo em `/comecar`; se nulo, mostrar banner linkando pra escolher o segmento primeiro (opção conservadora, não quebra conta existente).
 
-### E4 — Segmentos "Brindes"/"Corte a laser" caem no pacote de exemplo errado (Offset)
+### E4 — Segmentos "Brindes"/"Corte a laser" caem no pacote de exemplo errado (Offset) — **CONSTRUÍDO 2026-09-04 (rodada 21)**
 **Custo estimado:** 🟢 Barato — trabalho de conteúdo (novos pacotes de dados de exemplo por segmento já nomeado no enum), sem mudança de schema.
 
 **O que falta.** `PACOTES_POR_SEGMENTO` em `src/lib/dados-exemplo.ts` só tem entrada dedicada pra COMUNICACAO_VISUAL e ESTAMPARIA_VESTUARIO — os demais segmentos (já nomeados no enum, ex. BRINDES_PERSONALIZADOS, CORTE_LASER_ACRILICO) caem no pacote padrão de Offset comercial, sem nenhuma relação com o negócio real.
 
 **Proposta.** Criar pacotes de exemplo dedicados pros segmentos já nomeados no enum que ainda não têm um.
 
-### E5 — Dados de exemplo sem marca visual, risco de virar orçamento real
+### E5 — Dados de exemplo sem marca visual, risco de virar orçamento real — **CONSTRUÍDO (commit 4c549e8, 2026-09-08)**
 **Custo estimado:** 🟡 Médio — sem schema novo, mas exige badge em múltiplos seletores (produto/cliente) mais lógica nova de aviso na criação do orçamento.
 
 **O que falta.** O único sinal de que um cliente/produto é de exemplo é o prefixo de texto "[Exemplo] " no nome — sem badge/cor/ícone. Um usuário distraído pode incluir um cliente ou produto de exemplo num orçamento real.
@@ -2453,7 +2484,7 @@ confirmando ausência — diferente de A-E, tratar com mais confiança.
 
 **Proposta.** `enum TipoFerramental { FACA_CORTE_VINCO CLICHE_FLEXO CLICHE_HOT_STAMPING TELA_SERIGRAFIA MATRIZ_BORDADO CILINDRO_ROTOGRAVURA FERRAMENTA_ACABAMENTO OUTRO }` + `ProprietarioFerramental { GRAFICA CLIENTE }` + `StatusFerramental { ATIVO EM_MANUTENCAO DESCARTADO DEVOLVIDO_AO_CLIENTE }`. `model Ferramental { graficaId, tipo, tipoOutro?, codigo, descricao, clienteId? (SetNull), itemGraficaId?, proprietario, localizacao?, tiragensAcumuladas Int @default(0), status, desativadoEm }`. `OrcamentoItem.ferramentalId String?` opcional, nunca automático — só sugere aviso ("esta faca já existe, considere não cobrar"), preço continua travado à mão.
 
-### F2 — Sistema só emite NF-e de mercadoria; gráfica que fatura serviço não tem onde cadastrar
+### F2 — Sistema só emite NF-e de mercadoria; gráfica que fatura serviço não tem onde cadastrar — ✅ CONSTRUÍDO (commit 3b5e8a7, rodada 21; só cadastro, emissão de NFS-e de verdade é fase 2, não construída)
 **Custo estimado:** 🟡 Médio — campos aditivos em 3 models existentes mais 1 enum novo (`ModeloDocumentoFiscal`) e relaxar uma constraint `@@unique`; a própria proposta restringe o escopo desta rodada a cadastro (emissão de NFS-e em si fica pra fase 2).
 
 **O que falta.** `NotaFiscal`/`focus-nfe.ts` são inteiramente NF-e modelo 55. Zero campo de NFS-e (código de serviço, inscrição municipal do emitente, alíquota ISS). `Cliente.inscricaoMunicipal` já existe reservado com comentário "sistema só emite NF-e hoje". Atinge comunicação visual, design/arte, personalização, estamparia — e qualquer gráfica que imprima sobre material do cliente (`materialFornecidoPeloCliente`, já modelado), que é industrialização/serviço por definição.
@@ -2462,7 +2493,7 @@ confirmando ausência — diferente de A-E, tratar com mais confiança.
 
 **Proposta.** Cadastro primeiro, emissão depois: `ItemCatalogo.itemListaServicoLc116`/`codigoServicoMunicipal` (só quando `tipo=SERVICO`). `DadosFiscaisGrafica.inscricaoMunicipal`/`codigoMunicipioIbge`/`aliquotaIssPercent`. `NotaFiscal.modelo ModeloDocumentoFiscal @default(NFE)` (`NFE`/`NFSE`/`NFCE`) + relaxar `@@unique([orcamentoId, modelo])` pra venda mista emitir os dois. `verificarProntidaoFiscal` passa a checar pendência por modelo. Emissão de NFS-e em si fica pra fase 2.
 
-### F3 — Frete: existe a modalidade, não existe o valor, transportadora é texto livre, nota sai com transporte vazio
+### F3 — Frete: existe a modalidade, não existe o valor, transportadora é texto livre, nota sai com transporte vazio — ✅ CONSTRUÍDO (commit 09395a1, rodada 21; grupo &lt;transp&gt; da NF-e ainda não enviado, ver limitação documentada no código)
 **Custo estimado:** 🟡 Médio — 1 model novo (`Transportadora`) simples, análogo a `Fornecedor`, mais campos aditivos em `Orcamento`/`Entrega`; a proposta já sugere resposta pra sua única decisão em aberto (frete não entra na comissão).
 
 **O que falta.** `Orcamento.frete` é só a modalidade (já corrigido no B1/Parte 1); não existe `valorFrete` em lugar nenhum. `transportadora` é texto livre sem CNPJ/RNTRC. `focus-nfe.ts` manda `valor_frete: "0"` LITERAL e não tem grupo de transportadora nem volumes/peso no payload.
@@ -2471,7 +2502,7 @@ confirmando ausência — diferente de A-E, tratar com mais confiança.
 
 **Proposta.** `model Transportadora` (mesmo formato de `Fornecedor`, já nascendo com `documento`). `Orcamento.transportadoraId` (FK opcional, convive com texto — padrão já estabelecido) + `valorFrete Decimal?` (null=hoje). `Entrega.volumes`/`pesoBrutoKg`/`especieVolume`/`transportadoraId`. Decisão explícita necessária: frete entra na base de comissão? (sugestão: não, mesmo espírito de `BaseComissao.LUCRO`).
 
-### F4 — Estoque sem lote/validade — schema já cita exigência que não consegue atender
+### F4 — Estoque sem lote/validade — schema já cita exigência que não consegue atender — ✅ CONSTRUÍDO (commit 7d59b08, rodada 21; FEFO/apropriação automática ficaram de fora, snapshot é rastro documentado, não FEFO real)
 **Custo estimado:** 🟡 Médio — campos aditivos opt-in em models existentes, mais 1 enum novo fechado+`OUTRO` (`certificacao`) e lógica de snapshot de lote entre entrada e saída (reaproveita padrão de snapshot já usado no repo).
 
 **O que falta.** `MovimentacaoEstoque` não tem lote nem validade. `Cliente.preferenciasProducao` usa como exemplo real "não aceita variação de tom entre lotes" — o sistema registra a EXIGÊNCIA e não tem onde registrar de qual lote saiu o pedido. Também sem alerta de validade (mecânica já existe em `alerta-estoque.ts`, só falta o dado) e sem certificação FSC.
@@ -2480,7 +2511,7 @@ confirmando ausência — diferente de A-E, tratar com mais confiança.
 
 **Proposta.** `ItemGrafica.controlaLote Boolean @default(false)` opt-in. `MovimentacaoEstoque.lote`/`validade` preenchidos na ENTRADA_COMPRA, copiados como snapshot na SAIDA_PRODUCAO (liga lote→pedido de graça). `ItemGrafica.certificacao` enum fechado+OUTRO. Não fazer agora: FEFO/apropriação automática — só registro/rastro.
 
-### F5 — Arte é uma só por orçamento/pedido; não existe arte por item
+### F5 — Arte é uma só por orçamento/pedido; não existe arte por item — ✅ CONSTRUÍDO (commit 0c9aad6, rodada 21; aprovação pública é em /a/[token], não /o/[token] como a proposta original sugeria — corrigido durante a construção)
 **Custo estimado:** 🟡 Médio — 1 model novo (`ArteItem`) com poucos campos e FK direta pra `OrcamentoItem`, sem workflow de múltiplas etapas, mais 1 valor novo de enum (`ADD VALUE`).
 
 **O que falta.** `Orcamento.arteUrl`/`Pedido.arteUrl` são um arquivo único no cabeçalho — `OrcamentoItem` não tem campo de arte nenhum. Quebra no caso mais comum do próprio perfil-piloto: 6 SKUs de rótulo num pedido só recebem UMA aprovação, e o preflight de DPI/sangria checa o arquivo único contra a geometria de um pedido com itens de dimensões diferentes.
@@ -2509,7 +2540,7 @@ confirmando ausência — diferente de A-E, tratar com mais confiança.
 
 **Status:** construído exatamente como proposto — campos aditivos, fiação completa em todos os pontos de escrita (criar/editar/duplicar item, opção alternativa) e exibição (resumo interno, link público, PDF de orçamento e de ordem de produção). Confirmado por `git diff` que `src/lib/pricing/` não foi tocado.
 
-### F8 — Sem onde registrar cor especial/Pantone — só a QUANTIDADE de cores
+### F8 — Sem onde registrar cor especial/Pantone — só a QUANTIDADE de cores — ✅ CONSTRUÍDO (commit de1faf9, rodada 21; retomado após bater limite de gasto em fase final de verificação, não descartado — trabalho já estava completo)
 **Custo estimado:** 🟡 Médio — 2 models novos (`CorEspecialCliente`/`OrcamentoItemCor`), mas com relações diretas e simples seguindo um padrão já estabelecido no repo (`OrcamentoItemHotStamping`), sem tocar o motor de preço.
 
 **O que falta.** Todo campo de cor no schema é um número (`corFrente`/`numeroCoresFlexo`/`coresRotulo`) — nenhum diz QUAIS cores. Cor especial é simultaneamente tinta que se mistura por fórmula, clichê/tela a mais, e o critério nº1 de aprovação/reclamação do cliente. Repetição de pedido não carrega a receita de cor.
@@ -2533,9 +2564,170 @@ confirmando ausência — diferente de A-E, tratar com mais confiança.
 
 ---
 
+# Parte 8 — Auditoria de código (falhas, bugs e dívida técnica)
+
+**Adicionada em 2026-09-02, por um subagente Opus.** As Partes 1-7 perguntam
+"o módulo cobre o universo real de gráficas?". Esta rodada foi diferente:
+revisão de código pura. O subagente leu `arquitetura-resumo.md` + este
+documento inteiro + `prisma/schema.prisma` e depois mergulhou em `src/lib/`,
+`src/lib/pricing/` e `src/app/*/actions.ts` procurando **tudo que está ruim
+no código** — com a lente do princípio de abrangência, mas reportando
+também bug de lógica real e dívida técnica fora desse tema. Nenhum arquivo
+foi alterado; cada achado tem `arquivo:linha` e foi confirmado por leitura
+de código + rastreamento de call-site, não por execução de teste. O
+relatório bruto, com números e cenários por perfil de gráfica, está em
+`auditoria-codigo-2026-09-02.md` na raiz do repo — esta Parte é o resumo
+catalogado.
+
+**Dois eixos independentes por achado.** *Severidade* (🔴 alta / 🟡 média /
+🟢 baixa) = impacto no negócio hoje. *Custo estimado* (mesmo critério
+🟢/🟡/🔴 do "Resumo de custo" abaixo) = esforço de correção. Não coincidem:
+N7 é 🔴 severidade / 🟢 custo.
+
+**Nota de método (do subagente).** N9 é o único achado com interpretação
+disputável — a aritmética (`folhasAcerto × entradas²`) é fato, mas a leitura
+de "bug" se apoia no texto de ajuda do próprio campo. Antes de corrigir N3 e
+N9, conferir se a suíte `src/lib/pricing/__tests__/*` não codifica o
+comportamento atual como esperado. Confiança alta e por leitura direta: N1,
+N2, N3, N10, N14, N15, N16, N17, R1, R2. Certeza de código com julgamento de
+domínio na consequência: N4, N5, N6, N7, N8, N11, N12, N13.
+
+## Bugs de lógica
+
+### N1 — `SIMPLES` vira preço/m² se o vendedor preencher as dimensões — **CONSTRUÍDO 2026-09-03 (commit 0b74f9b)**
+**Severidade:** 🔴 alta · **Custo estimado:** 🟡 Médio — mexe no motor (`orcamento.ts`), exige gate por modelo no formulário, e uma decisão de produto: "cobra por área" tem que virar propriedade do `ItemGrafica`, não inferência da linha.
+**Arquivo:** `src/lib/orcamento.ts:16-27`; formulário `src/app/orcamento/SeletorItemOrcamento.tsx:304-330`.
+**O que está errado.** `areaM2 = (larguraCm && alturaCm) ? (l/100)*(a/100) : 1` e `precoUnitario = precoBase * areaM2`. Se o produto é cobrado por m² ou por peça **não é propriedade do produto** — é inferido de o vendedor ter digitado largura/altura naquela linha. Os campos são renderizados em toda linha de orçamento, sem gate por modelo, com `placeholder="opcional"`. Camiseta SIMPLES a R$45 com "30 × 40" digitado (área da estampa, dado descritivo) vira **R$5,40**, sem aviso. Atinge estamparia/vestuário, brindes, corte a laser/acrílico, editorial — perfis em que a dimensão é descritiva. O inverso também morde: quem quer preço/m² e esquece a dimensão cobra `precoBase × 1` por peça. O projeto reforça o hábito — o achado F7 (profundidade/espessura) foi construído como campo descritivo logo abaixo dos mesmos inputs.
+**Proposta.** `ItemGrafica.simplesCobraPorArea Boolean @default(false)` (ou valor dedicado em `ModeloCalculo`); o motor só multiplica pela área quando a flag está ligada. No mínimo, enquanto não: esconder largura/altura da linha SIMPLES que não cobra por área.
+
+### N2 — Cancelar pedido não desfaz `ContaReceber`, `Comissao`, nem tira o orçamento do faturamento — **CONSTRUÍDO 2026-09-04 (rodada 21)**
+**Severidade:** 🔴 alta · **Custo estimado:** 🔴 Caro — área financeira sensível, mexe em CAS de status, `ContaReceber` + `Comissao` + agregação de `/meu-negocio`, e precisa decidir o comportamento certo pra cada um (cancelar vs. estornar parcial já pago).
+**Arquivo:** `src/app/producao/actions.ts:227-420` (transação em `:263-351`); consumo em `src/lib/meu-negocio.ts:136-140` e `:176-178`.
+**O que está errado.** `cancelarPedido` estorna estoque (pelo histórico de `MovimentacaoEstoque`) e marca `CustoPedido.estornadoEm` nos custos automáticos — mas não toca em nenhuma das três consequências da aprovação: (a) a `ContaReceber` gerada fica `PENDENTE` pra sempre → entra no aging e na `calcularExposicaoCreditoCliente`, podendo bloquear vendas novas do cliente por limite de crédito de um pedido que não existe; (b) a `Comissao` (snapshot, `@unique` por orçamento) fica `PENDENTE` → o vendedor recebe comissão de pedido cancelado, `marcarComissaoPaga` não checa `Pedido.status`; (c) `Orcamento.status` continua `APROVADO`, e `buscarVisaoGeralNegocio` soma `faturamentoMes` de `orcamento.aggregate({ where: { status: "APROVADO" } })` → o pedido cancelado **continua sendo faturamento** no dashboard, e o `saldoReal` junto. Grep confirma: zero ocorrência de `contaReceber`/`comissao` em `src/app/producao/`.
+**Proposta.** Na transação de `cancelarPedido`: `updateMany` das `ContaReceber` PENDENTE/PARCIAL → `CANCELADO`; `Comissao` → `CANCELADA` (novo valor no enum `StatusComissao`) se ainda `PENDENTE`; e decidir se cancelamento reverte `Orcamento.status` para um novo `CANCELADO` ou se `buscarVisaoGeralNegocio` passa a excluir orçamentos cujo `Pedido.status = CANCELADO` (a 2ª é menos invasiva).
+
+### N3 — "Pedido mínimo (R$)" é piso por ITEM, não por pedido — **CONSTRUÍDO 2026-09-03 (commit 0b74f9b)**
+**Severidade:** 🔴 alta · **Custo estimado:** 🟡 Médio — mover o piso pra depois da soma das linhas (fora de `comporPreco`, que roda por item) muda onde o valor é aplicado e interage com desconto/arredondamento; desenhar junto com N18.
+**Arquivo:** `src/lib/pricing/compor.ts:70`; rótulo em `src/app/configuracoes/ParametrosForm.tsx:203`.
+**O que está errado.** `precoComPiso = maiorDec(precoBruto, pedidoMinimo)` roda dentro de `comporPreco`, chamado **uma vez por linha de orçamento**. O campo é rotulado "Pedido mínimo (R$)" em Configurações e não há piso agregado em lugar nenhum (grep de `pedidoMinimo`: só `compor.ts`). Gráfica rápida com mínimo R$30: cliente pede 100 cartões (R$12) + 50 panfletos (R$9) + 1 crachá (R$4) no mesmo orçamento → cobra R$90 em vez de R$30, sistematicamente pra cima. É o perfil que mais faz orçamento multi-linha barato. Efeito colateral: o piso é aplicado **antes** do arredondamento, então `arredondarParaIncremento` pode devolver valor abaixo do mínimo.
+**Proposta.** Tirar `pedidoMinimo` de `comporPreco` e aplicá-lo uma vez sobre o total do orçamento, depois de somar as linhas e antes do arredondamento final. Renomear o parâmetro pra deixar claro que é piso de pedido.
+
+### N5 — Baixa de estoque e custo real ignoram o consumo que o motor já calculou — **CONSTRUÍDO 2026-09-04 (rodada 21)**
+**Severidade:** 🔴 alta · **Custo estimado:** 🔴 Caro — liga motor → estoque → `CustoPedido` (o eixo "quanto lucrei"), toca a transação de transição de status, e precisa resolver como ler `folhasTotais`/`areaFaturavel` do `breakdown` de forma robusta.
+**Arquivo:** `src/app/producao/status-transicao.ts:454` e `:565`; `FichaTecnicaItem` em `prisma/schema.prisma:2206-2228`.
+**O que está errado.** A baixa em `CLICHE_FACA → PRODUCAO` faz `quantidadeConsumida = ficha.quantidadePorUnidade * item.quantidade` — consumo **linear por unidade vendida**, congelado no cadastro. O motor já gravou em `OrcamentoItem.breakdown` o consumo físico real (`folhasTotais` no offset = boas + perda + `folhasAcerto × entradas`; `areaFaturavel` no M2; `metragemTotal` na flexo) e **nada disso é lido**. Consequências: (a) o consumo linear é estruturalmente impossível de acertar pra produto cujas dimensões variam por orçamento — o `nUp` de um folder 10×21 e de um cartaz A3 no mesmo papel difere por 8×; (b) as folhas de acerto e a perda % nunca saem do estoque, e o `CustoPedido` origem `CONSUMO_ESTOQUE` fica subestimado pelo mesmo tanto. Distinto do B3/Parte 2 (refugo *pós*-produção) — aqui é o consumo *planejado* que o motor já sabe.
+**Proposta.** Quando o item tem `breakdown` de motor avançado, a baixa de matéria-prima usa a quantidade física de lá (folha/área/metragem) em vez de `quantidadePorUnidade × Q`. `FichaTecnicaItem` continua sendo o caminho pro SIMPLES/genérico.
+
+### N9 — Rodagem cobra as folhas/metros de acerto `entradas²` vezes — **CONSTRUÍDO (commit 22202d9, 2026-09-08 — decisão de negócio confirmada com o dono + pesquisa de mercado real, ver histórico de conversa; acerto agora escala linear com entradas, não quadrático)**
+**Severidade:** 🟡 média · **Custo estimado:** 🟢 Barato — correção aritmética localizada em `offset.ts` + `flexografia.ts`, mas conferir a suíte de testes antes (pode codificar o comportamento atual).
+**Arquivo:** `src/lib/pricing/offset.ts:110-111, 157-161`; mesmo padrão em `src/lib/pricing/flexografia.ts:84, 102-106`.
+**O que está errado.** `folhasTotais = folhasBoas + folhasPerda + folhasSetup`, onde `folhasSetup = folhasAcerto × entradas`. Depois `custoRodagemPorEntrada = maiorDec(rodagemMinima, folhasTotais/1000 × custoMilheiroRod)` e `custoRodagem = entradas × custoRodagemPorEntrada` — as folhas de acerto, já multiplicadas por `entradas` uma vez, são multiplicadas de novo (`folhasAcerto × entradas²`). Fisicamente cada passada roda as boas + a perda + **o acerto daquela passada**. O texto de ajuda do campo (`PrensaForm.tsx:128`) diz *"cobrado a cada mil folhas impressas, já descontado o acerto"* — o código faz o oposto e ainda duplica. Escala com `entradas`: job 6/6 numa prensa de 2 cores conta o acerto 36× em vez de 6×.
+**Proposta.** Tirar `folhasSetup` do `folhasTotais` que alimenta o custo/milheiro de rodagem (mantendo-o no cálculo de papel consumido, se for o caso), ou não multiplicar o resultado por `entradas` de novo. Confirmar contra spec/testes antes.
+
+**Investigado 2026-09-04, não construído de propósito.** Um subagente confirmou evidência genuinamente conflitante: o argumento aritmético do achado bate, mas `flexografia.test.ts` tem um teste já calibrado que assume o comportamento ATUAL como correto (`custoRodagem ≈ 73.888`, sob a escala tipo `entradas²`) — mudar o código quebraria esse teste de propósito, o que sugere que alguém já decidiu esse comportamento antes, ou que o teste em si está errado. A decisão de negócio real (a rodagem "acerto" deve contar 1× por job inteiro, ou 1× por passada/entrada?) não foi resolvida — fica pra decisão humana. Análise escrita num worktree (`ANALISE-N9.md`) que já foi limpo, não preservada no repo.
+
+### N10 — `custoFaca` é aceito, validado e descartado sem erro no branch OFFSET — **CONSTRUÍDO 2026-09-03 (commit 32207c6)**
+**Severidade:** 🟡 média · **Custo estimado:** 🟡 Médio — repassar `custoFaca` a `comporPreco` no branch OFFSET (1 linha) + abrir o campo na UI pra modelo não-etiqueta + gate de FormData.
+**Arquivo:** `src/lib/pricing/precificar.ts:232-248` (OFFSET é o único dos 6 branches sem `custoFaca`); `src/lib/orcamento-precificacao.ts:301`; UI em `SeletorItemOrcamento.tsx:495-501` e `CamposPrecificacaoEtiquetaOrcamento.tsx:89-102`.
+**O que está errado.** `calcularItemOrcamento` faz `if (dados.custoFaca !== null) contexto.custoFaca = dados.custoFaca` pra qualquer `modeloCalculo`, mas só o OFFSET não repassa isso a `comporPreco`. Um item OFFSET com faca informada (alcançável via `editarOrcamento`/`adicionarItemOrcamento`, que leem `formData.get("custoFaca")` sem gate por modelo — `orcamento/[id]/actions.ts:646` e `:1609`) tem o custo aceito e **jogado fora sem erro**. A UI só mostra o campo quando `usaClicheEtiqueta`, tratando faca como conceito de etiqueta. Gráfica de embalagem/cartonagem que imprime caixa em offset e paga R$900 de faca de corte-e-vinco não tem onde lançar. O F1/Parte 7 (`Ferramental`) construiu o *cadastro* da faca, não o caminho do custo entrar no preço do item OFFSET.
+**Proposta.** Repassar `custoFaca` em `comporPreco` no branch OFFSET; renderizar o campo de custo de faca/ferramental pra OFFSET também (não só etiqueta), aproveitando o vínculo `OrcamentoItem.ferramentalId` já existente.
+
+### N11 — Trava de "preço abaixo do custo" cai em custo zero e ignora área em SIMPLES — **CONSTRUÍDO 2026-09-03 (commit 0b74f9b)**
+**Severidade:** 🟡 média · **Custo estimado:** 🟡 Médio — a lógica de fallback está em 2 lugares (`actions.ts` e `orcamento-margem.ts`) e o caso SIMPLES-com-área precisa espelhar o cálculo do motor.
+**Arquivo:** `src/app/orcamento/[id]/actions.ts:2040-2055`; mesma regra em `src/lib/orcamento-margem.ts:44-46`.
+**O que está errado.** `custoDireto = breakdown?.custoTotal ? … : item.itemGrafica.precoCompra ? precoCompra × quantidade : 0`. Dois furos: (a) item SIMPLES sem `precoCompra` (serviço, revenda de terceiro, item importado por planilha) tem piso de custo **zero** — pode ser descontado a R$0,01, e como `descontoMaxSemAprovacao` default é 100 nada mais segura; (b) pra SIMPLES com dimensões, o preço escala por m² mas o custo é `precoCompra × quantidade` sem área — banner lona 3×2m a `precoVenda 60`/m² e `precoCompra 18`/m² mostra margem 95% (real 70%) e libera fechar por R$19.
+**Proposta.** Quando não há `breakdown`, calcular o piso de custo com a mesma fórmula que o motor usou (incluir área quando SIMPLES cobra por área — ver N1); e tratar `precoCompra` ausente como "custo desconhecido" (bloquear desconto grande, não liberar) em vez de `0`.
+
+### N12 — Fallback silencioso de gramatura de papel; o flag `APROXIMADO` é calculado e descartado — **CONSTRUÍDO 2026-09-04 (commit 7acc9bf)**
+**Severidade:** 🟡 média · **Custo estimado:** 🟢 Barato — `resolverPrecoPapel` já devolve `origem`; basta propagar pro `breakdown` e exibir aviso.
+**Arquivo:** `src/lib/pricing/papel.ts:34-42`; consumo em `src/lib/pricing/carregar.ts:231-237` (`const { precoKg } = resolverPrecoPapel(...)`).
+**O que está errado.** `resolverPrecoPapel` devolve `{ precoKg, gramaturaBase, origem: "EXATO" | "APROXIMADO" }` justamente pro chamador poder avisar. `carregarContextoPrecificacao` desestrutura só `precoKg` — `origem` e `gramaturaBase` são descartados. Gráfica editorial cadastra "Offset 75g" com tabela só em 90g/120g → o motor usa o R$/kg do 90g (mais próximo; empate protege a margem) mas o peso da folha usa 75g reais, e nada na tela nem no PDF indica que o preço/kg não corresponde ao papel.
+**Proposta.** Propagar `origem`/`gramaturaBase` pro `breakdown` e mostrar um aviso ("preço estimado a partir da gramatura mais próxima cadastrada") no orçamento quando `APROXIMADO`.
+
+### N15 — Receber compra cria saldo de estoque em item deliberadamente sem controle de estoque — **CONSTRUÍDO 2026-09-04 (commit b0f8200)**
+**Severidade:** 🟢 baixa · **Custo estimado:** 🟢 Barato — replicar o guard `if (estoqueAtual === null) continue` que a produção já usa.
+**Arquivo:** `src/app/compras/status-transicao.ts:171-202`.
+**O que está errado.** `estoqueAtual = null` é a convenção do projeto pra "sem controle de estoque" — a baixa de produção respeita (`status-transicao.ts:453`: `if (estoqueAtual === null) continue;`). Compras não: `new D(estoqueAnterior?.toString() ?? 0).plus(quantidadeDec)` transforma `null` em número e o CAS `where: { estoqueAtual: estoqueAnterior ?? null }` casa com o `null` e grava. Gráfica que não controla estoque de tinta registra compra de 5 L → a tinta passa a ter `estoqueAtual = 5`, entra em `calcularPrevisaoEstoque` e nos alertas de estoque crítico, com um saldo que ninguém mantém (a produção segue ignorando o item). O saldo só cresce.
+**Proposta.** No `RECEBIDO`, pular a atualização de `estoqueAtual`/`MovimentacaoEstoque` para item com `estoqueAtual = null` (registrar o custo da compra normalmente).
+
+## Abrangência e dívida técnica
+
+### N4 — Motor DIGITAL não tem nUp/folha: `numeroCliques` é inteiro ≥1 por peça e o substrato é `Q × preço da folha` — **CONSTRUÍDO 2026-09-04 (rodada 21)**
+**Severidade:** 🔴 alta · **Custo estimado:** 🔴 Caro — é um motor de cálculo: imposição/nesting no digital, `FormatoFolha` no branch DIGITAL, e mudar a semântica de `numeroCliques`.
+**Arquivo:** `src/lib/pricing/digital.ts:28-33`; validação em `src/lib/pricing/validar.ts:126-135`; carregamento em `carregar.ts:290-292`.
+**O que está errado.** `custoCliques = Q × numeroCliques × custoPorClique` e `custoSubstrato = Q × custoSubstratoPorPeca`. Não há `nUp`, não há folha, `FormatoFolha` só é lido no branch OFFSET. E `validarPedidoDigital` exige `Number.isInteger(numeroCliques) && numeroCliques >= 1` — é impossível expressar "muitas peças saem de um clique". Gráfica rápida roda 1.000 cartões 24-up em SRA3: real ≈ 42 cliques e 42 folhas; o sistema cobra `1000 × custoPorClique + 1000 × precoCompra da folha`, 24× o custo real. O contorno (falsear `custoPorClique`) quebra porque ele mora na máquina, compartilhada por todos os produtos dela. Gráfica rápida + digital é, junto com comunicação visual, o maior mercado-alvo declarado.
+**Proposta.** Branch DIGITAL passa a fazer imposição igual ao OFFSET (lê `FormatoFolha`, calcula `nUp` da geometria do item), com `numeroCliques`/substrato derivados de folhas, não de peças. `numeroCliques` manual vira override opcional.
+
+### N6 — `icms_origem: "0"` fixo em todo item de NF-e, sem campo de origem no catálogo — **CONSTRUÍDO 2026-09-03 (commit 32207c6)**
+**Severidade:** 🔴 alta · **Custo estimado:** 🟡 Médio — enum novo (`OrigemMercadoria`, 0-8) + campo em `ItemCatalogo`/`ItemGrafica` + payload; sem escape hoje.
+**Arquivo:** `src/lib/focus-nfe.ts:273`; `ItemCatalogo` só tem `ncm` (`prisma/schema.prisma:1968-1990`).
+**O que está errado.** `mapearItemNfePayload` emite `icms_origem: "0"` (nacional) pra todo item, de toda gráfica. Não existe campo de origem em `ItemCatalogo`, `ItemGrafica` nem `DadosFiscaisGrafica`. Gráfica de brindes que revende canecas/power banks importados (`ModeloCalculo.REVENDA` foi feito pra isso), comunicação visual que revende ACM/acrílico importado, DTF com filme importado — todas emitem NF-e declarando origem nacional. É informação fiscal incorreta no XML autorizado (afeta o ICMS de 4% interestadual da Resolução SF 13/2012 e a FCI), não corrigível por configuração. Colateral no mesmo arquivo: `tipo_documento: "1"` e `finalidade_emissao: "1"` também fixos (ver R3).
+**Proposta.** `enum OrigemMercadoria` (0-8, fechado) + `ItemCatalogo.origemMercadoria` (default `NACIONAL_0`) ou `ItemGrafica.origemMercadoria`; payload lê o campo. Default preserva o comportamento atual.
+
+### N7 — CFOP interestadual não distingue contribuinte de não-contribuinte, mas o campo bloqueador já existe — **CONSTRUÍDO 2026-09-04 (commit 7acc9bf)**
+**Severidade:** 🔴 alta · **Custo estimado:** 🟢 Barato — `Cliente.indicadorInscricaoEstadual` já existe e já é lido 8 linhas acima; é religar `resolverCfop`.
+**Arquivo:** `src/lib/nota-fiscal.ts:146-163`.
+**O que está errado.** `resolverCfop` só bifurca por UF (`cfopPadrao` vs `cfopPadraoInterestadual`). O comentário logo acima diz que a distinção 6102/6108 (com DIFAL) "depende do indicador de contribuinte do cliente, campo que ainda não existe no schema (achado A1, não construído)" — **desatualizado**: `Cliente.indicadorInscricaoEstadual` foi construído no A1/Parte 5 (rodada 12) e é lido em `verificarProntidaoFiscal:139` e enviado em `focus-nfe.ts:337`. A dependência que travava o A3 caiu e ninguém religou o fio; o comentário induz a achar que ainda é caro. Gráfica em SP vende adesivo pra pessoa física no RJ → sai CFOP 6102 em vez de 6108.
+**Proposta.** `resolverCfop` passa a receber `indicadorInscricaoEstadual` e escolher o CFOP de consumidor final não-contribuinte quando aplicável; atualizar o comentário. Marca o A3/Parte 5 como pronto pra fechar.
+
+### N8 — No OFFSET, papel e gramatura são propriedade do PRODUTO, não do orçamento — **CONSTRUÍDO 2026-09-04 (rodada 21)**
+**Severidade:** 🟡 média · **Custo estimado:** 🔴 Caro — muda o contexto de precificação do offset: papel/gramatura escolhidos por item de orçamento, `FormatoFolha`/`TabelaPrecoPapel` resolvidos por orçamento, UI nova no item.
+**Arquivo:** `src/lib/pricing/carregar.ts:216-251` (`item.papel`, `item.gramaturaGm2`, colunas de `ItemGrafica`); comparar com o caminho de etiqueta em `:166-194` (`dadosEtiqueta.papelId`, escolhido no orçamento).
+**O que está errado.** O A8/Parte 1 afirma que "o Offset já resolveu isso com `papelId` + `TabelaPrecoPapel`". Mas `papelId`/`gramaturaGm2` são colunas de `ItemGrafica` — resolvem "de que papel esse produto é feito", não "em que papel este orçamento sai". Só o motor de clichê de etiqueta (M2) tem override por orçamento. Gráfica offset comercial cota "Folder A4 4/4" em couché 90/115/150g → precisa de 3 produtos separados no catálogo (cada um com `FormatoFolha` re-cadastrado), ou 3 opções via `OrcamentoOpcao` (que também exige 3 produtos). É a variação mais básica do orçamento offset brasileiro.
+**Proposta.** `OrcamentoItem.papelId`/`gramaturaGm2` opcionais que, quando preenchidos, sobrepõem os do `ItemGrafica` no contexto de precificação (mesmo padrão do M2/etiqueta). A8/Parte 1 deixa de estar "resolvido no offset".
+
+### N13 — Faixa de gramatura 30–500 g/m² hardcoded no validador do offset — **CONSTRUÍDO 2026-09-04 (commit 7acc9bf)**
+**Severidade:** 🟡 média · **Custo estimado:** 🟢 Barato — trocar a constante por parâmetro configurável por gráfica, ou ampliar/remover.
+**Arquivo:** `src/lib/pricing/validar.ts:88-94`.
+**O que está errado.** `if (gramaturaGm2 < 30 || gramaturaGm2 > 500) throw GRAMATURA_INVALIDA` — constante em código, sem escape. Embalagem/cartonagem imprime offset em cartão duplex/triplex de 450–600 g/m² e micro-ondulado E-flute acima de 500 → a cotação aborta. Editorial usa papel bíblia (22–40 g/m²). É o padrão "enum-fechado sem `OUTRO`" reproduzido como faixa numérica, contra o princípio de configurabilidade que o resto do schema segue.
+**Proposta.** `ParametrosGrafica.gramaturaMinGm2`/`gramaturaMaxGm2` (defaults 30/500), ou só ampliar a faixa pra 15–800. A validação vira aviso "confirme a gramatura" fora da faixa esperada, não erro fatal.
+
+### N14 — `ConfiguracaoAcabamento.estagio` (PRE_REFILE/POS_REFILE) é gravado, carregado pelo motor e nunca lido — **CONSTRUÍDO 2026-09-04 (commit 7acc9bf)**
+**Severidade:** 🟢 baixa · **Custo estimado:** 🟢 Barato — decisão de produto: ou o campo governa a base de cobrança, ou o formulário diz que é descritivo.
+**Arquivo:** campo em `prisma/schema.prisma:1956-1959`; UI em `ConfiguracaoAcabamentoForm.tsx:21`; carregado em `carregar.ts:371`; **zero leituras** em `src/lib/pricing/acabamento.ts`.
+**O que está errado.** O enum tem comentário no schema, é pergunta obrigatória no cadastro, é semeado com valores distintos em `dados-exemplo.ts`, viaja até o `ConfigAcabamento` do motor puro — e `calcularQtdBase`/`calcularCustoAcabamento` nunca o consultam. Quem cadastra acredita estar configurando algo que muda a conta (o comentário de `BaseCobranca.FOLHA_IMPRESSA` fala de "antes do refile") e não muda nada. É a única configuração do motor que mente.
+**Proposta.** Fazer `estagio` governar a quantidade-base quando `BaseCobranca.FOLHA_IMPRESSA` (folhas antes vs. depois do refile), ou marcar o campo como descritivo no formulário.
+
+### N16 — `resolverConfigAcabamentos` não filtra acabamento desativado — **CONSTRUÍDO 2026-09-04 (commit 7acc9bf)**
+**Severidade:** 🟢 baixa · **Custo estimado:** 🟢 Barato — adicionar `ativo: true` ao `where`.
+**Arquivo:** `src/lib/pricing/carregar.ts:344-347`.
+**O que está errado.** `prisma.itemGrafica.findMany({ where: { id: { in: itemGraficaIds }, graficaId } })` — sem `ativo: true`. O caminho do papel de etiqueta 170 linhas acima filtra `ativo: true` explicitamente (`:178`). Um `ItemGrafica` de serviço desativado no catálogo continua precificável se o id chegar no FormData (ou se já estava selecionado numa aba aberta antes da desativação). Inconsistência com o soft-delete "quase universal" do projeto.
+**Proposta.** `where: { …, ativo: true }`.
+
+### N17 — A NF-e ignora `OrcamentoItem.descricaoLivre` e usa sempre o nome genérico do catálogo — **CONSTRUÍDO 2026-09-04 (commit 7acc9bf)**
+**Severidade:** 🟢 baixa · **Custo estimado:** 🟢 Barato — 1 linha no payload (`descricaoLivre ?? itemCatalogo.nome`).
+**Arquivo:** `src/app/orcamento/[id]/actions.ts:3105` (`descricao: item.itemGrafica.itemCatalogo.nome`).
+**O que está errado.** `descricaoLivre` foi construído no B6/Parte 1 (rodada 9) exatamente pra sobrepor o nome do catálogo no PDF e no link público. A emissão de NF-e não usa. O cliente recebe proposta "Banner 3×1m lona 440g com bastão e corda" e nota fiscal "Banner em Lona" — descrição divergente do documento comercial e sem a especificação que a fiscalização espera.
+**Proposta.** `descricao: item.descricaoLivre ?? item.itemGrafica.itemCatalogo.nome`.
+
+### N18 — Nenhum motor tem mínimo faturável por peça/m²; `areaMinimaFaturavel` é só métrica — **CONSTRUÍDO 2026-09-03 (commit 0b74f9b)**
+**Severidade:** 🟡 média · **Custo estimado:** 🟡 Médio — desenhar junto com N3; decidir se o piso mínimo é por m²/peça no motor ou só um piso de pedido em R$.
+**Arquivo:** `src/lib/pricing/m2.ts:198-202` (`areaCobrada` nunca entra em `custoBase`); hint em `ConfiguracaoProdutoForm.tsx:438`.
+**O que está errado.** O comportamento é **deliberado e documentado** (o hint diz "métrica de auditoria — o piso comercial real é o pedido mínimo em Configurações"), então não é bug isolado. Mas combinado com N3, o efeito líquido é que **não existe piso por m²/peça em lugar nenhum** — só um piso em R$ aplicado por item. "Cobro no mínimo 1 m² por peça de adesivo recortado" e "no mínimo 0,5 m² de lona" são regras universais em comunicação visual e nenhuma é representável. A correção de N3 (mover o piso pro pedido) deixa esse buraco mais visível — os dois devem ser desenhados juntos.
+**Proposta.** `ConfiguracaoProduto.areaMinimaFaturavel` (M2) e um equivalente por peça passam a entrar no `custoBase`/preço, não só no relatório; ou decisão explícita de que o produto não terá esse piso e o hint é atualizado.
+
+## Resíduos em achados já marcados CONSTRUÍDO
+
+### R1 — Condições de pagamento padrão são inertes: 3 das 4 sugestões não geram `ContaReceber` — **JÁ RESOLVIDO (verificado 2026-09-03, commit 072dcf7 de rodada anterior — sem mudança de código necessária)**
+**Severidade:** 🔴 alta · **Custo estimado:** 🟡 Médio — plumbar os gatilhos `EMISSAO_NOTA` e `ENTREGA` de `AncoraVencimento` (hoje existem no enum sem trigger).
+**Arquivo:** `src/lib/condicao-pagamento.ts:33-66` e `:149`.
+**O que está errado.** `garantirCondicoesPagamentoPadrao` semeia 4 condições, mas `gerarContasReceberDaAprovacao` faz `if (condicao.ancora !== "APROVACAO") return;` — 3 das 4 sugestões padrão são inertes, incluindo "1x faturado 30 dias" (`EMISSAO_NOTA`), a condição mais comum do mercado. A gráfica escolhe a condição no orçamento, aprova, e nenhuma `ContaReceber` nasce — sem erro, sem aviso na UI. O produto entrega defaults que não funcionam.
+**Proposta.** Disparar a geração de `ContaReceber` também na emissão de NF-e (âncora `EMISSAO_NOTA`) e na transição de entrega (`ENTREGA`), ou — se isso é fase 2 — não semear condições com âncora ainda não suportada, e avisar na tela quando a condição escolhida não vai gerar contas.
+
+### R2 — CFOP não religado depois que a dependência foi construída — **RESÍDUO de A3/Parte 5 (rodada 5)** — ver N7
+Mesmo achado que N7, do ângulo "já marcado PARCIALMENTE CONSTRUÍDO": o comentário em `nota-fiscal.ts` ainda declara que `indicadorInscricaoEstadual` não existe, quando foi construído na rodada 12. Barato de fechar agora.
+
+### R3 — Terceirização não emite remessa/retorno para industrialização — **CONSTRUÍDO 2026-09-03 (commit 32207c6)**
+**Severidade:** 🟡 média · **Custo estimado:** 🟡 Médio — CFOP de industrialização (5901/5902/6901/6902) + `tipo_documento`/`finalidade_emissao` variáveis no payload da Focus NFe.
+**Arquivo:** `src/lib/focus-nfe.ts:321-322` (`tipo_documento: "1"`, `finalidade_emissao: "1"` fixos); CFOP sempre de `cfopPadrao`/`cfopPadraoInterestadual`.
+**O que está errado.** `EtapaTerceirizada` (rodada 20) registra envio, retorno, `notaRemessa`/`notaRetorno` e gera `CustoPedido` origem `TERCEIRIZACAO` — mas não há como **emitir** a NF-e de remessa para industrialização (CFOP 5901/6901) nem o retorno (5902/6902) que a própria proposta do achado cita como a forma fiscal da operação. Os campos `notaRemessa`/`notaRetorno` são texto pra digitar o número de uma nota emitida fora do sistema.
+**Proposta.** Fase 2 da terceirização: tipo de operação fiscal na `EtapaTerceirizada` (remessa/retorno) que resolve o CFOP e os flags do payload. Fora do escopo "só cadastro + custo manual" da rodada 20 — registrar como pendência, não urgência.
+
+---
+
 ## Resumo de custo — achados pendentes
 
-Classificação de custo/esforço aplicada a todo achado ainda não marcado `CONSTRUÍDO` (inclui o restante pendente dos `PARCIALMENTE CONSTRUÍDO`), ao longo do documento inteiro (Partes 1-7). Critério: 🟢 Barato = campo aditivo nullable em model existente, `ADD VALUE` em enum existente, ou trabalho de seed/conteúdo; 🟡 Médio = 1 model novo simples ou 1 enum novo fechado+`OUTRO`, ou extensão moderada de tela existente; 🔴 Caro = 2+ models novos com relação não-trivial, workflow completo novo, área sensível (financeiro/CAS/autenticação), motor de cálculo novo, ou proposta que expressa incerteza/decisão pendente.
+Classificação de custo/esforço aplicada a todo achado ainda não marcado `CONSTRUÍDO` (inclui o restante pendente dos `PARCIALMENTE CONSTRUÍDO`), ao longo do documento inteiro (Partes 1-8). Critério: 🟢 Barato = campo aditivo nullable em model existente, `ADD VALUE` em enum existente, ou trabalho de seed/conteúdo; 🟡 Médio = 1 model novo simples ou 1 enum novo fechado+`OUTRO`, ou extensão moderada de tela existente; 🔴 Caro = 2+ models novos com relação não-trivial, workflow completo novo, área sensível (financeiro/CAS/autenticação), motor de cálculo novo, ou proposta que expressa incerteza/decisão pendente. Para a Parte 8, o "Custo estimado" é o esforço de correção (eixo separado da "Severidade", que é impacto).
 
 **Atualização 2026-08-31 (rodada 17):** 10 dos 32 🟢 Barato construídos — Parte 7 A1/A2/A3/A4/A5 (equipamentos) + B1/B2/B3/B4/B5 (matérias-primas, seed). B6 (materiais de bordado) ficou de fora de propósito, pra fechar a rodada em exatamente 10; é o próximo candidato natural.
 
@@ -2545,13 +2737,17 @@ Classificação de custo/esforço aplicada a todo achado ainda não marcado `CON
 
 **Atualização 2026-09-01 (rodada 20):** +2 🔴 Caro — Parte 7 F1 (cadastro de Ferramental) e Parte 2 E1 (terceirização de etapa). Primeira rodada que ataca a fila cara de propósito, em vez dos baratos — os dois foram escolhidos por já terem proposta concreta sem ressalva de "não construir agora" e por não mexerem em cálculo de preço/margem (só cadastro + registro de custo manual, mesmo padrão defensivo de outros custos automáticos do sistema).
 
-**Contagem total (87 achados classificados, 66 ainda pendentes):**
+**Atualização 2026-09-04 (rodada 21):** +6 — N2 (Parte 8, 🔴, recuperado de subagente interrompido por restart da máquina, revisado e corrigido antes de mesclar) + Parte 1 B4 (prazo por item) + Parte 4 A4 (fluxo de caixa projetado, corrigido bug de item já vencido some da projeção) + Parte 7 E1/E2 (esconde Produção pra revenda pura, por uso real não por `segmento`) + E3 (banner de segmento antes do onboarding) + E4 (pacotes de exemplo Brindes/Corte a Laser/Embalagem). Rodada de 5 subagentes Haiku em paralelo pros achados mecânicos restantes — 2 exigiram correção manual antes de mesclar (A4 tinha bug real de item vencido silenciosamente ignorado; B4 tinha a metade "cabeçalho reflete o máximo" nunca implementada, completada manualmente).
+
+**Atualização 2026-09-02 (Parte 8 catalogada, nada construído):** +20 achados pendentes classificados (N1-N18 + R1 + R3; R2 = N7, não conta duas vezes). Distribuição: 8 🟢 Barato (N7, N9, N12, N13, N14, N15, N16, N17), 8 🟡 Médio (N1, N3, N6, N10, N11, N18, R1, R3), 4 🔴 Caro (N2, N4, N5, N8). Vários são bug de lógica, não gap de abrangência — o "Custo estimado" aqui é esforço de correção, e a "Severidade" (impacto) está em cada achado. Ordem de ataque sugerida pelo relatório: N1/N2/N3 primeiro (severidade 🔴, alcançáveis pela UI hoje, dinheiro em jogo); N7/N9/N12/N15/N16/N17 são 🟢 Barato e cabem numa rodada de limpeza.
+
+**Contagem total (107 achados classificados, 86 ainda pendentes):**
 
 | Custo | Contagem |
 |---|---|
-| 🟢 Barato | 13 (19 construídos) |
-| 🟡 Médio | 29 |
-| 🔴 Caro | 24 (2 construídos) |
+| 🟢 Barato | 21 (19 construídos) |
+| 🟡 Médio | 37 |
+| 🔴 Caro | 28 (2 construídos) |
 
 ### Candidatos 🟢 Barato por Parte — próxima rodada de construção
 
@@ -2576,3 +2772,11 @@ Classificação de custo/esforço aplicada a todo achado ainda não marcado `CON
 - E1/E2 — Esconder card/menu de Produção por USO real (não por segmento — correção Opus)
 - E3 — Banner de segmento pendente no onboarding (checar contra o código antes)
 - E4 — Pacotes de dados de exemplo por segmento
+
+**Parte 8 — Auditoria de código** (bug/dívida, não gap — mas contidos)
+- N7 — Religar `resolverCfop` ao `indicadorInscricaoEstadual` (fecha A3/Parte 5) — 🔴 severidade
+- N15 — Compra não deve criar saldo em item sem controle de estoque
+- N16 — `resolverConfigAcabamentos` sem filtro `ativo: true`
+- N17 — NF-e usa `descricaoLivre` do item quando existe
+- N12 — Aviso de gramatura de papel aproximada (`origem` já é calculado)
+- N9 — Acerto contado `entradas²` vezes na rodagem (conferir testes antes)

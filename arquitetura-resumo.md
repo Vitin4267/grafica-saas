@@ -8,10 +8,16 @@
 > específico que este mapa não cobre ou que pode ter mudado.
 >
 > **Última atualização de fundo:** 2026-08-30 (seções 1-9 abaixo). **Retocado
-> em 2026-09-05** — ver bloco "Atualização 2026-09-05" logo abaixo com o que
-> mudou de estrutura e os models/campos novos; o resto do documento (padrões,
-> domínios 1-9) não foi reescrito, só complementado. Se algo abaixo conflitar
-> com o retoque, o retoque é a versão atual.
+> em 2026-09-05, 06, 07 e 12** — ver blocos "Atualização YYYY-MM-DD" logo
+> abaixo com o que mudou de estrutura e os models/campos novos; o resto do
+> documento (padrões, domínios 1-9) não foi reescrito, só complementado. Se
+> algo abaixo conflitar com um retoque mais recente, o retoque vence.
+>
+> **Há também `mapa-funcionalidades-sistema.md`** (raiz do repo, 2026-09-11)
+> — mapa COMPLEMENTAR, não substituto: cobre "o que cada tela faz" (produto/
+> UX/regra de negócio, rota por rota, ~90 rotas), enquanto este arquivo cobre
+> "como o código é organizado" (schema/models/padrões). Ler os dois cobre
+> tanto o quê quanto o como sem precisar reexplorar o repo do zero.
 >
 > **⚠️ Mudança estrutural mais importante: o schema NÃO é mais
 > `prisma/schema.prisma` (arquivo único).** Desde a rodada 21 (04-05/09) é
@@ -260,6 +266,157 @@ comportamento.
   depósito de `CreditoCliente`, mecanismo legítimo) e sinaliza quando a
   soma ultrapassa o total do orçamento com 2+ pagamentos — não resolve a
   causa raiz, só torna visível pro contador revisar.
+
+## Atualização 2026-09-09/12 — Lotes 1-5 da estratégia pós-auditoria (10 achados)
+
+A partir daqui a auditoria entrou numa fase nova: em vez de rodadas com N
+achados soltos, um subagente Opus leu `pesquisa-abrangencia-modulos.md`
+inteiro e desenhou uma estratégia em 8 lotes pros 15 achados 🔴/🟡 que
+restavam (`C:\Users\ferra\.claude\plans\estrategia-15-achados-restantes.md`,
+fonte de verdade de status/ordem). Lotes 1-5 (10 achados) fechados; Lotes
+6-8 (A8 fatia 1/M2, F2 fatia 1/Entrega, Clientes-A14/portal) pendentes.
+
+- **Financeiro — cobertura de overhead (achado Fin-A2):** zero schema novo,
+  relatório de leitura pura. `src/lib/cobertura-overhead.ts` (função pura) +
+  `cobertura-overhead-db.ts` (`server-only`) reaproveitam a MESMA where
+  clause de `dre-query.ts` pro custo fixo pago (`Despesa` PAGA,
+  `categoriaCusto.natureza=FIXO`) e a mesma base de receita bruta. Overhead
+  COBRADO vem de `OrcamentoItem.breakdown.detalhes.overhead` (parse
+  defensivo, item sem breakdown conta 0). Card novo em `/financeiro/dre`.
+  `ParametrosGrafica.overheadModo` (mudaria `compor.ts`) continua
+  DELIBERADAMENTE fora de escopo.
+- **Auth/Financeiro — dados de pagamento de pessoa (achado D3):**
+  `Usuario`/`Colaborador` ganham os mesmos 4 campos: `cpf`, `chavePix`,
+  `tipoChavePix` (reaproveita o enum `TipoChavePix` do achado F6, não cria
+  um novo), `especialidade` — todos nullable, SÓ EXIBIÇÃO, nunca validados
+  (mesmo princípio de `Grafica.chavePix`). Distinto de F6
+  (`Grafica.chavePix` = a gráfica RECEBENDO do cliente) e de A15
+  (`ContaFinanceira` = onde o dinheiro está, sem pessoa) — os 3 nunca se
+  sobrepõem. Exposição gated por `FINANCEIRO` (re-derivado no servidor,
+  nunca `formData`) em `/usuarios` e `/configuracoes/colaboradores/[id]`;
+  leitura em `/financeiro/comissoes`. Auditoria grava só QUAIS campos
+  mudaram, nunca o VALOR (CPF/PIX são sensíveis).
+- **Clientes/Fiscal — validação real de CPF/CNPJ (achado Fiscal-A2 Fase
+  A):** `src/lib/documento.ts` novo — `normalizarDocumento`/`validarCpf`/
+  `validarCnpj`, cobrindo CNPJ alfanumérico (padrão Serpro pós-31/07/2026:
+  12 primeiras posições podem ser letra, `valor = código ASCII − 48`).
+  `clienteSchema.documento` normaliza SEMPRE em silêncio, só rejeita se o
+  dígito verificador não bater; `atualizarCliente` só valida quando o
+  documento foi de fato ALTERADO (documento legado sujo não trava edição de
+  outros campos). Nova tela `/clientes/duplicados` (read-only): agrupa
+  clientes pelo documento NORMALIZADO, revelando duplicata que
+  `@@unique([graficaId, documento])` não pega hoje (compara string crua —
+  "111.444.777-35" ≠ "11144477735"). Migração de dado em massa
+  (normalizar tudo que já existe) DELIBERADAMENTE fora de escopo.
+- **Orçamento — cronograma de entrega programada (achado B3/Parte1, versão
+  contratual):** novo model `OrcamentoEntregaProgramada` (`ordem`,
+  `quantidade`, `dataPrevista`, `localEntrega`, `observacao`) — tabela
+  PARALELA, mesmo espírito de `OrcamentoItemFaixaQuantidade` (achado B5):
+  existe, é exibido (PDF + `/o/[token]`), NUNCA entra em `Entrega`/
+  `ContaReceber`/`StatusPedido` automaticamente. Validação em app: soma
+  pode ficar ABAIXO da quantidade total (parcial, aceito com aviso), nunca
+  ACIMA (rejeitado). Herdar como N `Entrega` físicas na aprovação
+  (relaxaria `Entrega.pedidoId` de `@unique` pra N:1) fica documentado como
+  próximo passo, compartilhado com o achado F2/Produção (ainda não
+  construído — Lote 7 da estratégia).
+- **Financeiro — retenção de impostos na fonte, versão declarativa (achado
+  Fin-A9):** `Cliente.retemImpostos` + `tipoTomador` (fechado+OUTRO:
+  PJ_PRIVADA/ORGAO_PUBLICO/PESSOA_FISICA/OUTRO). Novo model
+  `RetencaoContaReceber` (`tributo`, `percentual`, `valor`) — hard delete
+  deliberado (lançamento informativo, sem histórico financeiro real).
+  `ContaReceber.valorRetencoes` mantido por increment/decrement dentro de
+  `$transaction` junto do create/delete da linha (mesmo raciocínio de
+  `Pagamento.valorTaxa`, achado A11) — puramente informativo, NUNCA entra
+  em `saldoContaReceber`/`registrarBaixaContaReceber` (a parte que faria
+  isso, conciliação automática de valor líquido esperado, ficou
+  DELIBERADAMENTE fora de escopo — era o motivo do 🔴 Caro original).
+- **Financeiro — régua de cobrança + juros/multa manual (achado Fin-A5):**
+  `StatusContaReceber` ganha `EM_COBRANCA`/`PERDA` (ADD VALUE aditivo,
+  transição sempre MANUAL via `marcarContaReceberEmCobranca`/
+  `marcarContaReceberPerda`, mesmo padrão CAS de
+  `registrarBaixaContaReceber`). `EM_COBRANCA` conta como "em aberto" em
+  TODO lugar que soma PENDENTE+PARCIAL (exposição de crédito, fluxo de
+  caixa projetado, histórico de cliente, exportação pro contador — 4
+  lugares widened na revisão, além dos 2 que o build original já cobria).
+  `ParametrosGrafica.multaAtrasoPercent`/`jurosMoraMensalPercent` (só
+  sugestão de UI) + `Pagamento.valorJuros`/`valorMulta` (digitado na baixa,
+  sempre editável) — vira linha "Receita financeira" no DRE, somada DEPOIS
+  do resultado operacional (nunca infla `Orcamento.total`). `model
+  ReguaCobrancaEtapa` com disparo automático de e-mail/webhook escalonado
+  DELIBERADAMENTE fora de escopo (decisão de produto sensível).
+- **Financeiro — regra de comissão por especificidade + vendedor sem
+  cadastro (achado A12/Parte4):** novo model `RegraComissao`
+  (`prioridade`, `usuarioId?`, `itemCatalogoId?`, `tipoItem?`,
+  `margemMinPercent?`/`margemMaxPercent?`, `percentual`, `baseCalculo?`,
+  `ativa`) — resolvida por ESPECIFICIDADE (mais filtros preenchidos vence;
+  empate quebrado por `prioridade`, depois ordem de chegada) em
+  `resolverRegraComissao` (`src/lib/comissao.ts`, função pura testável
+  isolada). Sem regra que bata, cai no fallback de sempre
+  (`Usuario.comissaoPercent`). `Comissao.usuarioId` virou nullable +
+  `representanteNome` (snapshot de texto, mesmo padrão de
+  `ApontamentoEtapa.operadorNomeDeclarado`) + `estornadoEm` (mesmo padrão
+  de `CustoPedido.estornadoEm`) — vendedor SEM cadastro (`Orcamento.vendedor`
+  só texto livre) agora GERA `Comissao` (`usuarioId=null` +
+  `representanteNome`), usando `ParametrosGrafica.
+  comissaoRepresentanteSemCadastroPercent` (opt-in, null = sem regressão).
+  Resolução de QUEM é o vendedor extraída pra `src/lib/comissao-aprovacao.ts`
+  (`resolverDadosComissao`), ÚNICO lugar compartilhado pelos dois gatilhos
+  que criam `Comissao` (`orcamento/[id]/actions/status.ts` e
+  `o/[token]/actions.ts` — antes duplicavam a lógica, achado A8). Tela nova
+  `/configuracoes/regras-comissao`. Liberação proporcional por baixa de
+  `ContaReceber` e `FatorComissaoDesconto` DELIBERADAMENTE fora de escopo.
+- **Financeiro/Produção — vínculo Despesa↔CustoPedido (achado Fin-A1,
+  só direção Despesa→CustoPedido):** `Despesa.pedidoId?` (SetNull, vínculo
+  simples) + `CustoPedido.despesaId? @unique` (SetNull) — FK no lado
+  GERADO (`CustoPedido`), corrigindo a proposta original que sugeria
+  `Despesa.custoPedidoId`, pra seguir o precedente já maduro no schema
+  (`Comissao.despesaId`, `CustoPedido.movimentacaoEstoqueId`/
+  `solicitacaoCompraId`/`etapaTerceirizadaId`). Novo `OrigemCusto.DESPESA`.
+  `criarCustoAutomaticoDespesa` (`src/lib/custo-pedido.ts`, mesmo estilo de
+  `criarCustoAutomaticoComissao`) espelha o `CustoPedido` na MESMA
+  transação de `criarDespesa`/`editarDespesa`, só quando `pedidoId` E
+  `categoriaCustoId` estão os dois preenchidos; editar atualiza o espelho,
+  remover o vínculo ESTORNA (nunca deleta); `excluirDespesa` estorna antes
+  de apagar. Direção inversa (gerar `Despesa` a partir de `CustoPedido`
+  manual) DELIBERADAMENTE fora de escopo.
+- **Produção — aprovação de qualidade intermediária (achado Prod-D1):**
+  novo model `AprovacaoProducao` (`pedidoId`, `apontamentoEtapaId?`, `tipo`
+  `TipoAprovacaoProducao` [OK_MAQUINA/PROVA_CONTRATO/AMOSTRA_CLIENTE/
+  INSPECAO_PROCESSO/INSPECAO_FINAL/OUTRO], `resultado`
+  `ResultadoAprovacao` [APROVADO/APROVADO_COM_RESSALVA/REPROVADO],
+  `aprovadoPorId?`/`aprovadoPorNomeDeclarado?`, `arquivoId?` p/ foto,
+  `observacao`) — distinta da aprovação de ARTE (pré-produção, CLIENTE).
+  Gate opt-in novo: `EtapaGrafica.exigeAprovacaoQualidade` (**correção à
+  proposta original**, que amarrava isso a `EtapaFluxo` — Fase 2
+  estrutural do achado A1/Produção NUNCA construída; `EtapaGrafica`, Fase
+  1, já dá a granularidade certa). `avancarStatusPedido` ganhou um
+  TERCEIRO gate (mesmo formato dos dois de arte já existentes): exige
+  `AprovacaoProducao` com resultado que libere, amarrada ao
+  `ApontamentoEtapa` da passagem ATUAL (retrabalho não herda aprovação de
+  rodada anterior). `AMOSTRA_CLIENTE` cadastrado no enum mas SEM tela
+  pública/token nesta rodada (superfície pública nova, fora de escopo
+  deliberado — hoje é só um registro interno igual aos outros).
+- **Produção — retorno de etapa / retrabalho (achado Prod-D2):** nova
+  action `retornarEtapa` (`src/app/producao/retorno-etapa-actions.ts`) —
+  manda o pedido de volta pra uma etapa ANTERIOR (nunca pra frente,
+  revalidado no servidor contra `resolverEtapasGrafica`), sempre com
+  `MotivoRetorno` obrigatório (enum fechado+OUTRO). Permissão sempre
+  `PRODUCAO.podeEditar` COMPLETO, nunca por `ResponsavelEstagio`. Fecha o
+  apontamento atual e abre um novo marcado `ehRetrabalho:true` (campo novo
+  em `ApontamentoEtapa`, junto de `motivoRetorno`/`motivoRetornoOutro`) via
+  `fecharEAbrirApontamento` (`src/lib/apontamento-etapa.ts`, ganhou um
+  parâmetro opcional `retorno`). NUNCA estorna estoque (retrabalho consome
+  MAIS material, não menos — o consumo adicional entra pelo caminho normal
+  de refugo, achado B3/Parte2). **Trava contra baixa DUPLICADA de
+  matéria-prima**, a armadilha central deste achado: `Pedido.
+  baixaEstoqueRealizadaEm DateTime?` (com BACKFILL cuidadoso na migration
+  pra todo pedido histórico que já passou de PRODUCAO) — o gate de baixa
+  automática em `status-transicao.ts` virou `proximoStatus === "PRODUCAO"
+  && !pedido.baixaEstoqueRealizadaEm`; sem essa trava, um pedido que
+  retorna e reentra em PRODUCAO pela sequência normal descontaria o mesmo
+  material físico uma segunda vez. `retornarEtapa` NUNCA é exposta por
+  `/p/[token]`/`/q/[token]` (links públicos sem login) — decisão de
+  qualidade nunca deveria ser um clique sem autenticação.
 
 ---
 
