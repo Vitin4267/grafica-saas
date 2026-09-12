@@ -7,6 +7,7 @@ import { after } from "next/server";
 import { randomBytes } from "node:crypto";
 import { put, del } from "@vercel/blob";
 import { exigirTokenBlobPrivado } from "@/lib/blob-assinado";
+import { opcoesBlobPublico } from "@/lib/blob-store";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
@@ -157,6 +158,7 @@ export async function enviarArteOrcamento(
       access: "public",
       addRandomSuffix: true,
       contentType: arquivo.type,
+      ...opcoesBlobPublico(),
     });
   } catch (erro) {
     await cancelarReserva(reserva.arquivoId);
@@ -193,7 +195,7 @@ export async function enviarArteOrcamento(
   // cada reenvio deixava o arquivo antigo no Blob pra sempre, público e sem
   // nenhuma referência no banco.
   if (orcamento.arteUrl) {
-    await del(orcamento.arteUrl).catch(() => {});
+    await del(orcamento.arteUrl, opcoesBlobPublico()).catch(() => {});
   }
 
   revalidatePath(`/orcamento/${orcamentoId}`);
@@ -239,7 +241,7 @@ export async function removerArteOrcamento(
     referenciaId: orcamentoId,
   });
   if (arquivoRemovido) {
-    await del(arquivoRemovido.url).catch(() => {});
+    await del(arquivoRemovido.url, opcoesBlobPublico()).catch(() => {});
   }
 
   revalidatePath(`/orcamento/${orcamentoId}`);
@@ -326,7 +328,7 @@ export async function enviarArteItem(
     blob = await put(
       `orcamento-item-arte/${usuario.graficaId}/${orcamentoItemId}-${Date.now()}.${extensao}`,
       arquivo,
-      { access: "public", addRandomSuffix: true, contentType: arquivo.type }
+      { access: "public", addRandomSuffix: true, contentType: arquivo.type, ...opcoesBlobPublico() }
     );
   } catch (erro) {
     await cancelarReserva(reserva.arquivoId);
@@ -385,7 +387,7 @@ export async function enviarArteItem(
   // Apaga a arte anterior DEPOIS que a nova já está gravada — mesmo cuidado
   // de enviarArteOrcamento/enviarArte acima.
   if (arteAnteriorUrl) {
-    await del(arteAnteriorUrl).catch(() => {});
+    await del(arteAnteriorUrl, opcoesBlobPublico()).catch(() => {});
   }
 
   revalidatePath(`/orcamento/${item.orcamentoId}`);
@@ -433,7 +435,7 @@ export async function removerArteItem(
     referenciaId: orcamentoItemId,
   });
   if (arquivoRemovido) {
-    await del(arquivoRemovido.url).catch(() => {});
+    await del(arquivoRemovido.url, opcoesBlobPublico()).catch(() => {});
   }
 
   revalidatePath(`/orcamento/${item.orcamentoId}`);

@@ -3,6 +3,7 @@ import { put, list, del } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { cronAutorizado } from "@/lib/auth/cron";
 import { exigirTokenBlobPrivado } from "@/lib/blob-assinado";
+import { opcoesBlobPrivado } from "@/lib/blob-store";
 
 // Camada EXTRA de backup, não a principal — a defesa real contra perda de
 // dados é o PITR do próprio Neon (recomendado fazer upgrade de plano pro
@@ -98,10 +99,10 @@ async function exportarDados() {
 }
 
 async function limparBackupsAntigos(tokenPrivado: string) {
-  const { blobs } = await list({ prefix: "backups/", token: tokenPrivado });
+  const { blobs } = await list({ prefix: "backups/", token: tokenPrivado, ...opcoesBlobPrivado() });
   const limite = Date.now() - RETENCAO_DIAS * 24 * 60 * 60 * 1000;
   const antigos = blobs.filter((b) => new Date(b.uploadedAt).getTime() < limite);
-  await Promise.all(antigos.map((b) => del(b.url, { token: tokenPrivado })));
+  await Promise.all(antigos.map((b) => del(b.url, { token: tokenPrivado, ...opcoesBlobPrivado() })));
   return antigos.length;
 }
 
@@ -139,6 +140,7 @@ export async function GET(request: NextRequest) {
     addRandomSuffix: true,
     contentType: "application/json",
     token: tokenPrivado,
+    ...opcoesBlobPrivado(),
   });
 
   const removidos = await limparBackupsAntigos(tokenPrivado);

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { put } from "@vercel/blob";
+import { opcoesBlobPublico } from "@/lib/blob-store";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
@@ -186,7 +187,7 @@ export async function registrarAprovacaoProducao(
         const blob = await put(
           `producao-aprovacao/${usuario.graficaId}/${aprovacao.id}-${Date.now()}.${extensao}`,
           arquivo,
-          { access: "public", addRandomSuffix: true, contentType: arquivo.type }
+          { access: "public", addRandomSuffix: true, contentType: arquivo.type, ...opcoesBlobPublico() }
         );
         await confirmarArquivo(reserva.arquivoId, { url: blob.url, pathname: blob.pathname });
         await prisma.aprovacaoProducao.update({

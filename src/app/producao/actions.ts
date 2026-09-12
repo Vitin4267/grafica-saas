@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { put, del } from "@vercel/blob";
+import { opcoesBlobPublico } from "@/lib/blob-store";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
@@ -849,6 +850,7 @@ export async function enviarArte(
       access: "public",
       addRandomSuffix: true,
       contentType: arquivo.type,
+      ...opcoesBlobPublico(),
     });
   } catch (erro) {
     await cancelarReserva(reserva.arquivoId);
@@ -900,7 +902,7 @@ export async function enviarArte(
   // apagar depois. Além do custo de storage acumulado, é privacidade: arte de
   // cliente continuaria acessível por URL mesmo depois de substituída.
   if (pedido.arteUrl) {
-    await del(pedido.arteUrl).catch(() => {});
+    await del(pedido.arteUrl, opcoesBlobPublico()).catch(() => {});
   }
 
   revalidatePath("/producao");
@@ -956,7 +958,7 @@ export async function removerArte(
     referenciaId: pedidoId,
   });
   if (arquivoRemovido) {
-    await del(arquivoRemovido.url).catch(() => {});
+    await del(arquivoRemovido.url, opcoesBlobPublico()).catch(() => {});
   }
 
   revalidatePath("/producao");

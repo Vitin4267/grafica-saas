@@ -13,6 +13,7 @@ import {
   assinaturaBateComTipo,
   BYTES_ASSINATURA,
 } from "@/lib/upload-validacao";
+import { opcoesBlobPublico } from "@/lib/blob-store";
 import {
   resolverContextoArmazenamento,
   reservarEspaco,
@@ -86,6 +87,7 @@ export async function salvarLogo(
       access: "public",
       addRandomSuffix: true,
       contentType: arquivo.type,
+      ...opcoesBlobPublico(),
     });
   } catch (erro) {
     await cancelarReserva(reserva.arquivoId);
@@ -107,7 +109,7 @@ export async function salvarLogo(
   // Melhor esforço: apaga a logo antiga do Blob depois que a nova já está
   // salva no banco — nunca deixa a gráfica sem logo se o del() falhar.
   if (logoAnterior) {
-    await del(logoAnterior).catch(() => {});
+    await del(logoAnterior, opcoesBlobPublico()).catch(() => {});
   }
 
   await registrarAuditoria({
@@ -151,11 +153,11 @@ export async function removerLogo(
     referenciaId: usuario.graficaId,
   });
   if (arquivoRemovido) {
-    await del(arquivoRemovido.url).catch(() => {});
+    await del(arquivoRemovido.url, opcoesBlobPublico()).catch(() => {});
   } else if (logoAnterior) {
     // Fallback pra logo enviada antes desta feature existir (sem linha no
     // razão) — ainda precisa apagar o arquivo do Blob.
-    await del(logoAnterior).catch(() => {});
+    await del(logoAnterior, opcoesBlobPublico()).catch(() => {});
   }
 
   if (logoAnterior) {

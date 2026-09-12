@@ -1,5 +1,6 @@
 import "server-only";
 import { issueSignedToken, presignUrl } from "@vercel/blob";
+import { opcoesBlobPrivado } from "@/lib/blob-store";
 
 // Confere ANTES de qualquer put/del/list/issueSignedToken contra o store
 // PRIVADO (tinta/backup) que a env var está de fato presente. Sem essa
@@ -34,6 +35,7 @@ export async function urlAssinadaLeitura(pathname: string, validadeMs: number): 
     operations: ["get"],
     validUntil,
     token: exigirTokenBlobPrivado(),
+    ...opcoesBlobPrivado(),
   });
   const { presignedUrl } = await presignUrl(token, {
     operation: "get",

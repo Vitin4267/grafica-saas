@@ -1,5 +1,6 @@
 import "server-only";
 import { list, del, head } from "@vercel/blob";
+import { opcoesBlobPublico, opcoesBlobPrivado } from "@/lib/blob-store";
 import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { dispararEventoEmail } from "@/lib/email/webhook-email";
@@ -194,7 +195,7 @@ async function backfillArquivosLegados(): Promise<void> {
       where: { tipo: "ARTE_PEDIDO", referenciaId: pedido.id },
     });
     if (jaTemLinha) return;
-    const info = await head(pedido.arteUrl!).catch(() => null);
+    const info = await head(pedido.arteUrl!, opcoesBlobPublico()).catch(() => null);
     if (!info) return; // blob já não existe mais — nada a preencher
     await prisma.arquivoArmazenado.create({
       data: {
@@ -213,7 +214,7 @@ async function backfillArquivosLegados(): Promise<void> {
       where: { tipo: "LOGO_GRAFICA", referenciaId: grafica.id },
     });
     if (jaTemLinha) return;
-    const info = await head(grafica.logoUrl!).catch(() => null);
+    const info = await head(grafica.logoUrl!, opcoesBlobPublico()).catch(() => null);
     if (!info) return;
     await prisma.arquivoArmazenado.create({
       data: {
@@ -236,14 +237,19 @@ export type ResultadoReconciliacaoArmazenamento = {
   orfaosApagados: number;
 };
 
+// Opções de autenticação de UMA chamada — nunca a env var ambígua
+// BLOB_STORE_ID sozinha (achado de produção, 2026-09-12, ver
+// src/lib/blob-store.ts): storeId+token explícitos, resolvidos pro store
+// certo (público ou privado) em cada chamada.
+type OpcoesBlob = { storeId?: string; token?: string };
+
 // Lista TODOS os blobs de UM store (paginado) — usado uma vez por store, ver
-// reconciliarArmazenamento abaixo. `token` undefined = store público padrão
-// (BLOB_READ_WRITE_TOKEN); passe BLOB_PRIVATE_READ_WRITE_TOKEN pro privado.
-async function listarTodosOsBlobs(token: string | undefined): Promise<BlobReal[]> {
+// reconciliarArmazenamento abaixo.
+async function listarTodosOsBlobs(opcoes: OpcoesBlob): Promise<BlobReal[]> {
   const blobs: BlobReal[] = [];
   let cursor: string | undefined;
   do {
-    const pagina = await list({ cursor, limit: 1000, token });
+    const pagina = await list({ cursor, limit: 1000, ...opcoes });
     blobs.push(
       ...pagina.blobs.map((b) => ({ url: b.url, pathname: b.pathname, size: b.size, uploadedAt: b.uploadedAt }))
     );
@@ -296,17 +302,18 @@ export async function reconciliarArmazenamento(): Promise<ResultadoReconciliacao
   // verdade, mesmo que o arquivo continue vivo no Blob. Pular a passada
   // inteira evita isso: nenhuma linha ANALISE_TINTA é tocada na rodada em
   // que o token está ausente.
-  const tokenPorUrl = new Map<string, string | undefined>();
+  const opcoesPorUrl = new Map<string, OpcoesBlob>();
 
-  const blobsPublicos = await listarTodosOsBlobs(undefined);
-  for (const b of blobsPublicos) tokenPorUrl.set(b.url, undefined);
+  const opcoesPublico = opcoesBlobPublico();
+  const blobsPublicos = await listarTodosOsBlobs(opcoesPublico);
+  for (const b of blobsPublicos) opcoesPorUrl.set(b.url, opcoesPublico);
   const diferencaPublica = diferencaReconciliacao(linhasPublicas, blobsPublicos);
 
   let diferencaPrivada = DIFERENCA_VAZIA;
-  const tokenPrivado = process.env.BLOB_PRIVATE_READ_WRITE_TOKEN;
-  if (tokenPrivado) {
-    const blobsPrivados = await listarTodosOsBlobs(tokenPrivado);
-    for (const b of blobsPrivados) tokenPorUrl.set(b.url, tokenPrivado);
+  const opcoesPrivado = opcoesBlobPrivado();
+  if (opcoesPrivado.token || opcoesPrivado.storeId) {
+    const blobsPrivados = await listarTodosOsBlobs(opcoesPrivado);
+    for (const b of blobsPrivados) opcoesPorUrl.set(b.url, opcoesPrivado);
     diferencaPrivada = diferencaReconciliacao(linhasPrivadas, blobsPrivados);
   }
 
@@ -330,7 +337,7 @@ export async function reconciliarArmazenamento(): Promise<ResultadoReconciliacao
   // env var ausente/diferente de "1", esta etapa só CONTA, nunca apaga.
   if (process.env.ARMAZENAMENTO_LIMPEZA_ORFAOS === "1") {
     for (const orfao of orfaosParaApagar) {
-      await del(orfao.url, { token: tokenPorUrl.get(orfao.url) }).catch(() => {});
+      await del(orfao.url, opcoesPorUrl.get(orfao.url) ?? {}).catch(() => {});
       orfaosApagados++;
     }
   }
@@ -376,7 +383,7 @@ export async function expirarImportacoesAbandonadas(): Promise<ResultadoExpiraca
       referenciaId: importacao.id,
     });
     if (arquivoRevertido) {
-      await del(arquivoRevertido.url, { token: exigirTokenBlobPrivado() }).catch(() => {});
+      await del(arquivoRevertido.url, { token: exigirTokenBlobPrivado(), ...opcoesBlobPrivado() }).catch(() => {});
     }
     await prisma.importacaoPlanilha.update({
       where: { id: importacao.id },

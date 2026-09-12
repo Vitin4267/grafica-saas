@@ -7,6 +7,7 @@ import { after } from "next/server";
 import { randomBytes } from "node:crypto";
 import { put, del } from "@vercel/blob";
 import { exigirTokenBlobPrivado } from "@/lib/blob-assinado";
+import { opcoesBlobPrivado } from "@/lib/blob-store";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
@@ -1357,7 +1358,7 @@ export async function removerItemOrcamento(
     referenciaId: orcamentoItemId,
   });
   if (arquivoTintaRemovido) {
-    await del(arquivoTintaRemovido.url, { token: exigirTokenBlobPrivado() }).catch(() => {});
+    await del(arquivoTintaRemovido.url, { token: exigirTokenBlobPrivado(), ...opcoesBlobPrivado() }).catch(() => {});
   }
 
   revalidatePath(`/orcamento/${item.orcamentoId}`);

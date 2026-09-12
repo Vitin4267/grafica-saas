@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { put, del } from "@vercel/blob";
+import { opcoesBlobPrivado } from "@/lib/blob-store";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
@@ -212,6 +213,7 @@ export async function solicitarMapeamento(
       addRandomSuffix: true,
       contentType: arquivo.type,
       token: tokenPrivado,
+      ...opcoesBlobPrivado(),
     });
   } catch (erro) {
     await cancelarReserva(reserva.arquivoId);
@@ -252,7 +254,7 @@ export async function solicitarMapeamento(
       referenciaId: importacaoId,
     });
     if (arquivoRevertido) {
-      await del(arquivoRevertido.url, { token: tokenPrivado }).catch(() => {});
+      await del(arquivoRevertido.url, { token: tokenPrivado, ...opcoesBlobPrivado() }).catch(() => {});
     }
     if (erro instanceof ErroWebhookImportacao) {
       // A cota (a própria linha ImportacaoPlanilha) continua consumida —
@@ -461,7 +463,7 @@ export async function confirmarEImportar(
     referenciaId: importacaoId,
   });
   if (arquivoRevertido) {
-    await del(arquivoRevertido.url, { token: exigirTokenBlobPrivado() }).catch(() => {});
+    await del(arquivoRevertido.url, { token: exigirTokenBlobPrivado(), ...opcoesBlobPrivado() }).catch(() => {});
   }
 
   if (importacao.tipo === "CLIENTES") {

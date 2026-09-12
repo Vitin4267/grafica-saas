@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { put, del } from "@vercel/blob";
+import { opcoesBlobPrivado } from "@/lib/blob-store";
 import { prisma } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
@@ -140,6 +141,7 @@ export async function analisarTintaItem(
       addRandomSuffix: true,
       contentType: arquivo.type,
       token: tokenPrivado,
+      ...opcoesBlobPrivado(),
     });
   } catch (erro) {
     await cancelarReserva(reserva.arquivoId);
@@ -191,7 +193,7 @@ export async function analisarTintaItem(
       referenciaId: orcamentoItemId,
     });
     if (arquivoRevertido) {
-      await del(arquivoRevertido.url, { token: tokenPrivado }).catch(() => {});
+      await del(arquivoRevertido.url, { token: tokenPrivado, ...opcoesBlobPrivado() }).catch(() => {});
     }
     if (erro instanceof ErroWebhookTinta) {
       return { ok: false, mensagem: erro.message };
@@ -229,7 +231,7 @@ export async function analisarTintaItem(
   // de enviarArte/salvarLogo. O razão (ArquivoArmazenado) já trocou dentro
   // de confirmarArquivo; aqui só falta apagar o arquivo de verdade.
   if (imagemAnteriorPathname && imagemAnteriorPathname !== blob.pathname) {
-    await del(imagemAnteriorPathname, { token: tokenPrivado }).catch(() => {});
+    await del(imagemAnteriorPathname, { token: tokenPrivado, ...opcoesBlobPrivado() }).catch(() => {});
   }
 
   revalidatePath(`/orcamento/${item.orcamentoId}`);

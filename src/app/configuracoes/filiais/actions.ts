@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { put, del } from "@vercel/blob";
+import { opcoesBlobPublico } from "@/lib/blob-store";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import type { RegimeTributario } from "@/generated/prisma/enums";
@@ -208,6 +209,7 @@ export async function salvarLogoFilial(
       access: "public",
       addRandomSuffix: true,
       contentType: arquivo.type,
+      ...opcoesBlobPublico(),
     });
   } catch (erro) {
     await cancelarReserva(reserva.arquivoId);
@@ -228,7 +230,7 @@ export async function salvarLogoFilial(
   // Melhor esforço: apaga a logo antiga do Blob depois que a nova já está
   // salva no banco — mesmo cuidado de salvarLogo.
   if (filial.logoUrl) {
-    await del(filial.logoUrl).catch(() => {});
+    await del(filial.logoUrl, opcoesBlobPublico()).catch(() => {});
   }
 
   await registrarAuditoria({
@@ -275,11 +277,11 @@ export async function removerLogoFilial(
     referenciaId: filial.id,
   });
   if (arquivoRemovido) {
-    await del(arquivoRemovido.url).catch(() => {});
+    await del(arquivoRemovido.url, opcoesBlobPublico()).catch(() => {});
   } else if (filial.logoUrl) {
     // Fallback pra logo enviada antes desta feature existir (sem linha no
     // razão) — mesmo cuidado de removerLogo.
-    await del(filial.logoUrl).catch(() => {});
+    await del(filial.logoUrl, opcoesBlobPublico()).catch(() => {});
   }
 
   if (filial.logoUrl) {
