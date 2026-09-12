@@ -417,4 +417,63 @@ describe("Despesa → CustoPedido (achado Fin-A1 da Parte 4)", () => {
     },
     TIMEOUT_MS
   );
+
+  it(
+    "bug N19: CustoPedido TERCEIRIZACAO + Despesa mesma categoria + pedido → ambos disparam possivelDuplicidade",
+    async () => {
+      const f = await criarFixture();
+      await logarComo(f.usuarioId);
+
+      // Passo 1: cria CustoPedido origem TERCEIRIZACAO (simulando uma terceirização já lançada)
+      // — etapaTerceirizadaId fica de fora de propósito (é FK real pra
+      // EtapaTerceirizada; o teste só precisa provar a colisão de
+      // origem+categoria, não uma EtapaTerceirizada de verdade).
+      const custoTerceirizacao = await prisma.custoPedido.create({
+        data: {
+          graficaId: f.graficaId,
+          pedidoId: f.pedidoId,
+          categoriaCustoId: f.categoriaCustoId,
+          origem: "TERCEIRIZACAO",
+          valor: 800,
+          valorCalculado: 800,
+          possivelDuplicidade: false,
+        },
+      });
+
+      // Passo 2: cria Despesa vinculada ao MESMO pedido+categoria
+      const resultado = await criarDespesa(
+        null,
+        formDataDe({
+          descricao: "Nota do terceirizado",
+          valor: "800",
+          vencimento: "2026-10-01",
+          categoriaCustoId: f.categoriaCustoId,
+          pedidoId: f.pedidoId,
+        })
+      );
+
+      expect(resultado.ok).toBe(true);
+      const despesa = await prisma.despesa.findFirstOrThrow({
+        where: { graficaId: f.graficaId, descricao: "Nota do terceirizado" },
+      });
+
+      // Passo 3: verifica que o CustoPedido novo (origem DESPESA) tem possivelDuplicidade=true
+      const custoDespesa = await prisma.custoPedido.findUniqueOrThrow({
+        where: { despesaId: despesa.id },
+      });
+      expect(custoDespesa.origem).toBe("DESPESA");
+      expect(custoDespesa.pedidoId).toBe(f.pedidoId);
+      expect(custoDespesa.categoriaCustoId).toBe(f.categoriaCustoId);
+      expect(custoDespesa.possivelDuplicidade).toBe(true);
+      expect(Number(custoDespesa.valor)).toBe(800);
+
+      // Passo 4: verifica que o CustoPedido antigo (TERCEIRIZACAO) CONTINUA com possivelDuplicidade=false
+      // (pois não tem FK de dedup — cada origem tem seu próprio FK de proteção)
+      const custoTerceirizacaoAgora = await prisma.custoPedido.findUniqueOrThrow({
+        where: { id: custoTerceirizacao.id },
+      });
+      expect(custoTerceirizacaoAgora.possivelDuplicidade).toBe(false);
+    },
+    TIMEOUT_MS
+  );
 });
