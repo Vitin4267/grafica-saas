@@ -14,7 +14,14 @@ import { headers } from "next/headers";
 // atacante, que capturaria o token quando a vítima clicasse. Configure
 // `APP_URL` em produção pra eliminar esse risco por completo.
 export async function resolverOrigemPublica(): Promise<string> {
-  const configurada = process.env.APP_URL;
+  // .trim() antes de tirar a(s) barra(s) final — achado em produção
+  // (2026-09-12): um espaço sobrando no valor de APP_URL (erro de
+  // copiar/colar na env var) contaminava TODA URL pública montada a
+  // partir daqui (Stripe Checkout success_url/cancel_url, link de reset de
+  // senha, link público de orçamento), e a Stripe rejeitava com
+  // "url_invalid" só nos casos onde o espaço caía DENTRO da URL, não no
+  // final dela.
+  const configurada = process.env.APP_URL?.trim();
   if (configurada) {
     return configurada.replace(/\/+$/, "");
   }
