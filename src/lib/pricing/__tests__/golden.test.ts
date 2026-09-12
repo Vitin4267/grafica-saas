@@ -78,8 +78,15 @@ describe("golden #1 — banner 0,80×1,20m escolhe a bobina mais barata (nesting
     expect(resultado.metricas.bobinaEscolhida).toMatchObject({ id: "bobina-1.00" });
     expect(resultado.metricas.pecasPorFaixa).toBe(1);
     expect(resultado.metricas.numFaixas).toBe(1);
-    // área faturável = largura nominal cheia × comprimento consumido (1,00 × 1,248)
-    expect(resultado.metricas.areaFaturavel as number).toBeCloseTo(1.248, 3);
+    // área faturável = largura nominal cheia × comprimento consumido.
+    // Achado 7 da auditoria do motor M2/Offset (2026-09-12) — lConsumido
+    // agora usa a convenção n−1 gaps (igual ao eixo da largura): com
+    // numFaixas=1 não existe NENHUM vão entre faixas (1 peça enfileirada não
+    // tem vizinha), então lConsumido = numFaixas×b + g×(numFaixas−1) =
+    // 1×1,24 + 0,008×0 = 1,24 — sem gap nenhum. O valor antigo (1,248) vinha
+    // da fórmula numFaixas×(b+g), que cobrava 1 gap fantasma mesmo com uma
+    // única faixa na bobina.
+    expect(resultado.metricas.areaFaturavel as number).toBeCloseTo(1.24, 3);
   });
 });
 

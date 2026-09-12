@@ -88,7 +88,18 @@ export function calcularM2(
       if (pecasPorFaixa <= 0) continue; // orientação inviável nesta bobina
 
       const numFaixas = Math.ceil(Q / pecasPorFaixa);
-      const lConsumido = paraDecimal(numFaixas).times(b.plus(g));
+      // Achado 7 da auditoria do motor M2/Offset (2026-09-12) — ANTES:
+      // numFaixas × (b+g), que cobra numFaixas gaps — sempre UM gap A MAIS
+      // do que existe fisicamente entre numFaixas peças enfileiradas (entre
+      // N peças existem N−1 vãos, não N). É a mesma convenção "n−1 gaps" já
+      // usada corretamente no eixo da LARGURA duas linhas acima
+      // (pecasPorFaixa = (wUtil+g)/(a+g)) e em imposicao.ts — os dois eixos
+      // do mesmo nesting decidiam o gap de jeitos diferentes. Cenário do
+      // achado: etiqueta numa bobina, 1.000 faixas, g=0,008m → a fórmula
+      // antiga cobrava 8m lineares a mais do que o necessário (2m²
+      // sistemáticos em TODO pedido M2/DTF). Fix: numFaixas×b + (numFaixas−1)×g
+      // — matematicamente igual a numFaixas×(b+g) − g.
+      const lConsumido = paraDecimal(numFaixas).times(b).plus(g.times(numFaixas - 1));
       const areaFaturavel = larguraNominal.times(lConsumido);
       const custoMaterial = areaFaturavel.times(custoM2Material);
 
@@ -291,7 +302,17 @@ export function calcularM2(
     paraDecimal(Q).times(areaMinimaFaturavel)
   );
 
-  const eficiencia = paraDecimal(Q).times(wLinha).times(hLinha).div(escolhido.areaFaturavel);
+  // Achado 10 da auditoria do motor M2/Offset (2026-09-12) — numerador
+  // trocado de wLinha×hLinha (COM margem de segurança `s`) pra w×h (área
+  // NOMINAL da peça, sem margem): eficiência é métrica de EXIBIÇÃO pro
+  // usuário decidir se vale trocar de bobina, e a margem de segurança infla
+  // artificialmente o aproveitamento mostrado. Exemplo: etiqueta
+  // 0,10×0,05m com s=0,02 → w'×h' = 0,14×0,09 = 0,0126m² (com margem) contra
+  // a área real da peça, 0,10×0,05 = 0,005m² — o cálculo antigo mostrava
+  // 2,5× mais aproveitamento do que existe de verdade. Mesma separação que
+  // areaCobrada já faz (usa w×h nominal) — eficiencia só não tinha
+  // acompanhado.
+  const eficiencia = paraDecimal(Q).times(w).times(h).div(escolhido.areaFaturavel);
 
   return {
     custoMaterial: escolhido.custoMaterial,
