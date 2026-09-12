@@ -8,6 +8,8 @@ import type {
   ContextoM2,
   ContextoOffset,
   ContextoRevenda,
+  ParametrosMaquinaFlexo,
+  ParametrosPrensa,
   PedidoChapaRigida,
   PedidoDigital,
   PedidoEditorial,
@@ -19,6 +21,26 @@ import type {
   PedidoSetupPorPeca,
   PedidoTempoMaquina,
 } from "./tipos";
+
+// Achado 2 da auditoria do motor M2/Offset (2026-09-12) — "Perda padrão (%)"
+// é rotulado como percentual mas consumido cru como FRAÇÃO (folhasPerda =
+// ceil(folhasBoas × perdaPercent)). O público-alvo é leigo (ver form em
+// PrensaForm.tsx/MaquinaFlexografiaForm.tsx) e o campo Overhead — o único
+// outro percentual do motor com esse mesmo risco — tem o hint "ex: 0.15 =
+// 15%"; este não tinha nenhum. Sem trava, um dono digitando "3" pensando em
+// 3% grava 300% e QUADRUPLICA o papel do pedido inteiro. Mesmo espírito de
+// validarSomaEncargos (trava a soma de encargos em 0,85) — aqui a faixa
+// válida de uma FRAÇÃO é sempre [0,1], então é fixa (não configurável por
+// tenant, diferente de gramaturaMinGm2/gramaturaMaxGm2 acima).
+function validarPerdaPercent(perdaPercent: number) {
+  if (!Number.isFinite(perdaPercent) || perdaPercent < 0 || perdaPercent > 1) {
+    throw new ErroPrecificacao(
+      "PERDA_INVALIDA",
+      "A perda padrão precisa ser uma fração entre 0 e 1 (ex: 0.03 = 3%) — valor configurado ou informado no pedido está fora dessa faixa.",
+      { perdaPercent }
+    );
+  }
+}
 
 // Extraído pra ser reaproveitado por todo pedido (M2/OFFSET/FLEXOGRAFIA via
 // validarComum, e DIGITAL/setup-por-peça diretamente) — evita duplicar o
@@ -62,7 +84,11 @@ export function validarPedidoM2(pedido: PedidoM2, contexto: ContextoM2) {
   }
 }
 
-export function validarPedidoOffset(pedido: PedidoOffset, contexto: ContextoOffset) {
+export function validarPedidoOffset(
+  pedido: PedidoOffset,
+  contexto: ContextoOffset,
+  params: ParametrosPrensa
+) {
   validarComum(pedido.quantidade, pedido.larguraM, pedido.alturaM);
 
   if (!Number.isInteger(pedido.corFrente) || pedido.corFrente < 1) {
@@ -106,9 +132,18 @@ export function validarPedidoOffset(pedido: PedidoOffset, contexto: ContextoOffs
       { gramaturaGm2: contexto.gramaturaGm2, gramaturaMinGm2, gramaturaMaxGm2 }
     );
   }
+  // Achado 2 — valida o campo RESOLVIDO (pedido sobrepõe cadastro), o mesmo
+  // valor que offset.ts realmente usa em `paraDecimal(pedido.perdaPercent ??
+  // params.perdaPercentPadrao)` — o dedo-gordo pode vir tanto do cadastro da
+  // prensa (Configurações) quanto de um override pontual neste pedido.
+  validarPerdaPercent(pedido.perdaPercent ?? params.perdaPercentPadrao);
 }
 
-export function validarPedidoFlexografia(pedido: PedidoFlexografia, contexto: ContextoFlexografia) {
+export function validarPedidoFlexografia(
+  pedido: PedidoFlexografia,
+  contexto: ContextoFlexografia,
+  params: ParametrosMaquinaFlexo
+) {
   validarComum(pedido.quantidade, pedido.larguraM, pedido.alturaM);
 
   if (!Number.isInteger(pedido.numeroCores) || pedido.numeroCores < 1) {
@@ -131,6 +166,11 @@ export function validarPedidoFlexografia(pedido: PedidoFlexografia, contexto: Co
       { custoM2Material: contexto.custoM2Material }
     );
   }
+  // Achado 2 — mesmo campo/mesmo bug do Offset acima (ParametrosMaquinaFlexo.
+  // perdaPercentPadrao/PedidoFlexografia.perdaPercent, usados de forma
+  // idêntica em calcularFlexografia). Mesmo raciocínio: valida o valor
+  // RESOLVIDO (pedido sobrepõe cadastro).
+  validarPerdaPercent(pedido.perdaPercent ?? params.perdaPercentPadrao);
 }
 
 // Achado N4 da auditoria de código (2026-09-04) — Digital agora faz

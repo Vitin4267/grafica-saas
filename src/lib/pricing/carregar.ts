@@ -316,11 +316,26 @@ export async function carregarContextoPrecificacao(
     // Achado N8 — papel e gramatura escolhidos NESTE ORÇAMENTO sobrepõem os
     // fixos do PRODUTO (item.papel/item.gramaturaGm2 acima, que continuam
     // exigidos como fallback — comportamento de hoje inalterado quando
-    // dadosOffset não vem, ou vem sem um dos dois campos). Nunca mexe em
-    // item.formatosFolha ("folhas" abaixo) — isso é geometria de imposição
-    // do PRODUTO, fora do escopo deste achado (ver comentário no relatório).
+    // dadosOffset não vem, ou vem sem um dos dois campos).
+    //
+    // Achado 9 da auditoria do motor M2/Offset (2026-09-12) — quando o N8
+    // foi implementado, "folhas" (abaixo) continuava vindo sempre de
+    // item.formatosFolha (do PRODUTO), mesmo com um papel diferente
+    // escolhido no override — ficou marcado como "fora de escopo". Isso
+    // significava calcular nUp/folhasBoas/custoPapel sobre um formato de
+    // folha que a gráfica pode nem comprar de verdade (ex: produto cadastrado
+    // pra 66×96, mas o papel override só vem em 64×88). Corrigido agora:
+    // formatosFolha entra no include do papel override abaixo, e "folhas" só
+    // usa item.formatosFolha quando NÃO há override — com override, usa
+    // SEMPRE papelOverride.formatosFolha (nunca cai de volta pro formato do
+    // produto original em silêncio, nem quando o papel escolhido não tem
+    // nenhum formato cadastrado). Papel sem FormatoFolha cadastrado já cai no
+    // MATERIAL_SEM_FOLHA existente (validarPedidoOffset, validar.ts) porque
+    // "folhas" chega vazio — reaproveita o erro que já existia pro caso "sem
+    // override" em vez de inventar um código novo.
     let papelParaPreco = item.papel;
     let papelIdOverride: string | undefined;
+    let formatosFolhaOffset = item.formatosFolha;
     if (dadosOffset?.papelId) {
       const papelOverride = await prisma.itemGrafica.findFirst({
         where: {
@@ -329,7 +344,7 @@ export async function carregarContextoPrecificacao(
           ativo: true,
           itemCatalogo: { tipo: "MATERIA_PRIMA" },
         },
-        include: { tabelaPrecoPapel: true },
+        include: { tabelaPrecoPapel: true, formatosFolha: true },
       });
       if (!papelOverride) {
         throw new ErroPrecificacao(
@@ -339,6 +354,7 @@ export async function carregarContextoPrecificacao(
       }
       papelParaPreco = papelOverride;
       papelIdOverride = papelOverride.id;
+      formatosFolhaOffset = papelOverride.formatosFolha;
     }
 
     const gramaturaEscolhida = dadosOffset?.gramaturaGm2 ?? Number(item.gramaturaGm2 ?? 0);
@@ -355,7 +371,7 @@ export async function carregarContextoPrecificacao(
     );
 
     contexto.offset = {
-      folhas: item.formatosFolha.map((f) => ({
+      folhas: formatosFolhaOffset.map((f) => ({
         id: f.id,
         nome: f.nome,
         larguraFolha: Number(f.larguraFolha),

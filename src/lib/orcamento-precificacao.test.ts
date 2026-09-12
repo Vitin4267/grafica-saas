@@ -1078,6 +1078,14 @@ describe("calcularItemOrcamento — Offset papel/gramatura por orçamento (achad
           itemCatalogoId: catalogoPapelCaro.id,
           modeloCalculo: "SIMPLES",
           tabelaPrecoPapel: { create: [{ gramatura: 150, precoKg: 30 }] },
+          // Achado 9 da auditoria do motor M2/Offset (2026-09-12) — desde essa
+          // correção, um papel override PRECISA ter seu próprio FormatoFolha
+          // cadastrado (carregarContextoPrecificacao passa a usar os formatos
+          // do papel ESCOLHIDO, não mais os do produto original — ver
+          // carregar.ts). Mesmo formato do produto aqui de propósito: este
+          // teste isola só o efeito de preço/gramatura, não de geometria
+          // (esse cenário tem teste dedicado em carregar.test.ts).
+          formatosFolha: { create: [{ nome: `Fechada Importado ${s}`, larguraFolha: 0.66, alturaFolha: 0.96 }] },
         },
       });
 
