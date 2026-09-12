@@ -425,13 +425,15 @@ describe("Despesa → CustoPedido (achado Fin-A1 da Parte 4)", () => {
       await logarComo(f.usuarioId);
 
       // Passo 1: cria CustoPedido origem TERCEIRIZACAO (simulando uma terceirização já lançada)
+      // — etapaTerceirizadaId fica de fora de propósito (é FK real pra
+      // EtapaTerceirizada; o teste só precisa provar a colisão de
+      // origem+categoria, não uma EtapaTerceirizada de verdade).
       const custoTerceirizacao = await prisma.custoPedido.create({
         data: {
           graficaId: f.graficaId,
           pedidoId: f.pedidoId,
           categoriaCustoId: f.categoriaCustoId,
           origem: "TERCEIRIZACAO",
-          etapaTerceirizadaId: "etapa-teste-123",
           valor: 800,
           valorCalculado: 800,
           possivelDuplicidade: false,
