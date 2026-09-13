@@ -164,6 +164,30 @@ describe("calcularEditorial — custo básico: miolo + capa + encadernação", (
   });
 });
 
+describe("calcularEditorial — achado A5 da auditoria do motor de preço (2026-09-13): paginasPorCaderno precisa ser múltiplo de 4", () => {
+  it("NUMERO_PAGINAS_INVALIDO quando paginasPorCaderno não é múltiplo de 4 (ex: 2, o erro clássico de ler 'por caderno' como 'por folha')", () => {
+    for (const paginasPorCaderno of [2, 3, 6, 10, 15, 17]) {
+      try {
+        calcularEditorial(pedidoEditorialValido(), contextoEditorialValido({ paginasPorCaderno }));
+        expect.fail("deveria ter lançado ErroPrecificacao");
+      } catch (erro) {
+        expect(erro).toBeInstanceOf(ErroPrecificacao);
+        expect((erro as ErroPrecificacao).codigo).toBe("NUMERO_PAGINAS_INVALIDO");
+      }
+    }
+  });
+
+  it("aceita múltiplos de 4 (4, 8, 16, 32)", () => {
+    for (const paginasPorCaderno of [4, 8, 16, 32]) {
+      const resultado = calcularEditorial(
+        pedidoEditorialValido(),
+        contextoEditorialValido({ paginasPorCaderno })
+      );
+      expect(resultado.custoBase.toNumber()).toBeGreaterThan(0);
+    }
+  });
+});
+
 describe("calcularEditorial — rejeições (ErroPrecificacao)", () => {
   it("NUMERO_PAGINAS_INVALIDO quando numeroPaginas é zero, negativo ou fracionário", () => {
     for (const numeroPaginas of [0, -10, 5.5]) {
@@ -233,6 +257,56 @@ describe("calcularEditorial — rejeições (ErroPrecificacao)", () => {
   });
 });
 
+describe("calcularEditorial — achado C1 da auditoria do motor de preço (2026-09-13): faixa de gramatura (mesmo gêmeo do OFFSET)", () => {
+  it("GRAMATURA_INVALIDA quando gramaturaMioloGm2 está fora da faixa default 30-500 (dedo-gordo: 9 em vez de 90)", () => {
+    try {
+      calcularEditorial(pedidoEditorialValido(), contextoEditorialValido({ gramaturaMioloGm2: 9 }));
+      expect.fail("deveria ter lançado ErroPrecificacao");
+    } catch (erro) {
+      expect(erro).toBeInstanceOf(ErroPrecificacao);
+      expect((erro as ErroPrecificacao).codigo).toBe("GRAMATURA_INVALIDA");
+    }
+  });
+
+  it("GRAMATURA_INVALIDA quando gramaturaMioloGm2 excede o teto default (900 em vez de 90)", () => {
+    try {
+      calcularEditorial(pedidoEditorialValido(), contextoEditorialValido({ gramaturaMioloGm2: 900 }));
+      expect.fail("deveria ter lançado ErroPrecificacao");
+    } catch (erro) {
+      expect(erro).toBeInstanceOf(ErroPrecificacao);
+      expect((erro as ErroPrecificacao).codigo).toBe("GRAMATURA_INVALIDA");
+    }
+  });
+
+  it("GRAMATURA_INVALIDA quando gramaturaCapaGm2 está fora da faixa — mesmo buraco, mesmo caminho, do lado da capa", () => {
+    try {
+      calcularEditorial(pedidoEditorialValido(), contextoEditorialValido({ gramaturaCapaGm2: 5 }));
+      expect.fail("deveria ter lançado ErroPrecificacao");
+    } catch (erro) {
+      expect(erro).toBeInstanceOf(ErroPrecificacao);
+      expect((erro as ErroPrecificacao).codigo).toBe("GRAMATURA_INVALIDA");
+    }
+  });
+
+  it("respeita a faixa configurável por gráfica (ParametrosGrafica.gramaturaMinGm2/gramaturaMaxGm2) em vez do default", () => {
+    // Uma gráfica de cartonagem com faixa alargada (10-900) aceita uma
+    // gramatura que a faixa default (30-500) rejeitaria.
+    const resultado = calcularEditorial(
+      pedidoEditorialValido(),
+      contextoEditorialValido({ gramaturaMioloGm2: 20, gramaturaMinGm2: 10, gramaturaMaxGm2: 900 })
+    );
+    expect(resultado.custoBase.toNumber()).toBeGreaterThan(0);
+  });
+
+  it("dentro da faixa default não lança (comportamento normal preservado)", () => {
+    const resultado = calcularEditorial(
+      pedidoEditorialValido(),
+      contextoEditorialValido({ gramaturaMioloGm2: 90, gramaturaCapaGm2: 250 })
+    );
+    expect(resultado.custoBase.toNumber()).toBeGreaterThan(0);
+  });
+});
+
 describe("precificar() — EDITORIAL passa pelo mesmo comporPreco de todo mundo", () => {
   const PARAMS: ParametrosTenant = {
     overheadPercent: 0.15,
@@ -276,6 +350,31 @@ describe("precificar() — EDITORIAL passa pelo mesmo comporPreco de todo mundo"
     expect(typeof resultado.metricas.custoEncadernacao).toBe("number");
   });
 
+  it("achado C2: repassa gramaturaBaseMiolo/origemPrecoPapelMiolo/gramaturaBaseCapa/origemPrecoPapelCapa pras metricas (antes eram descartados)", () => {
+    const pedido: PedidoPrecificacao = {
+      tipo: "EDITORIAL",
+      pedido: pedidoEditorialValido({ quantidade: 100, numeroPaginas: 96 }),
+      acabamentos: [],
+    };
+
+    const resultado = precificar(
+      pedido,
+      contextoEditorial({
+        editorial: contextoEditorialValido({
+          gramaturaBaseMiolo: 75,
+          origemPrecoPapelMiolo: "APROXIMADO",
+          gramaturaBaseCapa: 250,
+          origemPrecoPapelCapa: "EXATO",
+        }),
+      })
+    );
+
+    expect(resultado.metricas.gramaturaBaseMiolo).toBe(75);
+    expect(resultado.metricas.origemPrecoPapelMiolo).toBe("APROXIMADO");
+    expect(resultado.metricas.gramaturaBaseCapa).toBe(250);
+    expect(resultado.metricas.origemPrecoPapelCapa).toBe("EXATO");
+  });
+
   it("CONTEXTO_EDITORIAL_NAO_CONFIGURADO quando o contexto não tem editorial", () => {
     const pedido: PedidoPrecificacao = {
       tipo: "EDITORIAL",
@@ -292,5 +391,39 @@ describe("precificar() — EDITORIAL passa pelo mesmo comporPreco de todo mundo"
       expect(erro).toBeInstanceOf(ErroPrecificacao);
       expect((erro as ErroPrecificacao).codigo).toBe("CONTEXTO_EDITORIAL_NAO_CONFIGURADO");
     }
+  });
+
+  it("achado C1: precificar() plumba GRAMATURA_INVALIDA na faixa default do tenant (mesmo caminho do OFFSET)", () => {
+    const pedido: PedidoPrecificacao = {
+      tipo: "EDITORIAL",
+      pedido: pedidoEditorialValido(),
+      acabamentos: [],
+    };
+    const contexto = contextoEditorial({
+      editorial: contextoEditorialValido({ gramaturaMioloGm2: 9 }),
+    });
+
+    try {
+      precificar(pedido, contexto);
+      expect.fail("deveria ter lançado ErroPrecificacao");
+    } catch (erro) {
+      expect(erro).toBeInstanceOf(ErroPrecificacao);
+      expect((erro as ErroPrecificacao).codigo).toBe("GRAMATURA_INVALIDA");
+    }
+  });
+
+  it("achado C1: precificar() respeita PARAMS.gramaturaMinGm2/MaxGm2 do tenant quando configurado", () => {
+    const pedido: PedidoPrecificacao = {
+      tipo: "EDITORIAL",
+      pedido: pedidoEditorialValido(),
+      acabamentos: [],
+    };
+    const contexto = contextoEditorial({
+      parametros: { ...PARAMS, gramaturaMinGm2: 10, gramaturaMaxGm2: 900 },
+      editorial: contextoEditorialValido({ gramaturaMioloGm2: 20 }),
+    });
+
+    const resultado = precificar(pedido, contexto);
+    expect(resultado.custoDireto.toNumber()).toBeGreaterThan(0);
   });
 });

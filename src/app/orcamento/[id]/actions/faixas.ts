@@ -50,6 +50,9 @@ export async function adicionarFaixaQuantidadeOrcamento(
   // tabela de faixas — a alternativa inteira é removida/recriada.
   const item = await prisma.orcamentoItem.findFirst({
     where: { id: orcamentoItemId, opcaoId: null, orcamento: { graficaId: usuario.graficaId } },
+    // quantidade (coluna direta, sem include) entra no select por padrão --
+    // é a quantidadeOriginal que montarDadosParaFaixa usa pra escalar tempo/
+    // metros/horas (achado B2).
     include: {
       orcamento: { select: { id: true, status: true, cliente: { select: { margemPadraoOverride: true } } } },
       itemGrafica: true,
@@ -78,7 +81,7 @@ export async function adicionarFaixaQuantidadeOrcamento(
       ? Number(item.orcamento.cliente.margemPadraoOverride)
       : null;
 
-  const dados = montarDadosParaFaixa(item, quantidade, margemLucroOverride);
+  const dados = montarDadosParaFaixa(item, item.quantidade, quantidade, margemLucroOverride);
   const resultado = await calcularItemOrcamento(item.itemGrafica, usuario.graficaId, dados);
   if (!resultado.ok) {
     return { ok: false, mensagem: resultado.mensagem };

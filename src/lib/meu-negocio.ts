@@ -219,9 +219,18 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
     // continua tendo entrado fisicamente no caixa mesmo que o pedido seja
     // cancelado depois (a exclusão em faturamentoAgregado é sobre RECEITA
     // reconhecida por competência, uma pergunta diferente — ver achado N2).
+    // Achado N31 da Parte 9 da auditoria de código (2026-09-12) — valorJuros/
+    // valorMulta entram na soma junto com valor: registrarBaixaContaReceber
+    // (financeiro/contas-receber/actions.ts) limita `valor` ao saldo do
+    // PRINCIPAL (rejeita valor > saldoAtual) e grava juros/multa em campos
+    // à parte — dinheiro real que ENTROU NO CAIXA (o cliente depositou
+    // capital + juros + multa juntos), mas que só valor sozinho não
+    // representa. Antes, só valor entrava aqui — uma conta de R$5.000 paga
+    // com R$300 de juros (R$5.300 de verdade recebidos) contava só R$5.000
+    // no "caixa de verdade" deste card.
     prisma.pagamento.aggregate({
       where: { orcamento: { graficaId }, createdAt: { gte: inicioDoMesReal } },
-      _sum: { valor: true },
+      _sum: { valor: true, valorJuros: true, valorMulta: true },
     }),
     prisma.orcamento.findMany({
       // Mesma exclusão de pedido cancelado — achado N2: o sparkline de
@@ -316,8 +325,13 @@ export async function buscarVisaoGeralNegocio(graficaId: string): Promise<VisaoG
   const faturamentoTotal = Number(faturamentoAgregado._sum.total ?? 0);
   const despesasPagasTotal = Number(despesasPagasAgregado._sum.valor ?? 0);
   // Achado A3 — ver comentário em saldoReal (VisaoGeralNegocio) e na query
-  // de pagamentosRecebidosAgregado acima.
-  const pagamentosRecebidosTotal = Number(pagamentosRecebidosAgregado._sum.valor ?? 0);
+  // de pagamentosRecebidosAgregado acima. Achado N31 — soma valorJuros/
+  // valorMulta junto com valor (dinheiro real recebido, não só o
+  // principal).
+  const pagamentosRecebidosTotal =
+    Number(pagamentosRecebidosAgregado._sum.valor ?? 0) +
+    Number(pagamentosRecebidosAgregado._sum.valorJuros ?? 0) +
+    Number(pagamentosRecebidosAgregado._sum.valorMulta ?? 0);
 
   return {
     faturamentoMes: {

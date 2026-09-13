@@ -1,4 +1,5 @@
 import type { Prisma } from "@/generated/prisma/client";
+import type { PrismaTransactionClient } from "@/lib/prisma";
 import { calcularPreco } from "@/lib/orcamento";
 import { precificar, ErroPrecificacao, aplicarPisoDoPedido, type PedidoPrecificacao } from "@/lib/pricing";
 import { carregarContextoPrecificacao, resolverConfigAcabamentos } from "@/lib/pricing/carregar";
@@ -602,7 +603,14 @@ export async function calcularItemOrcamento(
         };
       }
       if (contexto.setupPorPeca) {
-        contexto.setupPorPeca = { ...contexto.setupPorPeca, custoSubstratoPorPeca: 0 };
+        // Achado B10 da auditoria do motor de preço (2026-09-13) — faltava
+        // marcar a flag aqui (o tipo não a tinha até agora), mesmo padrão
+        // de contexto.digital/contexto.bordado acima.
+        contexto.setupPorPeca = {
+          ...contexto.setupPorPeca,
+          custoSubstratoPorPeca: 0,
+          materialFornecidoPeloCliente: true,
+        };
       }
       if (contexto.bordado) {
         contexto.bordado = {
@@ -646,6 +654,24 @@ export async function calcularItemOrcamento(
         ok: false,
         mensagem:
           "Este item tem um acabamento cobrado por hora — informe a estimativa de horas pra calcular o custo desse acabamento.",
+      };
+    }
+
+    // Achado B6 da auditoria do motor de preço (2026-09-13) —
+    // horasEstimadas é UM número por ITEM (não por acabamento), então 2
+    // acabamentos por HORA no mesmo item ("Instalação" R$50/h + "Criação de
+    // arte" R$80/h) cobrariam as MESMAS horas duas vezes (ex: 4h estimadas
+    // só pra instalação virando R$200+R$320=R$520, sem as 4h de arte terem
+    // sido estimadas de verdade). Sem um campo por acabamento pra corrigir
+    // isso direito, a trava é bloquear a combinação ambígua — o vendedor
+    // separa em 2 itens de orçamento (cada um com sua própria
+    // horasEstimadas), em vez do motor adivinhar como dividir uma estimativa
+    // só entre 2 serviços diferentes.
+    const acabamentosHora = acabamentos.filter((a) => a.baseCobranca === "HORA");
+    if (acabamentosHora.length > 1) {
+      return {
+        ok: false,
+        mensagem: `Este item tem ${acabamentosHora.length} acabamentos cobrados por hora (${acabamentosHora.map((a) => a.nome).join(", ")}) — a estimativa de horas é única por item, então o motor não sabe dividir entre eles. Coloque cada acabamento por hora num item de orçamento separado, cada um com sua própria estimativa.`,
       };
     }
 
@@ -985,7 +1011,7 @@ export async function calcularItemOrcamento(
 // itens da opção-base. Sempre chamado DENTRO da mesma transação Serializable
 // que alterou os itens, pra nunca gravar um total que já ficou stale.
 export async function recalcularTotalOrcamento(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   orcamentoId: string,
   graficaId: string
 ): Promise<Dec> {

@@ -19,4 +19,8 @@ export {
 export { comporPreco, aplicarPisoDoPedido, type ResultadoComposicao } from "./compor";
 export { resolverPrecoPapel, type ResultadoPrecoPapel, type OrigemPrecoPapel } from "./papel";
 export { precificar, type PedidoPrecificacao, type ContextoPrecificacao, type ResultadoPrecificacao } from "./precificar";
+// Achado D2 — usado fora do motor por src/app/clientes/actions.ts, pra
+// rejeitar Cliente.margemPadraoOverride sozinho já acima do teto no
+// CADASTRO, não só depois no orçamento (ver comentário em validar.ts).
+export { LIMITE_SOMA_ENCARGOS } from "./validar";
 export { paraDecimal, arredondarParaIncremento, tetoInteiro, type Dec } from "./decimal";

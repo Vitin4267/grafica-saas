@@ -421,6 +421,59 @@ describe("adicionarEntregaProgramadaOrcamento / editarEntregaProgramadaOrcamento
     TIMEOUT_MS
   );
 
+  // Achado N28 da auditoria de código (2026-09-12) — `ordem` vinha de
+  // `_count.entregasProgramadas` (a CONTAGEM atual), mas remover uma linha
+  // nunca renumerava quem sobrava: 3 linhas (ordem 0,1,2), remove a
+  // primeira (sobram ordem 1,2 — contagem=2), adiciona uma nova → tentava
+  // gravar `ordem: 2`, que já existe na segunda linha original → violação
+  // de `@@unique([orcamentoId, ordem])` crua, sem try/catch.
+  it(
+    "achado N28: remover a PRIMEIRA linha e adicionar uma nova depois não colide com @@unique([orcamentoId, ordem])",
+    async () => {
+      const fixture = await criarFixture(60_000);
+      graficaIdsParaLimpar.push(fixture.graficaId);
+
+      vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(
+        (await usuarioParaMock(fixture.usuarioDonoId)) as never
+      );
+      // 3 linhas: ordem 0, 1, 2.
+      for (const quantidade of ["10000", "10000", "10000"]) {
+        const r = await adicionarEntregaProgramadaOrcamento(
+          null,
+          formDataDe({ orcamentoId: fixture.orcamentoId, quantidade })
+        );
+        expect(r.ok).toBe(true);
+      }
+      const linhas = await prisma.orcamentoEntregaProgramada.findMany({
+        where: { orcamentoId: fixture.orcamentoId },
+        orderBy: { ordem: "asc" },
+      });
+      expect(linhas.map((l) => l.ordem)).toEqual([0, 1, 2]);
+
+      // Remove a PRIMEIRA (ordem 0) — sobram ordem 1 e 2, contagem = 2.
+      const remocao = await removerEntregaProgramadaOrcamento(
+        null,
+        formDataDe({ entregaProgramadaId: linhas[0].id })
+      );
+      expect(remocao.ok).toBe(true);
+
+      // ANTES do fix: ordemAtual = _count (2) colidiria com a linha que já
+      // tem ordem=2. Com o fix (MAX(ordem existente)+1 = 3), não colide.
+      const resultado = await adicionarEntregaProgramadaOrcamento(
+        null,
+        formDataDe({ orcamentoId: fixture.orcamentoId, quantidade: "10000" })
+      );
+      expect(resultado.ok).toBe(true);
+
+      const linhasFinais = await prisma.orcamentoEntregaProgramada.findMany({
+        where: { orcamentoId: fixture.orcamentoId },
+        orderBy: { ordem: "asc" },
+      });
+      expect(linhasFinais.map((l) => l.ordem)).toEqual([1, 2, 3]);
+    },
+    TIMEOUT_MS
+  );
+
   it(
     "orçamento sem nenhuma linha de cronograma continua sem nenhuma linha (regressão zero)",
     async () => {

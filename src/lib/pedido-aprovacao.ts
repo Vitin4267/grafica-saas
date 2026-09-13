@@ -1,5 +1,5 @@
 import "server-only";
-import { prisma } from "@/lib/prisma";
+import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import type { OrigemPrevisao } from "@/generated/prisma/enums";
 import { D, paraDecimal, type Dec } from "@/lib/pricing/decimal";
@@ -264,13 +264,29 @@ function componentesCustoBreakdown(
     return componentes;
   }
 
+  // Achado B9 da auditoria do motor de preço (2026-09-13) — ANTES, o
+  // custoBase INTEIRO (setup + variável + custoSubstrato, a peça em branco)
+  // virava "impressao" de uma vez, enquanto o irmão BORDADO logo abaixo já
+  // separa a peça em branco pro bucket "material". Mesmo dado que falta pra
+  // acertar (metricas.custoSubstrato, gravado por precificar.ts e nunca
+  // lido aqui antes) — separa a peça em branco ("material") do serviço de
+  // setup+variável ("impressao"), mesmo raciocínio de BORDADO/DIGITAL.
   if (
     modeloCalculo === "SERIGRAFIA" ||
     modeloCalculo === "SUBLIMACAO" ||
     modeloCalculo === "ESTAMPAGEM_QUENTE" ||
     modeloCalculo === "PERSONALIZACAO"
   ) {
-    return materialTotal.gt(0) ? [{ chave: "impressao", valor: materialTotal }] : [];
+    const metricasRaw = raiz.metricas;
+    const metricas =
+      metricasRaw && typeof metricasRaw === "object" ? (metricasRaw as Record<string, unknown>) : null;
+    const custoSubstrato = (metricas ? lerDecimalDeJson(metricas.custoSubstrato) : null) ?? paraDecimal(0);
+    const custoServico = materialTotal.minus(custoSubstrato);
+
+    const componentes: ComponenteCusto[] = [];
+    if (custoSubstrato.gt(0)) componentes.push({ chave: "material", valor: custoSubstrato });
+    if (custoServico.gt(0)) componentes.push({ chave: "impressao", valor: custoServico });
+    return componentes;
   }
 
   if (modeloCalculo === "REVENDA") {
@@ -582,7 +598,7 @@ export async function calcularPrevisaoAprovacaoPedido(
 // transação — Pedido.orcamentoId é @unique, então dá pra atualizar
 // diretamente por ele.
 export async function gravarPrevisaoAprovacaoPedido(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   params: { graficaId: string; orcamentoId: string; previsao: PrevisaoAprovacaoPedido }
 ): Promise<void> {
   const pedido = await tx.pedido.update({

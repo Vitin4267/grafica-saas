@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { hashToken } from "@/lib/auth/session";
 import { formatoMoeda } from "@/lib/moeda";
 import { formatoInstanteRealComHora, formatoData } from "@/lib/data";
 import { orcamentoEstaExpirado } from "@/lib/orcamento-status";
@@ -28,9 +29,11 @@ export default async function OrcamentoPublicoPage({
 }) {
   const { token } = await params;
 
-  // Busca só pelo token — rota pública, sem exigirUsuarioAutenticado().
+  // Busca só pelo token — rota pública, sem exigirUsuarioAutenticado(). Hash
+  // do token (achado da auditoria de segurança 2026-09-13), nunca gravado em
+  // claro — ver comentário de Orcamento.linkPublicoTokenHash no schema.
   const orcamento = await prisma.orcamento.findUnique({
-    where: { linkPublicoToken: token },
+    where: { linkPublicoTokenHash: hashToken(token) },
     include: {
       cliente: true,
       grafica: {
@@ -77,6 +80,15 @@ export default async function OrcamentoPublicoPage({
   }
 
   const ehPdf = orcamento.arteUrl?.toLowerCase().endsWith(".pdf") ?? false;
+  // Achado N29 da auditoria de código (2026-09-12) — validarSomaCronogramaEntrega
+  // só roda na ESCRITA de cada linha do cronograma; editar os itens do
+  // orçamento depois (reduzir quantidade) nunca revalida o que já foi
+  // salvo. Recalcula aqui pra nunca mostrar ao cliente um compromisso de
+  // entrega maior do que o vendido atual (mesma soma de
+  // somarQuantidadeItensBase, ver actions/entrega-programada.ts).
+  const cronogramaValido =
+    orcamento.entregasProgramadas.reduce((soma, linha) => soma + linha.quantidade, 0) <=
+    orcamento.itens.reduce((soma, item) => soma + item.quantidade, 0);
   // Default true: mesmo comportamento de sempre mostrar, que já existia
   // antes deste toggle (ver comentário do campo no schema).
   const mostrarEspecificacoesTecnicas = orcamento.grafica.parametros?.mostrarEspecificacoesTecnicas ?? true;
@@ -236,8 +248,13 @@ export default async function OrcamentoPublicoPage({
             cronograma de entrega combinado com o cliente, puramente
             informativo (nunca gera Entrega/ContaReceber, nunca muda
             StatusPedido — ver comentário completo no model
-            OrcamentoEntregaProgramada, schema 09-orcamento.prisma). */}
-        {orcamento.entregasProgramadas.length > 0 && (
+            OrcamentoEntregaProgramada, schema 09-orcamento.prisma).
+            Achado N29 da auditoria de código (2026-09-12) — cronogramaValido
+            some com o cronograma inteiro (em vez de mostrar um compromisso
+            que já não bate mais com o vendido atual) quando os itens do
+            orçamento mudaram depois que o cronograma foi salvo — mesmo
+            cálculo/raciocínio de src/lib/pdf/mapear-dados.ts. */}
+        {cronogramaValido && orcamento.entregasProgramadas.length > 0 && (
           <Card className="mb-6 p-5">
             <p className="mb-3 text-sm font-medium text-slate-500">Cronograma de entrega</p>
             <ul className="flex flex-col gap-2 text-sm">

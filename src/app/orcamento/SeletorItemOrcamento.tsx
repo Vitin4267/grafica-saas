@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
 import { CampoAjuda } from "@/components/ui/CampoAjuda";
+import { Alert } from "@/components/ui/Alert";
 import { ehDadoDeExemplo } from "@/lib/dados-exemplo-marcador";
 import { CamposEtiquetaOrcamento, etiquetaInicial, type CamposEtiqueta } from "./CamposEtiquetaOrcamento";
 import { CamposCorEspecialOrcamento } from "./CamposCorEspecialOrcamento";
@@ -111,7 +112,8 @@ export type CamposItemOrcamento = {
   corFrente: string;
   corVerso: string;
   numeroCoresFlexo: string;
-  // Só DIGITAL — opcional (em branco = default 1 clique/peça no motor).
+  // Só DIGITAL — opcional (em branco = default 1 clique/FOLHA no motor,
+  // achado A4: cliques são por folha, não por peça — ver digital.ts).
   numeroCliques: string;
   // Só SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE (compartilham este campo).
   numeroSetups: string;
@@ -346,9 +348,15 @@ export function SeletorItemOrcamento({
     itemSelecionado?.modeloCalculo === "SIMPLES" && itemSelecionado.simplesCobraPorArea === true;
   // Só aparece quando um acabamento selecionado cobra por hora — o motor
   // rejeita silenciosamente sem isso (ver guard em orcamento-precificacao.ts).
-  const temAcabamentoHora = valores.acabamentoIds.some(
+  const acabamentosHoraSelecionados = valores.acabamentoIds.filter(
     (id) => acabamentosDisponiveis.find((a) => a.id === id)?.baseCobranca === "HORA"
   );
+  const temAcabamentoHora = acabamentosHoraSelecionados.length > 0;
+  // Achado B6 da auditoria do motor de preço (2026-09-13) — horasEstimadas é
+  // um número só por item, então 2 acabamentos por hora no mesmo item
+  // dividiriam a MESMA estimativa (ver orcamento-precificacao.ts, que
+  // bloqueia essa combinação no submit) — avisa ANTES de tentar salvar.
+  const temMaisDeUmAcabamentoHora = acabamentosHoraSelecionados.length > 1;
   // Agrupa visualmente os campos de cor/setup específicos de cada modelo de
   // cálculo (formulário crescido demais — ficavam soltos, todos juntos,
   // assim que apareciam) num único <details> "Cor e preparo de máquina" —
@@ -611,16 +619,17 @@ export function SeletorItemOrcamento({
               <Input
                 label={
                   <>
-                    Número de cliques
-                    <CampoAjuda texto="Em impressão digital, cada passada da máquina pra imprimir uma peça é chamada de 'clique' — é assim que o custo do equipamento é cobrado. Normalmente é 1 clique por peça; só mude se seu equipamento contar diferente (ex: frente e verso separados)." />
+                    Número de cliques por FOLHA
+                    <CampoAjuda texto="Em impressão digital, cada passada da máquina sobre uma FOLHA (não uma peça — várias peças podem caber na mesma folha) é chamada de 'clique'. Normalmente é 1 clique por folha; só mude se seu equipamento passar mais de uma vez na mesma folha (ex: frente e verso separados, verniz). O motor já multiplica pelo número de folhas sozinho — não digite o total de folhas aqui." />
                   </>
                 }
                 type="number"
                 min={1}
+                max={20}
                 value={valores.numeroCliques}
                 onChange={set("numeroCliques")}
-                placeholder="opcional — padrão 1 por peça"
-                hint="Deixe em branco pra usar 1 clique por peça (padrão)."
+                placeholder="opcional — padrão 1 por folha"
+                hint="Deixe em branco pra usar 1 clique por folha (padrão). Não é o total de folhas do pedido."
               />
             )}
 
@@ -629,14 +638,14 @@ export function SeletorItemOrcamento({
                 label={
                   <>
                     Número de setups
-                    <CampoAjuda texto="Setup é o tempo de preparar a máquina pra rodar esta arte — trocar tela, matriz ou ajustar a cor. Cada arte diferente neste item conta como 1 setup, e isso entra no custo porque a máquina fica parada preparando, não produzindo." />
+                    <CampoAjuda texto="Setup é o tempo de preparar a máquina pra rodar esta arte — trocar tela, matriz ou ajustar a cor. É POR TELA/MATRIZ/COR, não por arte: uma arte de 1 cor só usa 1 setup, mas uma arte de 4 cores usa 4 telas e conta como 4 setups (cada cor precisa da sua própria tela na máquina)." />
                   </>
                 }
                 type="number"
                 min={1}
                 value={valores.numeroSetups}
                 onChange={set("numeroSetups")}
-                hint="Quantas telas/matrizes/artes esta arte usa."
+                hint="1 por TELA/MATRIZ — uma arte de 4 cores em serigrafia usa 4 telas, não 1."
               />
             )}
 
@@ -805,6 +814,15 @@ export function SeletorItemOrcamento({
         />
       )}
 
+      {temMaisDeUmAcabamentoHora && (
+        <Alert variant="warning">
+          Este item tem {acabamentosHoraSelecionados.length} acabamentos cobrados por hora — a
+          estimativa de horas é única por item, então o motor não vai saber dividir entre eles.
+          Separe cada acabamento por hora num item de orçamento diferente, cada um com sua própria
+          estimativa.
+        </Alert>
+      )}
+
       {temAcabamentoHora && (
         <Input
           label="Horas estimadas"
@@ -823,6 +841,8 @@ export function SeletorItemOrcamento({
           papeisDisponiveis={papeisDisponiveis}
           valores={valores.precificacaoEtiqueta}
           onChange={(precificacaoEtiqueta) => onChange({ ...valores, precificacaoEtiqueta })}
+          coresRotulo={valores.etiqueta.coresRotulo}
+          coresContraRotulo={valores.etiqueta.coresContraRotulo}
         />
       )}
 

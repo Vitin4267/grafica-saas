@@ -18,6 +18,7 @@ import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { dataInputParaUTC } from "@/lib/data";
+import { ehViolacaoDeUnicidade } from "@/lib/prisma-conflito";
 import {
   MAX_ENTREGAS_PROGRAMADAS,
   validarSomaCronogramaEntrega,
@@ -62,7 +63,12 @@ export async function adicionarEntregaProgramadaOrcamento(
     where: { id: orcamentoId, graficaId: usuario.graficaId },
     include: {
       itens: { where: { opcaoId: null }, select: { quantidade: true } },
-      entregasProgramadas: { select: { quantidade: true }, orderBy: { ordem: "asc" } },
+      // Achado N28 da auditoria de código (2026-09-12) — `ordem` precisa
+      // pra calcular o próximo valor livre (ver ordemAtual abaixo); antes
+      // só `quantidade` era lido, e o próximo `ordem` vinha de `_count`
+      // (contagem atual), que não é mais confiável depois de uma remoção
+      // (ver comentário completo abaixo).
+      entregasProgramadas: { select: { quantidade: true, ordem: true }, orderBy: { ordem: "asc" } },
       _count: { select: { entregasProgramadas: true } },
     },
   });
@@ -85,18 +91,46 @@ export async function adicionarEntregaProgramadaOrcamento(
     return { ok: false, mensagem: resultadoSoma.mensagem };
   }
 
-  const ordemAtual = orcamento._count.entregasProgramadas;
-  await prisma.orcamentoEntregaProgramada.create({
-    data: {
-      graficaId: usuario.graficaId,
-      orcamentoId,
-      ordem: ordemAtual,
-      quantidade,
-      dataPrevista: dataPrevistaStr ? dataInputParaUTC(dataPrevistaStr) : null,
-      localEntrega: localEntrega || null,
-      observacao: observacao || null,
-    },
-  });
+  // Achado N28 da auditoria de código (2026-09-12) — `ordem` era a
+  // CONTAGEM atual de linhas, mas removerEntregaProgramadaOrcamento nunca
+  // renumera quem sobra: cadastra 3 parcelas (ordem 0,1,2), remove a
+  // primeira (sobram ordem 1 e 2, contagem = 2), adiciona uma nova →
+  // `_count` = 2 → tenta gravar `ordem: 2`, que JÁ EXISTE (a segunda
+  // parcela original) → viola `@@unique([orcamentoId, ordem])`. `ordem` é
+  // só uma chave de ORDENAÇÃO (nunca mostrado como número pro usuário — ver
+  // `orderBy: { ordem: "asc" }` em mapear-dados.ts), então não precisa ser
+  // denso/contíguo: MAX(ordem existente) + 1 nunca colide, sem precisar
+  // renumerar nada.
+  const ordemAtual =
+    orcamento.entregasProgramadas.length > 0
+      ? Math.max(...orcamento.entregasProgramadas.map((e) => e.ordem)) + 1
+      : 0;
+  try {
+    await prisma.orcamentoEntregaProgramada.create({
+      data: {
+        graficaId: usuario.graficaId,
+        orcamentoId,
+        ordem: ordemAtual,
+        quantidade,
+        dataPrevista: dataPrevistaStr ? dataInputParaUTC(dataPrevistaStr) : null,
+        localEntrega: localEntrega || null,
+        observacao: observacao || null,
+      },
+    });
+  } catch (erro) {
+    // Defesa em profundidade (mesmo padrão de despesa-recorrente.ts) — duas
+    // abas adicionando linha no mesmo orçamento ao mesmo tempo ainda podem
+    // colidir no MAX(ordem)+1 calculado acima (não há lock entre o SELECT e
+    // o INSERT); nesse caso raro, pede pra tentar de novo em vez de estourar
+    // um erro de aplicação cru.
+    if (ehViolacaoDeUnicidade(erro)) {
+      return {
+        ok: false,
+        mensagem: "Outra linha de cronograma foi adicionada ao mesmo tempo — tente adicionar de novo.",
+      };
+    }
+    throw erro;
+  }
 
   revalidatePath(`/orcamento/${orcamentoId}`);
 

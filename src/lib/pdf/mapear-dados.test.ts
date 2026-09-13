@@ -265,8 +265,12 @@ describe("mapearDadosPdf — cronograma de entrega (achado B3)", () => {
   });
 
   it("mapeia cada linha formatando quantidade em pt-BR e preservando os demais campos", () => {
+    const base = orcamentoBase();
     const dados = mapearDadosPdf({
-      ...orcamentoBase(),
+      ...base,
+      // quantidade do item precisa cobrir a soma do cronograma (15.000) —
+      // achado N29 abaixo passa a omitir o cronograma quando não cobre.
+      itens: [{ ...base.itens[0], quantidade: 15000 }],
       entregasProgramadas: [
         {
           quantidade: 10000,
@@ -290,5 +294,37 @@ describe("mapearDadosPdf — cronograma de entrega (achado B3)", () => {
       localEntrega: null,
       observacao: null,
     });
+  });
+
+  // Achado N29 da auditoria de código (2026-09-12) — validarSomaCronogramaEntrega
+  // só roda na ESCRITA de cada linha do cronograma; editar os itens do
+  // orçamento depois (reduzir quantidade) nunca revalida o que já foi
+  // salvo. O PDF nunca deve imprimir um compromisso de entrega MAIOR do
+  // que o vendido atual — mostrar nada é sempre melhor que mostrar uma
+  // promessa sabidamente errada pro cliente.
+  it("cronograma que soma MAIS do que a quantidade vendida atual: cronogramaEntrega vazio (item foi reduzido depois)", () => {
+    const base = orcamentoBase(); // item com quantidade: 100
+    const dados = mapearDadosPdf({
+      ...base,
+      entregasProgramadas: [
+        // Soma 120 — mais do que os 100 vendidos agora (o item foi
+        // reduzido de, digamos, 120 pra 100 depois do cronograma pronto).
+        { quantidade: 60, dataPrevista: null, localEntrega: null, observacao: null },
+        { quantidade: 60, dataPrevista: null, localEntrega: null, observacao: null },
+      ],
+    });
+    expect(dados.cronogramaEntrega).toEqual([]);
+  });
+
+  it("cronograma que soma EXATAMENTE a quantidade vendida atual: continua aparecendo normalmente", () => {
+    const base = orcamentoBase(); // item com quantidade: 100
+    const dados = mapearDadosPdf({
+      ...base,
+      entregasProgramadas: [
+        { quantidade: 60, dataPrevista: null, localEntrega: null, observacao: null },
+        { quantidade: 40, dataPrevista: null, localEntrega: null, observacao: null },
+      ],
+    });
+    expect(dados.cronogramaEntrega).toHaveLength(2);
   });
 });

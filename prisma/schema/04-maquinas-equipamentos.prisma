@@ -180,16 +180,28 @@ model MaquinaSetupPorPeca {
 // @default(1) pela mesma razão de criação com o mínimo de campos.
 // custoHoraMaq/custoMinimo nullable = opcionais de verdade (nem todo bordado
 // cobra hora de máquina separada nem tem piso de job).
+// velocidadePontosPorMinuto — achado B1 da auditoria do motor de preço
+// (2026-09-13): custoHoraMaq (R$/h) só vira um custo real se souber QUANTO
+// TEMPO o pedido consome, e a única forma de derivar isso sem pedir uma
+// estimativa manual a cada pedido é a velocidade da própria máquina
+// (pontos/minuto) — daí numeroPontos (já existe por pedido) ÷ velocidade =
+// minutos. Antes desta versão, custoHoraMaq era gravado e mostrado na tela
+// mas NUNCA chegava no motor de cálculo (calcularBordado nem recebia o
+// valor) — ver comentário em src/lib/pricing/bordado.ts. Os dois campos
+// andam juntos: salvarMaquinaBordado (actions.ts) exige que ou os dois
+// estejam preenchidos, ou nenhum — nunca um custoHoraMaq órfão sem
+// velocidade (isso reproduziria o mesmo bug calado).
 model MaquinaBordado {
-  id                       String   @id @default(cuid())
-  graficaId                String
-  nome                     String
-  custoPorMilPontos        Decimal  @default(0) @db.Decimal(10, 2)
-  custoMatrizDigitalizacao Decimal  @default(0) @db.Decimal(10, 2)
-  cabecas                  Int      @default(1)
-  custoHoraMaq             Decimal? @db.Decimal(10, 2)
-  custoMinimo              Decimal? @db.Decimal(10, 2)
-  ativa                    Boolean  @default(true)
+  id                        String   @id @default(cuid())
+  graficaId                 String
+  nome                      String
+  custoPorMilPontos         Decimal  @default(0) @db.Decimal(10, 2)
+  custoMatrizDigitalizacao  Decimal  @default(0) @db.Decimal(10, 2)
+  cabecas                   Int      @default(1)
+  custoHoraMaq              Decimal? @db.Decimal(10, 2)
+  velocidadePontosPorMinuto Int?
+  custoMinimo               Decimal? @db.Decimal(10, 2)
+  ativa                     Boolean  @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -495,8 +495,15 @@ export async function salvarModeloProduto(
         valorNovo: `Modelo: ${ROTULO_MODELO.FLEXOGRAFIA}, custo clichê/cm²: ${formatarPreco(custoClichePorCm2)}, ${bobinasResult.data.length} bobina${bobinasResult.data.length > 1 ? "s" : ""}`,
       });
     } else if (modeloCalculo === "DIGITAL") {
-      // Sem nesting — nenhuma bobina/folha, só a impressora escolhida (ver
-      // "dimensões opcionais" no motor, src/lib/pricing/digital.ts).
+      // Achado N4 — desde que o motor Digital passou a fazer imposição
+      // (nUp por FormatoFolha), o produto não cadastra bobina/folha aqui: o
+      // PAPEL (matéria-prima) e seus formatos são escolhidos NO ORÇAMENTO
+      // (ver dadosDigital em src/lib/pricing/carregar.ts) — não fixo no
+      // produto, porque uma gráfica rápida troca o papel carregado na
+      // impressora com frequência maior do que cadastraria produtos novos.
+      // Formatos de folha do papel são cadastrados na tela da PRÓPRIA
+      // matéria-prima (achado A1 da auditoria do motor de preço, ver
+      // FormatosFolhaPapelForm.tsx), não aqui.
       const impressoraDigitalId = String(formData.get("impressoraDigitalId") ?? "");
       if (!impressoraDigitalId) {
         return {
@@ -548,7 +555,8 @@ export async function salvarModeloProduto(
       // processo homônimo — aceita qualquer máquina cujo tipoProcesso seja
       // um dos processos "genéricos" (TAMPOGRAFIA/GRAVACAO_LASER/DTG/
       // TRANSFER/OUTRO), ou seja, qualquer um que NÃO seja um dos 3 já
-      // mapeados 1:1. Sem nesting, igual a Digital.
+      // mapeados 1:1. Sem nesting (diferente de Digital desde o achado N4,
+      // que passou a fazer imposição por FormatoFolha do papel).
       const maquinaSetupPorPecaId = String(formData.get("maquinaSetupPorPecaId") ?? "");
       if (!maquinaSetupPorPecaId) {
         return {
@@ -757,10 +765,22 @@ export async function salvarModeloProduto(
       if (!formatosResult.ok) {
         return { ok: false, mensagem: formatosResult.mensagem };
       }
-      if (formatosResult.data.length === 0) {
+      // Achado A3 da auditoria do motor de preço (2026-09-13) — EXATAMENTE
+      // 1 formato, não "ao menos 1". A chapa tem preço FIXO por chapa
+      // inteira (chapaId → precoCompra), sem nenhum vínculo por formato —
+      // 2+ formatos no mesmo produto deixava o motor sempre escolher o
+      // MAIOR (mais peças por chapa) mas cobrar o preço de UM registro só,
+      // errado nas duas leituras possíveis. Mesmo padrão já documentado no
+      // comentário de ItemGrafica.chapaId no schema: uma gráfica que vende
+      // a mesma chapa em tamanho/preço diferente cadastra outro produto
+      // (outro ItemGrafica), não um segundo formato no mesmo.
+      if (formatosResult.data.length !== 1) {
         return {
           ok: false,
-          mensagem: "Adicione ao menos um formato de chapa para habilitar o cálculo Chapa rígida.",
+          mensagem:
+            formatosResult.data.length === 0
+              ? "Adicione o formato da chapa para habilitar o cálculo Chapa rígida."
+              : "Chapa rígida aceita só 1 formato por produto (preço é fixo por chapa inteira) — pra outro tamanho/preço, cadastre outro produto.",
         };
       }
 
@@ -1587,6 +1607,72 @@ export async function salvarTabelaGramatura(
   revalidatePath("/catalogo");
   revalidatePath("/orcamento");
   return { ok: true, mensagem: "Gramaturas salvas com sucesso!" };
+}
+
+// Achado A1 da auditoria do motor de preço (2026-09-13) — o motor DIGITAL
+// (achado N4) exige FormatoFolha no PAPEL escolhido no orçamento
+// (contexto.digital.folhas, ver src/lib/pricing/carregar.ts), mas até aqui
+// só o PRODUTO tinha um editor de formatos (OFFSET/CHAPA_RIGIDA, ver
+// FormatosFolhaEditor em ConfiguracaoProdutoForm.tsx) — nenhuma tela
+// conseguia gravar um FormatoFolha numa MATERIA_PRIMA. Todo orçamento
+// DIGITAL morria em MATERIAL_SEM_FOLHA. Reaproveita o MESMO model
+// (FormatoFolha.itemGraficaId já aceita qualquer ItemGrafica, sem migration
+// nenhuma) e o mesmo schema de validação (formatoFolhaSchema) que
+// salvarConfiguracaoProduto já usa pro branch OFFSET — só muda o dono da
+// linha (o papel, não o produto) e o gate de tipo (MATERIA_PRIMA, categoria
+// "Papéis" — mesmo escopo de salvarTabelaGramatura acima).
+export async function salvarFormatosFolhaPapel(
+  _estadoAnterior: SalvarConfigResult | null,
+  formData: FormData
+): Promise<SalvarConfigResult> {
+  const usuario = await exigirUsuarioAutenticado();
+  await exigirEmailVerificado(usuario);
+  await exigirAssinaturaAtiva(usuario);
+  if (!(await podeEditarModulo(usuario, "CATALOGO"))) {
+    return { ok: false, mensagem: "Você não tem permissão pra editar o catálogo." };
+  }
+  const itemGraficaId = String(formData.get("itemGraficaId"));
+
+  const itemGrafica = await prisma.itemGrafica.findFirst({
+    where: { id: itemGraficaId, graficaId: usuario.graficaId },
+    include: { itemCatalogo: true },
+  });
+  if (!itemGrafica || itemGrafica.itemCatalogo.tipo !== "MATERIA_PRIMA") {
+    return { ok: false, mensagem: "Item não encontrado." };
+  }
+
+  const parsedResult = parseJsonArray(formData.get("formatosFolhaJson"), formatoFolhaSchema);
+  if (!parsedResult.ok) {
+    return { ok: false, mensagem: parsedResult.mensagem };
+  }
+
+  const formatosAntes = await prisma.formatoFolha.findMany({ where: { itemGraficaId } });
+
+  await prisma.$transaction([
+    prisma.formatoFolha.deleteMany({ where: { itemGraficaId } }),
+    prisma.formatoFolha.createMany({
+      data: parsedResult.data.map((f) => ({ itemGraficaId, ...f })),
+    }),
+  ]);
+
+  // Mesmo espírito de resumo (não linha-a-linha) de salvarTabelaGramatura
+  // acima — a lista inteira é substituída a cada save.
+  await registrarAuditoria({
+    graficaId: usuario.graficaId,
+    usuarioId: usuario.id,
+    usuarioNome: usuario.nome,
+    acao: "catalogo.salvar_formatos_folha_papel",
+    entidade: "ItemGrafica",
+    entidadeId: itemGraficaId,
+    descricao: `Formatos de folha de "${itemGrafica.itemCatalogo.nome}" atualizados`,
+    valorAnterior: `${formatosAntes.length} formato${formatosAntes.length !== 1 ? "s" : ""}`,
+    valorNovo: `${parsedResult.data.length} formato${parsedResult.data.length !== 1 ? "s" : ""}`,
+  });
+
+  revalidatePath(`/catalogo/${itemGraficaId}`);
+  revalidatePath("/catalogo");
+  revalidatePath("/orcamento");
+  return { ok: true, mensagem: "Formatos de folha salvos com sucesso!" };
 }
 
 export async function salvarVariantesMateriaPrima(

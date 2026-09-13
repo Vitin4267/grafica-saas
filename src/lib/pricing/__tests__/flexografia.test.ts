@@ -65,7 +65,12 @@ describe("calcularFlexografia — nUp varia conforme a largura útil da bobina e
     expect(resultadoLarga.nUp).toBe(3); // floor(0,508/0,128)
   });
 
-  it("entre bobinas que cabem, escolhe a de menor custoMaterial resultante", () => {
+  it("entre bobinas que cabem, escolhe a de menor custo-base TOTAL (material + rodagem), não só material", () => {
+    // Achado A2 da auditoria do motor de preço (2026-09-13) — neste
+    // fixture específico as duas leituras concordam (b-030 vence nos dois
+    // critérios), então este teste sozinho NÃO prova qual critério o motor
+    // usa de verdade — ver o teste seguinte, que usa um cenário onde os
+    // dois critérios DIVERGEM, prova real do fix.
     const contexto = contextoFlexoValido({
       bobinas: [
         { id: "b-030", larguraNominal: 0.3, refile: 0.01 },
@@ -79,6 +84,50 @@ describe("calcularFlexografia — nUp varia conforme a largura útil da bobina e
     // cheia (0,60m) por metro consumido — no fim sai mais caro que a b-030
     // (0,30m) mesmo fazendo menos voltas.
     expect(resultado.bobinaEscolhida.id).toBe("b-030");
+  });
+
+  it("achado A2: bobina mais barata em MATERIAL nem sempre é a mais barata no TOTAL — escolhe pelo custo-base completo", () => {
+    // Cenário do achado A2 (auditoria do motor de preço, 2026-09-13):
+    // etiqueta 0,10×0,05m, Q=50.000, 1 cor, passo 0,30m, largura máq 0,50m,
+    // R$0,80/m de rodagem, 80m de acerto, perda 5%, material R$4,00/m².
+    // Bobina A (0,46m) tem nUp menor (3) mas roda MENOS metro que B (nUp 2,
+    // 0,30m) — rodagem é por METRO LINEAR, indiferente à largura, então
+    // minimizar só o material (critério antigo, quebrado) favorecia
+    // sistematicamente a bobina estreita, que roda muito mais metro.
+    const contexto = contextoFlexoValido({
+      bobinas: [
+        { id: "bobina-A-0.46", larguraNominal: 0.46, refile: 0.005 },
+        { id: "bobina-B-0.30", larguraNominal: 0.3, refile: 0.005 },
+      ],
+      custoM2Material: 4.0,
+    });
+    const params = paramsFlexoValidos({
+      larguraMaquinaM: 0.5,
+      passoCilindroM: 0.3,
+      metrosAcerto: 80,
+      custoMetroLinearRod: 0.8,
+      rodagemMinima: 1, // baixo de propósito, pro piso não mascarar o efeito
+      perdaPercentPadrao: 0.05,
+      numeroEstacoesCores: 6,
+    });
+    const pedido = pedidoFlexoValido({ larguraM: 0.1, alturaM: 0.05, quantidade: 50_000, numeroCores: 1 });
+
+    const resultado = calcularFlexografia(pedido, contexto, params);
+
+    expect(resultado.nUp).toBe(3); // bobina A vence a imposição
+
+    // Custo-base de cada candidato, pra provar a inversão de critério:
+    //   A: material R$9.807,39 + rodagem R$4.264,08 = R$14.071,47
+    //   B: material R$9.546,00 (mais barato — critério antigo escolheria B)
+    //      + rodagem R$6.364,00 = R$15.910,00 (mais caro no TOTAL)
+    // O motor precisa escolher A (o total menor), não B (o material menor).
+    expect(resultado.bobinaEscolhida.id).toBe("bobina-A-0.46");
+    expect(resultado.custoMaterial.toNumber()).toBeCloseTo(9807.39, 1);
+    expect(resultado.custoRodagem.toNumber()).toBeCloseTo(4264.08, 1);
+    const custoBaseSemSetup = resultado.custoMaterial.plus(resultado.custoRodagem);
+    expect(custoBaseSemSetup.toNumber()).toBeCloseTo(14071.47, 1);
+    // ... e R$1.838,53 mais barato que se tivesse escolhido B (R$15.910,00).
+    expect(15_910 - custoBaseSemSetup.toNumber()).toBeCloseTo(1838.53, 1);
   });
 });
 

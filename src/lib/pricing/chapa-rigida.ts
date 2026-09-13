@@ -35,10 +35,22 @@ export type ResultadoChapaRigida = {
 // Reaproveita a MESMA geometria de imposicao 2D do Offset/Digital
 // (calcularImposicao, src/lib/pricing/imposicao.ts) sobre FormatoFolha do
 // PRODUTO (mesma relacao ja usada pelo Offset, so passa a ser lida tambem
-// pra este modelo -- ver carregarContextoPrecificacao). Igual ao Digital
-// (nao ao Offset): o preco por chapa e FIXO (nao varia por peso/gramatura),
-// entao maximizar nUp ja minimiza direto o numero de chapas e, portanto, o
-// custo total -- o criterio de escolha e "maior nUp", nao "menor custo".
+// pra este modelo -- ver carregarContextoPrecificacao).
+//
+// Achado A3 da auditoria do motor de preco (2026-09-13) -- ANTES, o motor
+// aceitava varios FormatoFolha no mesmo produto e escolhia sempre o de
+// MAIOR nUp (mais pecas por chapa), mas contexto.precoPorChapa e um preco
+// FIXO de UM registro so (ItemGrafica.chapaId), sem vinculo nenhum com QUAL
+// formato -- cadastro real (ex: "Placa ACM 4mm" em 1,00x2,00 E 1,22x2,44,
+// precos diferentes) saia com numero errado nas duas leituras possiveis.
+// AGORA: salvarConfiguracaoProduto (catalogo/[itemGraficaId]/actions.ts)
+// exige EXATAMENTE 1 FormatoFolha por produto CHAPA_RIGIDA -- mesmo padrao
+// ja documentado no schema (ItemGrafica.chapaId): uma grafica que vende a
+// mesma chapa em tamanho/preco diferente cadastra outro PRODUTO, nao um
+// segundo formato no mesmo. O loop abaixo continua escrito pra "achar o
+// melhor entre candidatos" (validarPedidoChapaRigida rejeita mais de 1 como
+// defesa em profundidade), mas na pratica so ha 1 candidato -- nao ha mais
+// "escolha" nenhuma, so validacao de que a peca cabe no formato cadastrado.
 //
 // pinca (margem de garra de prensa OFFSET) nao existe fisicamente numa
 // chapa rigida cortada -- chamamos calcularImposicao sempre com pinca=0,

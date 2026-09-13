@@ -74,10 +74,28 @@ export type ItemAcabamentoCalculado = {
   custo: Dec;
 };
 
+// Achado B6 da auditoria do motor de preço (2026-09-13) — ctx.horasEstimadas
+// é UM número por ITEM, não por acabamento (ver ContextoAcabamento em
+// tipos.ts). Com 2+ configs de baseCobranca=HORA no mesmo item, calcularQtdBase
+// devolveria o MESMO ctx.horasEstimadas pras duas — cobrando a mesma
+// estimativa duas vezes (ex: "Instalação" R$50/h + "Criação de arte" R$80/h,
+// 4h estimadas só pra uma delas, cobradas nas duas = R$520 em vez do real).
+// orcamento-precificacao.ts já bloqueia essa combinação na camada de
+// aplicação — esta é a defesa em profundidade do motor puro, pro caso de
+// alguém chamar precificar()/calcularAcabamentos direto sem passar por lá.
 export function calcularAcabamentos(
   configs: ConfigAcabamento[],
   ctx: ContextoAcabamento
 ): { itens: ItemAcabamentoCalculado[]; total: Dec } {
+  const configsHora = configs.filter((c) => c.baseCobranca === "HORA");
+  if (configsHora.length > 1) {
+    throw new ErroPrecificacao(
+      "ACABAMENTOS_HORA_AMBIGUOS",
+      `Este item tem ${configsHora.length} acabamentos cobrados por hora (${configsHora.map((c) => c.nome).join(", ")}) — a estimativa de horas é única por item, o motor não sabe dividir entre eles.`,
+      { acabamentos: configsHora.map((c) => c.nome) }
+    );
+  }
+
   const itens = configs.map((config) => ({
     itemGraficaId: config.itemGraficaId,
     nome: config.nome,

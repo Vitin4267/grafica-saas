@@ -19,6 +19,7 @@ import { ConfiguracaoClicheEtiquetaForm } from "./ConfiguracaoClicheEtiquetaForm
 import { ConfiguracaoEmendaForm } from "./ConfiguracaoEmendaForm";
 import { FichaTecnicaForm } from "./FichaTecnicaForm";
 import { TabelaGramaturaForm } from "./TabelaGramaturaForm";
+import { FormatosFolhaPapelForm } from "./FormatosFolhaPapelForm";
 import { VariantesMateriaPrimaForm } from "./VariantesMateriaPrimaForm";
 import { NcmForm } from "./NcmForm";
 import { LancarMovimentacaoForm } from "./LancarMovimentacaoForm";
@@ -498,13 +499,23 @@ export default async function ConfiguracaoItemPage({
         ) : itemGrafica.itemCatalogo.tipo === "MATERIA_PRIMA" ? (
           <div className="flex flex-col gap-6">
             {itemGrafica.itemCatalogo.categoria === "Papéis" ? (
-              <TabelaGramaturaForm
-                itemGraficaId={itemGrafica.id}
-                linhasIniciais={itemGrafica.tabelaPrecoPapel.map((l) => ({
-                  gramatura: l.gramatura.toString(),
-                  precoKg: l.precoKg.toString(),
-                }))}
-              />
+              <>
+                <TabelaGramaturaForm
+                  itemGraficaId={itemGrafica.id}
+                  linhasIniciais={itemGrafica.tabelaPrecoPapel.map((l) => ({
+                    gramatura: l.gramatura.toString(),
+                    precoKg: l.precoKg.toString(),
+                  }))}
+                />
+                <FormatosFolhaPapelForm
+                  itemGraficaId={itemGrafica.id}
+                  linhasIniciais={itemGrafica.formatosFolha.map((f) => ({
+                    nome: f.nome,
+                    larguraFolha: f.larguraFolha.toString(),
+                    alturaFolha: f.alturaFolha.toString(),
+                  }))}
+                />
+              </>
             ) : (
               <VariantesMateriaPrimaForm
                 itemGraficaId={itemGrafica.id}

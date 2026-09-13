@@ -14,9 +14,10 @@ vi.mock("next/cache", () => ({
   unstable_cache: (fn: unknown) => fn,
 }));
 
-vi.mock("@/lib/auth/session", () => ({
-  exigirUsuarioAutenticado: vi.fn(),
-}));
+vi.mock("@/lib/auth/session", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/auth/session")>();
+  return { ...real, exigirUsuarioAutenticado: vi.fn() };
+});
 vi.mock("@/lib/auth/email-verificacao", () => ({
   exigirEmailVerificado: vi.fn(async () => {}),
 }));
@@ -143,6 +144,43 @@ describe("achado A12 da Parte 4 — RegraComissao (resolução por especificidad
       expect(comissao.representanteNome).toBeNull();
       expect(Number(comissao.percentualAplicado)).toBeCloseTo(0.1, 4);
       expect(Number(comissao.valorComissao)).toBeCloseTo(100, 2); // 10% de 1000, igual Usuario.comissaoPercent
+    },
+    TIMEOUT_MS
+  );
+
+  // Achado N27 da auditoria de código (2026-09-12) — cenário exato da
+  // auditoria: vendedor com taxa individual cadastrada há meses; o dono
+  // cria uma "regra geral" (nenhum filtro preenchido) pra cobrir
+  // representantes externos. ANTES, essa regra vencia sobre
+  // Usuario.comissaoPercent pra QUALQUER vendedor, inclusive os que já
+  // tinham taxa própria — sem aviso nenhum.
+  it(
+    "regra coringa (nenhum filtro preenchido) NÃO sobrescreve a taxa pessoal de um vendedor já cadastrado (achado N27)",
+    async () => {
+      const f = await criarFixtureBase();
+      await prisma.regraComissao.create({
+        data: { graficaId: f.grafica.id, percentual: 0.05 }, // regra geral, sem nenhum filtro
+      });
+      const orcamento = await criarOrcamento({
+        graficaId: f.grafica.id,
+        clienteId: f.cliente.id,
+        usuarioId: f.vendedor.id,
+        itemGraficaId: f.itemGrafica.id,
+      });
+      vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(
+        (await prisma.usuario.findUniqueOrThrow({ where: { id: f.vendedor.id } })) as never
+      );
+
+      const resultado = await atualizarStatusOrcamento(
+        null,
+        formDataDe({ orcamentoId: orcamento.id, novoStatus: "APROVADO" })
+      );
+      expect(resultado.ok).toBe(true);
+
+      const comissao = await prisma.comissao.findUniqueOrThrow({ where: { orcamentoId: orcamento.id } });
+      // 10% (Usuario.comissaoPercent), NÃO 5% (a regra coringa).
+      expect(Number(comissao.percentualAplicado)).toBeCloseTo(0.1, 4);
+      expect(Number(comissao.valorComissao)).toBeCloseTo(100, 2);
     },
     TIMEOUT_MS
   );

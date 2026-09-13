@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { calcularPrevisaoAprovacaoPedido } from "./pedido-aprovacao";
 
@@ -9,10 +9,37 @@ import { calcularPrevisaoAprovacaoPedido } from "./pedido-aprovacao";
 // anexados como acabamento, usando OrcamentoItemAcabamento.qtdBase como
 // multiplicador em vez de item.quantidade. calcularPrevisaoAprovacaoPedido
 // não exige sessão autenticada (não lê cookies), então é chamada direto,
-// sem precisar simular login.
+// sem precisar simular login — os mocks abaixo (next/cache, auth) só
+// existem pro describe do achado B9, que precisa de adicionarItemOrcamento
+// (uma Server Action) pra gerar um breakdown REAL do motor de precificação.
 const TIMEOUT_MS = 30_000;
 
+vi.mock("next/cache", () => ({
+  revalidatePath: vi.fn(),
+  revalidateTag: vi.fn(),
+  updateTag: vi.fn(),
+  unstable_cache: (fn: unknown) => fn,
+}));
+vi.mock("@/lib/auth/session", () => ({
+  exigirUsuarioAutenticado: vi.fn(),
+}));
+vi.mock("@/lib/auth/email-verificacao", () => ({
+  exigirEmailVerificado: vi.fn(async () => {}),
+}));
+vi.mock("@/lib/auth/assinatura", () => ({
+  exigirAssinaturaAtiva: vi.fn(async () => {}),
+}));
+
+import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { adicionarItemOrcamento } from "@/app/orcamento/[id]/actions/itens";
+
 const sufixo = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+function formDataDe(campos: Record<string, string>): FormData {
+  const fd = new FormData();
+  for (const [chave, valor] of Object.entries(campos)) fd.set(chave, valor);
+  return fd;
+}
 
 const graficaIdsParaLimpar: string[] = [];
 
@@ -21,7 +48,10 @@ afterEach(async () => {
     await prisma.orcamentoItem.deleteMany({ where: { orcamento: { graficaId } } });
     await prisma.orcamento.deleteMany({ where: { graficaId } });
     await prisma.fichaTecnicaItem.deleteMany({ where: { itemGrafica: { graficaId } } });
+    // itemGrafica ANTES de maquinaSetupPorPeca (FK RESTRICT, mesma ordem de
+    // src/app/orcamento/[id]/actions/faixas.test.ts).
     await prisma.itemGrafica.deleteMany({ where: { graficaId } });
+    await prisma.maquinaSetupPorPeca.deleteMany({ where: { graficaId } });
     await prisma.itemCatalogo.deleteMany({ where: { graficaId } });
     await prisma.categoriaCusto.deleteMany({ where: { graficaId } });
     await prisma.cliente.deleteMany({ where: { graficaId } });
@@ -29,6 +59,7 @@ afterEach(async () => {
     await prisma.grafica.delete({ where: { id: graficaId } }).catch(() => {});
   }
   graficaIdsParaLimpar.length = 0;
+  vi.mocked(exigirUsuarioAutenticado).mockReset();
 }, TIMEOUT_MS);
 
 describe("previsão de custo soma a ficha técnica dos acabamentos anexados", () => {
@@ -203,6 +234,87 @@ describe("previsão de custo soma a ficha técnica dos acabamentos anexados", ()
       expect(previsao.itensSemPrevisao).toHaveLength(0);
       expect(previsao.linhas).toHaveLength(1);
       expect(Number(previsao.linhas[0].valor)).toBeCloseTo(2 * 10 * precoCompraPapel, 2);
+    },
+    TIMEOUT_MS
+  );
+});
+
+describe("achado B9 da auditoria do motor de preço (2026-09-13): SERIGRAFIA separa peça em branco (material) de serviço (impressão) na previsão de custo", () => {
+  it(
+    "custoSubstrato (peça em branco) vai pra categoria do PRODUTO; setup+variável vai pra categoria 'Impressão' — não tudo junto",
+    async () => {
+      const s = sufixo();
+      const grafica = await prisma.grafica.create({
+        data: { nome: `Teste Previsão B9 ${s}`, slug: `teste-previsao-b9-${s}` },
+      });
+      graficaIdsParaLimpar.push(grafica.id);
+      const cliente = await prisma.cliente.create({ data: { graficaId: grafica.id, nome: `Cliente ${s}` } });
+      const usuario = await prisma.usuario.create({
+        data: { graficaId: grafica.id, nome: `Usuário ${s}`, email: `teste-previsao-b9-${s}@example.com`, senhaHash: "x", papel: "DONO" },
+      });
+
+      // Duas categorias DISTINTAS — antes da correção, tudo (peça em branco
+      // + serviço) caía junto em "Impressão"; depois, a peça em branco
+      // (custoSubstrato) tem que aparecer na categoria do PRODUTO.
+      const categoriaPecaEmBranco = await prisma.categoriaCusto.create({
+        data: { graficaId: grafica.id, nome: `Camiseta em branco ${s}` },
+      });
+      await prisma.categoriaCusto.create({ data: { graficaId: grafica.id, nome: "Impressão" } });
+
+      const maquina = await prisma.maquinaSetupPorPeca.create({
+        data: {
+          graficaId: grafica.id,
+          nome: `Carrossel 6 cores ${s}`,
+          tipoProcesso: "SERIGRAFIA",
+          custoPorSetup: 40,
+          custoPorPeca: 2,
+          custoMinimo: 0,
+        },
+      });
+      const catalogo = await prisma.itemCatalogo.create({
+        data: { graficaId: grafica.id, tipo: "PRODUTO", categoria: "Camiseta", nome: `Camiseta Serigrafia ${s}` },
+      });
+      const produto = await prisma.itemGrafica.create({
+        data: {
+          graficaId: grafica.id,
+          itemCatalogoId: catalogo.id,
+          modeloCalculo: "SERIGRAFIA",
+          precoCompra: 25, // camiseta em branco — custoSubstratoPorPeca
+          precoVenda: 999,
+          maquinaSetupPorPecaId: maquina.id,
+          categoriaCustoId: categoriaPecaEmBranco.id,
+        },
+      });
+      const orcamento = await prisma.orcamento.create({
+        data: { graficaId: grafica.id, clienteId: cliente.id, usuarioId: usuario.id, status: "RASCUNHO", total: 0 },
+      });
+
+      vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(usuario as never);
+      const resultado = await adicionarItemOrcamento(
+        null,
+        formDataDe({
+          orcamentoId: orcamento.id,
+          itemGraficaId: produto.id,
+          quantidade: "5",
+          unidadeDimensao: "CM",
+          numeroSetups: "1",
+        })
+      );
+      expect(resultado.ok).toBe(true);
+
+      const previsao = await calcularPrevisaoAprovacaoPedido(orcamento.id, grafica.id);
+
+      expect(previsao.itensSemPrevisao).toHaveLength(0);
+      // custoSetup=1×40=40, custoVariavel=5×2=10, custoSubstrato=5×25=125.
+      const linhaPecaEmBranco = previsao.linhas.find((l) => l.categoriaCustoId === categoriaPecaEmBranco.id);
+      expect(linhaPecaEmBranco).toBeDefined();
+      expect(Number(linhaPecaEmBranco!.valor)).toBeCloseTo(125, 2);
+
+      const linhaImpressao = previsao.linhas.find((l) => l.categoriaCustoId !== categoriaPecaEmBranco.id);
+      expect(linhaImpressao).toBeDefined();
+      // ANTES da correção, esta linha seria 175 (40+10+125 — tudo junto em
+      // "impressão", incluindo a peça em branco).
+      expect(Number(linhaImpressao!.valor)).toBeCloseTo(50, 2);
     },
     TIMEOUT_MS
   );

@@ -78,6 +78,26 @@ export function CronogramaEntregaForm({
         </p>
       )}
 
+      {/* Achado N29 da auditoria de código (2026-09-12) — este cronograma foi
+          salvo quando o orçamento vendia mais unidades do que vende agora
+          (alguém reduziu a quantidade de um item depois). quantidadeTotalOrcamento
+          já vem recalculado AO VIVO do Server Component (nunca um snapshot
+          antigo) — quando faltam < 0, a soma do cronograma ultrapassa o
+          vendido atual. O PDF/link público já omitem o cronograma inteiro
+          nesse estado (ver src/lib/pdf/mapear-dados.ts e
+          src/app/o/[token]/page.tsx) — este aviso é pro vendedor corrigir
+          aqui antes de reenviar. */}
+      {faltam < 0 && (
+        <div className="mb-3">
+          <Alert variant="warning">
+            Este cronograma soma {soma.toLocaleString("pt-BR")} unidades, mas o orçamento agora vende só{" "}
+            {quantidadeTotalOrcamento.toLocaleString("pt-BR")} — a quantidade de algum item foi reduzida
+            depois do cronograma ter sido montado. Ajuste as linhas abaixo antes de enviar pro cliente; o
+            PDF e o link público não mostram este cronograma enquanto ele estiver acima do vendido.
+          </Alert>
+        </div>
+      )}
+
       {linhas.length > 0 && (
         <ul className="mb-3 flex flex-col gap-2">
           {linhas.map((linha) =>

@@ -66,7 +66,17 @@ describe("resolverRegraComissao", () => {
     expect(resolverRegraComissao(regras, { usuarioId: "u1" })).toBeNull();
   });
 
-  it("regra coringa (todo filtro null) bate com qualquer contexto", () => {
+  // Achado N27 da auditoria de código (2026-09-12) — ANTES, uma regra
+  // coringa (especificidade 0) vencia sobre QUALQUER contexto, inclusive
+  // sobre o fallback de Usuario.comissaoPercent de um vendedor cadastrado
+  // (cenário real: 3 vendedores com taxa individual cadastrada há meses; o
+  // dono cria uma "regra geral de 5%" pra cobrir representantes externos —
+  // os 3 cadastrados passavam a receber 5% sem aviso nenhum). Uma regra sem
+  // NENHUM filtro não está de fato mirando em nada específico — não conta
+  // como match válido; Usuario.comissaoPercent (vendedor cadastrado) e
+  // comissaoRepresentanteSemCadastroPercent (opt-in explícito, vendedor sem
+  // cadastro) são o jeito certo de configurar um padrão.
+  it("regra coringa (todo filtro null, especificidade 0) NUNCA bate — não é match válido (achado N27)", () => {
     const regras = [regra({ id: "coringa" })];
     const resolvida = resolverRegraComissao(regras, {
       usuarioId: "u1",
@@ -74,7 +84,13 @@ describe("resolverRegraComissao", () => {
       tipoItem: "Cartão",
       margemPercent: 0.5,
     });
-    expect(resolvida?.id).toBe("coringa");
+    expect(resolvida).toBeNull();
+  });
+
+  it("regra coringa também não bate pra vendedor sem cadastro — não fura o opt-in de comissaoRepresentanteSemCadastroPercent (achado N27)", () => {
+    const regras = [regra({ id: "coringa", percentual: 0.05 })];
+    const resolvida = resolverRegraComissao(regras, { usuarioId: null });
+    expect(resolvida).toBeNull();
   });
 
   it("regra mais específica (usuário + item) vence a genérica (só usuário) quando as duas batem", () => {

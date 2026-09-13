@@ -117,7 +117,23 @@ export function resolverRegraComissao(
   regras: RegraComissaoCandidata[],
   contexto: ContextoResolucaoComissao
 ): RegraComissaoCandidata | null {
-  const candidatas = regras.filter((regra) => regraBateComContexto(regra, contexto));
+  // Achado N27 da auditoria de código (2026-09-12) — uma regra com
+  // especificidade 0 (NENHUM filtro preenchido) "bate" com QUALQUER venda,
+  // então sempre vencia sobre Usuario.comissaoPercent (o fallback de sempre
+  // pra vendedor cadastrado) e sobre comissaoRepresentanteSemCadastroPercent
+  // (o opt-in específico pra vendedor SEM cadastro). Cenário real: 3
+  // vendedores com 3%/5%/8% cadastrados há meses; o dono cria uma "regra
+  // geral de 5%" pra cobrir representantes externos — os 3 cadastrados
+  // passam a receber 5% sem aviso, e o opt-in de vendedor sem cadastro é
+  // furado mesmo com comissaoRepresentanteSemCadastroPercent ainda null.
+  // Uma regra sem NENHUM filtro não está de fato "mirando" em nada
+  // específico — não conta como match válido; os dois fallbacks já
+  // existentes (Usuario.comissaoPercent e o opt-in) são o jeito certo de
+  // configurar um padrão, individual por vendedor cadastrado ou explícito
+  // pra vendedor sem cadastro.
+  const candidatas = regras.filter(
+    (regra) => especificidadeRegra(regra) > 0 && regraBateComContexto(regra, contexto)
+  );
   if (candidatas.length === 0) return null;
 
   let melhor = candidatas[0];

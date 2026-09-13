@@ -148,6 +148,11 @@ export async function carregarParametrosMaquinaBordado(
     custoPorMilPontos: Number(registro.custoPorMilPontos),
     custoMatrizDigitalizacao: Number(registro.custoMatrizDigitalizacao),
     custoMinimo: Number(registro.custoMinimo ?? 0),
+    // Achado B1 — undefined (não 0) quando a máquina não tem o campo
+    // preenchido, pra calcularBordado saber diferenciar "sem custo de hora"
+    // de "custo de hora zero".
+    custoHoraMaq: registro.custoHoraMaq !== null ? Number(registro.custoHoraMaq) : undefined,
+    velocidadePontosPorMinuto: registro.velocidadePontosPorMinuto ?? undefined,
   };
 }
 
@@ -592,6 +597,13 @@ export async function carregarContextoPrecificacao(
       custoImpressaoM2: Number(item.custoImpressaoM2Editorial ?? 0),
       custoEncadernacaoPorPeca: Number(item.custoEncadernacaoPorPeca ?? 0),
       paginasPorCaderno: parametros.paginasPorCadernoPadrao ?? 16,
+      // Achado C2 — antes só precoKg era lido de resolverPrecoPapel, os
+      // outros dois campos (a gramatura REALMENTE usada e se veio exata ou
+      // por fallback) eram descartados aqui, para os dois papéis.
+      gramaturaBaseMiolo: precoMiolo.gramaturaBase,
+      origemPrecoPapelMiolo: precoMiolo.origem,
+      gramaturaBaseCapa: precoCapa.gramaturaBase,
+      origemPrecoPapelCapa: precoCapa.origem,
     };
   } else if (item.modeloCalculo === "CHAPA_RIGIDA") {
     // Achado A7 -- mesmo padrao de PRENSA_NAO_CONFIGURADA/PAPEL_NAO_
@@ -664,18 +676,42 @@ export async function resolverConfigAcabamentos(
       );
     }
 
+    const custoUnitario = Number(item.precoCompra ?? 0);
+    const custoSetup = Number(item.configuracaoAcabamento.custoSetup);
+    const custoMinimo = Number(item.configuracaoAcabamento.custoMinimo);
+    const custoFerramental =
+      item.configuracaoAcabamento.custoFerramental !== null
+        ? Number(item.configuracaoAcabamento.custoFerramental)
+        : 0;
+
+    // Achado B3 da auditoria do motor de preço (2026-09-13) — este era o
+    // único custo do motor sem essa trava (todo motor irmão — M2, Offset,
+    // Digital, Revenda, Bordado, Chapa — rejeita CUSTO_INVALIDO quando o
+    // custo de material é <= 0). `precoCompra` nunca preenchido colapsava
+    // pra 0 em silêncio, e um acabamento com setup/mínimo/ferramental
+    // também zerados saía do motor custando R$0,00 — mas ainda aparecia no
+    // PDF como "incluído". Só bloqueia quando as QUATRO fontes de custo
+    // possíveis estão zeradas ao mesmo tempo: um acabamento com só
+    // custoSetup preenchido (taxa fixa, sem cobrança por unidade) ou só
+    // custoMinimo (piso do job) continua legítimo — não força
+    // custoUnitario > 0 pra todo mundo, só recusa "sem custo nenhum".
+    if (custoUnitario <= 0 && custoSetup <= 0 && custoMinimo <= 0 && custoFerramental <= 0) {
+      throw new ErroPrecificacao(
+        "CUSTO_INVALIDO",
+        `Acabamento "${item.itemCatalogo.nome}" está sem nenhum custo configurado (preço de compra, setup, mínimo e ferramental todos vazios/zerados) — configure ao menos um em Catálogo antes de usar.`,
+        { itemGraficaId: item.id }
+      );
+    }
+
     return {
       itemGraficaId: item.id,
       nome: item.itemCatalogo.nome,
       baseCobranca: item.configuracaoAcabamento.baseCobranca,
       estagio: item.configuracaoAcabamento.estagio,
-      custoUnitario: Number(item.precoCompra ?? 0),
-      custoSetup: Number(item.configuracaoAcabamento.custoSetup),
-      custoMinimo: Number(item.configuracaoAcabamento.custoMinimo),
-      custoFerramental:
-        item.configuracaoAcabamento.custoFerramental !== null
-          ? Number(item.configuracaoAcabamento.custoFerramental)
-          : null,
+      custoUnitario,
+      custoSetup,
+      custoMinimo,
+      custoFerramental: item.configuracaoAcabamento.custoFerramental !== null ? custoFerramental : null,
     };
   });
 }

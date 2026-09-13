@@ -439,15 +439,16 @@ export function ParametrosForm({
               Quantas páginas compõem um caderno (signature) do miolo — o
               motor sempre arredonda o número de páginas pra cima pro próximo
               múltiplo desse valor. 16 é o mais comum no Brasil, mas 8 e 32
-              também são usados dependendo do formato.
+              também são usados dependendo do formato. Sempre um múltiplo de
+              4 (é sempre uma folha física dobrada — nunca 2, 6, 10...).
             </p>
           </div>
           <Input
             label="Páginas por caderno"
             name="paginasPorCadernoPadrao"
             type="number"
-            step="1"
-            min="1"
+            step="4"
+            min="4"
             defaultValue={paginasPorCadernoPadrao}
             className="max-w-xs"
           />

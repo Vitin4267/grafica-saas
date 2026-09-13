@@ -322,8 +322,10 @@ describe("golden #7 — camiseta serigrafia Q=200/2 telas: setup fixo + variáve
       viraFolha: false,
       parametros: PARAMS,
       // custoSubstratoPorPeca=0 — este golden cobre só setup+variável, o
-      // achado A2 (substrato) tem golden dedicado logo abaixo.
-      setupPorPeca: { custoSubstratoPorPeca: 0 },
+      // achado A2 (substrato) tem golden dedicado logo abaixo. Achado B10
+      // (2026-09-13): 0 sozinho agora exige materialFornecidoPeloCliente,
+      // senão CUSTO_INVALIDO — mesma trava de Digital/Bordado.
+      setupPorPeca: { custoSubstratoPorPeca: 0, materialFornecidoPeloCliente: true },
       parametrosMaquinaSetupPorPeca: { custoPorSetup: 80, custoPorPeca: 3.5, custoMinimo: 150 },
       maquinaSetupPorPecaUsada: { id: "carrossel-1", nome: "Carrossel 6 cores" },
     };
@@ -356,7 +358,8 @@ describe("golden #7 — camiseta serigrafia Q=200/2 telas: setup fixo + variáve
       modeloCalculo: "SERIGRAFIA",
       viraFolha: false,
       parametros: PARAMS,
-      setupPorPeca: { custoSubstratoPorPeca: 0 },
+      // Achado B10 (2026-09-13): idem golden anterior — flag necessária.
+      setupPorPeca: { custoSubstratoPorPeca: 0, materialFornecidoPeloCliente: true },
       parametrosMaquinaSetupPorPeca: { custoPorSetup: 5, custoPorPeca: 0.1, custoMinimo: 150 },
     };
 
@@ -395,10 +398,14 @@ describe("golden #7 — camiseta serigrafia Q=200/2 telas: setup fixo + variáve
     const resultado = precificar(pedido, contexto);
 
     // custoSetup = 1×80 = 80; custoVariavel = 10×3,5 = 35; custoSubstrato =
-    // 10×15 = 150 (era R$0 antes do fix) -> soma = 265, acima do
-    // custoMinimo de 150 -> custoBase = 265.
+    // 10×15 = 150 (era R$0 antes do fix A2). Achado B4 (2026-09-13): o piso
+    // custoMinimo=150 compara só contra o SERVIÇO (80+35=115 < 150 -> piso
+    // age: max(150,115)=150), e o substrato soma DEPOIS, sempre por fora ->
+    // custoBase = 150 + 150 = 300 (não 265 — essa era a soma direta que
+    // deixava o piso inerte sempre que o substrato empurrava o total pra
+    // cima sozinho).
     expect(resultado.metricas.custoSubstrato as number).toBeCloseTo(150, 6);
-    expect(resultado.detalhes.material.toNumber()).toBeCloseTo(265, 6);
+    expect(resultado.detalhes.material.toNumber()).toBeCloseTo(300, 6);
   });
 });
 

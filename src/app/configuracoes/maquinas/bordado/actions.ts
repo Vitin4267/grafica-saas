@@ -105,6 +105,28 @@ export async function salvarMaquinaBordado(
   if (custoHoraMaq !== null && (!Number.isFinite(custoHoraMaq) || custoHoraMaq < 0)) {
     return { ok: false, mensagem: 'Valor inválido em "Custo por hora de máquina".' };
   }
+  // Achado B1 da auditoria do motor de preço (2026-09-13) — custoHoraMaq
+  // (R$/h) só vira custo real com a velocidade da máquina (pontos/min) pra
+  // converter em tempo (ver calcularBordado). Os dois andam juntos: sem
+  // essa trava, um custoHoraMaq preenchido sem velocidade repete em
+  // silêncio o bug que esta correção fechou.
+  const velocidadePontosPorMinutoRaw = formData.get("velocidadePontosPorMinuto");
+  const velocidadePontosPorMinuto = velocidadePontosPorMinutoRaw
+    ? Number(velocidadePontosPorMinutoRaw)
+    : null;
+  if (
+    velocidadePontosPorMinuto !== null &&
+    (!Number.isInteger(velocidadePontosPorMinuto) || velocidadePontosPorMinuto < 1)
+  ) {
+    return { ok: false, mensagem: 'Valor inválido em "Velocidade (pontos/minuto)" — precisa ser um inteiro maior ou igual a 1.' };
+  }
+  if ((custoHoraMaq !== null) !== (velocidadePontosPorMinuto !== null)) {
+    return {
+      ok: false,
+      mensagem:
+        'Preencha "Custo por hora de máquina" e "Velocidade (pontos/minuto)" juntos, ou deixe os dois em branco — um sem o outro não tem como virar custo.',
+    };
+  }
   const custoMinimoRaw = formData.get("custoMinimo");
   const custoMinimo = custoMinimoRaw ? Number(custoMinimoRaw) : null;
   if (custoMinimo !== null && (!Number.isFinite(custoMinimo) || custoMinimo < 0)) {
@@ -121,6 +143,7 @@ export async function salvarMaquinaBordado(
         custoMatrizDigitalizacao,
         cabecas,
         custoHoraMaq,
+        velocidadePontosPorMinuto,
         custoMinimo,
       },
     });
@@ -145,6 +168,11 @@ export async function salvarMaquinaBordado(
     "Custo por hora de máquina",
     maquina.custoHoraMaq !== null ? Number(maquina.custoHoraMaq) : null,
     custoHoraMaq
+  );
+  diff.campo(
+    "Velocidade (pontos/minuto)",
+    maquina.velocidadePontosPorMinuto,
+    velocidadePontosPorMinuto
   );
   diff.campo("Custo mínimo do job", maquina.custoMinimo !== null ? Number(maquina.custoMinimo) : null, custoMinimo);
   if (diff.temMudanca) {

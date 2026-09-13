@@ -240,6 +240,88 @@ describe("adicionarFaixaQuantidadeOrcamento / removerFaixaQuantidadeOrcamento", 
   );
 
   it(
+    "achado B2 da auditoria do motor de preço (2026-09-13): TEMPO_MAQUINA — faixa com quantidade maior ESCALA tempoEstimadoMin, não reaproveita o mesmo valor absoluto",
+    async () => {
+      const s = sufixo();
+      const grafica = await prisma.grafica.create({
+        data: { nome: `Teste Faixas Tempo Maquina ${s}`, slug: `teste-faixas-tempo-maquina-${s}` },
+      });
+      graficaIdsParaLimpar.push(grafica.id);
+      const cliente = await prisma.cliente.create({ data: { graficaId: grafica.id, nome: `Cliente ${s}` } });
+      const usuarioDono = await prisma.usuario.create({
+        data: {
+          graficaId: grafica.id,
+          nome: `Dono ${s}`,
+          email: `dono-faixas-tempo-${s}@example.com`,
+          senhaHash: "x",
+          papel: "DONO",
+        },
+      });
+      // Mesmo cenário numérico da auditoria: placa de acrílico em router, 50
+      // peças, 200 min, R$120/h + R$50 de setup → custoBase R$450. ANTES,
+      // uma faixa de "200 unidades" devolvia os MESMOS R$450 (tempo não
+      // escalava) — o achado B2 corrige isso escalando tempoEstimadoMin
+      // proporcionalmente: 200 peças → 800 min → custoBase R$1.650.
+      const maquina = await prisma.maquinaTempo.create({
+        data: {
+          graficaId: grafica.id,
+          nome: `Router CNC ${s}`,
+          custoHoraMaq: 120,
+          custoSetupPorJob: 50,
+        },
+      });
+      const catalogo = await prisma.itemCatalogo.create({
+        data: { graficaId: grafica.id, tipo: "PRODUTO", categoria: "Placa", nome: `Placa Acrílico ${s}` },
+      });
+      const produto = await prisma.itemGrafica.create({
+        data: {
+          graficaId: grafica.id,
+          itemCatalogoId: catalogo.id,
+          modeloCalculo: "TEMPO_MAQUINA",
+          precoVenda: 999,
+          maquinaTempoId: maquina.id,
+        },
+      });
+      const orcamento = await prisma.orcamento.create({
+        data: { graficaId: grafica.id, clienteId: cliente.id, usuarioId: usuarioDono.id, status: "RASCUNHO", total: 0 },
+      });
+
+      vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(usuarioDono as never);
+      const itemResultado = await adicionarItemOrcamento(
+        null,
+        formDataDe({
+          orcamentoId: orcamento.id,
+          itemGraficaId: produto.id,
+          quantidade: "50",
+          unidadeDimensao: "CM",
+          tempoEstimadoMin: "200",
+        })
+      );
+      expect(itemResultado.ok).toBe(true);
+      const itemBase = await prisma.orcamentoItem.findFirstOrThrow({
+        where: { orcamentoId: orcamento.id, opcaoId: null },
+      });
+      const breakdownBase = itemBase.breakdown as { custoDireto: string } | null;
+      expect(Number(breakdownBase!.custoDireto)).toBeCloseTo(450, 6);
+
+      const faixaResultado = await adicionarFaixaQuantidadeOrcamento(
+        null,
+        formDataDe({ orcamentoItemId: itemBase.id, quantidade: "200" })
+      );
+      expect(faixaResultado.ok).toBe(true);
+
+      const faixa = await prisma.orcamentoItemFaixaQuantidade.findFirstOrThrow({
+        where: { orcamentoItemId: itemBase.id },
+      });
+      const breakdownFaixa = faixa.breakdown as { custoDireto: string } | null;
+      // 200 peças → tempoEstimadoMin escalado pra 800min → custoTempo =
+      // 800/60×120 = 1600 + custoSetupPorJob 50 = 1650 (NÃO R$450).
+      expect(Number(breakdownFaixa!.custoDireto)).toBeCloseTo(1650, 6);
+    },
+    TIMEOUT_MS
+  );
+
+  it(
     "rejeita quantidade inválida (zero, negativa, fracionária)",
     async () => {
       const fixture = await criarFixtureSimples();

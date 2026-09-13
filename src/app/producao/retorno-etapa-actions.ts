@@ -141,6 +141,29 @@ export async function retornarEtapa(
         operadorId: usuario.id,
         retorno: { motivoRetorno: motivo, motivoRetornoOutro: motivoOutro },
       });
+
+      // Achado N26 da auditoria de código (2026-09-12) — os dois gates de
+      // arte em avancarStatusPedido (status-transicao.ts:575 e :591) olham
+      // Pedido.arteAprovadaEm/ArteItem.aprovadaEm; retornarEtapa mandava o
+      // pedido de volta pra ARTE sem zerar nenhum dos dois, então a
+      // aprovação ANTIGA (da arte com erro) continuava valendo — o pedido
+      // saía de ARTE de novo no próximo clique, com a arte NOVA nunca vista
+      // pelo cliente, carimbada como aprovada por ele. Mesmo princípio que
+      // o Prod-D1 já aplica à aprovação de qualidade (amarrada ao
+      // ApontamentoEtapa da passagem ATUAL, "retrabalho não herda aprovação
+      // de rodada anterior") — só quando o motivo é literalmente "a arte
+      // estava errada" (retornos por outro motivo, ex: falha de máquina,
+      // não mexem numa arte que continua correta).
+      if (motivo === "ERRO_ARTE") {
+        await tx.pedido.update({
+          where: { id: pedido.id },
+          data: { arteAprovadaEm: null },
+        });
+        await tx.arteItem.updateMany({
+          where: { pedidoId: pedido.id },
+          data: { aprovadaEm: null },
+        });
+      }
     });
   } catch (erro) {
     if (erro instanceof ErroPedidoJaAlterado) {
