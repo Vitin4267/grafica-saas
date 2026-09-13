@@ -6,6 +6,8 @@ import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
+import { hashToken } from "@/lib/auth/session";
+import { cifrar, decifrarOuNull } from "@/lib/cripto";
 import { resolverOrigemPublica } from "@/lib/url-publica";
 import { gerarQrCodeDataUrl } from "@/lib/qr-code";
 import { slugify } from "@/lib/slug";
@@ -52,10 +54,17 @@ export async function GET(
   // (enviarArte) e producaoLinkToken (avancarStatusPedido). Reaproveitado em
   // downloads seguintes: reimprimir a etiqueta nunca invalida QRs já colados
   // em produtos físicos anteriores deste mesmo pedido.
-  let qrToken = pedido.qrToken;
+  // Achado da auditoria de segurança (2026-09-13) — decifra o existente pra
+  // reaproveitar (mesmo comportamento preguiçoso de sempre — reimprimir
+  // nunca pode invalidar QR já colado em produto físico), grava hash+cifra
+  // quando gera um novo (ver comentário de Pedido.qrTokenHash no schema).
+  let qrToken = decifrarOuNull(pedido.qrTokenCifrado);
   if (!qrToken) {
     qrToken = randomBytes(20).toString("base64url");
-    await prisma.pedido.update({ where: { id: pedido.id }, data: { qrToken } });
+    await prisma.pedido.update({
+      where: { id: pedido.id },
+      data: { qrTokenHash: hashToken(qrToken), qrTokenCifrado: cifrar(qrToken) },
+    });
   }
 
   const origem = await resolverOrigemPublica();

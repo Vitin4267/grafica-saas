@@ -1,4 +1,5 @@
 import type { Prisma } from "@/generated/prisma/client";
+import type { PrismaTransactionClient } from "@/lib/prisma";
 import type { ModeloCalculo, UnidadeMedida } from "@/generated/prisma/enums";
 import { D } from "@/lib/pricing/decimal";
 import { calcularQuantidadeConsumidaFichaProduto } from "@/lib/baixa-estoque-substrato";
@@ -71,7 +72,7 @@ export type ResultadoPreProducao = {
 // `itemGrafica` (tenant + tipo=PRODUTO) FORA da transação, mesmo padrão de
 // buscarOrcamentoParaBaixa/avancarStatusPedido — mantém a transação curta.
 export async function producirEstoqueEspeculativo(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   params: {
     itemGrafica: ItemGraficaParaPreProducao;
     quantidade: number;

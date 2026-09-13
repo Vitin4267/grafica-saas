@@ -135,7 +135,7 @@ function pedidoParaAvanco(f: Fixture): PedidoParaAvanco {
     status: "CLICHE_FACA",
     arteUrl: null,
     arteAprovadaEm: null,
-    producaoLinkToken: null,
+    producaoLinkTokenCifrado: null,
     orcamento: {
       clienteId: "cliente-teste",
       condicaoPagamentoId: null,

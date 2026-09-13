@@ -1,13 +1,13 @@
 import "server-only";
 import { Prisma } from "@/generated/prisma/client";
-import type { prisma } from "@/lib/prisma";
+import type { prisma, PrismaTransactionClient } from "@/lib/prisma";
 import { D, paraDecimal, type Dec } from "@/lib/pricing/decimal";
 
 // Mesmo padrão de src/lib/billing/armazenamento.ts (ClientePrisma): as
 // funções abaixo precisam rodar tanto fora de transação (leitura pra tela)
 // quanto DENTRO da transação de aprovação do orçamento (consumo), sem
 // duplicar a lógica pros dois casos.
-type ClientePrisma = typeof prisma | Prisma.TransactionClient;
+type ClientePrisma = typeof prisma | PrismaTransactionClient;
 
 // Sinal de cada tipo de movimentação na soma do saldo. AJUSTE não entra
 // aqui: o próprio valor já vem com o sinal certo (positivo ou negativo,
@@ -105,7 +105,7 @@ export async function lancarMovimentacaoManualCreditoCliente(
 // aqui dentro, nunca aceito de fora sem checagem: um valor vindo do form
 // só é um pedido, esta função é quem decide se cabe.
 export async function lancarConsumoCreditoCliente(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   params: { clienteId: string; orcamentoId: string; valor: Dec; criadoPorId: string }
 ): Promise<ResultadoMovimentacaoCredito> {
   if (params.valor.lte(0)) {

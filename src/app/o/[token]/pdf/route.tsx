@@ -3,6 +3,7 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import { prisma } from "@/lib/prisma";
 import { OrcamentoDocumento } from "@/lib/pdf/OrcamentoDocumento";
 import { mapearDadosPdf, nomeArquivoPdf } from "@/lib/pdf/mapear-dados";
+import { hashToken } from "@/lib/auth/session";
 
 export async function GET(
   _request: Request,
@@ -11,9 +12,10 @@ export async function GET(
   const { token } = await params;
 
   // Rota pública, sem exigirUsuarioAutenticado() — mesmo padrão de
-  // o/[token]/page.tsx: o token em si é a credencial.
+  // o/[token]/page.tsx: o token em si é a credencial. Hash do token (achado
+  // da auditoria de segurança 2026-09-13), nunca gravado em claro.
   const orcamento = await prisma.orcamento.findUnique({
-    where: { linkPublicoToken: token },
+    where: { linkPublicoTokenHash: hashToken(token) },
     include: {
       cliente: true,
       // include (não select) pra manter os campos escalares de Grafica de

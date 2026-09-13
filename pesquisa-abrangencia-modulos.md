@@ -923,8 +923,8 @@ Isso não é só um problema de abrangência para outros perfis de gráfica — 
 
 ### A. Estrutura do fluxo
 
-#### A1 — Fluxo linear único, sem roteiro por produto/processo
-**Custo estimado:** 🔴 Caro — a Fase 2 exige models novos (`FluxoProducao`/`EtapaFluxo`) e faz `Pedido.status` virar derivado da etapa atual, mexendo na lógica de transição protegida por CAS que já existe.
+#### A1 — Fluxo linear único, sem roteiro por produto/processo — **PARCIALMENTE CONSTRUÍDO (marcador corrigido na reconciliação de 2026-09-13 — Fase 1 fechada: `model EtapaGrafica` em `10-producao.prisma:527` + `src/lib/etapa-grafica.ts`, etapas por gráfica com rótulo próprio; Fase 2 (`FluxoProducao`/`EtapaFluxo`, `Pedido.status` derivado) segue de propósito fora de escopo)**
+**Custo estimado (restante pendente):** 🔴 Caro — a Fase 2 exige models novos (`FluxoProducao`/`EtapaFluxo`) e faz `Pedido.status` virar derivado da etapa atual, mexendo na lógica de transição protegida por CAS que já existe.
 
 **O que falta.** `SEQUENCIA_STATUS_PEDIDO` (`src/lib/producao-estagios.ts:12`) é um array literal de 8 valores de enum, e `avancarStatusPedido` (`src/app/producao/status-transicao.ts:248-260`) avança sempre para `indice + 1`. Não existe nenhum ponto onde uma gráfica, um produto ou um `modeloCalculo` possa dizer "essa etapa não existe pra mim". Uma gráfica só-digital arrasta card por `CLICHE_FACA` sem clichê nenhum; uma serigrafia não tem onde representar "queima de tela" (que é uma operação real, com custo e refugo — a tela pode velar); uma comunicação visual não tem "aplicação/instalação no cliente", que é a etapa mais cara e mais arriscada do serviço dela.
 
@@ -1886,7 +1886,7 @@ Achado secundário do mesmo bloco: a única tela que **lê** `LogAuditoria` é `
 
 **Proposta.** Nenhuma mudança de schema. Chamar `registrarAuditoria` nas 12 actions faltantes, com prioridade nas de máquina e fiscal, reaproveitando o padrão de diff campo-a-campo já escrito em `salvarParametros` (extrair aquele bloco `antesTextos`/`depoisTextos` pra um helper genérico em `src/lib/auditoria.ts` evita reescrevê-lo 12 vezes). Para o token da Focus NFe, logar só "token alterado"/"token removido", nunca o valor — mesmo cuidado que o form já toma ao não reexibir a URL do webhook. E mover/duplicar a tela de auditoria para `/configuracoes/auditoria` com gate `CONFIGURACOES` **ou** `FINANCEIRO`.
 
-## A4 — Não existe cadastro de alçada: a única trava é global e "quem aprova" está hardcoded; Compras não tem alçada nenhuma
+## A4 — Não existe cadastro de alçada: a única trava é global e "quem aprova" está hardcoded; Compras não tem alçada nenhuma — **✅ CONSTRUÍDO (marcador corrigido na reconciliação de 2026-09-13 — `AlcadaAprovacao`/`TipoAlcada` em `03-usuarios-auth.prisma:269`, `src/lib/alcada-aprovacao.ts`, tela em `configuracoes/alcadas/`, ligado em `compras/status-transicao.ts`, `orcamento/[id]/actions/` e `regras-comissao/actions.ts`, com testes; a própria entrada A10/Parte 3 já apontava pra cá como construído)**
 
 **Custo estimado:** 🔴 Caro — 1 model novo (`AlcadaAprovacao`) é simples isolado, mas muda o comportamento de aprovação de desconto e de compra, área sensível de autorização.
 
@@ -2741,42 +2741,59 @@ Classificação de custo/esforço aplicada a todo achado ainda não marcado `CON
 
 **Atualização 2026-09-02 (Parte 8 catalogada, nada construído):** +20 achados pendentes classificados (N1-N18 + R1 + R3; R2 = N7, não conta duas vezes). Distribuição: 8 🟢 Barato (N7, N9, N12, N13, N14, N15, N16, N17), 8 🟡 Médio (N1, N3, N6, N10, N11, N18, R1, R3), 4 🔴 Caro (N2, N4, N5, N8). Vários são bug de lógica, não gap de abrangência — o "Custo estimado" aqui é esforço de correção, e a "Severidade" (impacto) está em cada achado. Ordem de ataque sugerida pelo relatório: N1/N2/N3 primeiro (severidade 🔴, alcançáveis pela UI hoje, dinheiro em jogo); N7/N9/N12/N15/N16/N17 são 🟢 Barato e cabem numa rodada de limpeza.
 
-**Contagem total (107 achados classificados, 86 ainda pendentes):**
+---
 
-| Custo | Contagem |
-|---|---|
-| 🟢 Barato | 21 (19 construídos) |
-| 🟡 Médio | 37 |
-| 🔴 Caro | 28 (2 construídos) |
+## Reconciliação 2026-09-13 — contagem corrigida (substitui a tabela e a lista de candidatos que ficavam aqui)
 
-### Candidatos 🟢 Barato por Parte — próxima rodada de construção
+> **Por que esta seção existe.** A tabela de custo que ficava aqui dizia "107 achados classificados, **86 ainda pendentes**" e a lista de "Candidatos 🟢 Barato" apontava 19 itens pra próxima rodada. As duas foram escritas num ponto no tempo e nunca recalculadas — as rodadas 17-21 e os commits avulsos de setembro foram marcando `CONSTRUÍDO` **no header de cada achado**, sem mexer nos agregados. Resultado: os agregados sugeriam ~6× mais trabalho pendente do que existe de verdade, e **16 dos 19 "candidatos" já estavam construídos**. As duas foram removidas e substituídas pelo que segue.
+>
+> Os parágrafos "**Atualização \<data\> (rodada N)**" logo acima são registro histórico e ficam como estão — cada um era verdade na sua data. Quando divergirem desta seção, esta seção vale.
+>
+> Método desta reconciliação: o header de cada achado é a fonte de verdade (é o que as rodadas mantiveram em dia); os agregados foram recontados a partir deles, e os que restaram abertos foram conferidos contra o código. Nada foi construído nesta passada — só marcador corrigido.
+
+**Correções de marcador aplicadas** (achado marcado aberto que já estava pronto):
+
+- **Parte 6 A4** (cadastro de alçada) → **CONSTRUÍDO**. `AlcadaAprovacao`/`TipoAlcada` existem em `03-usuarios-auth.prisma:269`, com `src/lib/alcada-aprovacao.ts`, tela em `configuracoes/alcadas/`, e uso em compras/orçamento/regras de comissão. A entrada A10/Parte 3 já dizia "JÁ CONSTRUÍDO (achado A4/Parte 6)" — a contradição interna ficou meses no doc.
+- **Parte 2 A1** (roteiro de produção) → **PARCIALMENTE CONSTRUÍDO**. Fase 1 fechada (`model EtapaGrafica`, `src/lib/etapa-grafica.ts`); só a Fase 2 segue pendente, e o próprio "Custo estimado" do achado já falava só dela.
+
+**Contagem real (142 achados com header, apurados por Parte):**
+
+| Parte | Total | Construído | Parcial | Aberto |
+|---|---|---|---|---|
+| 1 — Orçamento + Catálogo | 20 | 16 | 3 | 1 |
+| 2 — Produção | 13 | 9 | 2 | 2 |
+| 3 — Compras | 11 | 9 | 2 | 0 |
+| 4 — Financeiro | 17 | 12 | 5 | 0 |
+| 5 — Clientes | 14 | 12 | 1 | 1 |
+| 6 — Configurações | 13 | 9 | 0 | 4 |
+| 7 — Completude de cadastro | 33 | 33 | 0 | 0 |
+| 8 — Auditoria de código | 21 | 20 | 0 | 1 |
+| **TOTAL** | **142** | **120** | **13** | **9** |
+
+**A Parte 8 está 100% construída** (N1-N18 + R1 + R3). O único "aberto" ali é **R2**, que não é achado: é um ponteiro pro N7, que está construído desde 2026-09-04 — pode ser fechado.
+
+### O que sobrou de verdade — 8 achados abertos
+
+Nenhum é 🟢 Barato. Todos foram conferidos contra o código nesta passada.
 
 **Parte 1 — Orçamento + Catálogo**
-- B4 — Prazo é por orçamento, nunca por item
+- **A8** — M2 é o único motor sem máquina, sem perda e sem vínculo com a matéria-prima. *Confirmado: `m2.ts` não tem nenhuma referência a perda, e `validarPerdaPercent` só é chamado por OFFSET e FLEXOGRAFIA.*
 
-**Parte 3 — Compras**
-- A2 — Frete/IPI/desconto no custo de aquisição (rota curta)
-- A10 — Alçada de valor + segregação de funções em Compras
-- A11 — OTIF/desempenho de fornecedor (depende de A7/A8 Médios)
+**Parte 2 — Produção**
+- **F2** — Entrega é 1:1 com o pedido. *Confirmado: `model Entrega` tem `pedidoId @unique` (`10-producao.prisma:682`).*
+- **F3** — Produção monolítica por pedido, não por item/componente. (Irmão do A10/Parte 1 — os dois dependem do mesmo item composto `itemPaiId`.)
 
-**Parte 4 — Financeiro**
-- A4 — Fluxo de caixa projetado
-- A10 — Aviso de alíquota efetiva do Simples acima do `impostoPercent` configurado
+**Parte 5 — Clientes**
+- **A14** — Portal do cliente: existem tokens por objeto, não existe identidade do cliente.
 
 **Parte 6 — Configurações**
-- A8 (restante) — Identidade/contato por filial
-- A10 — Onboarding de tenant (nada além do que A6 já cobre)
-- A11 — `UnidadeDimensao.POLEGADA` (a própria proposta recomenda NÃO construir agora — over-engineering sem sinal real de uso)
+- **A7** — Uma tabela + uma pasta de tela por tipo de máquina. *Confirmado: hoje são 6 models separados (`Prensa`, `MaquinaFlexografia`, `ImpressoraDigital`, `MaquinaSetupPorPeca`, `MaquinaBordado`, `MaquinaTempo`).* Dívida arquitetural, não gap de funcionalidade.
+- **A10** — Onboarding de tenant: template/exportação de configuração. *Confirmado: `src/lib/onboarding.ts` existe (o checklist), mas não há nenhuma função de exportar/importar configuração.*
+- **A11** — `UnidadeDimensao.POLEGADA`. *Confirmado: o enum tem só MM/CM/M.* **A própria proposta recomenda NÃO construir** — over-engineering sem sinal real de uso.
+- **A12** — Multi-moeda. *Confirmado: nenhum campo de moeda no schema.* Nota de uma linha, sem proposta.
 
-**Parte 7 — Completude de cadastro**
-- E1/E2 — Esconder card/menu de Produção por USO real (não por segmento — correção Opus)
-- E3 — Banner de segmento pendente no onboarding (checar contra o código antes)
-- E4 — Pacotes de dados de exemplo por segmento
+### Os 13 parciais (resíduo, não achado novo)
 
-**Parte 8 — Auditoria de código** (bug/dívida, não gap — mas contidos)
-- N7 — Religar `resolverCfop` ao `indicadorInscricaoEstadual` (fecha A3/Parte 5) — 🔴 severidade
-- N15 — Compra não deve criar saldo em item sem controle de estoque
-- N16 — `resolverConfigAcabamentos` sem filtro `ativo: true`
-- N17 — NF-e usa `descricaoLivre` do item quando existe
-- N12 — Aviso de gramatura de papel aproximada (`origem` já é calculado)
-- N9 — Acerto contado `entradas²` vezes na rodagem (conferir testes antes)
+Cada um tem a parte construída e o resto documentado no próprio achado. Em ordem de Parte: **P1** A10 (Editorial Rota 2 / item composto), B3 (entrega programada contratual), B6 (descrição própria na linha); **P2** A1 (roteiro Fase 2), D1 (aprovação de qualidade Fase 2 / `AMOSTRA_CLIENTE` sem tela); **P3** A2 (compra multi-linha, frete, impostos), A5 (fornecedor × financeiro); **P4** A1 (Despesa × CustoPedido), A2 (custo fixo × `overheadPercent`), A5 (régua de cobrança), A9 (retenção na fonte), A12 (comissão por percentual único); **P5** A7 (segmento de cliente / tabela de preço).
+
+> **Fila real de gaps de funcionalidade: 8 abertos + 13 resíduos parciais = 21 itens** — não 86. Pra comparação, a fila de *bugs* aberta na mesma data é maior: 19 achados de `auditoria-motor-preco-completo-2026-09-13.md` (7 🔴 + 12 🟡) mais 8 🟡 da Parte 9 em `auditoria-codigo-2026-09-12.md`.

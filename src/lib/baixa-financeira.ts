@@ -1,12 +1,12 @@
 import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
-import type { prisma } from "@/lib/prisma";
+import type { prisma, PrismaTransactionClient } from "@/lib/prisma";
 import { D, paraDecimal, type Dec } from "@/lib/pricing/decimal";
 
 // Mesmo padrão de src/lib/credito-cliente.ts: as funções abaixo precisam
 // rodar tanto fora de transação (leitura pra tela) quanto DENTRO da
 // transação que registra a baixa, sem duplicar a lógica pros dois casos.
-type ClientePrisma = typeof prisma | Prisma.TransactionClient;
+type ClientePrisma = typeof prisma | PrismaTransactionClient;
 
 type ContaReceberParaSaldo = {
   id: string;

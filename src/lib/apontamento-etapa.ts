@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import type { MotivoRefugo, MotivoRetorno, OrigemConfirmacaoEtapa, StatusPedido } from "@/generated/prisma/enums";
 import { validarSelecaoMaquinaOpcional } from "@/lib/manutencao-maquina";
@@ -141,7 +141,7 @@ export function sugerirMaquinaPedido(
 // da FSM (nunca reentra, ver SEQUENCIA_STATUS_PEDIDO) — "nenhum apontamento
 // ainda pra este pedidoId" é equivalente a "acabou de nascer".
 export async function abrirApontamentoInicialSeNecessario(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   params: { graficaId: string; pedidoId: string; origemConfirmacao: OrigemConfirmacaoEtapa }
 ): Promise<void> {
   const existente = await tx.apontamentoEtapa.findFirst({
@@ -210,7 +210,7 @@ export type RetornoParaAbertura = {
 // (pedido criado antes desta feature, sem backfill retroativo — ver achado
 // B1) — nesse caso o updateMany só não afeta nenhuma linha, sem lançar erro.
 export async function fecharEAbrirApontamento(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   params: {
     graficaId: string;
     pedidoId: string;

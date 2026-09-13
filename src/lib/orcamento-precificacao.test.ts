@@ -968,6 +968,54 @@ describe("calcularItemOrcamento — guard METRO_LINEAR/HORA (achado A1)", () => 
     },
     TIMEOUT_MS
   );
+
+  // Achado B6 da auditoria do motor de preço (2026-09-13) — horasEstimadas é
+  // um número por ITEM, não por acabamento: 2 acabamentos por HORA no mesmo
+  // item dividiriam a MESMA estimativa entre serviços com preços/hora
+  // diferentes (Instalação R$50/h + Criação de arte R$80/h), cobrando a
+  // estimativa completa nas duas em vez de saber o real de cada uma.
+  it(
+    "DIGITAL com 2 acabamentos HORA anexados no mesmo item: bloqueia com mensagem amigável (não divide a mesma estimativa entre os dois)",
+    async () => {
+      const { produto, acabamento, papel } = await criarProdutoDigitalComAcabamento("HORA");
+
+      // Segundo acabamento HORA, mesma gráfica do produto — mesmo padrão do
+      // helper criarProdutoDigitalComAcabamento acima.
+      const s = sufixo();
+      const catalogoAcabamento2 = await prisma.itemCatalogo.create({
+        data: { graficaId: produto.graficaId, tipo: "SERVICO", categoria: "Acabamento", nome: `Criação de arte ${s}` },
+      });
+      const acabamento2 = await prisma.itemGrafica.create({
+        data: {
+          graficaId: produto.graficaId,
+          itemCatalogoId: catalogoAcabamento2.id,
+          precoCompra: 80,
+          configuracaoAcabamento: {
+            create: { baseCobranca: "HORA", estagio: "POS_REFILE", custoSetup: 0, custoMinimo: 0 },
+          },
+        },
+      });
+
+      const resultado = await calcularItemOrcamento(
+        produto,
+        produto.graficaId,
+        dadosBase({
+          acabamentoIds: [acabamento.id, acabamento2.id],
+          larguraCm: 100,
+          alturaCm: 200,
+          horasEstimadas: 4,
+          papelId: papel.id,
+        })
+      );
+
+      expect(resultado.ok).toBe(false);
+      if (!resultado.ok) {
+        expect(resultado.mensagem).toMatch(/hora/i);
+        expect(resultado.mensagem).toMatch(/2/);
+      }
+    },
+    TIMEOUT_MS
+  );
 });
 
 // Teste de INTEGRAÇÃO de verdade (mesmo padrão dos describes acima) — cobre o

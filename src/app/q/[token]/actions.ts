@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { hashToken } from "@/lib/auth/session";
 import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
 import { avancarStatusPedido } from "@/app/producao/status-transicao";
 import { assinaturaEstaLiberada } from "@/lib/billing/status";
@@ -24,8 +25,10 @@ export async function avancarStatusQr(
 ): Promise<AvancarStatusQrResult> {
   const token = String(formData.get("token"));
 
+  // Hash do token (achado da auditoria de segurança 2026-09-13), nunca
+  // gravado em claro — ver comentário de Pedido.qrTokenHash no schema.
   const pedido = await prisma.pedido.findUnique({
-    where: { qrToken: token },
+    where: { qrTokenHash: hashToken(token) },
     include: {
       orcamento: {
         include: {

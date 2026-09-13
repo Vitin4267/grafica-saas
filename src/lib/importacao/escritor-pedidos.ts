@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { parseDataBrasileira, parseNumeroBrasileiro } from "./planilha";
 import { Prisma } from "@/generated/prisma/client";
+import type { PrismaTransactionClient } from "@/lib/prisma";
 // import type: escritores.ts importa a FUNÇÃO deste arquivo — ver comentário
 // equivalente em escritor-clientes.ts.
 import type { ResultadoEscritaLinha } from "./escritores";
@@ -64,7 +65,7 @@ export const pedidoImportacaoSchema = z.object({
 // precedente de "um registro só" pra Orcamento+Pedido no resto do app — essa
 // função existe só pra este importador.
 export async function escreverLinhaPedido(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   graficaId: string,
   usuarioId: string,
   linha: Record<string, string>

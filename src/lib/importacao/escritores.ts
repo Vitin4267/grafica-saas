@@ -1,5 +1,6 @@
 import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
+import type { PrismaTransactionClient } from "@/lib/prisma";
 import type { TipoImportacaoPlanilha } from "@/generated/prisma/enums";
 import { escreverLinhaCliente } from "./escritor-clientes";
 import { escreverLinhaCatalogo } from "./escritor-catalogo";
@@ -13,7 +14,7 @@ export type ResultadoEscritaLinha = { ok: true } | { ok: false; mensagem: string
 // escondida aqui.
 export async function escreverLinha(
   tipo: TipoImportacaoPlanilha,
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   contexto: { graficaId: string; usuarioId: string },
   linha: Record<string, string>
 ): Promise<ResultadoEscritaLinha> {

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { unstable_cache, updateTag } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import type { AssinaturaGrafica } from "@/generated/prisma/client";
 import type { TipoArquivoArmazenado } from "@/generated/prisma/enums";
@@ -40,7 +40,7 @@ export function resolverContextoArmazenamento(usuario: {
   };
 }
 
-type ClientePrisma = typeof prisma | Prisma.TransactionClient;
+type ClientePrisma = typeof prisma | PrismaTransactionClient;
 
 // SEM cache de propósito — chamada de dentro da transação de reserva
 // (reservarEspaco), onde a decisão é "aceita ou rejeita este upload agora".

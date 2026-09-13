@@ -561,7 +561,7 @@ model ContaReceber {
   // perdaEm: carimbado junto com status=PERDA (mesmo padrão de recebidoEm) —
   // é o "quando" que buscarDRE usa pra filtrar a perda dentro do período
   // certo (ver src/lib/dre-query.ts), sem depender de LogAuditoria.
-  perdaEm DateTime?
+  perdaEm          DateTime?
   // limiteLiberadoEm: null enquanto ninguém revisou — calcularExposicaoCreditoCliente
   // (src/lib/exposicao-credito-cliente.ts) continua somando o saldo desta
   // conta na exposição do cliente mesmo com status=PERDA, bloqueando novo

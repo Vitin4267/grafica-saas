@@ -54,7 +54,7 @@ model Fornecedor {
   // TipoPrestadorServico/PrestadorServico.tipoOutro logo abaixo — cobre
   // perfil de fornecedor além do offset comercial (embalagem/cartonagem,
   // estamparia/bordado, brindes...).
-  categoria CategoriaFornecedor?
+  categoria      CategoriaFornecedor?
   // Só usado quando categoria=OUTRO.
   categoriaOutro String?
 
@@ -63,7 +63,7 @@ model Fornecedor {
   // parcelas/âncora de CONTAS A RECEBER do lado do cliente/venda; não
   // reaproveitado aqui de propósito, ver comentário no enum
   // CondicaoPagamentoFornecedor).
-  condicaoPagamentoPadrao CondicaoPagamentoFornecedor?
+  condicaoPagamentoPadrao      CondicaoPagamentoFornecedor?
   // Só usado quando condicaoPagamentoPadrao=OUTRO.
   condicaoPagamentoPadraoOutro String?
 
@@ -273,22 +273,22 @@ model SolicitacaoCompra {
   // descricaoLivre é exigido na aplicação (não em constraint de banco,
   // mesmo padrão do resto do schema) — os dois podem coexistir (ex: item
   // do catálogo + observação livre sobre esta compra específica).
-  itemGraficaId String? // a matéria-prima (ItemGrafica tipo=MATERIA_PRIMA), quando estruturada
+  itemGraficaId   String? // a matéria-prima (ItemGrafica tipo=MATERIA_PRIMA), quando estruturada
   // Descrição livre do que está sendo comprado, quando não há item de
   // catálogo pra apontar — ex: "Clichê 4 cores — arte Rótulo Cerveja X".
   // Nunca usada pra baixa de estoque nem pra atualizar preço de nenhum
   // ItemGrafica (só texto exibido na tela de detalhe/listagem).
-  descricaoLivre String?
+  descricaoLivre  String?
   // Achado A1 da auditoria de abrangência — ver enum TipoCompra acima.
   tipoCompra      TipoCompra @default(MATERIA_PRIMA)
   tipoCompraOutro String?
   // Qual variante (ex: espessura de chapa) quando a matéria-prima tem
   // VarianteMateriaPrima cadastrada — mesmo padrão opcional de
   // FichaTecnicaItem.varianteId. null = matéria-prima sem variantes.
-  varianteId    String?
+  varianteId      String?
   // Pode nascer sem fornecedor definido (ainda em SOLICITADO/COTANDO) — só
   // costuma ser preenchido a partir de APROVADO.
-  fornecedorId  String?
+  fornecedorId    String?
 
   quantidade           Decimal        @db.Decimal(12, 4)
   // Achado A6 da auditoria de abrangência (Parte 3/Compras): unidade
@@ -330,10 +330,10 @@ model SolicitacaoCompra {
   // formulário que já pede valorFinal (ver AcoesSolicitacaoForm.tsx).
   // valorIcmsCreditavel e valorDesconto REDUZEM o custo de aquisição;
   // valorFrete e valorIpi AUMENTAM.
-  valorFrete           Decimal?       @db.Decimal(12, 2)
-  valorIpi             Decimal?       @db.Decimal(12, 2)
-  valorIcmsCreditavel  Decimal?       @db.Decimal(12, 2)
-  valorDesconto        Decimal?       @db.Decimal(12, 2)
+  valorFrete          Decimal? @db.Decimal(12, 2)
+  valorIpi            Decimal? @db.Decimal(12, 2)
+  valorIcmsCreditavel Decimal? @db.Decimal(12, 2)
+  valorDesconto       Decimal? @db.Decimal(12, 2)
 
   // Achado A7 da auditoria de abrangência (Parte 3/Compras, 2026-09-07) —
   // recebimento parcial e divergência (ver enum StatusSolicitacaoCompra
@@ -347,7 +347,7 @@ model SolicitacaoCompra {
   // em MovimentacaoEstoque: null é "ainda não apurado", não "apurado como
   // zero"). Comparado contra `quantidade` (o total solicitado) pra decidir
   // se a confirmação atual fecha em RECEBIDO ou fica RECEBIDO_PARCIAL.
-  quantidadeRecebida Decimal? @db.Decimal(12, 4)
+  quantidadeRecebida    Decimal? @db.Decimal(12, 4)
   // Valor que veio na NF de entrada, opcional — puramente informativo, pra
   // comparar com o valor esperado (valorFinal/custoAquisicaoTotal) na tela
   // de detalhe. Nunca usado em nenhum cálculo de custo (isso continua sendo
@@ -356,7 +356,7 @@ model SolicitacaoCompra {
   // conferência visual. Reescrito a cada confirmação de RECEBIDO que o
   // informe (mesmo padrão simples de `documento`, sem histórico por
   // recebimento parcial).
-  valorNotaFiscal Decimal? @db.Decimal(12, 2)
+  valorNotaFiscal       Decimal? @db.Decimal(12, 2)
   // Preenchido só quando a quantidade confirmada num recebimento diverge do
   // restante esperado (pra mais ou pra menos) — exigido pela aplicação
   // nesse caso (não é constraint de banco), texto livre porque o motivo de

@@ -4,6 +4,8 @@ import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { hashToken } from "@/lib/auth/session";
+import { cifrar } from "@/lib/cripto";
 import { TRANSICOES_VALIDAS, orcamentoEstaExpirado, type StatusOrcamento } from "@/lib/orcamento-status";
 import { resolverDadosComissao } from "@/lib/comissao-aprovacao";
 import { tentarRegistrarRespostaOrcamento } from "@/lib/auth/rate-limit";
@@ -105,7 +107,7 @@ export async function responderOrcamentoPublico(
 
   // vendedorId: achado A8 — ver bloco de comissão logo abaixo.
   const orcamento = await prisma.orcamento.findUnique({
-    where: { linkPublicoToken: token },
+    where: { linkPublicoTokenHash: hashToken(token) },
     include: {
       // limiteCredito: achado A6 da Parte 4 — ver bloco de crédito logo
       // abaixo. Nunca populamos `aviso` pro cliente por aqui (é o próprio
@@ -354,6 +356,10 @@ export async function responderOrcamentoPublico(
         aprovadoEm: agora,
       });
 
+      // Gerado ANTES do upsert (não dentro do `create`) porque hash e cifra
+      // precisam do MESMO token cru — ver comentário de
+      // Pedido.producaoLinkTokenHash no schema.
+      const producaoLinkTokenGerado = randomBytes(20).toString("base64url");
       const pedido = await tx.pedido.upsert({
         where: { orcamentoId: orcamento.id },
         update: {},
@@ -361,7 +367,11 @@ export async function responderOrcamentoPublico(
           graficaId: orcamento.graficaId,
           orcamentoId: orcamento.id,
           status: "ARTE",
-          producaoLinkToken: randomBytes(20).toString("base64url"),
+          // Achado da auditoria de segurança (2026-09-13) — hash pra buscar,
+          // cifra pra remontar no e-mail de responsável (ver comentário de
+          // Pedido.producaoLinkTokenHash no schema).
+          producaoLinkTokenHash: hashToken(producaoLinkTokenGerado),
+          producaoLinkTokenCifrado: cifrar(producaoLinkTokenGerado),
           // Copia a URL como referência (mesmo comportamento do caminho
           // autenticado em src/app/orcamento/[id]/actions.ts) — o arquivo
           // continua "pertencendo" contabilmente ao orçamento, nunca cria
@@ -570,7 +580,7 @@ export async function solicitarAjusteOrcamento(
   }
 
   const orcamento = await prisma.orcamento.findUnique({
-    where: { linkPublicoToken: token },
+    where: { linkPublicoTokenHash: hashToken(token) },
     include: {
       cliente: { select: { nome: true } },
       grafica: { select: { nome: true, corPrimaria: true } },

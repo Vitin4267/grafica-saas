@@ -10,7 +10,8 @@ import { exigirTokenBlobPrivado } from "@/lib/blob-assinado";
 import { opcoesBlobPublico, opcoesBlobPrivado } from "@/lib/blob-store";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
-import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirUsuarioAutenticado, hashToken } from "@/lib/auth/session";
+import { cifrar, decifrarOuNull } from "@/lib/cripto";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
@@ -175,7 +176,7 @@ export type DuplicarOrcamentoResult = { ok: boolean; mensagem: string };
 // duplicação inteira — é só um rascunho, o vendedor decide o resto.
 //
 // Nunca copiados de propósito: status (sempre nasce RASCUNHO),
-// linkPublicoToken, respostaPublica* (aceite/recusa é de UM pedido
+// linkPublicoTokenHash/Cifrado, respostaPublica* (aceite/recusa é de UM pedido
 // específico), validoAteEm/enviadoEm (validade e data de envio da proposta
 // ANTERIOR não se estendem à nova — o duplicado só entra na lista de
 // "parados" depois de ser enviado de novo), as etapas de produção
@@ -702,12 +703,16 @@ export async function gerarLinkPublico(
     return { ok: false, mensagem: "Orçamento não encontrado." };
   }
 
-  let token = orcamento.linkPublicoToken;
+  // Achado da auditoria de segurança (2026-09-13): o token cru não fica mais
+  // gravado direto — decifra o existente pra reaproveitar (mesmo
+  // comportamento de sempre), ou gera+grava hash+cifra quando ainda não
+  // existe. Ver comentário de Orcamento.linkPublicoTokenHash no schema.
+  let token = decifrarOuNull(orcamento.linkPublicoTokenCifrado);
   if (!token) {
     token = randomBytes(20).toString("base64url");
     await prisma.orcamento.update({
       where: { id: orcamentoId },
-      data: { linkPublicoToken: token },
+      data: { linkPublicoTokenHash: hashToken(token), linkPublicoTokenCifrado: cifrar(token) },
     });
   }
 
@@ -780,7 +785,7 @@ export async function revogarLinkPublico(
 
   await prisma.orcamento.update({
     where: { id: orcamentoId },
-    data: { linkPublicoToken: null },
+    data: { linkPublicoTokenHash: null, linkPublicoTokenCifrado: null },
   });
 
   await registrarAuditoria({

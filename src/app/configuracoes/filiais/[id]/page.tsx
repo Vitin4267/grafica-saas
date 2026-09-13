@@ -39,8 +39,10 @@ export default async function FilialDetalhePage({
   const dadosFiscaisFilial = await prisma.dadosFiscaisFilial.findUnique({
     where: { filialId: filial.id },
   });
-  const tokenMascaradoFilial = dadosFiscaisFilial?.focusNfeToken
-    ? `•••• ${dadosFiscaisFilial.focusNfeToken.slice(-4)}`
+  // Mesmo tratamento de configuracoes/fiscal/page.tsx: monta a máscara de
+  // focusNfeTokenUltimos4 (texto claro), nunca decifra o valor de verdade.
+  const tokenMascaradoFilial = dadosFiscaisFilial?.focusNfeTokenUltimos4
+    ? `•••• ${dadosFiscaisFilial.focusNfeTokenUltimos4}`
     : null;
 
   return (

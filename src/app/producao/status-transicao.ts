@@ -2,7 +2,9 @@ import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import { hashToken } from "@/lib/auth/session";
+import { cifrar, decifrarOuNull } from "@/lib/cripto";
 import { Prisma } from "@/generated/prisma/client";
 import type { MotivoRefugo, StatusPedido, OrigemCusto } from "@/generated/prisma/enums";
 import { D } from "@/lib/pricing/decimal";
@@ -52,7 +54,9 @@ export type PedidoParaAvanco = {
   status: StatusPedido;
   arteUrl: string | null;
   arteAprovadaEm: Date | null;
-  producaoLinkToken: string | null;
+  // Achado da auditoria de segurança (2026-09-13) — cifrado, nunca o token
+  // cru (ver comentário de Pedido.producaoLinkTokenHash no schema).
+  producaoLinkTokenCifrado: string | null;
   // Achado Prod-D2 da auditoria de abrangência (Parte 2/Produção) — trava
   // contra baixa DUPLICADA de matéria-prima (ver comentário completo no
   // schema, campo Pedido.baixaEstoqueRealizadaEm, e no gate mais abaixo,
@@ -236,7 +240,7 @@ export function snapshotCustoFicha(
 // um model novo — fora do escopo deste achado.
 // Exportada pelo mesmo motivo de snapshotCustoFicha acima.
 export async function snapshotLoteFicha(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   ficha: { varianteId: string | null; materiaPrimaId: string; materiaPrima: { controlaLote: boolean } }
 ): Promise<{ lote: string | null; validade: Date | null }> {
   if (!ficha.materiaPrima.controlaLote) {
@@ -271,7 +275,7 @@ export async function snapshotLoteFicha(
 // lançar exceção — a baixa de estoque em si NUNCA pode falhar por causa
 // disto.
 async function criarCustoAutomaticoConsumo(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   params: {
     graficaId: string;
     pedidoId: string;
@@ -358,7 +362,7 @@ type ItemParaBaixaRefugo = OrcamentoParaBaixa["itens"][number];
 // antes dela como a perda fixa faz) — ver comentário de
 // ErroEstoqueInsuficienteRefugo acima.
 async function aplicarBaixaRefugo(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   params: {
     graficaId: string;
     pedidoId: string;
@@ -467,7 +471,7 @@ class ErroEstoqueInsuficienteAtendimento extends Error {}
 // pré-produzido com o motor novo, ou toda leva ficou sem preço de matéria-
 // prima cadastrado) — a UI mostra "—", nunca inventa R$0,00.
 async function aplicarAtendimentoEstoquePronto(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   params: {
     graficaId: string;
     pedidoId: string;
@@ -1366,11 +1370,17 @@ export async function avancarStatusPedido(
     if (responsaveis.length > 0) {
       // Backfill lazy: pedidos criados antes desta feature não têm token
       // ainda. Pedidos novos já nascem com ele (ver criação do Pedido em
-      // orcamento/[id]/actions.ts e o/[token]/actions.ts).
-      let token = pedido.producaoLinkToken;
+      // orcamento/[id]/actions.ts e o/[token]/actions.ts). Achado da
+      // auditoria de segurança (2026-09-13): decifra o existente, ou gera +
+      // grava hash+cifra (ver comentário de Pedido.producaoLinkTokenHash no
+      // schema).
+      let token = decifrarOuNull(pedido.producaoLinkTokenCifrado);
       if (!token) {
         token = randomBytes(20).toString("base64url");
-        await prisma.pedido.update({ where: { id: pedido.id }, data: { producaoLinkToken: token } });
+        await prisma.pedido.update({
+          where: { id: pedido.id },
+          data: { producaoLinkTokenHash: hashToken(token), producaoLinkTokenCifrado: cifrar(token) },
+        });
       }
       const origem = await resolverOrigemPublica();
       const link = `${origem}/p/${token}`;

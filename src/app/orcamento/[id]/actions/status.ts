@@ -9,7 +9,8 @@ import { put, del } from "@vercel/blob";
 import { exigirTokenBlobPrivado } from "@/lib/blob-assinado";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
-import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirUsuarioAutenticado, hashToken } from "@/lib/auth/session";
+import { cifrar } from "@/lib/cripto";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
@@ -348,6 +349,10 @@ export async function atualizarStatusOrcamento(
         aprovadoEm: new Date(),
       });
 
+      // Gerado ANTES do upsert — hash e cifra precisam do MESMO token cru
+      // (achado da auditoria de segurança 2026-09-13, ver comentário de
+      // Pedido.producaoLinkTokenHash no schema).
+      const producaoLinkTokenGerado = randomBytes(20).toString("base64url");
       const pedido = await tx.pedido.upsert({
         where: { orcamentoId },
         update: {},
@@ -356,7 +361,8 @@ export async function atualizarStatusOrcamento(
           orcamentoId,
           status: "ARTE",
           prazoEntrega,
-          producaoLinkToken: randomBytes(20).toString("base64url"),
+          producaoLinkTokenHash: hashToken(producaoLinkTokenGerado),
+          producaoLinkTokenCifrado: cifrar(producaoLinkTokenGerado),
           // Copia a URL como referência — o arquivo continua "pertencendo"
           // contabilmente ao orçamento (ArquivoArmazenado tipo
           // ARTE_ORCAMENTO), não cria uma linha nova de razão pro Pedido.

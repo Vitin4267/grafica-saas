@@ -12,8 +12,17 @@ model DadosFiscaisGrafica {
   id        String @id @default(cuid())
   graficaId String @unique
 
-  focusNfeToken String? // token da CONTA DELES na Focus NFe — nunca uma conta nossa
-  ambiente      String  @default("homologacao") // homologacao | producao — nasce em homologação por segurança
+  // Achado da auditoria de segurança (2026-09-13) — token da CONTA DELES na
+  // Focus NFe (nunca uma conta nossa), agora CIFRADO (AES-256-GCM, ver
+  // src/lib/cripto.ts) — nem um dump direto do banco/backup entrega o valor
+  // usável. Nunca ler/gravar esta coluna direto: passa sempre por
+  // resolverDadosFiscais (src/lib/nota-fiscal.ts), o único ponto que decifra.
+  // focusNfeTokenUltimos4 fica em texto claro de propósito — só os últimos 4
+  // caracteres, o bastante pra montar a máscara `•••• 1234` na tela SEM
+  // decifrar o valor de verdade a cada render (ver configuracoes/fiscal/page.tsx).
+  focusNfeTokenCifrado  String?
+  focusNfeTokenUltimos4 String?
+  ambiente              String  @default("homologacao") // homologacao | producao — nasce em homologação por segurança
 
   cnpj              String?
   razaoSocial       String?
@@ -79,8 +88,11 @@ model DadosFiscaisFilial {
   id       String @id @default(cuid())
   filialId String @unique
 
-  focusNfeToken String?
-  ambiente      String  @default("homologacao")
+  // Espelha DadosFiscaisGrafica campo a campo — ver comentário lá (cifrado,
+  // achado da auditoria de segurança 2026-09-13).
+  focusNfeTokenCifrado  String?
+  focusNfeTokenUltimos4 String?
+  ambiente              String  @default("homologacao")
 
   cnpj              String?
   razaoSocial       String?

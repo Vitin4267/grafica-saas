@@ -1,7 +1,7 @@
 import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 import type { SegmentoGrafica } from "@/generated/prisma/enums";
-import { prisma } from "@/lib/prisma";
+import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 
 // Conjunto sugerido de categorias, POR PERFIL DE GRÁFICA (Grafica.segmento —
 // achado A6 da Parte 6 da auditoria de abrangência, 2026-08-27). "PADRAO" é
@@ -192,7 +192,7 @@ export const CATEGORIAS_CUSTO_SUGERIDAS: Record<SegmentoGrafica | "PADRAO", stri
 // src/app/producao/status-transicao.ts): nunca lança — a aprovação do
 // orçamento não pode falhar por causa disto.
 export async function criarCustoAutomaticoComissao(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   params: { graficaId: string; pedidoId: string; valorComissao: number }
 ): Promise<void> {
   if (params.valorComissao <= 0) return;
@@ -258,7 +258,7 @@ export async function criarCustoAutomaticoComissao(
 // CONSUMO_ESTOQUE quando a produção baixar o estoque desse material pra este
 // mesmo pedido (ver comentário da proposta do achado A3).
 export async function criarCustoAutomaticoCompra(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   params: {
     graficaId: string;
     pedidoId: string;
@@ -344,7 +344,7 @@ export async function criarCustoAutomaticoCompra(
 // @unique — chamar de novo pra mesma terceirização (reentrância, duplo
 // clique, valorFinal editado de novo) é no-op, nunca substitui/soma.
 export async function criarCustoAutomaticoTerceirizacao(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   params: {
     graficaId: string;
     pedidoId: string;
@@ -439,7 +439,7 @@ export async function criarCustoAutomaticoTerceirizacao(
 // tinha sido estornada numa edição anterior (pedidoId/categoriaCustoId
 // removidos e depois preenchidos de novo), REATIVA (estornadoEm: null).
 export async function criarCustoAutomaticoDespesa(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   params: {
     graficaId: string;
     despesaId: string;

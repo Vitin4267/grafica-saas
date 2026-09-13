@@ -1,5 +1,6 @@
 import "server-only";
 import { Prisma } from "@/generated/prisma/client";
+import type { PrismaTransactionClient } from "@/lib/prisma";
 import type { OrigemCliente } from "@/generated/prisma/enums";
 import { clienteSchema } from "@/lib/clientes";
 // import type: escritores.ts importa a FUNÇÃO deste arquivo — um import de
@@ -38,7 +39,7 @@ function normalizarOrigemCliente(
 // já que `linha` chega com as mesmas chaves que CAMPOS_CLIENTES declara) e o
 // mesmo padrão de campo-vazio-vira-null + catch de P2002 daquela action.
 export async function escreverLinhaCliente(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   graficaId: string,
   linha: Record<string, string>
 ): Promise<ResultadoEscritaLinha> {

@@ -71,9 +71,9 @@ model Usuario {
   // gated por FINANCEIRO — ver podeVerModulo/podeEditarModulo) e em
   // /financeiro/comissoes (exibição, mesmo gate) — NUNCA em listagem geral
   // de usuários (UsuariosLista) nem em PDF algum.
-  cpf          String?
-  chavePix     String?
-  tipoChavePix TipoChavePix?
+  cpf           String?
+  chavePix      String?
+  tipoChavePix  TipoChavePix?
   // Área de atuação livre (ex: "Motorista", "Designer freelance", "Operador
   // de guilhotina") — puramente descritivo/organizacional, nunca lido por
   // nenhuma lógica de negócio (preço, permissão, produção).
@@ -193,9 +193,9 @@ enum FuncaoPerfil {
 // OPERADOR, igual PermissaoUsuario — DONO/ADMIN nunca consultam nem esta
 // tabela nem a de override individual.
 model PerfilAcesso {
-  id        String        @id @default(cuid())
-  graficaId String
-  nome      String // "Impressor", "Acabamento", "Vendedor externo"
+  id         String        @id @default(cuid())
+  graficaId  String
+  nome       String // "Impressor", "Acabamento", "Vendedor externo"
   // null = perfil customizado criado do zero pelo DONO. Preenchido só nos 6
   // perfis pré-semeados por garantirPerfisAcessoPadrao — ver comentário
   // completo no enum FuncaoPerfil acima.
@@ -499,15 +499,15 @@ model ResponsavelAdministrativo {
 // (ex: dois motoristas chamados "José") são um caso real, não erro de
 // digitação.
 model Colaborador {
-  id        String          @id @default(cuid())
-  graficaId String
-  nome      String
-  tipo      TipoColaborador @default(OUTRO)
+  id            String          @id @default(cuid())
+  graficaId     String
+  nome          String
+  tipo          TipoColaborador @default(OUTRO)
   // Preenchido só quando tipo=OUTRO — mesmo padrão enum-fechado+OUTRO usado
   // em dezenas de outros models deste repo (ver comentário de padrão #1 em
   // arquitetura-resumo.md), validado na Server Action, nunca CHECK no banco.
-  tipoOutro String?
-  telefone  String?
+  tipoOutro     String?
+  telefone      String?
   // Dados de pagamento avulso (achado D3 da auditoria de abrangência, Parte 7
   // pesquisa-abrangencia-modulos.md, 2026-09-09) — Colaborador é quem MAIS
   // recebe pagamento avulso na prática (motorista/freelancer terceirizado
@@ -519,19 +519,19 @@ model Colaborador {
   // podeEditarModulo) — a página em si já é gated por CONFIGURACOES, mas
   // estes 4 campos têm um segundo gate por cima, mais restrito. NUNCA em
   // listagem geral (/configuracoes/colaboradores) nem em PDF algum.
-  cpf            String?
-  chavePix       String?
-  tipoChavePix   TipoChavePix?
+  cpf           String?
+  chavePix      String?
+  tipoChavePix  TipoChavePix?
   // Área de atuação livre (ex: "Motorista", "Operador de guilhotina") —
   // puramente descritivo, nunca lido por nenhuma lógica de negócio.
-  especialidade  String?
+  especialidade String?
   // Soft-delete — mesmo princípio de Transportadora.ativa/Fornecedor.ativo:
   // um colaborador referenciado em Entrega.motoristaColaboradorId não pode
   // ser removido de verdade sem quebrar o histórico, só sai da lista de
   // seleção pra novo uso (ver onDelete: SetNull em Entrega).
-  ativo     Boolean         @default(true)
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
+  ativo         Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
 
   grafica  Grafica   @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   entregas Entrega[] @relation("EntregaMotoristaColaborador")

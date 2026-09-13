@@ -11,6 +11,7 @@ import {
 import { UserNav } from "@/components/UserNav";
 import { ArrowLeftIcon } from "@/components/icons";
 import { AutomacaoForm } from "./AutomacaoForm";
+import { decifrarOuNull } from "@/lib/cripto";
 
 function mascararWebhookUrl(url: string): string {
   try {
@@ -35,9 +36,11 @@ export default async function ConfiguracoesAutomacaoPage() {
     create: { graficaId: usuario.graficaId },
   });
 
-  const webhookUrlMascarada = automacao.webhookUrl
-    ? mascararWebhookUrl(automacao.webhookUrl)
-    : null;
+  // Decifra só pra montar a máscara desta tela (baixo tráfego, não é
+  // caminho quente de disparo — ver buscarAutomacaoGrafica em
+  // src/lib/webhook-automacao.ts pro ponto central usado no disparo real).
+  const webhookUrlDecifrada = decifrarOuNull(automacao.webhookUrlCifrado);
+  const webhookUrlMascarada = webhookUrlDecifrada ? mascararWebhookUrl(webhookUrlDecifrada) : null;
 
   return (
     <div className="flex flex-1 flex-col">

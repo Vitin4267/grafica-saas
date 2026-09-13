@@ -113,7 +113,7 @@ model ArquivoArmazenado {
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
 
-  grafica Grafica @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  grafica            Grafica             @relation(fields: [graficaId], references: [id], onDelete: Cascade)
   // Achado D1 da Parte 2 (Produção) da auditoria de abrangência
   // (2026-09-11) — lado inverso de AprovacaoProducao.arquivoId
   // (10-producao.prisma). [] pra toda linha que não é do tipo

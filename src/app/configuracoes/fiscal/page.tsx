@@ -26,8 +26,11 @@ export default async function ConfiguracoesFiscaisPage() {
     create: { graficaId: usuario.graficaId },
   });
 
-  const tokenMascarado = dadosFiscais.focusNfeToken
-    ? `•••• ${dadosFiscais.focusNfeToken.slice(-4)}`
+  // Achado da auditoria de segurança (2026-09-13): monta a máscara a partir
+  // de focusNfeTokenUltimos4 (texto claro, só 4 caracteres) — nunca decifra
+  // focusNfeTokenCifrado só pra exibir 4 dígitos.
+  const tokenMascarado = dadosFiscais.focusNfeTokenUltimos4
+    ? `•••• ${dadosFiscais.focusNfeTokenUltimos4}`
     : null;
 
   return (

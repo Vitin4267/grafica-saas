@@ -1,5 +1,6 @@
 import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
+import type { PrismaTransactionClient } from "@/lib/prisma";
 import { aplicarPisoDoPedido } from "@/lib/pricing";
 import { paraDecimal } from "@/lib/pricing/decimal";
 
@@ -44,7 +45,7 @@ export type ResolucaoOpcoes = {
 // de opção única de sempre: Pedido, Comissao, PDF, relatórios e ficha técnica
 // nunca precisam saber que opções existiram.
 export async function resolverOpcoesNaAprovacao(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   params: { orcamentoId: string; opcaoEscolhidaId: string | null }
 ): Promise<ResolucaoOpcoes> {
   const opcoes = await tx.orcamentoOpcao.findMany({
@@ -120,7 +121,7 @@ export async function resolverOpcoesNaAprovacao(
 // tocada. Sem custo perceptível quando o orçamento nunca teve opção nenhuma
 // (deleteMany com zero linhas casando).
 export async function descartarOpcoesAlternativas(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   orcamentoId: string
 ): Promise<void> {
   await tx.orcamentoOpcao.deleteMany({ where: { orcamentoId } });

@@ -1,7 +1,7 @@
 import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 import type { AncoraVencimento } from "@/generated/prisma/enums";
-import { prisma } from "@/lib/prisma";
+import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 import { dataInputParaUTC, hojeBrasiliaInputValue } from "@/lib/data";
 
 export type ParcelaCondicaoPagamentoSugerida = {
@@ -140,7 +140,7 @@ type ParamsGeracaoContaReceber = {
 // da condição) bloquearia a geração automática; dado o baixo risco e a
 // alternativa (migration só pra isso), essa é a troca deliberada.
 async function gerarContasReceberPorAncora(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   ancoraGatilho: AncoraVencimento,
   params: ParamsGeracaoContaReceber
 ): Promise<void> {
@@ -214,7 +214,7 @@ async function gerarContasReceberPorAncora(
 // gerarContasReceberPorAncora é redundância defensiva, não a proteção
 // principal aqui).
 export async function gerarContasReceberDaAprovacao(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   params: {
     graficaId: string;
     orcamentoId: string;
@@ -236,7 +236,7 @@ export async function gerarContasReceberDaAprovacao(
 // depois de já autorizado), então a idempotência real vem do marcador em
 // gerarContasReceberPorAncora.
 export async function gerarContasReceberDaEmissaoNota(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   params: {
     graficaId: string;
     orcamentoId: string;
@@ -258,7 +258,7 @@ export async function gerarContasReceberDaEmissaoNota(
 // marcador em gerarContasReceberPorAncora cobre mesmo assim qualquer
 // reentrada (ex: reprocessamento manual do mesmo evento).
 export async function gerarContasReceberDaEntrega(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   params: {
     graficaId: string;
     orcamentoId: string;

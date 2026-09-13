@@ -25,9 +25,10 @@ vi.mock("next/cache", () => ({
   unstable_cache: (fn: unknown) => fn,
 }));
 
-vi.mock("@/lib/auth/session", () => ({
-  exigirUsuarioAutenticado: vi.fn(),
-}));
+vi.mock("@/lib/auth/session", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/auth/session")>();
+  return { ...real, exigirUsuarioAutenticado: vi.fn() };
+});
 vi.mock("@/lib/auth/email-verificacao", () => ({
   exigirEmailVerificado: vi.fn(async () => {}),
 }));
@@ -43,7 +44,8 @@ vi.mock("@/lib/email/webhook-email", async (importOriginal) => {
   return { ...real, dispararEventoEmail: vi.fn(async () => true) };
 });
 
-import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirUsuarioAutenticado, hashToken } from "@/lib/auth/session";
+import { cifrar } from "@/lib/cripto";
 import { adicionarItemOrcamento, atualizarStatusOrcamento } from "./actions";
 import { adicionarOpcaoOrcamento, removerOpcaoOrcamento } from "./opcoes.actions";
 import { responderOrcamentoPublico } from "@/app/o/[token]/actions";
@@ -476,7 +478,8 @@ describe("responderOrcamentoPublico (link público) com opções alternativas", 
         where: { id: fixture.orcamentoId },
         data: {
           status: "ENVIADO",
-          linkPublicoToken: token,
+          linkPublicoTokenHash: hashToken(token),
+          linkPublicoTokenCifrado: cifrar(token),
           enviadoEm: new Date(),
           validoAteEm: new Date(Date.now() + 86_400_000),
         },

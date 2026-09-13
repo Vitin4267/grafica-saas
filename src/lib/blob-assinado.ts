@@ -8,10 +8,10 @@ import { opcoesBlobPrivado } from "@/lib/blob-store";
 // `token: undefined` quando a var falta — e o SDK do @vercel/blob trata
 // isso como "não fornecido", caindo silenciosamente pro token do store
 // PÚBLICO (BLOB_READ_WRITE_TOKEN). Isso mandaria arquivo privado (imagem de
-// análise de tinta, ou o backup diário com Usuario.senhaHash e
-// DadosFiscaisGrafica.focusNfeToken em texto claro) pro store errado, sem
-// erro nenhum. Falha alto em vez disso — reaproveitada por
-// AnaliseTinta.actions.ts e src/app/api/cron/backup/route.ts.
+// análise de tinta, ou o backup diário com Usuario.senhaHash e credenciais
+// cifradas — ver src/lib/cripto.ts) pro store errado, sem erro nenhum. Falha
+// alto em vez disso — reaproveitada por AnaliseTinta.actions.ts e
+// src/app/api/cron/backup/route.ts.
 export function exigirTokenBlobPrivado(): string {
   const token = process.env.BLOB_PRIVATE_READ_WRITE_TOKEN;
   if (!token) {

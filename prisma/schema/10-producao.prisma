@@ -247,7 +247,13 @@ model Pedido {
   arteUrl               String?
   arteAprovadaEm        DateTime?
   arteComentarioCliente String?
-  arteLinkToken         String?   @unique
+  // Achado da auditoria de segurança (2026-09-13) — token de capability de
+  // /a/[token] (aprova a arte SEM login), mesmo tratamento de
+  // Orcamento.linkPublicoTokenHash/Cifrado (ver comentário lá): hash pra
+  // buscar, cifra pra remontar a URL quando "Copiar link da arte"
+  // (producao/page.tsx) precisa reexibi-la.
+  arteLinkTokenHash     String?   @unique
+  arteLinkTokenCifrado  String?
   // Mesmo campo/formato de Orcamento.preflightAvisos (ver comentário lá) —
   // quando a arte do orçamento é copiada pro Pedido na aprovação, os
   // achados de preflight são copiados junto (não recalculados, é o mesmo
@@ -267,7 +273,12 @@ model Pedido {
   // "qual" etapa confirma, só lê o status atual. Deixa de fazer sentido
   // quando o pedido chega em ENTREGUE/CANCELADO (terminal) — a página trata
   // isso como "nada pra confirmar agora", não como link inválido.
-  producaoLinkToken String? @unique
+  // Achado da auditoria de segurança (2026-09-13) — mesmo tratamento de
+  // arteLinkTokenHash/Cifrado acima: hash pra buscar
+  // (confirmarEstagioPublico), cifra pra remontar o link no e-mail de
+  // responsável (ver src/app/producao/status-transicao.ts).
+  producaoLinkTokenHash    String? @unique
+  producaoLinkTokenCifrado String?
 
   // QR físico colado no produto, pra atualizar status direto do chão de
   // fábrica sem voltar ao desktop (ver src/app/q/[token]). Mesmo princípio
@@ -284,7 +295,14 @@ model Pedido {
   // ESTAGIOS_ATRIBUIVEIS continua valendo (nunca avança a partir de FILA por
   // aqui — essa transição baixa estoque e exige a tela de confirmação de
   // perda de material, que não existe nesta versão mobile).
-  qrToken String? @unique
+  // Achado da auditoria de segurança (2026-09-13) — mesmo tratamento dos
+  // outros 3 tokens de link público acima: hash pra buscar (/q/[token]),
+  // cifra pra remontar o QR (src/app/producao/[pedidoId]/etiqueta/route.tsx)
+  // sempre que a etiqueta é reimpressa. Restrição física a lembrar: o token
+  // é evergreen (ver comentário do bloco acima) porque já existem QR codes
+  // impressos e colados em produto — reimprimir tem que gerar a MESMA URL.
+  qrTokenHash    String? @unique
+  qrTokenCifrado String?
 
   // Data da aprovação do orçamento (autenticada ou pelo link público) — até
   // esta fase, o dashboard somava faturamento por createdAt do orçamento
@@ -626,7 +644,7 @@ model AprovacaoProducao {
 
   // Usuario que registrou, quando é um usuário cadastrado logado — SetNull
   // preserva o histórico se o usuário for removido depois.
-  aprovadoPorId String?
+  aprovadoPorId            String?
   // Snapshot de nome quando NÃO é um Usuario cadastrado que registrou (ex:
   // operador do chão de fábrica sem login próprio no sistema) — não
   // verificado, vale como registro. Mesmo padrão de

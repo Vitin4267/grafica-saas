@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { SESSION_COOKIE_NAME } from "./constants";
 import { obterIpRequisicao } from "./ip";
+import { definirTenantAtual } from "@/lib/tenant-context";
 
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 7; // 7 dias
 
@@ -86,6 +87,12 @@ export async function exigirUsuarioAutenticado() {
   if (!usuario) {
     redirect("/login");
   }
+  // Achado da auditoria de segurança (2026-09-13) — todo caminho autenticado
+  // passa por aqui; a partir deste ponto, prisma-tenant-guard.ts (ver
+  // src/lib/prisma.ts) já enxerga o tenant do request e passa a exigir
+  // graficaId nas queries multi-tenant, conferindo o VALOR contra este
+  // mesmo usuario.graficaId quando presente. Ver src/lib/tenant-context.ts.
+  definirTenantAtual(usuario.graficaId);
   return usuario;
 }
 
