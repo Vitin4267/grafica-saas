@@ -36,11 +36,17 @@ async function resolverMotoristaColaboradorId(
   return { ok: true, id: colaborador.id };
 }
 
-// Cria a Entrega (1:1, sempre nasce em AGUARDANDO — ver default do schema)
-// de um pedido que ainda não tem uma. Gate PRODUCAO (não um módulo novo, ver
-// tarefa) — mesmo módulo que já controla o resto da fila em
-// producao/page.tsx. motorista é opcional aqui: a gráfica pode só marcar
-// "aguardando saída" e preencher quem vai levar depois, na hora de sair.
+// Cria uma Entrega pra um pedido. Achado F2 da auditoria de abrangência
+// (2026-09-14) — Entrega deixou de ser 1:1 com o Pedido (entrega física pode
+// ser dividida em remessas, ou uma entrega com PROBLEMA pode precisar de
+// uma nova do zero). Guard: só bloqueia quando já existe entrega "em voo"
+// (AGUARDANDO/EM_TRANSITO) — ENTREGUE ou PROBLEMA liberam uma nova, evitando
+// duas entregas ativas ao mesmo tempo sem sentido operacional (mesma regra
+// espelhada na UI, ver EntregaPedidoSecao.tsx, mas a garantia real é aqui).
+// Gate PRODUCAO (não um módulo novo, ver tarefa) — mesmo módulo que já
+// controla o resto da fila em producao/page.tsx. motorista é opcional aqui:
+// a gráfica pode só marcar "aguardando saída" e preencher quem vai levar
+// depois, na hora de sair.
 export async function criarEntrega(
   _estadoAnterior: CriarEntregaResult | null,
   formData: FormData
@@ -61,7 +67,11 @@ export async function criarEntrega(
 
   const pedido = await prisma.pedido.findFirst({
     where: { id: pedidoId, graficaId: usuario.graficaId },
-    select: { id: true, status: true, entrega: { select: { id: true } } },
+    select: {
+      id: true,
+      status: true,
+      entregas: { where: { status: { in: ["AGUARDANDO", "EM_TRANSITO"] } }, select: { id: true } },
+    },
   });
   if (!pedido) {
     return { ok: false, mensagem: "Pedido não encontrado." };
@@ -69,8 +79,11 @@ export async function criarEntrega(
   if (pedido.status === "CANCELADO") {
     return { ok: false, mensagem: "Um pedido cancelado não pode ter entrega." };
   }
-  if (pedido.entrega) {
-    return { ok: false, mensagem: "Este pedido já tem uma entrega registrada." };
+  if (pedido.entregas.length > 0) {
+    return {
+      ok: false,
+      mensagem: "Este pedido já tem uma entrega em andamento — aguarde ela chegar a Entregue ou Problema.",
+    };
   }
 
   const entrega = await prisma.entrega.create({

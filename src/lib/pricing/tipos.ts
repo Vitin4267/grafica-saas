@@ -41,6 +41,13 @@ export type PedidoM2 = {
   quantidade: number; // Q
   margemSeguranca?: number; // s — usa o default do tenant se omitido
   gapPecas?: number; // g — usa o default do tenant se omitido
+  // Achado A8 da auditoria de abrangência (2026-09-14) — M2 era o único
+  // motor sem perda de material (OFFSET/FLEXOGRAFIA já descontam via
+  // Prensa.perdaPercentPadrao/MaquinaFlexografia.perdaPercentPadrao, ver
+  // PedidoOffset.perdaPercent acima). Mesmo formato: override por pedido,
+  // usa o default do tenant (ParametrosTenant.perdaPercentPadraoM2) se
+  // omitido — fração [0,1], validada por validarPerdaPercent em validar.ts.
+  perdaPercent?: number;
 };
 
 export type ContextoM2 = {
@@ -169,6 +176,14 @@ export type ParametrosTenant = {
 
   margemSegurancaPadrao: number;
   gapPecasPadrao: number;
+  // Achado A8 — default de perda de material pra M2 (fração, mesmo formato
+  // de Prensa.perdaPercentPadrao/MaquinaFlexografia.perdaPercentPadrao, mas
+  // em nível de TENANT porque M2 não tem máquina própria pra guardar isso).
+  // Opcional só pra não quebrar fixture de teste antiga que monta
+  // ParametrosTenant à mão sem esse campo (mesmo padrão de
+  // gramaturaMinGm2/paginasPorCadernoPadrao acima) — calcularM2 trata
+  // ausência como 0 (sem perda, comportamento de sempre).
+  perdaPercentPadraoM2?: number;
 
   // Achado N13 — faixa de gramatura aceita pelo validador do offset (ver
   // ContextoOffset acima e validarPedidoOffset em validar.ts). Opcional

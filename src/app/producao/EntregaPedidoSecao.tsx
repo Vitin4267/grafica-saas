@@ -161,6 +161,70 @@ function FormularioAvancoEntrega({
   );
 }
 
+// Um bloco de detalhe + form de avanço pra UMA entrega da lista — extraído
+// do corpo de EntregaPedidoSecao (achado F2) pra manter o .map() abaixo
+// legível.
+function EntregaItem({
+  entrega,
+  podeEditar,
+  colaboradoresMotoristas,
+}: {
+  entrega: EntregaResumo;
+  podeEditar: boolean;
+  colaboradoresMotoristas: ColaboradorMotoristaOpcao[];
+}) {
+  return (
+    <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 last:border-0 last:pb-0 dark:border-slate-800">
+      <div className="flex items-center justify-between gap-2">
+        <StatusBadge status={entrega.status} tipo="entrega" />
+      </div>
+      <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+        <div>
+          <p className="text-xs font-medium text-slate-500">Motorista</p>
+          <p className="mt-0.5 text-slate-900 dark:text-white">{entrega.motorista ?? "—"}</p>
+        </div>
+        <div>
+          <p className="text-xs font-medium text-slate-500">Saída</p>
+          <p className="mt-0.5 text-slate-900 dark:text-white">
+            {entrega.dataSaida ? formatoInstanteRealComHora.format(new Date(entrega.dataSaida)) : "—"}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs font-medium text-slate-500">Entrega</p>
+          <p className="mt-0.5 text-slate-900 dark:text-white">
+            {entrega.dataEntrega ? formatoInstanteRealComHora.format(new Date(entrega.dataEntrega)) : "—"}
+          </p>
+        </div>
+        {entrega.observacoes && (
+          <div className="sm:col-span-2">
+            <p className="text-xs font-medium text-slate-500">Observações</p>
+            <p className="mt-0.5 whitespace-pre-wrap text-slate-900 dark:text-white">{entrega.observacoes}</p>
+          </div>
+        )}
+      </div>
+
+      {/* key={entrega.status}: força remount a cada mudança de status — sem
+          isso, o useState de proximoStatus dentro do formulário
+          (inicializado só na primeira montagem) ficava com o valor do
+          status ANTERIOR depois de uma transição bem-sucedida (ex: depois
+          de AGUARDANDO→EM_TRANSITO, o próximo submit ainda mandava
+          "EM_TRANSITO" em vez de "ENTREGUE", porque só o texto do botão
+          usava entrega.status direto — o campo hidden usava o state
+          velho). Bug real encontrado testando na mão. */}
+      {podeEditar && entrega.status !== "ENTREGUE" && (
+        <FormularioAvancoEntrega
+          key={entrega.status}
+          entrega={entrega}
+          colaboradoresMotoristas={colaboradoresMotoristas}
+        />
+      )}
+      {entrega.status === "ENTREGUE" && (
+        <p className="text-xs text-slate-500">Entregue — nenhuma ação disponível.</p>
+      )}
+    </div>
+  );
+}
+
 // Seção de entrega estruturada de um pedido — status próprio (AGUARDANDO →
 // EM_TRANSITO → ENTREGUE, mais o desvio lateral PROBLEMA), substituindo o
 // texto livre de Orcamento.frete/transportadora/localEntrega por algo com
@@ -169,14 +233,25 @@ function FormularioAvancoEntrega({
 // quando o pedido já saiu da pré-produção (ARTE/CLICHE_FACA, ver
 // ESTAGIOS_PRE_PRODUCAO em src/lib/producao-estagios.ts) — antes disso não
 // há nada físico ainda pra sair pra entrega.
+//
+// Achado F2 da auditoria de abrangência (2026-09-14) — Entrega deixou de
+// ser 1:1 com o Pedido (entrega física pode ser dividida em remessas, ou
+// uma entrega com PROBLEMA pode precisar de uma nova do zero em vez de
+// resolver a antiga). `entregas` é a lista inteira (mais antiga primeiro,
+// ver `orderBy` em producao/page.tsx), renderizada uma abaixo da outra.
+// "+ Nova entrega" só aparece quando NENHUMA está "em voo" (AGUARDANDO/
+// EM_TRANSITO) — ENTREGUE ou PROBLEMA liberam uma nova, evitando duas
+// entregas ativas ao mesmo tempo sem sentido operacional (mesmo guard
+// aplicado no servidor, ver criarEntrega em entrega-actions.ts — a tela só
+// espelha a regra, nunca confia só nela).
 export function EntregaPedidoSecao({
   pedidoId,
-  entrega,
+  entregas,
   podeEditar,
   colaboradoresMotoristas,
 }: {
   pedidoId: string;
-  entrega: EntregaResumo | null;
+  entregas: EntregaResumo[];
   podeEditar: boolean;
   // Achado D1 da auditoria de abrangência (Parte 4/Qualidade-pessoas) —
   // Colaboradores ATIVOS tipo=MOTORISTA da gráfica (grafica-wide, buscados
@@ -196,61 +271,34 @@ export function EntregaPedidoSecao({
     }
   }
 
+  const temEntregaEmVoo = entregas.some((e) => e.status === "AGUARDANDO" || e.status === "EM_TRANSITO");
+  const podeCriarNova = podeEditar && !temEntregaEmVoo;
+  const ultimaEntrega = entregas[entregas.length - 1] ?? null;
+
   return (
     <details className="group rounded-xl border border-slate-200 dark:border-slate-800">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-600 marker:content-none hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800/50">
-        <span>Entrega</span>
-        {entrega && <StatusBadge status={entrega.status} tipo="entrega" />}
+        <span>{entregas.length > 1 ? `Entregas (${entregas.length})` : "Entrega"}</span>
+        {ultimaEntrega && <StatusBadge status={ultimaEntrega.status} tipo="entrega" />}
       </summary>
 
       <div className="flex flex-col gap-4 border-t border-slate-100 p-4 dark:border-slate-800">
-        {entrega ? (
-          <>
-            <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-              <div>
-                <p className="text-xs font-medium text-slate-500">Motorista</p>
-                <p className="mt-0.5 text-slate-900 dark:text-white">{entrega.motorista ?? "—"}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-slate-500">Saída</p>
-                <p className="mt-0.5 text-slate-900 dark:text-white">
-                  {entrega.dataSaida ? formatoInstanteRealComHora.format(new Date(entrega.dataSaida)) : "—"}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-slate-500">Entrega</p>
-                <p className="mt-0.5 text-slate-900 dark:text-white">
-                  {entrega.dataEntrega ? formatoInstanteRealComHora.format(new Date(entrega.dataEntrega)) : "—"}
-                </p>
-              </div>
-              {entrega.observacoes && (
-                <div className="sm:col-span-2">
-                  <p className="text-xs font-medium text-slate-500">Observações</p>
-                  <p className="mt-0.5 whitespace-pre-wrap text-slate-900 dark:text-white">{entrega.observacoes}</p>
-                </div>
-              )}
-            </div>
-
-            {/* key={entrega.status}: força remount a cada mudança de status —
-                sem isso, o useState de proximoStatus dentro do formulário
-                (inicializado só na primeira montagem) ficava com o valor do
-                status ANTERIOR depois de uma transição bem-sucedida (ex:
-                depois de AGUARDANDO→EM_TRANSITO, o próximo submit ainda
-                mandava "EM_TRANSITO" em vez de "ENTREGUE", porque só o
-                texto do botão usava entrega.status direto — o campo hidden
-                usava o state velho). Bug real encontrado testando na mão. */}
-            {podeEditar && entrega.status !== "ENTREGUE" && (
-              <FormularioAvancoEntrega
-                key={entrega.status}
+        {entregas.length > 0 ? (
+          <div className="flex flex-col gap-4">
+            {entregas.map((entrega) => (
+              <EntregaItem
+                key={entrega.id}
                 entrega={entrega}
+                podeEditar={podeEditar}
                 colaboradoresMotoristas={colaboradoresMotoristas}
               />
-            )}
-            {entrega.status === "ENTREGUE" && (
-              <p className="text-xs text-slate-500">Entregue — nenhuma ação disponível.</p>
-            )}
-          </>
-        ) : podeEditar ? (
+            ))}
+          </div>
+        ) : !podeEditar ? (
+          <p className="text-xs text-slate-500">Nenhuma entrega registrada ainda.</p>
+        ) : null}
+
+        {podeCriarNova && (
           <form action={formAction} className="flex flex-col gap-3">
             <input type="hidden" name="pedidoId" value={pedidoId} />
             {colaboradoresMotoristas.length > 0 && (
@@ -279,11 +327,14 @@ export function EntregaPedidoSecao({
             />
             {state && !state.ok && <Alert variant="error">{state.mensagem}</Alert>}
             <Button type="submit" variant="outline" loading={isPending} className="self-start">
-              {isPending ? "Criando..." : "Registrar entrega"}
+              {isPending ? "Criando..." : entregas.length > 0 ? "+ Nova entrega" : "Registrar entrega"}
             </Button>
           </form>
-        ) : (
-          <p className="text-xs text-slate-500">Nenhuma entrega registrada ainda.</p>
+        )}
+        {podeEditar && !podeCriarNova && (
+          <p className="text-xs text-slate-500">
+            Aguarde esta entrega chegar a Entregue (ou Problema) antes de registrar outra.
+          </p>
         )}
       </div>
     </details>

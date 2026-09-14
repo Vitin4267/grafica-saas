@@ -49,6 +49,18 @@ function contextoM2Valido(overrides: Partial<ContextoM2> = {}): ContextoM2 {
   };
 }
 
+// Achado A8 — mesmo formato de paramsPrensaValidos/paramsMaquinaFlexoValidos
+// abaixo, só que M2 não tinha nenhum "params" antes deste achado (não tem
+// máquina própria) — perdaPercentPadraoM2 é o único campo.
+function paramsM2Validos(overrides: { perdaPercentPadraoM2?: number } = {}): {
+  perdaPercentPadraoM2: number;
+} {
+  return {
+    perdaPercentPadraoM2: 0.03,
+    ...overrides,
+  };
+}
+
 function pedidoOffsetValido(overrides: Partial<PedidoOffset> = {}): PedidoOffset {
   return {
     larguraM: 0.09,
@@ -280,6 +292,86 @@ describe("validarPedidoM2 — CUSTO_INVALIDO (custoM2Material)", () => {
     expect(() =>
       validarPedidoM2(pedidoM2Valido(), contextoM2Valido({ custoM2Material: 0.01 }))
     ).not.toThrow();
+  });
+});
+
+// Achado A8 da auditoria de abrangência (2026-09-14) — M2 ganhou perda de
+// material, mesmo formato de OFFSET/FLEXOGRAFIA (ver describe "PERDA_INVALIDA"
+// deles mais abaixo neste arquivo) — mesma matriz de fronteira, só que o
+// "cadastro" é ParametrosGrafica.perdaPercentPadraoM2 (tenant), não uma
+// máquina, porque M2 não tem máquina própria.
+describe("validarPedidoM2 — PERDA_INVALIDA (perdaPercent resolvido: pedido ?? params, faixa [0,1])", () => {
+  it("dispara quando o PEDIDO informa perdaPercent=3 (dedo-gordo de 3% digitado sem dividir por 100)", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoM2(
+        pedidoM2Valido({ perdaPercent: 3 }),
+        contextoM2Valido(),
+        paramsM2Validos()
+      )
+    );
+    expect(erro).toBe("PERDA_INVALIDA");
+  });
+
+  it("dispara quando o default do tenant (params.perdaPercentPadraoM2) vem com 1.5 (150%)", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoM2(
+        pedidoM2Valido(),
+        contextoM2Valido(),
+        paramsM2Validos({ perdaPercentPadraoM2: 1.5 })
+      )
+    );
+    expect(erro).toBe("PERDA_INVALIDA");
+  });
+
+  it("fronteira válida: perdaPercent = 0 (sem perda configurada) não lança", () => {
+    expect(() =>
+      validarPedidoM2(pedidoM2Valido({ perdaPercent: 0 }), contextoM2Valido(), paramsM2Validos())
+    ).not.toThrow();
+  });
+
+  it("fronteira válida: perdaPercent = 1 (limite superior, 100% de perda) não lança", () => {
+    expect(() =>
+      validarPedidoM2(pedidoM2Valido({ perdaPercent: 1 }), contextoM2Valido(), paramsM2Validos())
+    ).not.toThrow();
+  });
+
+  it("caso comum: perdaPercent = 0.03 (3%, vindo do pedido ou do cadastro) não lança", () => {
+    expect(() =>
+      validarPedidoM2(
+        pedidoM2Valido({ perdaPercent: 0.03 }),
+        contextoM2Valido(),
+        paramsM2Validos()
+      )
+    ).not.toThrow();
+    expect(() =>
+      validarPedidoM2(
+        pedidoM2Valido(),
+        contextoM2Valido(),
+        paramsM2Validos({ perdaPercentPadraoM2: 0.03 })
+      )
+    ).not.toThrow();
+  });
+
+  it("dispara logo acima do limite (1.0001) e não lança logo abaixo (0.9999)", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoM2(
+        pedidoM2Valido({ perdaPercent: 1.0001 }),
+        contextoM2Valido(),
+        paramsM2Validos()
+      )
+    );
+    expect(erro).toBe("PERDA_INVALIDA");
+    expect(() =>
+      validarPedidoM2(
+        pedidoM2Valido({ perdaPercent: 0.9999 }),
+        contextoM2Valido(),
+        paramsM2Validos()
+      )
+    ).not.toThrow();
+  });
+
+  it("sem params (default 0 embutido em validarPedidoM2) não lança — retrocompatível com chamada de 2 argumentos", () => {
+    expect(() => validarPedidoM2(pedidoM2Valido(), contextoM2Valido())).not.toThrow();
   });
 });
 

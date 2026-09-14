@@ -124,6 +124,12 @@ model Usuario {
   // login) — SetNull preserva o registro histórico mesmo se o usuário for
   // removido depois.
   aprovacoesProducaoRegistradas AprovacaoProducao[]
+  // Achado F3 da auditoria de abrangência (2026-09-14, escopo reduzido) —
+  // usuários que marcaram um item de pedido como concluído, ver model
+  // ItemPedidoStatus (10-producao.prisma). SetNull lá preserva o registro
+  // mesmo se o usuário for removido depois — mesmo padrão de
+  // aprovacoesProducaoRegistradas acima.
+  itensPedidoConcluidos         ItemPedidoStatus[]
 
   @@index([graficaId])
   @@map("usuarios")

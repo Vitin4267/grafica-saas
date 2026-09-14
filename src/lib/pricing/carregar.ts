@@ -37,6 +37,7 @@ export async function carregarParametrosTenant(graficaId: string): Promise<Param
 
     margemSegurancaPadrao: Number(registro.margemSegurancaPadrao),
     gapPecasPadrao: Number(registro.gapPecasPadrao),
+    perdaPercentPadraoM2: Number(registro.perdaPercentPadraoM2),
 
     gramaturaMinGm2: Number(registro.gramaturaMinGm2),
     gramaturaMaxGm2: Number(registro.gramaturaMaxGm2),

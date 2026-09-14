@@ -68,7 +68,16 @@ function validarComum(quantidade: number, larguraM: number, alturaM: number) {
   }
 }
 
-export function validarPedidoM2(pedido: PedidoM2, contexto: ContextoM2) {
+export function validarPedidoM2(
+  pedido: PedidoM2,
+  contexto: ContextoM2,
+  // Opcional (default perdaPercentPadraoM2: 0) — mesmo motivo de
+  // validarPedidoM2 já ser chamada em ~15 lugares de validar.test.ts sem um
+  // 3º argumento antes do achado A8: exigir o campo quebraria toda fixture
+  // de teste existente. Ausência = sem perda configurada, nunca lança
+  // PERDA_INVALIDA (comportamento de sempre pra quem não mexeu no default).
+  params: { perdaPercentPadraoM2: number } = { perdaPercentPadraoM2: 0 }
+) {
   validarComum(pedido.quantidade, pedido.larguraM, pedido.alturaM);
 
   if (contexto.bobinas.length === 0) {
@@ -84,6 +93,10 @@ export function validarPedidoM2(pedido: PedidoM2, contexto: ContextoM2) {
       { custoM2Material: contexto.custoM2Material }
     );
   }
+  // Achado A8 — mesmo campo RESOLVIDO (pedido sobrepõe cadastro) que m2.ts
+  // realmente usa, espelhando validarPedidoOffset/validarPedidoFlexografia
+  // acima.
+  validarPerdaPercent(pedido.perdaPercent ?? params.perdaPercentPadraoM2);
 }
 
 export function validarPedidoOffset(

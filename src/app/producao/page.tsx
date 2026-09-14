@@ -335,7 +335,13 @@ export default async function ProducaoPage({
           include: { categoriaCusto: true },
           orderBy: { createdAt: "desc" },
         },
-        entrega: true,
+        // Achado F2 — N entregas por pedido, mais antiga primeiro (mesma
+        // ordem que EntregaPedidoSecao.tsx espera pra listar).
+        entregas: { orderBy: { createdAt: "asc" } },
+        // Achado F3 da auditoria de abrangência (2026-09-14, escopo
+        // reduzido) — só o orcamentoItemId de cada marcação (o resto do
+        // ItemPedidoStatus não é usado na lista, ver ItemPedidoStatusCheckbox).
+        itensStatus: { select: { orcamentoItemId: true } },
         // Achado C1 da auditoria de abrangência (Parte 2/Produção) — só o
         // apontamento ABERTO (finalizadoEm null) da etapa atual, com os 5
         // campos de máquina — sinal PRIMÁRIO de "a máquina deste card" pras
@@ -673,6 +679,17 @@ export default async function ProducaoPage({
           // compartilhada, ver comentário em resolverAprovacaoQualidade).
           const aprovacaoQualidade = resolverAprovacaoQualidade(pedido, mapaExigeAprovacaoQualidade);
 
+          // Achado F3 da auditoria de abrangência (2026-09-14, escopo
+          // reduzido) — Set dos itens já marcados (pedido.itensStatus, ver
+          // `include` acima) pra montar itens[] sem N+1 query.
+          const idsItensConcluidos = new Set(pedido.itensStatus.map((s) => s.orcamentoItemId));
+          const itensPedido = pedido.orcamento.itens.map((i) => ({
+            id: i.id,
+            nome: i.itemGrafica.itemCatalogo.nome,
+            quantidade: i.quantidade,
+            concluido: idsItensConcluidos.has(i.id),
+          }));
+
           return (
             <div key={pedido.id}>
               {inicioFinalizados && (
@@ -687,6 +704,7 @@ export default async function ProducaoPage({
                 itensResumo={pedido.orcamento.itens
                   .map((i) => i.itemGrafica.itemCatalogo.nome)
                   .join(", ")}
+                itens={itensPedido}
                 status={pedido.status}
                 podeEditar={podeEditar}
                 podeEditarCustos={podeEditarCustos}
@@ -744,19 +762,15 @@ export default async function ProducaoPage({
                 // apontamento ABERTO atual, ver `apontamentos` no `include`
                 // de cima).
                 ehRetrabalho={pedido.apontamentos[0]?.ehRetrabalho ?? false}
-                entrega={
-                  pedido.entrega
-                    ? {
-                        id: pedido.entrega.id,
-                        status: pedido.entrega.status,
-                        motorista: pedido.entrega.motorista,
-                        motoristaColaboradorId: pedido.entrega.motoristaColaboradorId,
-                        dataSaida: pedido.entrega.dataSaida ? pedido.entrega.dataSaida.toISOString() : null,
-                        dataEntrega: pedido.entrega.dataEntrega ? pedido.entrega.dataEntrega.toISOString() : null,
-                        observacoes: pedido.entrega.observacoes,
-                      }
-                    : null
-                }
+                entregas={pedido.entregas.map((entrega) => ({
+                  id: entrega.id,
+                  status: entrega.status,
+                  motorista: entrega.motorista,
+                  motoristaColaboradorId: entrega.motoristaColaboradorId,
+                  dataSaida: entrega.dataSaida ? entrega.dataSaida.toISOString() : null,
+                  dataEntrega: entrega.dataEntrega ? entrega.dataEntrega.toISOString() : null,
+                  observacoes: entrega.observacoes,
+                }))}
                 colaboradoresMotoristas={colaboradoresMotoristas}
                 terceirizacoes={mapearTerceirizacoes(pedido.etapasTerceirizadas, podeVerCustos)}
                 fornecedores={fornecedoresAtivos}
