@@ -35,7 +35,7 @@ jobs:
       ENCRYPTION_KEY: B4SkFfk7cy8Cv633i/pe36o3aHDUP91VTYi0rJFb+GE=
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
