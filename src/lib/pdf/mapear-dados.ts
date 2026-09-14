@@ -344,12 +344,31 @@ export function mapearDadosPdf(orcamento: OrcamentoParaPdf): DadosPdfOrcamento {
     })),
     // Achado B3 — já ordenado por `ordem` crescente pela própria query (ver
     // `orderBy: { ordem: "asc" }` nos includes de entregasProgramadas).
-    cronogramaEntrega: orcamento.entregasProgramadas.map((linha) => ({
-      quantidade: linha.quantidade.toLocaleString("pt-BR"),
-      dataPrevista: linha.dataPrevista,
-      localEntrega: linha.localEntrega,
-      observacao: linha.observacao,
-    })),
+    //
+    // Achado N29 da auditoria de código (2026-09-12) — o cronograma só é
+    // validado (soma <= total vendido) NA ESCRITA de cada linha
+    // (validarSomaCronogramaEntrega, achado B3); editar os ITENS do
+    // orçamento depois (reduzir quantidade) nunca revalida o cronograma já
+    // salvo, e o PDF/link público continuavam imprimindo o compromisso
+    // ANTIGO — uma promessa contratual de entregar mais do que foi vendido.
+    // Recalcula aqui (mesma soma de `somarQuantidadeItensBase`, ver
+    // src/app/orcamento/[id]/actions/entrega-programada.ts) e OMITE o
+    // cronograma inteiro do documento quando ele já não bate mais com o
+    // vendido atual — mostrar nada é sempre melhor que mostrar uma promessa
+    // sabidamente errada pro cliente. A tela de edição do orçamento
+    // continua mostrando as linhas (com aviso, ver CronogramaEntregaForm.tsx)
+    // pro vendedor corrigir.
+    cronogramaEntrega: (() => {
+      const quantidadeTotalOrcamento = orcamento.itens.reduce((soma, item) => soma + item.quantidade, 0);
+      const somaCronograma = orcamento.entregasProgramadas.reduce((soma, linha) => soma + linha.quantidade, 0);
+      if (somaCronograma > quantidadeTotalOrcamento) return [];
+      return orcamento.entregasProgramadas.map((linha) => ({
+        quantidade: linha.quantidade.toLocaleString("pt-BR"),
+        dataPrevista: linha.dataPrevista,
+        localEntrega: linha.localEntrega,
+        observacao: linha.observacao,
+      }));
+    })(),
   };
 }
 

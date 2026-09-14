@@ -52,6 +52,24 @@ export interface EntradaCoberturaOverhead {
    * empurrando a gráfica a configurar overhead insuficiente).
    */
   custoDiretoAgregado: number;
+  /**
+   * Achado N30 da Parte 9 da auditoria de código (2026-09-12) — soma, em
+   * R$, de `OrcamentoItem.precoTotal` de TODOS os itens de orçamentos
+   * APROVADOS no período (SIMPLES incluído), pra medir quanto da receita
+   * do período este relatório de fato enxerga.
+   */
+  receitaTotalAprovada: number;
+  /**
+   * Achado N30 — fatia de `receitaTotalAprovada` que veio de item SEM
+   * `custoDireto` rastreado (item SIMPLES, na prática) — nunca entra em
+   * `overheadCobrado` nem em `custoDiretoAgregado`. Uma gráfica que vende
+   * majoritariamente por SIMPLES tem essa fatia próxima de 100%: o
+   * relatório mede a cobertura de um mecanismo (overhead embutido no motor
+   * avançado) que ela mal usa, e sem este campo a tela não tinha como
+   * avisar — "overhead cobriu R$0,00, custo fixo real R$28.000" parecia
+   * alarme de verdade quando era só escopo.
+   */
+  receitaSemCustoDireto: number;
 }
 
 export interface ResultadoCoberturaOverhead {
@@ -76,22 +94,35 @@ export interface ResultadoCoberturaOverhead {
    * fixo real do período.
    */
   diferenca: number;
+  /**
+   * Achado N30 — 0-100, que fração de `receitaTotalAprovada` NÃO tem
+   * custoDireto rastreado (item SIMPLES). `null` quando não houve receita
+   * aprovada no período nenhuma (nada a medir). A tela usa isto pra
+   * avisar quando o relatório está vendo só uma fatia pequena da operação
+   * real da gráfica, em vez de deixar o número parecer completo.
+   */
+  percentualReceitaForaDoEscopo: number | null;
 }
 
 export function calcularCoberturaOverhead(
   entrada: EntradaCoberturaOverhead
 ): ResultadoCoberturaOverhead {
-  const { overheadCobrado, custoFixoPago, custoDiretoAgregado } = entrada;
+  const { overheadCobrado, custoFixoPago, custoDiretoAgregado, receitaTotalAprovada, receitaSemCustoDireto } =
+    entrada;
 
   // Achado N20 — base é custoDiretoAgregado, NUNCA receita bruta (ver
   // comentário completo em EntradaCoberturaOverhead.custoDiretoAgregado).
   const percentualQueFecharia = custoDiretoAgregado > 0 ? (custoFixoPago / custoDiretoAgregado) * 100 : null;
   const diferenca = custoFixoPago - overheadCobrado;
+  // Achado N30 — ver comentário completo de percentualReceitaForaDoEscopo.
+  const percentualReceitaForaDoEscopo =
+    receitaTotalAprovada > 0 ? (receitaSemCustoDireto / receitaTotalAprovada) * 100 : null;
 
   return {
     overheadCobrado,
     custoFixoPago,
     percentualQueFecharia,
     diferenca,
+    percentualReceitaForaDoEscopo,
   };
 }

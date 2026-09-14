@@ -3,6 +3,7 @@
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { CampoAjuda } from "@/components/ui/CampoAjuda";
+import { Alert } from "@/components/ui/Alert";
 
 // Papel escolhido como matéria-prima NESTE orçamento (não fixo no produto,
 // diferente do papelId do modelo Offset) — ver ConfiguracaoClicheEtiqueta e
@@ -33,15 +34,40 @@ export function CamposPrecificacaoEtiquetaOrcamento({
   papeisDisponiveis,
   valores,
   onChange,
+  coresRotulo,
+  coresContraRotulo,
 }: {
   papeisDisponiveis: PapelDisponivel[];
   valores: CamposPrecificacaoEtiqueta;
   onChange: (novo: CamposPrecificacaoEtiqueta) => void;
+  // Achado B8 da auditoria do motor de preço (2026-09-13) — "Cores rótulo"/
+  // "Cores contra-rótulo" (campos descritivos da ficha técnica, ver
+  // CamposEtiquetaOrcamento.tsx) e "Quantidade de cores (clichês)" acima
+  // (o único que entra no preço) são digitados em telas diferentes e
+  // ninguém compara um com o outro — um vendedor preenchendo os dois
+  // primeiros com cuidado e deixando este aqui desatualizado (ou vice-versa)
+  // faz o clichê sair errado sem nenhum aviso. Opcionais só pra não quebrar
+  // quem usa este componente sem os campos descritivos por perto.
+  coresRotulo?: string;
+  coresContraRotulo?: string;
 }) {
   const set =
     (campo: keyof CamposPrecificacaoEtiqueta) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
       onChange({ ...valores, [campo]: e.target.value });
+
+  // Só avisa quando os 3 campos estão preenchidos com números válidos — não
+  // é uma trava (pode ser proposital: uma cor compartilhada entre rótulo e
+  // contra-rótulo reaproveitando o mesmo clichê, por exemplo), é só tornar
+  // visível uma divergência que hoje passa desapercebida.
+  const rotuloNum = coresRotulo !== undefined && coresRotulo !== "" ? Number(coresRotulo) : null;
+  const contraRotuloNum =
+    coresContraRotulo !== undefined && coresContraRotulo !== "" ? Number(coresContraRotulo) : null;
+  const quantidadeCoresNum = valores.quantidadeCores !== "" ? Number(valores.quantidadeCores) : null;
+  const somaDescritiva =
+    rotuloNum !== null && contraRotuloNum !== null ? rotuloNum + contraRotuloNum : null;
+  const divergeDaFichaTecnica =
+    somaDescritiva !== null && quantidadeCoresNum !== null && somaDescritiva !== quantidadeCoresNum;
 
   return (
     <div className="flex flex-col gap-4 rounded-xl border border-slate-300 p-4 dark:border-slate-700">
@@ -76,6 +102,15 @@ export function CamposPrecificacaoEtiquetaOrcamento({
         hint="Um clichê por cor da arte — custo fixo, não muda com a tiragem."
         required
       />
+
+      {divergeDaFichaTecnica && (
+        <Alert variant="warning">
+          "Cores rótulo" + "Cores contra-rótulo" (ficha técnica, mais abaixo) somam {somaDescritiva}, mas
+          a quantidade de cores usada no preço está em {quantidadeCoresNum}. Confira se é isso mesmo —
+          divergência intencional acontece (ex: uma cor reaproveitada entre rótulo e contra-rótulo no
+          mesmo clichê), mas costuma ser um campo que ficou desatualizado.
+        </Alert>
+      )}
 
       {/* Custo de faca/frete: R$ livres, opcionais, raramente preenchidos —
           diferente de papel/quantidade de cores acima (que entram na conta

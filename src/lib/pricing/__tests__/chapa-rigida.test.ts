@@ -62,19 +62,29 @@ describe("calcularChapaRigida — imposição (nUp/nChapas), reaproveitando calc
     expect(resultado.folhaEscolhida).toEqual({ id: "f1", nome: "Chapa 30x30" });
   });
 
-  it("escolhe o formato de chapa com MAIOR nUp entre os cadastrados (minimiza nº de chapas, preço é fixo por chapa)", () => {
-    const resultado = calcularChapaRigida(
-      pedidoChapaValido(),
-      contextoChapaValido({
-        folhas: [
-          { id: "pequena", nome: "Chapa 20x20", larguraFolha: 0.2, alturaFolha: 0.2 }, // 2x2=4 up
-          { id: "grande", nome: "Chapa 1220x2440mm", larguraFolha: 1.22, alturaFolha: 2.44 }, // muito maior
-        ],
-      })
-    );
-
-    expect(resultado.folhaEscolhida.id).toBe("grande");
-    expect(resultado.nUp).toBeGreaterThan(4);
+  it("achado A3 da auditoria do motor de preço (2026-09-13): MAIS DE 1 formato cadastrado é rejeitado, não escolhe o maior", () => {
+    // ANTES, o motor aceitava vários FormatoFolha no mesmo produto e
+    // escolhia sempre o de MAIOR nUp — mas contexto.precoPorChapa é um
+    // preço FIXO de UM registro só (ItemGrafica.chapaId), sem vínculo
+    // nenhum com QUAL formato: cadastro real (ex: "Placa ACM 4mm" em
+    // 1,00x2,00 E 1,22x2,44, preços diferentes) saía com número errado nas
+    // duas leituras possíveis. Defesa em profundidade (o cadastro em
+    // Catálogo já impede isso na escrita) — o motor puro também recusa.
+    try {
+      calcularChapaRigida(
+        pedidoChapaValido(),
+        contextoChapaValido({
+          folhas: [
+            { id: "pequena", nome: "Chapa 20x20", larguraFolha: 0.2, alturaFolha: 0.2 },
+            { id: "grande", nome: "Chapa 1220x2440mm", larguraFolha: 1.22, alturaFolha: 2.44 },
+          ],
+        })
+      );
+      expect.fail("deveria ter lançado ErroPrecificacao");
+    } catch (erro) {
+      expect(erro).toBeInstanceOf(ErroPrecificacao);
+      expect((erro as ErroPrecificacao).codigo).toBe("MATERIAL_SEM_FOLHA");
+    }
   });
 
   it("PECA_EXCEDE_FOLHA quando a peça não cabe em nenhuma chapa cadastrada", () => {

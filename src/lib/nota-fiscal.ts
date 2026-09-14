@@ -8,14 +8,26 @@ import type {
   RegimeTributario,
   TipoFrete,
 } from "@/generated/prisma/enums";
+import { decifrarOuNull } from "@/lib/cripto";
 
 // Dados fiscais "resolvidos" pra um orçamento/filial — DadosFiscaisFilial
 // espelha DadosFiscaisGrafica campo a campo (só troca graficaId por
 // filialId como chave de vínculo), então o mesmo tipo serve pros dois.
+// `focusNfeToken` aqui é o valor JÁ DECIFRADO (achado da auditoria de
+// segurança 2026-09-13) — resolverDadosFiscais é o ÚNICO ponto do sistema
+// que decifra; `focusNfeTokenCifrado`/`focusNfeTokenUltimos4` (as colunas
+// reais do banco) nunca saem daqui pra fora.
 export type DadosFiscaisResolvidos = Omit<
   DadosFiscaisGrafica,
-  "id" | "graficaId" | "createdAt" | "updatedAt"
->;
+  "id" | "graficaId" | "createdAt" | "updatedAt" | "focusNfeTokenCifrado" | "focusNfeTokenUltimos4"
+> & { focusNfeToken: string | null };
+
+function decifrarTokenFiscal<T extends { focusNfeTokenCifrado: string | null; focusNfeTokenUltimos4: string | null }>(
+  registro: T
+): Omit<T, "focusNfeTokenCifrado" | "focusNfeTokenUltimos4"> & { focusNfeToken: string | null } {
+  const { focusNfeTokenCifrado, focusNfeTokenUltimos4: _ultimos4, ...resto } = registro;
+  return { ...resto, focusNfeToken: decifrarOuNull(focusNfeTokenCifrado) };
+}
 
 // Decide de onde vêm os dados fiscais usados pra emitir/consultar uma nota:
 // se a filial do orçamento tiver seu próprio cadastro fiscal (CNPJ próprio,
@@ -28,9 +40,10 @@ export async function resolverDadosFiscais(
 ): Promise<DadosFiscaisResolvidos | null> {
   if (filialId) {
     const dadosFilial = await prisma.dadosFiscaisFilial.findUnique({ where: { filialId } });
-    if (dadosFilial) return dadosFilial;
+    if (dadosFilial) return decifrarTokenFiscal(dadosFilial);
   }
-  return prisma.dadosFiscaisGrafica.findUnique({ where: { graficaId } });
+  const dadosGrafica = await prisma.dadosFiscaisGrafica.findUnique({ where: { graficaId } });
+  return dadosGrafica ? decifrarTokenFiscal(dadosGrafica) : null;
 }
 
 // Checagem do que falta configurar antes de conseguir emitir uma nota fiscal

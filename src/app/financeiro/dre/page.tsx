@@ -7,6 +7,7 @@ import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { StatTile } from "@/components/ui/StatTile";
+import { Alert } from "@/components/ui/Alert";
 import { ArrowLeftIcon } from "@/components/icons";
 import { formatoMoeda } from "@/lib/moeda";
 import { anoMesBrasilia, limitesMesBrasilia } from "@/lib/data";
@@ -209,6 +210,26 @@ export default async function DrePage({
             leitura — não muda nenhum preço nem o % de overhead configurado
             em Configurações.
           </p>
+
+          {/* Achado N30 da Parte 9 da auditoria de código (2026-09-12) —
+              item SIMPLES não tem overhead embutido rastreado (não passa
+              pelo motor avançado de precificação), então fica de fora dos
+              números abaixo. Pra uma gráfica que vende majoritariamente por
+              SIMPLES, isso fazia "overhead cobrado" parecer R$0 e soar
+              alarme, quando na verdade este relatório só enxerga uma fatia
+              pequena da operação real. */}
+          {cobertura.percentualReceitaForaDoEscopo !== null && cobertura.percentualReceitaForaDoEscopo > 0 && (
+            <div className="mt-4">
+              <Alert variant="warning">
+                {cobertura.percentualReceitaForaDoEscopo.toFixed(0)}% da receita aprovada em {nomeMes} é de
+                itens no modelo Simples (preço digitado direto, sem overhead calculado pelo motor) — este
+                relatório só mede a cobertura do overhead embutido nos itens do motor avançado (M2, Offset
+                etc). {cobertura.percentualReceitaForaDoEscopo >= 50
+                  ? "Como a maior parte da receita do período é Simples, os números abaixo não representam a operação real desta gráfica."
+                  : "Os números abaixo cobrem só a parte que passa pelo motor avançado."}
+              </Alert>
+            </div>
+          )}
 
           <p className="mt-4 text-sm text-slate-700 dark:text-slate-300">
             Seu overhead cobriu{" "}

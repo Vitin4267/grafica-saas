@@ -514,8 +514,11 @@ model AutomacaoGrafica {
   // URL do workflow n8n do PRÓPRIO tenant — o path costuma carregar um UUID
   // que funciona como token de capability (padrão de webhook do n8n), por
   // isso é tratada como segredo (nunca reexibida por completo, ver
-  // /configuracoes/automacao).
-  webhookUrl String?
+  // /configuracoes/automacao). Achado da auditoria de segurança
+  // (2026-09-13): agora CIFRADA (AES-256-GCM, ver src/lib/cripto.ts) — nunca
+  // ler/gravar direto, sempre por buscarAutomacaoGrafica
+  // (src/lib/webhook-automacao.ts), o único ponto que decifra.
+  webhookUrlCifrado String?
 
   // Liga/desliga cada tipo de evento individualmente — antes dos três
   // disparavam sempre juntos assim que webhookUrl estava configurado. Uma

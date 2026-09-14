@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { SESSION_COOKIE_NAME } from "./constants";
 import { obterIpRequisicao } from "./ip";
+import { definirTenantAtual } from "@/lib/tenant-context";
 
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 7; // 7 dias
 
@@ -81,11 +82,39 @@ export const obterUsuarioAtual = cache(async () => {
   return sessao.usuario;
 });
 
+// Achado da expansão de PendenciasConfiguracaoModal->Banner (2026-09-14) —
+// versão enxuta de obterUsuarioAtual, só pra quem precisa da linha de
+// Sessao em si (não do Usuario relacionado): hoje só
+// pendencias-configuracao.ts (ler/gravar pendenciasDispensadas). cache()
+// próprio (não reaproveita o de obterUsuarioAtual) — são dois lookups por
+// tokenHash separados no mesmo request quando ambos são chamados, aceitável
+// porque só roda pra DONO já passado do onboarding, não em toda requisição.
+export const obterSessaoAtual = cache(async () => {
+  const cookieStore = await cookies();
+  const tokenBruto = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+  if (!tokenBruto) return null;
+
+  const tokenHash = hashToken(tokenBruto);
+  const sessao = await prisma.sessao.findUnique({
+    where: { tokenHash },
+    select: { id: true, expiraEm: true, pendenciasDispensadas: true },
+  });
+  if (!sessao || sessao.expiraEm < new Date()) return null;
+
+  return sessao;
+});
+
 export async function exigirUsuarioAutenticado() {
   const usuario = await obterUsuarioAtual();
   if (!usuario) {
     redirect("/login");
   }
+  // Achado da auditoria de segurança (2026-09-13) — todo caminho autenticado
+  // passa por aqui; a partir deste ponto, prisma-tenant-guard.ts (ver
+  // src/lib/prisma.ts) já enxerga o tenant do request e passa a exigir
+  // graficaId nas queries multi-tenant, conferindo o VALOR contra este
+  // mesmo usuario.graficaId quando presente. Ver src/lib/tenant-context.ts.
+  definirTenantAtual(usuario.graficaId);
   return usuario;
 }
 

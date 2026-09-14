@@ -126,7 +126,7 @@ function pedidoParaAvanco(f: FixtureSimples, status: StatusPedido): PedidoParaAv
     status,
     arteUrl: null,
     arteAprovadaEm: null,
-    producaoLinkToken: null,
+    producaoLinkTokenCifrado: null,
     orcamento: {
       clienteId: "cliente-teste",
       condicaoPagamentoId: null,
@@ -473,7 +473,7 @@ describe("avancarStatusPedido usando a sequência/rótulos resolvidos por gráfi
         status: "ARTE",
         arteUrl: null,
         arteAprovadaEm: null,
-        producaoLinkToken: null,
+        producaoLinkTokenCifrado: null,
         orcamento: {
           clienteId: "cliente-teste",
           condicaoPagamentoId: null,
@@ -529,7 +529,7 @@ describe("avancarStatusPedido usando a sequência/rótulos resolvidos por gráfi
         status: "CLICHE_FACA",
         arteUrl: null,
         arteAprovadaEm: null,
-        producaoLinkToken: null,
+        producaoLinkTokenCifrado: null,
         orcamento: {
           clienteId: "cliente-teste",
           condicaoPagamentoId: null,

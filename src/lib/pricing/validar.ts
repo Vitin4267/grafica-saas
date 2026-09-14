@@ -8,6 +8,8 @@ import type {
   ContextoM2,
   ContextoOffset,
   ContextoRevenda,
+  ContextoSetupPorPeca,
+  ParametrosMaquinaBordado,
   ParametrosMaquinaFlexo,
   ParametrosPrensa,
   PedidoChapaRigida,
@@ -181,14 +183,26 @@ export function validarPedidoFlexografia(
 export function validarPedidoDigital(pedido: PedidoDigital, contexto: ContextoDigital) {
   validarComum(pedido.quantidade, pedido.larguraM, pedido.alturaM);
 
+  // Achado A4 da auditoria do motor de preço (2026-09-13) — sem teto, um
+  // vendedor confundindo "cliques por folha" com "total de folhas do
+  // pedido" (a tela já disse "por peça" três vezes até esta correção — ver
+  // SeletorItemOrcamento.tsx/EditarOrcamentoForm.tsx) digitava o total de
+  // folhas aqui (ex: 48) e o motor multiplicava numeroFolhas × 48 em vez de
+  // ×1 — 48× o custo real. Nenhuma impressora digital de verdade passa a
+  // mesma folha mais de ~20× (frente/verso + verniz/branco/primer em
+  // passagens extras é o teto real do mercado) — acima disso é
+  // quase certamente o mesmo erro de digitação.
+  const NUMERO_CLIQUES_MAX = 20;
   if (
     pedido.numeroCliques !== undefined &&
-    (!Number.isInteger(pedido.numeroCliques) || pedido.numeroCliques < 1)
+    (!Number.isInteger(pedido.numeroCliques) ||
+      pedido.numeroCliques < 1 ||
+      pedido.numeroCliques > NUMERO_CLIQUES_MAX)
   ) {
     throw new ErroPrecificacao(
       "NUMERO_CLIQUES_INVALIDO",
-      "O número de cliques por folha precisa ser um inteiro maior ou igual a 1.",
-      { numeroCliques: pedido.numeroCliques }
+      `O número de cliques POR FOLHA precisa ser um inteiro entre 1 e ${NUMERO_CLIQUES_MAX}. Se você digitou o total de folhas do pedido por engano, deixe em branco — o motor já multiplica por folha automaticamente.`,
+      { numeroCliques: pedido.numeroCliques, max: NUMERO_CLIQUES_MAX }
     );
   }
   if (contexto.folhas.length === 0) {
@@ -212,7 +226,7 @@ export function validarPedidoDigital(pedido: PedidoDigital, contexto: ContextoDi
 // Serigrafia/Sublimação/Estampagem a quente (setup por peça) — mesma
 // ausência de dimensões do Digital; validação compartilhada pelos 3
 // ModeloCalculo (ver calcularSetupPorPeca).
-export function validarPedidoSetupPorPeca(pedido: PedidoSetupPorPeca) {
+export function validarPedidoSetupPorPeca(pedido: PedidoSetupPorPeca, contexto: ContextoSetupPorPeca) {
   validarQuantidade(pedido.quantidade);
 
   if (!Number.isInteger(pedido.numeroSetups) || pedido.numeroSetups < 1) {
@@ -220,6 +234,18 @@ export function validarPedidoSetupPorPeca(pedido: PedidoSetupPorPeca) {
       "NUMERO_SETUPS_INVALIDO",
       "O número de setups precisa ser um inteiro maior ou igual a 1.",
       { numeroSetups: pedido.numeroSetups }
+    );
+  }
+  // Achado B10 da auditoria do motor de preço (2026-09-13) — mesma trava de
+  // ContextoDigital/ContextoBordado (achado B7), replicada aqui: setup-por-
+  // peça era o único dos 3 motores com substrato sem essa checagem, então
+  // um produto SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE/PERSONALIZACAO
+  // cadastrado sem precoCompra custava a peça em branco a R$0 em silêncio.
+  if (contexto.custoSubstratoPorPeca <= 0 && !contexto.materialFornecidoPeloCliente) {
+    throw new ErroPrecificacao(
+      "CUSTO_INVALIDO",
+      "O preço de compra do substrato (peça em branco) precisa ser maior que zero.",
+      { custoSubstratoPorPeca: contexto.custoSubstratoPorPeca }
     );
   }
 }
@@ -262,6 +288,23 @@ export function validarPedidoBordado(pedido: PedidoBordado, contexto: ContextoBo
       "CUSTO_INVALIDO",
       "O preço de compra do substrato precisa ser maior que zero.",
       { custoSubstratoPorPeca: contexto.custoSubstratoPorPeca }
+    );
+  }
+}
+
+// Achado B1 da auditoria do motor de preço (2026-09-13) — custoHoraMaq e
+// velocidadePontosPorMinuto andam sempre juntos (ver comentário em
+// tipos.ts/bordado.ts): sem os dois, não há como converter R$/h num custo
+// real. salvarMaquinaBordado já impede isso no cadastro, mas máquinas
+// criadas ANTES desta versão podem ter custoHoraMaq preenchido sem
+// velocidade — defesa em profundidade pra nunca reproduzir em silêncio o
+// bug que esta correção fechou.
+export function validarParametrosMaquinaBordado(params: ParametrosMaquinaBordado) {
+  if (params.custoHoraMaq !== undefined && params.velocidadePontosPorMinuto === undefined) {
+    throw new ErroPrecificacao(
+      "MAQUINA_BORDADO_SEM_VELOCIDADE",
+      "Esta máquina de bordado tem custo por hora configurado mas não tem a velocidade (pontos/minuto) cadastrada — sem isso o motor não sabe quanto tempo o pedido consome. Preencha a velocidade na máquina, em Configurações > Máquinas > Bordado.",
+      { custoHoraMaq: params.custoHoraMaq }
     );
   }
 }
@@ -342,11 +385,45 @@ export function validarPedidoEditorial(pedido: PedidoEditorial, contexto: Contex
       { precoPorKgCapa: contexto.precoPorKgCapa }
     );
   }
-  if (!Number.isInteger(contexto.paginasPorCaderno) || contexto.paginasPorCaderno < 1) {
+  // Achado A5 da auditoria do motor de preço (2026-09-13) — um caderno é
+  // sempre uma folha física DOBRADA (múltiplo de 4 páginas: 4, 8, 16, 32...
+  // nunca 2, 6, 10). Antes, qualquer inteiro >= 1 passava — um dono lendo
+  // "páginas por caderno" como "páginas por FOLHA" e digitando 2 fazia
+  // numFolhasMiolo = paginasEfetivas/2 sair fracionário e o motor nunca
+  // arredondar pra caderno nenhum (ceil(numeroPaginas/2)×2 = numeroPaginas
+  // sempre), subdimensionando papel/impressão do miolo inteiro em silêncio.
+  if (
+    !Number.isInteger(contexto.paginasPorCaderno) ||
+    contexto.paginasPorCaderno < 4 ||
+    contexto.paginasPorCaderno % 4 !== 0
+  ) {
     throw new ErroPrecificacao(
       "NUMERO_PAGINAS_INVALIDO",
-      "O número de páginas por caderno configurado na gráfica precisa ser um inteiro maior ou igual a 1.",
+      "O número de páginas por caderno configurado na gráfica precisa ser um múltiplo de 4 (ex: 4, 8, 16, 32) — um caderno é sempre uma folha física dobrada.",
       { paginasPorCaderno: contexto.paginasPorCaderno }
+    );
+  }
+  // Achado C1 da auditoria do motor de preço (2026-09-13) — mesma faixa e
+  // mesmo default 30/500 que validarPedidoOffset já usa (achado N13). O
+  // gêmeo OFFSET validava isso e EDITORIAL não — um dedo-gordo digitando 9
+  // em vez de 90 g/m² não tinha NENHUMA trava: resolverPrecoPapel cai pra
+  // linha mais próxima da tabela em silêncio (ver papel.ts), então o motor
+  // seguia calculando com um peso de papel ~10× menor sem erro nenhum.
+  // Miolo E capa passam pelo mesmo caminho (mesmo buraco nos dois).
+  const gramaturaMinGm2 = contexto.gramaturaMinGm2 ?? 30;
+  const gramaturaMaxGm2 = contexto.gramaturaMaxGm2 ?? 500;
+  if (contexto.gramaturaMioloGm2 < gramaturaMinGm2 || contexto.gramaturaMioloGm2 > gramaturaMaxGm2) {
+    throw new ErroPrecificacao(
+      "GRAMATURA_INVALIDA",
+      `A gramatura do miolo precisa estar entre ${gramaturaMinGm2} e ${gramaturaMaxGm2} g/m². Ajuste em Configurações se sua gráfica trabalha fora dessa faixa.`,
+      { gramaturaMioloGm2: contexto.gramaturaMioloGm2, gramaturaMinGm2, gramaturaMaxGm2 }
+    );
+  }
+  if (contexto.gramaturaCapaGm2 < gramaturaMinGm2 || contexto.gramaturaCapaGm2 > gramaturaMaxGm2) {
+    throw new ErroPrecificacao(
+      "GRAMATURA_INVALIDA",
+      `A gramatura da capa precisa estar entre ${gramaturaMinGm2} e ${gramaturaMaxGm2} g/m². Ajuste em Configurações se sua gráfica trabalha fora dessa faixa.`,
+      { gramaturaCapaGm2: contexto.gramaturaCapaGm2, gramaturaMinGm2, gramaturaMaxGm2 }
     );
   }
 }
@@ -366,6 +443,19 @@ export function validarPedidoChapaRigida(pedido: PedidoChapaRigida, contexto: Co
     throw new ErroPrecificacao(
       "MATERIAL_SEM_FOLHA",
       "Esta chapa não tem nenhum formato de folha cadastrado."
+    );
+  }
+  // Achado A3 da auditoria do motor de preço (2026-09-13) — defesa em
+  // profundidade: salvarConfiguracaoProduto (catalogo/[itemGraficaId]/actions.ts)
+  // já impede gravar mais de 1 FormatoFolha num produto CHAPA_RIGIDA, mas o
+  // motor puro não deveria confiar só nisso — 2+ formatos aqui significa
+  // preço fixo (contexto.precoPorChapa, 1 valor só) sendo aplicado a mais
+  // de um tamanho físico, o mesmo estado ambíguo que causava o achado A3.
+  if (contexto.folhas.length > 1) {
+    throw new ErroPrecificacao(
+      "MATERIAL_SEM_FOLHA",
+      "Esta chapa tem mais de um formato cadastrado — Chapa rígida aceita só 1 (preço é fixo por chapa inteira). Corrija em Catálogo antes de orçar.",
+      { quantidadeFormatos: contexto.folhas.length }
     );
   }
   if (contexto.precoPorChapa <= 0) {
@@ -394,8 +484,19 @@ export function validarPedidoChapaRigida(pedido: PedidoChapaRigida, contexto: Co
   }
 }
 
+// Achado D2 da auditoria do motor de preço (2026-09-13) — exportado (não só
+// literal dentro da função) pra src/app/clientes/actions.ts poder rejeitar
+// Cliente.margemPadraoOverride >= este teto NO CADASTRO, em vez de deixar o
+// erro só aparecer no primeiro orçamento desse cliente (com uma mensagem que
+// aponta pra "Configurações", onde não há nada errado — o campo culpado é
+// margemPadraoOverride, e a tela de cliente nem é mencionada). Um
+// margemPadraoOverride sozinho >= este limiar já garante ENCARGOS_INVALIDOS
+// em QUALQUER orçamento desse cliente, não importa o resto dos encargos da
+// gráfica (imposto/comissão/taxa financeira só somam, nunca subtraem).
+export const LIMITE_SOMA_ENCARGOS = 0.85;
+
 export function validarSomaEncargos(somaEncargos: number) {
-  if (somaEncargos >= 0.85) {
+  if (somaEncargos >= LIMITE_SOMA_ENCARGOS) {
     throw new ErroPrecificacao(
       "ENCARGOS_INVALIDOS",
       "A soma de margem + imposto + comissão + taxa financeira precisa ser menor que 85%, senão o preço explode.",

@@ -43,7 +43,12 @@ export async function buscarCoberturaOverhead(
         ...semPedidoCancelado,
       },
       select: {
-        itens: { select: { breakdown: true } },
+        // Achado N30 da Parte 9 da auditoria de código (2026-09-12) —
+        // precoTotal entra aqui só pra medir QUANTO da receita aprovada no
+        // período é de item SIMPLES (sem custoDireto/overhead rastreado —
+        // ver extrairCustoDiretoDoBreakdown abaixo), não pra entrar em
+        // nenhuma conta de cobertura em si.
+        itens: { select: { breakdown: true, precoTotal: true } },
       },
     }),
     // Custo fixo pago no período — MESMA where clause de dre-query.ts
@@ -63,10 +68,28 @@ export async function buscarCoberturaOverhead(
 
   let overheadCobradoDec = new D(0);
   let custoDiretoAgregadoDec = new D(0);
+  // Achado N30 da Parte 9 da auditoria de código (2026-09-12) — item
+  // SIMPLES não passa por comporPreco (sem custoDireto/overhead
+  // rastreado), então conta 0 nas duas somas acima — correto pra elas, mas
+  // silenciosamente enviesa `percentualQueFecharia`/`diferenca` pra uma
+  // gráfica que vende majoritariamente por tabela (SIMPLES): o relatório
+  // mede a cobertura de um mecanismo (overhead embutido no motor avançado)
+  // que essa gráfica mal usa, e nada na tela avisava disso — "overhead
+  // cobriu R$0,00" soava como alarme quando era só escopo. Rastreado aqui
+  // (não muda NENHUMA conta de cobertura em si) só pra calcularCoberturaOverhead
+  // poder mostrar o aviso de escopo — ver receitaTotalAprovada/
+  // receitaSemCustoDireto em cobertura-overhead.ts.
+  let receitaTotalAprovadaDec = new D(0);
+  let receitaSemCustoDiretoDec = new D(0);
   for (const orcamento of orcamentosAprovados) {
     for (const item of orcamento.itens) {
       overheadCobradoDec = overheadCobradoDec.plus(extrairOverheadDoBreakdown(item.breakdown));
       custoDiretoAgregadoDec = custoDiretoAgregadoDec.plus(extrairCustoDiretoDoBreakdown(item.breakdown));
+      const precoTotalItem = new D(String(item.precoTotal));
+      receitaTotalAprovadaDec = receitaTotalAprovadaDec.plus(precoTotalItem);
+      if (!temCustoDiretoRastreado(item.breakdown)) {
+        receitaSemCustoDiretoDec = receitaSemCustoDiretoDec.plus(precoTotalItem);
+      }
     }
   }
 
@@ -76,6 +99,8 @@ export async function buscarCoberturaOverhead(
     overheadCobrado: overheadCobradoDec.toNumber(),
     custoFixoPago: custoFixoPagoDec.toNumber(),
     custoDiretoAgregado: custoDiretoAgregadoDec.toNumber(),
+    receitaTotalAprovada: receitaTotalAprovadaDec.toNumber(),
+    receitaSemCustoDireto: receitaSemCustoDiretoDec.toNumber(),
   });
 }
 
@@ -109,8 +134,11 @@ function extrairOverheadDoBreakdown(breakdown: unknown): Dec {
  * dele, diferente de `overhead` acima) — mesmo nível de `custoTotal`, que já
  * é lido assim em outros lugares do repo (ex: src/app/orcamento/[id]/
  * actions/itens.ts). Item SIMPLES nunca passa por `comporPreco` (não tem
- * `custoDireto` nenhum) e conta 0 aqui — mesma limitação já documentada no
- * achado N30 da Parte 9, não corrigida nesta rodada.
+ * `custoDireto` nenhum) e conta 0 aqui — correto pra esta soma (ela SÓ
+ * mede o motor avançado), mas achado N30 da Parte 9 (2026-09-12) mostrou
+ * que isso enviesa `percentualQueFecharia`/`diferenca` em silêncio pra
+ * quem vende majoritariamente por SIMPLES; `temCustoDiretoRastreado`
+ * abaixo existe só pra `buscarCoberturaOverhead` conseguir avisar disso.
  */
 function extrairCustoDiretoDoBreakdown(breakdown: unknown): Dec {
   if (breakdown !== null && typeof breakdown === "object" && "custoDireto" in breakdown) {
@@ -120,4 +148,16 @@ function extrairCustoDiretoDoBreakdown(breakdown: unknown): Dec {
     }
   }
   return new D(0);
+}
+
+/**
+ * Achado N30 — true quando este breakdown tem um `custoDireto` de verdade
+ * (motor avançado); false pra item SIMPLES (sem breakdown) ou qualquer
+ * shape inesperado. Diferente de checar `extrairCustoDiretoDoBreakdown(...)
+ * .gt(0)`: um custoDireto == 0 rastreado de verdade (caso raro, mas
+ * possível) não deveria contar como "fora de escopo" — aqui é presença do
+ * campo, não o valor dele.
+ */
+function temCustoDiretoRastreado(breakdown: unknown): boolean {
+  return breakdown !== null && typeof breakdown === "object" && "custoDireto" in breakdown;
 }

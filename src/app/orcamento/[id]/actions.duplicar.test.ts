@@ -226,7 +226,8 @@ describe("duplicarOrcamento", () => {
 
       // Nunca copiados: status/link/resposta pública/arte — permanecem no
       // estado "nunca aconteceu" de um orçamento recém-criado.
-      expect(novo.linkPublicoToken).toBeNull();
+      expect(novo.linkPublicoTokenHash).toBeNull();
+      expect(novo.linkPublicoTokenCifrado).toBeNull();
       expect(novo.respostaPublicaEm).toBeNull();
       expect(novo.arteUrl).toBeNull();
     },

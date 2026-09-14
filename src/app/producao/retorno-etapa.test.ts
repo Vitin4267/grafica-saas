@@ -286,6 +286,86 @@ describe("retornarEtapa — RBAC, CAS e validação de destino (achado Prod-D2)"
     },
     TIMEOUT_MS
   );
+
+  // Achado N26 da auditoria de código (2026-09-12) — os dois gates de arte
+  // em avancarStatusPedido (Pedido.arteAprovadaEm e ArteItem.aprovadaEm)
+  // continuavam "aprovados" depois de um retorno por erro de arte, então o
+  // pedido saía de ARTE de novo sem o cliente ver a arte corrigida.
+  it(
+    "motivo=ERRO_ARTE ao retornar pra ARTE zera Pedido.arteAprovadaEm e ArteItem.aprovadaEm (não herda aprovação antiga)",
+    async () => {
+      const f = await criarFixtureSimples();
+
+      // Simula um pedido que já passou por ARTE e foi aprovado — tanto no
+      // campo de cabeçalho quanto por item (os 2 gates independentes de
+      // status-transicao.ts).
+      await prisma.pedido.update({
+        where: { id: f.pedidoId },
+        data: { arteUrl: "https://example.com/arte.pdf", arteAprovadaEm: new Date() },
+      });
+      const catalogo = await prisma.itemCatalogo.create({
+        data: { graficaId: f.graficaId, tipo: "PRODUTO", categoria: "Cartão", nome: `Produto Arte ${sufixo()}` },
+      });
+      const itemGrafica = await prisma.itemGrafica.create({
+        data: { graficaId: f.graficaId, itemCatalogoId: catalogo.id },
+      });
+      const orcamentoAtual = await prisma.pedido.findUniqueOrThrow({ where: { id: f.pedidoId } });
+      const orcamentoItem = await prisma.orcamentoItem.create({
+        data: {
+          orcamentoId: orcamentoAtual.orcamentoId,
+          itemGraficaId: itemGrafica.id,
+          quantidade: 1,
+          precoUnitario: 10,
+          precoTotal: 10,
+        },
+      });
+      const arteItem = await prisma.arteItem.create({
+        data: {
+          orcamentoItemId: orcamentoItem.id,
+          pedidoId: f.pedidoId,
+          url: "https://example.com/arte-item.pdf",
+          aprovadaEm: new Date(),
+        },
+      });
+
+      await autenticarComo(f.usuarioDonoId);
+      const resultado = await retornarEtapa(
+        null,
+        formDataDe({ pedidoId: f.pedidoId, etapaDestino: "ARTE", motivo: "ERRO_ARTE" })
+      );
+      expect(resultado.ok).toBe(true);
+
+      const pedidoDepois = await prisma.pedido.findUniqueOrThrow({ where: { id: f.pedidoId } });
+      expect(pedidoDepois.status).toBe("ARTE");
+      expect(pedidoDepois.arteAprovadaEm).toBeNull();
+
+      const arteItemDepois = await prisma.arteItem.findUniqueOrThrow({ where: { id: arteItem.id } });
+      expect(arteItemDepois.aprovadaEm).toBeNull();
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "motivo diferente de ERRO_ARTE (ex: FALTA_MATERIAL) NÃO mexe em arteAprovadaEm — a arte continua correta",
+    async () => {
+      const f = await criarFixtureSimples();
+      await prisma.pedido.update({
+        where: { id: f.pedidoId },
+        data: { arteUrl: "https://example.com/arte.pdf", arteAprovadaEm: new Date() },
+      });
+
+      await autenticarComo(f.usuarioDonoId);
+      const resultado = await retornarEtapa(
+        null,
+        formDataDe({ pedidoId: f.pedidoId, etapaDestino: "ARTE", motivo: "FALTA_MATERIAL" })
+      );
+      expect(resultado.ok).toBe(true);
+
+      const pedidoDepois = await prisma.pedido.findUniqueOrThrow({ where: { id: f.pedidoId } });
+      expect(pedidoDepois.arteAprovadaEm).not.toBeNull();
+    },
+    TIMEOUT_MS
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -377,7 +457,7 @@ function pedidoParaAvanco(
     status,
     arteUrl: null,
     arteAprovadaEm: null,
-    producaoLinkToken: null,
+    producaoLinkTokenCifrado: null,
     baixaEstoqueRealizadaEm,
     orcamento: {
       clienteId: "cliente-teste",

@@ -8,6 +8,7 @@ import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { validarWebhookUrl } from "@/lib/webhook-assistente";
 import { registrarAuditoria, criarDiffCampos } from "@/lib/auditoria";
+import { cifrar } from "@/lib/cripto";
 
 export type SalvarAutomacaoResult = { ok: boolean; mensagem: string };
 
@@ -43,17 +44,22 @@ export async function salvarAutomacao(
     where: { graficaId: usuario.graficaId },
   });
 
+  // Cifrado antes de gravar (achado da auditoria de segurança 2026-09-13,
+  // ver src/lib/cripto.ts) — o banco nunca vê a URL em claro.
+  const webhookUrlCifradoParaSalvar =
+    webhookUrlParaSalvar !== undefined ? cifrar(webhookUrlParaSalvar) : undefined;
+
   await prisma.automacaoGrafica.upsert({
     where: { graficaId: usuario.graficaId },
     update: {
-      ...(webhookUrlParaSalvar !== undefined ? { webhookUrl: webhookUrlParaSalvar } : {}),
+      ...(webhookUrlCifradoParaSalvar !== undefined ? { webhookUrlCifrado: webhookUrlCifradoParaSalvar } : {}),
       notificarStatusMudou,
       notificarEstoqueCritico,
       notificarPedidoAtrasado,
     },
     create: {
       graficaId: usuario.graficaId,
-      ...(webhookUrlParaSalvar !== undefined ? { webhookUrl: webhookUrlParaSalvar } : {}),
+      ...(webhookUrlCifradoParaSalvar !== undefined ? { webhookUrlCifrado: webhookUrlCifradoParaSalvar } : {}),
       notificarStatusMudou,
       notificarEstoqueCritico,
       notificarPedidoAtrasado,
@@ -85,7 +91,7 @@ export async function salvarAutomacao(
     notificarPedidoAtrasado
   );
   if (webhookUrlParaSalvar !== undefined) {
-    diff.antesTextos.push(`Webhook: ${antes?.webhookUrl ? "configurado" : "—"}`);
+    diff.antesTextos.push(`Webhook: ${antes?.webhookUrlCifrado ? "configurado" : "—"}`);
     diff.depoisTextos.push("Webhook: alterado");
   }
   if (diff.temMudanca) {

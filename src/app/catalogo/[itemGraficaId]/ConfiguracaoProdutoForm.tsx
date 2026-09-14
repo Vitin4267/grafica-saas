@@ -139,9 +139,21 @@ function BobinasEditor({
 function FormatosFolhaEditor({
   itens,
   onChange,
+  max,
 }: {
   itens: FormatoLinha[];
   onChange: (itens: FormatoLinha[]) => void;
+  // Achado A3 da auditoria do motor de preço (2026-09-13) — CHAPA_RIGIDA usa
+  // este editor com max=1: diferente do Offset (onde vários formatos fazem
+  // sentido — o papel vem em folhas de tamanhos físicos diferentes), uma
+  // chapa rígida tem preço FIXO por chapa inteira (ItemGrafica.chapaId →
+  // precoCompra), sem nenhum vínculo por formato. Antes, nada impedia
+  // cadastrar 2+ formatos no mesmo produto, e o motor sempre escolhia o
+  // MAIOR (mais peças por chapa) pagando o preço de UM registro só — número
+  // errado nas duas leituras possíveis. Uma gráfica que vende a mesma chapa
+  // em tamanhos/preços diferentes cadastra 2 ItemGrafica (mesmo padrão já
+  // documentado pro EDITORIAL Rota 1) — undefined = sem limite (Offset).
+  max?: number;
 }) {
   const atualizar = (
     chave: string,
@@ -156,14 +168,21 @@ function FormatosFolhaEditor({
       ...itens,
       { chave: gerarChave(), nome: "", larguraFolha: "", alturaFolha: "" },
     ]);
+  const podeAdicionar = max === undefined || itens.length < max;
 
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
-        Formatos de folha (largura e altura em metros)
+        {max === 1 ? "Formato da chapa (largura e altura em metros)" : "Formatos de folha (largura e altura em metros)"}
       </p>
       {itens.length === 0 && (
         <p className="text-sm text-slate-500">Nenhum formato cadastrado ainda.</p>
+      )}
+      {max !== undefined && itens.length > max && (
+        <Alert variant="error">
+          Este modelo aceita só {max} formato. Remova o(s) excedente(s) — pra vender a mesma
+          chapa em outro tamanho/preço, cadastre outro produto apontando pra outra matéria-prima.
+        </Alert>
       )}
       {itens.map((formato) => (
         <div key={formato.chave} className="flex items-end gap-3">
@@ -202,9 +221,11 @@ function FormatosFolhaEditor({
           </button>
         </div>
       ))}
-      <Button type="button" variant="outline" onClick={adicionar} className="self-start">
-        + Adicionar formato
-      </Button>
+      {podeAdicionar && (
+        <Button type="button" variant="outline" onClick={adicionar} className="self-start">
+          + Adicionar formato
+        </Button>
+      )}
     </div>
   );
 }
@@ -419,7 +440,7 @@ export function ConfiguracaoProdutoForm({
           label={
             <>
               Modelo de cálculo
-              <CampoAjuda texto="Define como a máquina realmente produz este item e como o preço é calculado. M2 e Flexografia imprimem em bobina (rolo contínuo) com aproveitamento de largura; Offset imprime em folha, com custo de chapa por tiragem; Digital cobra por clique da impressora, sem aproveitamento de bobina ou folha; Serigrafia, Sublimação, Estampagem a quente e Personalização cobram um setup fixo (tela, matriz ou arte) mais um valor por peça; Bordado cobra pelo número de pontos da arte de cada pedido; Tempo de máquina cobra pelo tempo de uso e/ou pelos metros cortados (corte a laser, router, plotter); Simples é preço fixo direto, sem cálculo de máquina; Revenda é para produto comprado pronto de outro fornecedor." />
+              <CampoAjuda texto="Define como a máquina realmente produz este item e como o preço é calculado. M2 e Flexografia imprimem em bobina (rolo contínuo) com aproveitamento de largura; Offset imprime em folha, com custo de chapa por tiragem; Digital faz imposição igual ao Offset — o papel é escolhido no orçamento, com aproveitamento de folha por formato cadastrado nele; Serigrafia, Sublimação, Estampagem a quente e Personalização cobram um setup fixo (tela, matriz ou arte) mais um valor por peça; Bordado cobra pelo número de pontos da arte de cada pedido; Tempo de máquina cobra pelo tempo de uso e/ou pelos metros cortados (corte a laser, router, plotter); Simples é preço fixo direto, sem cálculo de máquina; Revenda é para produto comprado pronto de outro fornecedor." />
             </>
           }
           name="modeloCalculo"
@@ -697,10 +718,12 @@ export function ConfiguracaoProdutoForm({
             )}
             {formatos.length === 0 && (
               <Alert variant="error">
-                Adicione ao menos um formato de chapa para habilitar o cálculo.
+                Adicione o formato da chapa para habilitar o cálculo.
               </Alert>
             )}
-            <FormatosFolhaEditor itens={formatos} onChange={setFormatos} />
+            {/* Achado A3 da auditoria do motor de preço (2026-09-13) — max=1
+                de propósito, ver comentário completo em FormatosFolhaEditor. */}
+            <FormatosFolhaEditor itens={formatos} onChange={setFormatos} max={1} />
           </div>
         )}
 
@@ -910,9 +933,10 @@ export function ConfiguracaoProdutoForm({
               </>
             )}
             <p className="text-xs text-slate-500">
-              Sem nesting — o custo é direto por peça (clique da impressora + custo do
-              substrato, que vem do preço de compra deste item). Largura/altura ficam
-              opcionais no orçamento.
+              Faz imposição igual ao Offset: o papel (matéria-prima) é escolhido no orçamento,
+              e o sistema calcula quantas peças cabem em cada formato de folha cadastrado na
+              tela do papel. Cadastre os formatos de folha na tela da matéria-prima antes de
+              orçar — sem isso o orçamento não fecha.
             </p>
           </div>
         )}

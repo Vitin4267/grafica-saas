@@ -15,6 +15,7 @@ import { enderecoClienteSchema, ORDEM_TIPO_ENDERECO_CLIENTE } from "@/lib/endere
 import { ehViolacaoDeChaveEstrangeira } from "@/lib/prisma-conflito";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { buscarUsuariosVendedores } from "@/lib/usuarios-vendedores";
+import { LIMITE_SOMA_ENCARGOS } from "@/lib/pricing";
 import {
   ORDEM_ORIGEM_CLIENTE,
   ORDEM_SEGMENTO_CLIENTE,
@@ -180,6 +181,21 @@ function validarMargemPadraoOverride(
   if (!Number.isFinite(valor) || valor < 0) {
     return { ok: false, mensagem: "Margem diferenciada inválida." };
   }
+  // Achado D2 da auditoria do motor de preço (2026-09-13) — margemPadrao é
+  // sempre uma FRAÇÃO (0-1, nunca 0-100, mesma convenção de
+  // ParametrosGrafica.margemPadrao). Sozinho, um valor >= LIMITE_SOMA_ENCARGOS
+  // (0,85) já garante que TODO orçamento deste cliente vai falhar com
+  // ENCARGOS_INVALIDOS (imposto/comissão/taxa financeira só somam em cima,
+  // nunca reduzem) — antes, isso só era descoberto no primeiro orçamento,
+  // com uma mensagem que aponta pra "Configurações" (onde não há nada
+  // errado). Rejeitar aqui, no cadastro do cliente, aponta pro campo certo
+  // na hora certa.
+  if (valor >= LIMITE_SOMA_ENCARGOS) {
+    return {
+      ok: false,
+      mensagem: `Margem diferenciada precisa ser menor que ${LIMITE_SOMA_ENCARGOS * 100}% (${LIMITE_SOMA_ENCARGOS}) — acima disso, todo orçamento deste cliente vai falhar na validação de encargos (margem + imposto + comissão + taxa financeira precisa ficar abaixo de 85%).`,
+    };
+  }
   return { ok: true, valor };
 }
 
@@ -189,6 +205,13 @@ function validarMargemPadraoOverride(
 // validarMargemPadraoOverride acima: em branco = sem limite (comportamento
 // de hoje), presente e inválido é rejeitado, nunca vira 0 silenciosamente
 // (0 seria um limite de crédito real e válido, diferente de "sem limite").
+// Achado D2 (2026-09-13) considerou e descartou um teto superior aqui: ao
+// contrário de margemPadraoOverride (uma FRAÇÃO com um teto matematicamente
+// comprovável — validarSomaEncargos), limiteCredito é um valor em R$ sem
+// limite natural (uma gráfica pode legitimamente dar R$500 mil de crédito a
+// um cliente grande) — nenhum valor alto é PROVADAMENTE inválido do jeito
+// que margemPadraoOverride >= 0,85 é. Sem cross-check análogo a
+// validarSomaEncargos pra este campo, um teto aqui seria arbitrário.
 function validarLimiteCredito(
   formData: FormData
 ): { ok: true; valor: number | null } | { ok: false; mensagem: string } {

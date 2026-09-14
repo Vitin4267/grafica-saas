@@ -1,6 +1,6 @@
 import "server-only";
 
-import { prisma } from "@/lib/prisma";
+import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import type { SegmentoGrafica } from "@/generated/prisma/enums";
 import { calcularItemOrcamento, type DadosItemOrcamento } from "@/lib/orcamento-precificacao";
@@ -66,7 +66,7 @@ export async function existemDadosExemplo(graficaId: string): Promise<boolean> {
 type PacoteExemplo = {
   nomeProdutoAvancado: string;
   nomeProdutoSimples: string;
-  criarCatalogo: (tx: Prisma.TransactionClient, graficaId: string) => Promise<void>;
+  criarCatalogo: (tx: PrismaTransactionClient, graficaId: string) => Promise<void>;
   dadosAvancado: DadosItemOrcamento;
   dadosSimples: DadosItemOrcamento;
 };
@@ -126,7 +126,7 @@ const PAPEL_GRAMATURAS_PADRAO = [
   { gramatura: 300, precoKg: 15.6 },
 ];
 
-async function criarCatalogoPadrao(tx: Prisma.TransactionClient, graficaId: string): Promise<void> {
+async function criarCatalogoPadrao(tx: PrismaTransactionClient, graficaId: string): Promise<void> {
   const prensa = await tx.prensa.create({
     data: {
       graficaId,
@@ -277,7 +277,7 @@ const NOME_ACABAMENTO_BAINHA = `${PREFIXO_EXEMPLO}Bainha/Solda de Borda`;
 const NOME_ACABAMENTO_INSTALACAO = `${PREFIXO_EXEMPLO}Instalação`;
 
 async function criarCatalogoComunicacaoVisual(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   graficaId: string
 ): Promise<void> {
   // Produto M2 — sem prensa/máquina cadastrada: o custo do m² de lona vive
@@ -390,7 +390,7 @@ const NOME_ACABAMENTO_NUMERACAO = `${PREFIXO_EXEMPLO}Numeração Individual`;
 const NOME_ACABAMENTO_EMBALAGEM = `${PREFIXO_EXEMPLO}Dobra e Embalagem`;
 
 async function criarCatalogoEstampariaVestuario(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   graficaId: string
 ): Promise<void> {
   const maquina = await tx.maquinaSetupPorPeca.create({
@@ -501,7 +501,7 @@ const NOME_ACABAMENTO_GRAVACAO_BRINDE = `${PREFIXO_EXEMPLO}Gravação a Laser`;
 const NOME_ACABAMENTO_EMBALAGEM_BRINDE = `${PREFIXO_EXEMPLO}Embalagem Personalizada`;
 
 async function criarCatalogoBrindesPersonalizados(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   graficaId: string
 ): Promise<void> {
   // Produto Simples — caneta personalizada, preço fixo por unidade.
@@ -589,7 +589,7 @@ const NOME_ACABAMENTO_POLIMENTO_LASER = `${PREFIXO_EXEMPLO}Polimento de Borda`;
 const NOME_ACABAMENTO_GRAVACAO_LASER = `${PREFIXO_EXEMPLO}Gravação Profunda`;
 
 async function criarCatalogoCorteAcrilico(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   graficaId: string
 ): Promise<void> {
   const maquina = await tx.prensa.create({
@@ -703,7 +703,7 @@ const NOME_ACABAMENTO_MONTAGEM_CAIXA = `${PREFIXO_EXEMPLO}Montagem e Colagem`;
 const NOME_ACABAMENTO_IMPRESSAO_DETALHE = `${PREFIXO_EXEMPLO}Impressão Detalhe Cor`;
 
 async function criarCatalogoEmbalagemCartonagem(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   graficaId: string
 ): Promise<void> {
   // Produto M2 — caixa de papelão (modelo similar a Banner: custo no precoCompra,
@@ -811,7 +811,7 @@ type AcabamentoExemplo = {
 // src/lib/orcamento-precificacao.ts), mas ficam disponíveis no catálogo pra
 // o usuário já ver como configurar os dele.
 async function criarAcabamentosExemplo(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   graficaId: string,
   acabamentos: AcabamentoExemplo[]
 ): Promise<void> {

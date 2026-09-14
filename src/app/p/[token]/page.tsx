@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { hashToken } from "@/lib/auth/session";
 import { Card } from "@/components/ui/Card";
 import { Logo } from "@/components/Logo";
 import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
@@ -21,8 +22,10 @@ export default async function ConfirmarEstagioPage({
   // avançar — isso trava um e-mail antigo (aberto depois que o pedido já
   // passou daquela etapa) de empurrar o pedido a partir do status atual sem
   // intenção (ver confirmarEstagioPublico em ./actions.ts).
+  // Hash do token (achado da auditoria de segurança 2026-09-13), nunca
+  // gravado em claro — ver comentário de Pedido.producaoLinkTokenHash no schema.
   const pedido = await prisma.pedido.findUnique({
-    where: { producaoLinkToken: token },
+    where: { producaoLinkTokenHash: hashToken(token) },
     include: { orcamento: { include: { cliente: true, grafica: true } } },
   });
 

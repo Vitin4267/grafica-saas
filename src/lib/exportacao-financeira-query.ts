@@ -206,6 +206,14 @@ export async function buscarDadosExportacaoFinanceira(
     buscarDRE(graficaId, inicioReal, fimReal),
   ]);
 
+  // Achado N31 da Parte 9 da auditoria de código (2026-09-12) — valorJuros/
+  // valorMulta somados aqui, não só p.valor: registrarBaixaContaReceber
+  // (financeiro/contas-receber/actions.ts) limita `valor` ao saldo do
+  // PRINCIPAL, gravando juros/multa em campos à parte — mas o dinheiro que
+  // o cliente de fato depositou nessa transação é valor+juros+multa
+  // JUNTOS. Um extrato pro contador que mostrasse só o principal (ex:
+  // R$5.000 numa baixa de R$5.300 com R$300 de juros) divergiria do valor
+  // real depositado em banco, sem nenhuma explicação na própria linha.
   const pagamentos: LinhaPagamento[] = pagamentosBrutos.map((p) => ({
     id: p.id,
     data: p.createdAt,
@@ -213,7 +221,9 @@ export async function buscarDadosExportacaoFinanceira(
     filialNome: p.orcamento.filial?.nome ?? null,
     forma: p.forma,
     formaDetalhe: p.formaDetalhe,
-    valor: paraDecimal(p.valor.toString()),
+    valor: paraDecimal(p.valor.toString())
+      .plus(paraDecimal(p.valorJuros.toString()))
+      .plus(paraDecimal(p.valorMulta.toString())),
   }));
 
   const despesasPagas: LinhaDespesa[] = despesasPagasBrutas.map((d) => ({

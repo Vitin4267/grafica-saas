@@ -27,6 +27,12 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/grafica_saas_test?schema=public
+      # Chave só de CI, sem relação com a de produção — o Postgres deste job é
+      # descartado ao final, então não tem segredo real pra proteger aqui,
+      # só precisa satisfazer src/lib/cripto.ts pros testes de cifrar/decifrar
+      # (achado ao abrir o PR #8, 2026-09-14: CI nunca tinha rodado testes que
+      # tocam cripto.ts antes desta branch).
+      ENCRYPTION_KEY: B4SkFfk7cy8Cv633i/pe36o3aHDUP91VTYi0rJFb+GE=
 
     steps:
       - uses: actions/checkout@v4

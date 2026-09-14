@@ -7,6 +7,7 @@ import {
 } from "@/lib/lifecycle-cron";
 import { enviarAlertasPrazoEmail } from "@/lib/alerta-prazo-email";
 import { cronAutorizado } from "@/lib/auth/cron";
+import { semTenant } from "@/lib/tenant-context";
 
 // Cron diário (vercel.json) de "ciclo de vida" da plataforma: 1) aviso de
 // trial acabando (e-mail via EMAIL_WEBHOOK_URL), 2) métricas agregadas de
@@ -51,13 +52,21 @@ export async function GET(request: NextRequest) {
   // resultado das outras, que podem ter terminado normalmente, nunca é
   // reportado. Cada resultado é reportado individualmente abaixo; "ok"
   // reflete se TODAS as cinco tarefas terminaram sem lançar.
-  const [avisosTrial, metricas, armazenamento, alertasPrazo, importacoesExpiradas] = await Promise.allSettled([
-    enviarAvisosTrialExpirando(origemPublica),
-    enviarMetricasDiarias(),
-    reconciliarArmazenamento(),
-    enviarAlertasPrazoEmail(origemPublica),
-    expirarImportacoesAbandonadas(),
-  ]);
+  // Achado da auditoria de segurança (2026-09-13) — as 5 tarefas varrem
+  // TODOS os tenants de propósito (é um cron diário de plataforma, não uma
+  // operação escopada a uma gráfica) — semTenant evita disparar o guard de
+  // isolamento em src/lib/prisma.ts (ver src/lib/prisma-tenant-guard.ts).
+  const [avisosTrial, metricas, armazenamento, alertasPrazo, importacoesExpiradas] = await semTenant(
+    "cron de lifecycle — varre todos os tenants de propósito (trial/métricas/armazenamento/prazo/importação)",
+    () =>
+      Promise.allSettled([
+        enviarAvisosTrialExpirando(origemPublica),
+        enviarMetricasDiarias(),
+        reconciliarArmazenamento(),
+        enviarAlertasPrazoEmail(origemPublica),
+        expirarImportacoesAbandonadas(),
+      ])
+  );
 
   return Response.json({
     ok: [avisosTrial, metricas, armazenamento, alertasPrazo, importacoesExpiradas].every(

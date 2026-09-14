@@ -52,6 +52,7 @@ describe("calcularBordado — fórmula básica", () => {
     expect(resultado.custoMatriz.toNumber()).toBeCloseTo(20, 6);
     expect(resultado.custoPontos.toNumber()).toBeCloseTo(37.5, 6);
     expect(resultado.custoSubstrato.toNumber()).toBeCloseTo(150, 6);
+    expect(resultado.custoMaquina.toNumber()).toBe(0);
     expect(resultado.custoBase.toNumber()).toBeCloseTo(207.5, 6);
   });
 
@@ -90,14 +91,18 @@ describe("calcularBordado — fórmula básica", () => {
     expect(grande.custoPontos.toNumber()).toBeCloseTo(pequeno.custoPontos.toNumber() * 5, 6);
   });
 
-  it("respeita o piso de custoMinimo quando a soma fica abaixo dele", () => {
+  it("respeita o piso de custoMinimo quando o SERVIÇO fica abaixo dele — substrato soma por fora (achado B4)", () => {
     const resultado = calcularBordado(
       pedidoBordadoValido({ quantidade: 1, numeroPontos: 100 }),
       contextoBordadoValido({ custoSubstratoPorPeca: 1 }),
       parametrosBordadoValidos({ custoPorMilPontos: 0.1, custoMatrizDigitalizacao: 0, custoMinimo: 500 })
     );
 
-    expect(resultado.custoBase.toNumber()).toBe(500);
+    // custoServico = custoMatriz(0) + custoPontos(0,01) = 0,01, bem abaixo
+    // do piso 500 -> piso age: max(500, 0,01) = 500. custoSubstrato = 1,
+    // somado DEPOIS -> custoBase = 501 (não 500 — o piso nunca "absorve" o
+    // substrato, ver achado B4).
+    expect(resultado.custoBase.toNumber()).toBe(501);
   });
 
   it("materialFornecidoPeloCliente=true (achado B7) permite custoSubstratoPorPeca=0 sem erro", () => {
@@ -107,6 +112,48 @@ describe("calcularBordado — fórmula básica", () => {
       parametrosBordadoValidos()
     );
     expect(resultado.custoSubstrato.toNumber()).toBe(0);
+  });
+});
+
+describe("calcularBordado — achado B1 da auditoria do motor de preço (2026-09-13): custoHoraMaq chegando no motor", () => {
+  it("custoMaquina = (numeroPontos × Q ÷ velocidade ÷ 60) × custoHoraMaq, somado ao custoBase", () => {
+    const resultado = calcularBordado(
+      pedidoBordadoValido({ quantidade: 10, numeroPontos: 6000 }),
+      contextoBordadoValido({ custoSubstratoPorPeca: 0, materialFornecidoPeloCliente: true }),
+      parametrosBordadoValidos({
+        custoPorMilPontos: 0,
+        custoMatrizDigitalizacao: 0,
+        custoHoraMaq: 30,
+        velocidadePontosPorMinuto: 1000,
+      })
+    );
+
+    // minutosTotal = (6000 × 10) ÷ 1000 = 60 min = 1h → custoMaquina = 30×1 = 30
+    expect(resultado.custoMaquina.toNumber()).toBeCloseTo(30, 6);
+    expect(resultado.custoBase.toNumber()).toBeCloseTo(30, 6);
+  });
+
+  it("custoMaquina é 0 quando a máquina não tem custoHoraMaq configurado (comportamento antigo preservado)", () => {
+    const resultado = calcularBordado(
+      pedidoBordadoValido(),
+      contextoBordadoValido(),
+      parametrosBordadoValidos()
+    );
+    expect(resultado.custoMaquina.toNumber()).toBe(0);
+  });
+
+  it("MAQUINA_BORDADO_SEM_VELOCIDADE quando custoHoraMaq está preenchido mas velocidadePontosPorMinuto não", () => {
+    try {
+      calcularBordado(
+        pedidoBordadoValido(),
+        contextoBordadoValido(),
+        parametrosBordadoValidos({ custoHoraMaq: 30 })
+      );
+      expect.fail("deveria ter lançado ErroPrecificacao");
+    } catch (erro) {
+      expect(erro).toBeInstanceOf(ErroPrecificacao);
+      expect((erro as ErroPrecificacao).codigo).toBe("MAQUINA_BORDADO_SEM_VELOCIDADE");
+    }
   });
 });
 

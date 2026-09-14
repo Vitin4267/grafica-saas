@@ -429,10 +429,19 @@ export async function salvarParametros(
     return { ok: false, mensagem: 'Preencha o campo "Páginas por caderno".' };
   }
   const paginasPorCadernoPadrao = Number(paginasPorCadernoPadraoBruto);
-  if (!Number.isInteger(paginasPorCadernoPadrao) || paginasPorCadernoPadrao <= 0) {
+  // Achado A5 da auditoria do motor de preço (2026-09-13) — um caderno é
+  // sempre uma folha física dobrada (múltiplo de 4: 4, 8, 16, 32...). Mesma
+  // trava do motor (validarPedidoEditorial em src/lib/pricing/validar.ts) —
+  // barrar aqui também evita que um valor inválido chegue a ser salvo e só
+  // quebre depois, no primeiro orçamento Editorial.
+  if (
+    !Number.isInteger(paginasPorCadernoPadrao) ||
+    paginasPorCadernoPadrao < 4 ||
+    paginasPorCadernoPadrao % 4 !== 0
+  ) {
     return {
       ok: false,
-      mensagem: 'Páginas por caderno precisa ser um número inteiro maior que zero.',
+      mensagem: 'Páginas por caderno precisa ser um múltiplo de 4 (ex: 4, 8, 16, 32) — um caderno é sempre uma folha física dobrada.',
     };
   }
 

@@ -331,6 +331,119 @@ describe(
   }
 );
 
+describe("resolverConfigAcabamentos — achado B3 da auditoria do motor de preço (2026-09-13)", () => {
+  async function criarAcabamentoComCustos(
+    graficaId: string,
+    s: string,
+    custos: { precoCompra: number | null; custoSetup: number; custoMinimo: number; custoFerramental?: number | null }
+  ) {
+    const catalogo = await prisma.itemCatalogo.create({
+      data: { graficaId, tipo: "SERVICO", categoria: "Acabamento", nome: `Laminação BOPP ${s}` },
+    });
+    return prisma.itemGrafica.create({
+      data: {
+        graficaId,
+        itemCatalogoId: catalogo.id,
+        modeloCalculo: "M2",
+        ativo: true,
+        precoCompra: custos.precoCompra,
+        configuracaoAcabamento: {
+          create: {
+            baseCobranca: "M2",
+            estagio: "POS_REFILE",
+            custoSetup: custos.custoSetup,
+            custoMinimo: custos.custoMinimo,
+            custoFerramental: custos.custoFerramental ?? null,
+          },
+        },
+      },
+    });
+  }
+
+  it(
+    "precoCompra nunca preenchido + setup/mínimo/ferramental também zerados — lança CUSTO_INVALIDO (cenário real do achado)",
+    async () => {
+      const { grafica, s } = await criarGrafica();
+      const acabamento = await criarAcabamentoComCustos(grafica.id, s, {
+        precoCompra: null,
+        custoSetup: 0,
+        custoMinimo: 0,
+      });
+
+      await expect(resolverConfigAcabamentos([acabamento.id], grafica.id)).rejects.toMatchObject({
+        codigo: "CUSTO_INVALIDO",
+      });
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "sem preço de compra mas com custoSetup > 0 (taxa fixa, sem cobrança por unidade) — resolve normalmente",
+    async () => {
+      const { grafica, s } = await criarGrafica();
+      const acabamento = await criarAcabamentoComCustos(grafica.id, s, {
+        precoCompra: null,
+        custoSetup: 35,
+        custoMinimo: 0,
+      });
+
+      const resolvidos = await resolverConfigAcabamentos([acabamento.id], grafica.id);
+      expect(resolvidos[0]).toMatchObject({ custoUnitario: 0, custoSetup: 35 });
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "sem preço de compra mas com custoMinimo > 0 (piso do job) — resolve normalmente",
+    async () => {
+      const { grafica, s } = await criarGrafica();
+      const acabamento = await criarAcabamentoComCustos(grafica.id, s, {
+        precoCompra: null,
+        custoSetup: 0,
+        custoMinimo: 20,
+      });
+
+      const resolvidos = await resolverConfigAcabamentos([acabamento.id], grafica.id);
+      expect(resolvidos[0]).toMatchObject({ custoUnitario: 0, custoMinimo: 20 });
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "sem preço de compra mas com custoFerramental > 0 — resolve normalmente",
+    async () => {
+      const { grafica, s } = await criarGrafica();
+      const acabamento = await criarAcabamentoComCustos(grafica.id, s, {
+        precoCompra: null,
+        custoSetup: 0,
+        custoMinimo: 0,
+        custoFerramental: 50,
+      });
+
+      const resolvidos = await resolverConfigAcabamentos([acabamento.id], grafica.id);
+      expect(resolvidos[0]).toMatchObject({ custoUnitario: 0, custoFerramental: 50 });
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "precoCompra explicitamente 0 (não null) segue tratado como \"sem custo\" pra fins da trava",
+    async () => {
+      const { grafica, s } = await criarGrafica();
+      const acabamento = await criarAcabamentoComCustos(grafica.id, s, {
+        precoCompra: 0,
+        custoSetup: 0,
+        custoMinimo: 0,
+      });
+
+      await expect(resolverConfigAcabamentos([acabamento.id], grafica.id)).rejects.toMatchObject({
+        codigo: "CUSTO_INVALIDO",
+      });
+    },
+    TIMEOUT_MS
+  );
+});
+
 describe(
   "carregarContextoPrecificacao — M2 / ConfiguracaoEmenda (achado A9)",
   () => {

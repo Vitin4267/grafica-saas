@@ -12,13 +12,7 @@ import {
 import { UserNav } from "@/components/UserNav";
 import { Card } from "@/components/ui/Card";
 import { ArrowLeftIcon } from "@/components/icons";
-import { NovaPrensaForm } from "../prensas/NovaPrensaForm";
-import { NovaMaquinaFlexografiaForm } from "./flexografia/NovaMaquinaFlexografiaForm";
-import { NovoEquipamentoForm } from "./equipamentos/NovoEquipamentoForm";
-import { NovaImpressoraDigitalForm } from "./impressao-digital/NovaImpressoraDigitalForm";
-import { NovaMaquinaSetupPorPecaForm } from "./setup-por-peca/NovaMaquinaSetupPorPecaForm";
-import { NovaMaquinaBordadoForm } from "./bordado/NovaMaquinaBordadoForm";
-import { NovaMaquinaTempoForm } from "./tempo-maquina/NovaMaquinaTempoForm";
+import { SeletorNovaMaquina } from "./SeletorNovaMaquina";
 import { indexarManutencoesAtivasPorMaquina } from "@/lib/manutencao-maquina";
 import { buscarManutencoesAtivas } from "@/lib/manutencao-maquina-db";
 import { ROTULO_CATEGORIA_EQUIPAMENTO, ROTULO_PROCESSO_SETUP_POR_PECA } from "@/lib/tipos-equipamento";
@@ -156,14 +150,6 @@ export default async function MaquinasPage() {
             ))}
           </div>
 
-          {podeEditar && (
-            <Card className="p-6">
-              <h3 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">
-                Nova prensa
-              </h3>
-              <NovaPrensaForm />
-            </Card>
-          )}
         </div>
 
         <div className="mb-8">
@@ -215,14 +201,6 @@ export default async function MaquinasPage() {
             ))}
           </div>
 
-          {podeEditar && (
-            <Card className="p-6">
-              <h3 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">
-                Nova máquina de flexografia
-              </h3>
-              <NovaMaquinaFlexografiaForm />
-            </Card>
-          )}
         </div>
 
         <div className="mb-8">
@@ -280,14 +258,6 @@ export default async function MaquinasPage() {
             ))}
           </div>
 
-          {podeEditar && (
-            <Card className="p-6">
-              <h3 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">
-                Novo equipamento
-              </h3>
-              <NovoEquipamentoForm />
-            </Card>
-          )}
         </div>
 
         <div className="mb-8">
@@ -338,14 +308,6 @@ export default async function MaquinasPage() {
             ))}
           </div>
 
-          {podeEditar && (
-            <Card className="p-6">
-              <h3 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">
-                Nova impressora digital
-              </h3>
-              <NovaImpressoraDigitalForm />
-            </Card>
-          )}
         </div>
 
         <div className="mb-8">
@@ -401,14 +363,6 @@ export default async function MaquinasPage() {
             ))}
           </div>
 
-          {podeEditar && (
-            <Card className="p-6">
-              <h3 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">
-                Nova máquina
-              </h3>
-              <NovaMaquinaSetupPorPecaForm />
-            </Card>
-          )}
         </div>
 
         <div className="mb-8">
@@ -461,14 +415,6 @@ export default async function MaquinasPage() {
             ))}
           </div>
 
-          {podeEditar && (
-            <Card className="p-6">
-              <h3 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">
-                Nova máquina de bordado
-              </h3>
-              <NovaMaquinaBordadoForm />
-            </Card>
-          )}
         </div>
 
         <div className="mb-8">
@@ -522,15 +468,9 @@ export default async function MaquinasPage() {
             ))}
           </div>
 
-          {podeEditar && (
-            <Card className="p-6">
-              <h3 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">
-                Nova máquina de tempo
-              </h3>
-              <NovaMaquinaTempoForm />
-            </Card>
-          )}
         </div>
+
+        {podeEditar && <SeletorNovaMaquina />}
       </main>
     </div>
   );

@@ -6,7 +6,8 @@ import { after } from "next/server";
 import { put, del } from "@vercel/blob";
 import { opcoesBlobPublico } from "@/lib/blob-store";
 import { prisma } from "@/lib/prisma";
-import { exigirUsuarioAutenticado } from "@/lib/auth/session";
+import { exigirUsuarioAutenticado, hashToken } from "@/lib/auth/session";
+import { cifrar, decifrarOuNull } from "@/lib/cripto";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo, podeVerModulo, podeConfirmarEstagio } from "@/lib/auth/permissoes";
@@ -444,16 +445,23 @@ export async function cancelarPedido(
         }
 
         // ContaReceber gerada na aprovação (automática ou manual) — só
-        // cancela quem ainda estiver PENDENTE. Uma conta PARCIAL já tem
-        // dinheiro real recebido via BaixaContaReceber: cancelar sozinho
-        // faria esse saldo já recebido desaparecer sem contrapartida, então
-        // fica como está e a gráfica decide à parte (mesmo critério que
-        // cancelarContaReceber, em financeiro/contas-receber/actions.ts, já
-        // aplica pro cancelamento manual — também só aceita PENDENTE).
-        // RECEBIDO/CANCELADO nunca são tocados (já não representam dívida em
-        // aberto, e um já cancelado não precisa ser cancelado de novo).
+        // cancela quem ainda estiver PENDENTE ou EM_COBRANCA. Uma conta
+        // PARCIAL já tem dinheiro real recebido via BaixaContaReceber:
+        // cancelar sozinho faria esse saldo já recebido desaparecer sem
+        // contrapartida, então fica como está e a gráfica decide à parte
+        // (mesmo critério que cancelarContaReceber, em
+        // financeiro/contas-receber/actions.ts, aplica pro cancelamento
+        // manual). EM_COBRANCA entra junto com PENDENTE (achado N24 da
+        // auditoria de código, 2026-09-12) — é só um PENDENTE vencido que o
+        // financeiro marcou "em cobrança" pra rastrear, SEM nenhuma baixa
+        // registrada; sem essa entrada, uma conta cujo pedido foi cancelado
+        // ficava presa em EM_COBRANCA pra sempre, voltando a entrar no
+        // aging/exposição de crédito/projeção de caixa/exportação contábil
+        // de um pedido que não existe mais. RECEBIDO/CANCELADO nunca são
+        // tocados (já não representam dívida em aberto, e um já cancelado
+        // não precisa ser cancelado de novo).
         const contasParaCancelar = await tx.contaReceber.findMany({
-          where: { orcamentoId: pedido.orcamentoId, status: "PENDENTE" },
+          where: { orcamentoId: pedido.orcamentoId, status: { in: ["PENDENTE", "EM_COBRANCA"] } },
         });
         if (contasParaCancelar.length > 0) {
           await tx.contaReceber.updateMany({
@@ -868,7 +876,10 @@ export async function enviarArte(
   }
   await confirmarArquivo(reserva.arquivoId, { url: blob.url, pathname: blob.pathname });
 
-  const arteLinkToken = pedido.arteLinkToken ?? randomBytes(20).toString("base64url");
+  // Achado da auditoria de segurança (2026-09-13) — decifra o existente pra
+  // reaproveitar entre reenvios (comportamento de sempre), grava hash+cifra
+  // quando gera um novo (ver comentário de Pedido.arteLinkTokenHash no schema).
+  const arteLinkToken = decifrarOuNull(pedido.arteLinkTokenCifrado) ?? randomBytes(20).toString("base64url");
 
   // Preflight é melhor esforço (nunca lança, ver analisarPreflight) — roda
   // ANTES do update pra gravar os achados no mesmo write que já grava
@@ -888,7 +899,8 @@ export async function enviarArte(
     where: { id: pedidoId },
     data: {
       arteUrl: blob.url,
-      arteLinkToken,
+      arteLinkTokenHash: hashToken(arteLinkToken),
+      arteLinkTokenCifrado: cifrar(arteLinkToken),
       arteAprovadaEm: null,
       arteComentarioCliente: null,
       preflightAvisos,

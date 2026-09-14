@@ -1,5 +1,7 @@
 import { describe, it, expect, afterEach, beforeAll, afterAll, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
+import { hashToken } from "@/lib/auth/session";
+import { cifrar } from "@/lib/cripto";
 
 // Teste de INTEGRAÇÃO de verdade (toca o Postgres de dev via DATABASE_URL) —
 // espelha src/app/orcamento/[id]/actions.condicao-pagamento.test.ts, mas
@@ -75,7 +77,8 @@ async function criarFixture(opts: { total: number; condicaoPagamentoId?: string 
       usuarioId: criador.id,
       status: "ENVIADO",
       total: opts.total,
-      linkPublicoToken: token,
+      linkPublicoTokenHash: hashToken(token),
+      linkPublicoTokenCifrado: cifrar(token),
       condicaoPagamentoId: opts.condicaoPagamentoId ?? null,
     },
   });

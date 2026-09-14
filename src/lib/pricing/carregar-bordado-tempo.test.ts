@@ -10,9 +10,12 @@ import { ErroPrecificacao } from "./erros";
 // (pesquisa-abrangencia-modulos.md). Cada cenário cobre "máquina não
 // configurada" (erro) e "caminho feliz" (contexto carregado do banco).
 //
-// IMPORTANTE: a migration 20260902100000_bordado_tempo_maquina foi escrita
-// à mão mas NÃO foi aplicada ao banco de dev (regra do projeto). Este
-// arquivo só passa depois que alguém aplicar essa migration.
+// IMPORTANTE: a migration 20260913120000_bordado_velocidade_pontos_minuto
+// (achado B1 da auditoria do motor de preço, 2026-09-13 — adiciona
+// MaquinaBordado.velocidadePontosPorMinuto) foi escrita à mão mas NÃO foi
+// aplicada ao banco de dev ainda (regra do projeto: aprovação explícita do
+// dono antes de aplicar). O teste "caminho feliz" abaixo só passa depois
+// que alguém aplicar essa migration.
 const TIMEOUT_MS = 30_000;
 
 const sufixo = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -81,6 +84,8 @@ describe(
             custoPorMilPontos: 0.75,
             custoMatrizDigitalizacao: 20,
             cabecas: 6,
+            custoHoraMaq: 45,
+            velocidadePontosPorMinuto: 800,
             custoMinimo: 30,
           },
         });
@@ -104,6 +109,10 @@ describe(
           custoPorMilPontos: 0.75,
           custoMatrizDigitalizacao: 20,
           custoMinimo: 30,
+          // Achado B1 — antes, carregarParametrosMaquinaBordado descartava
+          // custoHoraMaq e nem sabia que velocidadePontosPorMinuto existia.
+          custoHoraMaq: 45,
+          velocidadePontosPorMinuto: 800,
         });
         expect(contexto.maquinaBordadoUsada).toMatchObject({ id: maquina.id, nome: maquina.nome });
       },

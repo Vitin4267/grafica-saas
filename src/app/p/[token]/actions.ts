@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { hashToken } from "@/lib/auth/session";
 import { obterIpRequisicao } from "@/lib/auth/ip";
 import { tentarRegistrarConfirmacaoEstagio } from "@/lib/auth/rate-limit";
 import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
@@ -22,8 +23,10 @@ export async function confirmarEstagioPublico(
 ): Promise<ConfirmarEstagioResult> {
   const token = String(formData.get("token"));
 
+  // Hash do token (achado da auditoria de segurança 2026-09-13), nunca
+  // gravado em claro — ver comentário de Pedido.producaoLinkTokenHash no schema.
   const pedido = await prisma.pedido.findUnique({
-    where: { producaoLinkToken: token },
+    where: { producaoLinkTokenHash: hashToken(token) },
     include: {
       orcamento: {
         include: {

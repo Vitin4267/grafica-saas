@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { hashToken } from "@/lib/auth/session";
 import { Card } from "@/components/ui/Card";
 import { Logo } from "@/components/Logo";
 import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
@@ -17,8 +18,10 @@ export default async function EtiquetaPedidoPage({
 }) {
   const { token } = await params;
 
+  // Hash do token (achado da auditoria de segurança 2026-09-13), nunca
+  // gravado em claro — ver comentário de Pedido.qrTokenHash no schema.
   const pedido = await prisma.pedido.findUnique({
-    where: { qrToken: token },
+    where: { qrTokenHash: hashToken(token) },
     include: {
       orcamento: {
         include: {

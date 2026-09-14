@@ -13,6 +13,7 @@ import type {
   ContextoFlexografia,
   ContextoM2,
   ContextoOffset,
+  ContextoSetupPorPeca,
   ParametrosMaquinaFlexo,
   ParametrosPrensa,
   PedidoDigital,
@@ -147,6 +148,13 @@ function pedidoSetupPorPecaValido(overrides: Partial<PedidoSetupPorPeca> = {}): 
   return {
     quantidade: 100,
     numeroSetups: 1,
+    ...overrides,
+  };
+}
+
+function contextoSetupPorPecaValido(overrides: Partial<ContextoSetupPorPeca> = {}): ContextoSetupPorPeca {
+  return {
+    custoSubstratoPorPeca: 15,
     ...overrides,
   };
 }
@@ -906,6 +914,30 @@ describe("validarPedidoDigital — NUMERO_CLIQUES_INVALIDO (só quando informado
       validarPedidoDigital(pedidoDigitalValido({ numeroCliques: undefined }), contextoDigitalValido())
     ).not.toThrow();
   });
+
+  // Achado A4 da auditoria do motor de preço (2026-09-13) — sem teto, um
+  // vendedor confundindo "cliques por folha" (o campo real) com "total de
+  // folhas do pedido" digitava um número grande (ex: 48, o total de folhas
+  // que ele mesmo calculou) e o motor multiplicava numeroFolhas × 48.
+  it("dispara quando numeroCliques excede o teto de 20 (ex: 48 — o dedo-gordo clássico de digitar o TOTAL de folhas por engano)", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoDigital(pedidoDigitalValido({ numeroCliques: 48 }), contextoDigitalValido())
+    );
+    expect(erro).toBe("NUMERO_CLIQUES_INVALIDO");
+  });
+
+  it("aceita exatamente o teto (20) sem lançar", () => {
+    expect(() =>
+      validarPedidoDigital(pedidoDigitalValido({ numeroCliques: 20 }), contextoDigitalValido())
+    ).not.toThrow();
+  });
+
+  it("dispara com 21 (1 acima do teto)", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoDigital(pedidoDigitalValido({ numeroCliques: 21 }), contextoDigitalValido())
+    );
+    expect(erro).toBe("NUMERO_CLIQUES_INVALIDO");
+  });
 });
 
 describe("validarPedidoDigital — CUSTO_INVALIDO (custoPorFolha)", () => {
@@ -963,14 +995,14 @@ describe("validarPedidoDigital — MATERIAL_SEM_FOLHA (achado N4)", () => {
 
 describe("validarPedidoSetupPorPeca — casos válidos (sanity check, não deve lançar)", () => {
   it("não lança para pedido totalmente válido", () => {
-    expect(() => validarPedidoSetupPorPeca(pedidoSetupPorPecaValido())).not.toThrow();
+    expect(() => validarPedidoSetupPorPeca(pedidoSetupPorPecaValido(), contextoSetupPorPecaValido())).not.toThrow();
   });
 });
 
 describe("validarPedidoSetupPorPeca — QUANTIDADE_INVALIDA (herdado de validarQuantidade)", () => {
   it("dispara com quantidade zero", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoSetupPorPeca(pedidoSetupPorPecaValido({ quantidade: 0 }))
+      validarPedidoSetupPorPeca(pedidoSetupPorPecaValido({ quantidade: 0 }), contextoSetupPorPecaValido())
     );
     expect(erro).toBe("QUANTIDADE_INVALIDA");
   });
@@ -979,28 +1011,49 @@ describe("validarPedidoSetupPorPeca — QUANTIDADE_INVALIDA (herdado de validarQ
 describe("validarPedidoSetupPorPeca — NUMERO_SETUPS_INVALIDO (obrigatório, sem default)", () => {
   it("dispara com numeroSetups zero", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoSetupPorPeca(pedidoSetupPorPecaValido({ numeroSetups: 0 }))
+      validarPedidoSetupPorPeca(pedidoSetupPorPecaValido({ numeroSetups: 0 }), contextoSetupPorPecaValido())
     );
     expect(erro).toBe("NUMERO_SETUPS_INVALIDO");
   });
 
   it("dispara com numeroSetups negativo", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoSetupPorPeca(pedidoSetupPorPecaValido({ numeroSetups: -1 }))
+      validarPedidoSetupPorPeca(pedidoSetupPorPecaValido({ numeroSetups: -1 }), contextoSetupPorPecaValido())
     );
     expect(erro).toBe("NUMERO_SETUPS_INVALIDO");
   });
 
   it("dispara com numeroSetups fracionário", () => {
     const erro = codigoDoErro(() =>
-      validarPedidoSetupPorPeca(pedidoSetupPorPecaValido({ numeroSetups: 1.5 }))
+      validarPedidoSetupPorPeca(pedidoSetupPorPecaValido({ numeroSetups: 1.5 }), contextoSetupPorPecaValido())
     );
     expect(erro).toBe("NUMERO_SETUPS_INVALIDO");
   });
 
   it("fronteira válida: numeroSetups = 1 (mínimo permitido) não lança", () => {
     expect(() =>
-      validarPedidoSetupPorPeca(pedidoSetupPorPecaValido({ numeroSetups: 1 }))
+      validarPedidoSetupPorPeca(pedidoSetupPorPecaValido({ numeroSetups: 1 }), contextoSetupPorPecaValido())
+    ).not.toThrow();
+  });
+});
+
+describe("validarPedidoSetupPorPeca — CUSTO_INVALIDO (achado B10 da auditoria do motor de preço, 2026-09-13)", () => {
+  it("dispara quando custoSubstratoPorPeca <= 0 e materialFornecidoPeloCliente não está marcado", () => {
+    const erro = codigoDoErro(() =>
+      validarPedidoSetupPorPeca(
+        pedidoSetupPorPecaValido(),
+        contextoSetupPorPecaValido({ custoSubstratoPorPeca: 0 })
+      )
+    );
+    expect(erro).toBe("CUSTO_INVALIDO");
+  });
+
+  it("NÃO dispara quando custoSubstratoPorPeca <= 0 mas materialFornecidoPeloCliente=true (achado B7, mesmo padrão de Digital/Bordado)", () => {
+    expect(() =>
+      validarPedidoSetupPorPeca(
+        pedidoSetupPorPecaValido(),
+        contextoSetupPorPecaValido({ custoSubstratoPorPeca: 0, materialFornecidoPeloCliente: true })
+      )
     ).not.toThrow();
   });
 });

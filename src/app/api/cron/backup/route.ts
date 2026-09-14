@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { cronAutorizado } from "@/lib/auth/cron";
 import { exigirTokenBlobPrivado } from "@/lib/blob-assinado";
 import { opcoesBlobPrivado } from "@/lib/blob-store";
+import { semTenant } from "@/lib/tenant-context";
 
 // Camada EXTRA de backup, não a principal — a defesa real contra perda de
 // dados é o PITR do próprio Neon (recomendado fazer upgrade de plano pro
@@ -28,7 +29,16 @@ const RETENCAO_DIAS = 14;
 // ser rede de segurança.
 export const maxDuration = 60;
 
+// Achado da auditoria de segurança (2026-09-13) — genuinamente cross-tenant
+// de propósito (dump de TODOS os tenants pro backup diário), então roda sob
+// semTenant pra não disparar o guard de isolamento em src/lib/prisma.ts
+// (ver src/lib/prisma-tenant-guard.ts) — sem `where` nenhum é exatamente o
+// comportamento correto AQUI, e só aqui.
 async function exportarDados() {
+  return semTenant("cron de backup — dump de todos os tenants de propósito", () => exportarDadosDeTodosTenants());
+}
+
+async function exportarDadosDeTodosTenants() {
   const [
     graficas,
     usuarios,
@@ -119,20 +129,26 @@ export async function GET(request: NextRequest) {
   // Falha alto se o store privado não estiver configurado, em vez de deixar
   // put()/list()/del() caírem silenciosamente pro token do store público
   // (ver exigirTokenBlobPrivado em src/lib/blob-assinado.ts) — este dump
-  // contém Usuario.senhaHash e DadosFiscaisGrafica/DadosFiscaisFilial.focusNfeToken
-  // em texto claro, não pode arriscar ir pro store público sem erro nenhum.
-  // Confere ANTES de exportar os dados (evita gastar a query cara à toa).
+  // contém Usuario.senhaHash (hash) e, desde a auditoria de segurança
+  // 2026-09-13, DadosFiscaisGrafica/DadosFiscaisFilial.focusNfeTokenCifrado
+  // e AutomacaoGrafica.webhookUrlCifrado (cifrados com AES-256-GCM, ver
+  // src/lib/cripto.ts — ANTES desta rodada iam em texto claro no backup).
+  // Não pode arriscar ir pro store público sem erro nenhum de qualquer
+  // forma. Confere ANTES de exportar os dados (evita gastar a query cara à
+  // toa).
   const tokenPrivado = exigirTokenBlobPrivado();
 
   const dados = await exportarDados();
   const nomeArquivo = `backups/backup-${new Date().toISOString().slice(0, 10)}.json`;
 
   // access: "private" — este dump inclui Usuario.senhaHash (hash argon2id de
-  // todo usuário de toda gráfica) e DadosFiscaisGrafica/DadosFiscaisFilial
-  // .focusNfeToken (token de API de terceiro em texto claro). Blob público + nome de arquivo
-  // previsível == esses dados baixáveis por qualquer um que descubra a URL do
-  // blob store, sem autenticação nenhuma. Restaurar exige usar `get()` de
-  // @vercel/blob (autenticado pelo token do servidor), nunca a URL direta.
+  // todo usuário de toda gráfica) e os campos cifrados citados acima (a
+  // cifra em si não é segredo trivial de quebrar sem a chave, mas o dump
+  // continua indo pro store privado por padrão de profundidade — nunca
+  // depender só da cifra). Blob público + nome de arquivo previsível == esses
+  // dados baixáveis por qualquer um que descubra a URL do blob store, sem
+  // autenticação nenhuma. Restaurar exige usar `get()` de @vercel/blob
+  // (autenticado pelo token do servidor), nunca a URL direta.
   // Store PRIVADO dedicado (BLOB_PRIVATE_READ_WRITE_TOKEN) — mesmo store da
   // imagem de tinta, público/privado é fixo por store no Vercel Blob.
   const blob = await put(nomeArquivo, JSON.stringify(dados), {

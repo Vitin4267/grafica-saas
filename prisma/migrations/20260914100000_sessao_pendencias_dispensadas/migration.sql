@@ -1,0 +1,12 @@
+-- Extensão do "PendenciasConfiguracaoModal -> Banner" (2026-09-14) — antes,
+-- o botão "Depois" só setava um useState local, que resetava a cada
+-- navegação de página (o componente vive dentro de UserNav, montado em
+-- quase toda rota) — a pendência reaparecia toda hora, não só no próximo
+-- login como a intenção original era. Guardar a dispensa na própria linha
+-- de Sessao resolve isso sem precisar de nenhuma limpeza manual: uma
+-- sessão NOVA (próximo login) já nasce sem essa coluna preenchida, porque é
+-- uma linha nova no banco.
+-- Aditivo: 1 coluna nullable, sem default diferente de NULL, sem backfill —
+-- toda sessão existente continua com o campo NULL (nenhuma pendência
+-- dispensada, o mesmo estado "nunca dispensei nada ainda").
+ALTER TABLE "sessoes" ADD COLUMN "pendenciasDispensadas" JSONB;

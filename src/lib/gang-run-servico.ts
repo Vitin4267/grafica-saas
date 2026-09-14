@@ -1,5 +1,5 @@
 import "server-only";
-import { prisma } from "@/lib/prisma";
+import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { paraDecimal } from "@/lib/pricing/decimal";
 import {
@@ -37,7 +37,7 @@ const CATEGORIA_CHAPAS_NOME = "Clichê";
 // ---------------------------------------------------------------------------
 
 export async function registrarCandidatosGangRun(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   params: { graficaId: string; orcamentoId: string; pedidoId: string }
 ): Promise<void> {
   // Achado F1 (auditoria de abrangência) — só itens de processos com
@@ -150,7 +150,7 @@ export async function registrarCandidatosGangRun(
 // ---------------------------------------------------------------------------
 
 export async function cancelarCandidatosDoPedido(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   pedidoId: string,
   motivo: string
 ): Promise<void> {
@@ -171,7 +171,7 @@ export type ResultadoCombinarGangRun =
   | { ok: false; mensagem: string };
 
 async function resolverCategoriaCustoGangRun(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   graficaId: string
 ): Promise<string | null> {
   // Mesma cascata de 3 níveis usada em montarResolutorCategoria

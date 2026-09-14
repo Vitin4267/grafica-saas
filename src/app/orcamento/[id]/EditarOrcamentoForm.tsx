@@ -286,6 +286,12 @@ export function EditarOrcamentoForm({
   // da orelha segue a mesma unidadeDimensao do item).
   const [larguraOrelhaCm, setLarguraOrelhaCm] = useState(valoresIniciais.larguraOrelhaCm);
   const [etiqueta, setEtiqueta] = useState<CamposEtiqueta>(valoresIniciais.etiqueta);
+  // Achado B8 da auditoria do motor de preço (2026-09-13) — controlado (em
+  // vez do defaultValue não-controlado do resto do form) só pra poder
+  // comparar ao vivo contra etiqueta.coresRotulo/coresContraRotulo abaixo
+  // (mesmo aviso de divergência que CamposPrecificacaoEtiquetaOrcamento.tsx
+  // já tem no formulário de ADICIONAR item).
+  const [quantidadeCores, setQuantidadeCores] = useState(valoresIniciais.quantidadeCores);
   const [coresEspeciais, setCoresEspeciais] = useState<CamposCorEspecial[]>(
     valoresIniciais.coresEspeciais
   );
@@ -505,16 +511,17 @@ export function EditarOrcamentoForm({
                 <Input
                   label={
                     <>
-                      Número de cliques
-                      <CampoAjuda texto="Em impressão digital, cada passada da máquina pra imprimir uma peça é chamada de 'clique' — é assim que o custo do equipamento é cobrado. Normalmente é 1 clique por peça; só mude se seu equipamento contar diferente (ex: frente e verso separados)." />
+                      Número de cliques por FOLHA
+                      <CampoAjuda texto="Em impressão digital, cada passada da máquina sobre uma FOLHA (não uma peça — várias peças podem caber na mesma folha) é chamada de 'clique'. Normalmente é 1 clique por folha; só mude se seu equipamento passar mais de uma vez na mesma folha (ex: frente e verso separados, verniz). O motor já multiplica pelo número de folhas sozinho — não digite o total de folhas aqui." />
                     </>
                   }
                   name="numeroCliques"
                   type="number"
                   min={1}
+                  max={20}
                   defaultValue={valoresIniciais.numeroCliques}
-                  placeholder="opcional — padrão 1 por peça"
-                  hint="Deixe em branco pra usar 1 clique por peça (padrão)."
+                  placeholder="opcional — padrão 1 por folha"
+                  hint="Deixe em branco pra usar 1 clique por folha (padrão). Não é o total de folhas do pedido."
                 />
               )}
 
@@ -526,7 +533,7 @@ export function EditarOrcamentoForm({
                   label={
                     <>
                       Número de setups
-                      <CampoAjuda texto="Setup é o tempo de preparar a máquina pra rodar esta arte — trocar tela, matriz ou ajustar a cor. Cada arte diferente neste item conta como 1 setup, e isso entra no custo porque a máquina fica parada preparando, não produzindo." />
+                      <CampoAjuda texto="Setup é o tempo de preparar a máquina pra rodar esta arte — trocar tela, matriz ou ajustar a cor. É POR TELA/MATRIZ/COR, não por arte: uma arte de 1 cor só usa 1 setup, mas uma arte de 4 cores usa 4 telas e conta como 4 setups (cada cor precisa da sua própria tela na máquina)." />
                     </>
                   }
                   name="numeroSetups"
@@ -534,7 +541,7 @@ export function EditarOrcamentoForm({
                   min={1}
                   required
                   defaultValue={valoresIniciais.numeroSetups}
-                  hint="Quantas telas/matrizes/artes esta arte usa."
+                  hint="1 por TELA/MATRIZ — uma arte de 4 cores em serigrafia usa 4 telas, não 1."
                 />
               )}
 
@@ -734,7 +741,7 @@ export function EditarOrcamentoForm({
             step="0.25"
             defaultValue={valoresIniciais.horasEstimadas}
             placeholder="opcional"
-            hint="Só necessário se um dos acabamentos acima cobra por hora (ex: instalação, criação de arte)."
+            hint="Só necessário se um dos acabamentos acima cobra por hora (ex: instalação, criação de arte). É uma estimativa ÚNICA por item — se marcar 2 acabamentos por hora ao mesmo tempo, o salvamento é bloqueado (o motor não sabe dividir a estimativa entre eles); separe em itens diferentes."
           />
         )}
 
@@ -786,9 +793,33 @@ export function EditarOrcamentoForm({
               type="number"
               min={1}
               required
-              defaultValue={valoresIniciais.quantidadeCores}
+              value={quantidadeCores}
+              onChange={(e) => setQuantidadeCores(e.target.value)}
               hint="Um clichê por cor da arte — custo fixo, não muda com a tiragem."
             />
+            {(() => {
+              // Achado B8 — mesmo aviso do formulário de adicionar item:
+              // "Cores rótulo"/"Cores contra-rótulo" (ficha técnica, mais
+              // abaixo) e esta quantidade (a única que entra no preço) são
+              // digitadas em lugares diferentes e ninguém compara.
+              const rotuloNum = etiqueta.coresRotulo !== "" ? Number(etiqueta.coresRotulo) : null;
+              const contraRotuloNum =
+                etiqueta.coresContraRotulo !== "" ? Number(etiqueta.coresContraRotulo) : null;
+              const quantidadeCoresNum = quantidadeCores !== "" ? Number(quantidadeCores) : null;
+              const somaDescritiva =
+                rotuloNum !== null && contraRotuloNum !== null ? rotuloNum + contraRotuloNum : null;
+              const diverge =
+                somaDescritiva !== null && quantidadeCoresNum !== null && somaDescritiva !== quantidadeCoresNum;
+              if (!diverge) return null;
+              return (
+                <Alert variant="warning">
+                  "Cores rótulo" + "Cores contra-rótulo" (ficha técnica, mais abaixo) somam{" "}
+                  {somaDescritiva}, mas a quantidade de cores usada no preço está em {quantidadeCoresNum}.
+                  Confira se é isso mesmo — divergência intencional acontece (ex: uma cor reaproveitada
+                  entre rótulo e contra-rótulo no mesmo clichê), mas costuma ser um campo desatualizado.
+                </Alert>
+              );
+            })()}
             {/* Custo de faca/frete: R$ livres, opcionais, raramente
                 preenchidos — diferente de papel/quantidade de cores acima
                 (que entram na conta de preço e costumam ser necessários),

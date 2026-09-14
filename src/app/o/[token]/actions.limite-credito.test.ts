@@ -1,5 +1,7 @@
 import { describe, it, expect, afterEach, beforeAll, afterAll, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
+import { hashToken } from "@/lib/auth/session";
+import { cifrar } from "@/lib/cripto";
 
 // Teste de INTEGRAÇÃO de verdade (toca o Postgres de dev via DATABASE_URL) —
 // espelha src/app/orcamento/[id]/actions.limite-credito.test.ts, mas pelo
@@ -94,7 +96,8 @@ async function criarFixture(opts: {
       usuarioId: criador.id,
       status: "ENVIADO",
       total: 100,
-      linkPublicoToken: token,
+      linkPublicoTokenHash: hashToken(token),
+      linkPublicoTokenCifrado: cifrar(token),
     },
   });
   await prisma.orcamentoItem.create({

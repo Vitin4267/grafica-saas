@@ -221,3 +221,69 @@ describe("atualizarCliente — dados comerciais (achado A6 da Parte 5)", () => {
     TIMEOUT_MS
   );
 });
+
+describe("atualizarCliente — achado D2 da auditoria do motor de preço (2026-09-13): margemPadraoOverride precisa de teto", () => {
+  it(
+    "rejeita margemPadraoOverride >= 0,85 (garante ENCARGOS_INVALIDOS em todo orçamento futuro deste cliente)",
+    async () => {
+      const f = await criarFixture();
+      vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(
+        (await prisma.usuario.findUniqueOrThrow({ where: { id: f.usuarioDonoId } })) as never
+      );
+
+      // Cenário exato da auditoria: dono quis dizer "90%" e digitou 0.9 —
+      // um valor bem-formatado como fração, mas que sozinho já estoura o
+      // teto de 85% de validarSomaEncargos.
+      const resultado = await atualizarCliente(
+        null,
+        formDataBase(f.clienteId, { margemPadraoOverride: "0.9" })
+      );
+
+      expect(resultado.ok).toBe(false);
+      expect(resultado.mensagem).toContain("Margem diferenciada");
+
+      // Nada foi gravado por cima do valor anterior (null).
+      const cliente = await prisma.cliente.findUniqueOrThrow({ where: { id: f.clienteId } });
+      expect(cliente.margemPadraoOverride).toBeNull();
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "rejeita margemPadraoOverride exatamente 0,85 (limiar é exclusivo, mesma regra de validarSomaEncargos)",
+    async () => {
+      const f = await criarFixture();
+      vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(
+        (await prisma.usuario.findUniqueOrThrow({ where: { id: f.usuarioDonoId } })) as never
+      );
+
+      const resultado = await atualizarCliente(
+        null,
+        formDataBase(f.clienteId, { margemPadraoOverride: "0.85" })
+      );
+
+      expect(resultado.ok).toBe(false);
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "aceita margemPadraoOverride abaixo do teto (ex: 0,3 = 30%)",
+    async () => {
+      const f = await criarFixture();
+      vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(
+        (await prisma.usuario.findUniqueOrThrow({ where: { id: f.usuarioDonoId } })) as never
+      );
+
+      const resultado = await atualizarCliente(
+        null,
+        formDataBase(f.clienteId, { margemPadraoOverride: "0.3" })
+      );
+
+      expect(resultado.ok).toBe(true);
+      const cliente = await prisma.cliente.findUniqueOrThrow({ where: { id: f.clienteId } });
+      expect(Number(cliente.margemPadraoOverride)).toBe(0.3);
+    },
+    TIMEOUT_MS
+  );
+});

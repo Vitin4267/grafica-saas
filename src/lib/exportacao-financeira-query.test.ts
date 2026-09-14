@@ -482,4 +482,36 @@ describe("buscarDadosExportacaoFinanceira — achado A16 da Parte 4", () => {
     },
     TIMEOUT_MS
   );
+
+  // Achado N31 da Parte 9 da auditoria de código (2026-09-12) —
+  // registrarBaixaContaReceber limita `valor` ao saldo do PRINCIPAL;
+  // juros/multa recebidos junto ficam em valorJuros/valorMulta, campos à
+  // parte. Um extrato pro contador que mostrasse só o principal (R$5.000
+  // numa baixa de R$5.300 com R$300 de juros) divergiria do que o cliente
+  // de fato depositou em banco.
+  it(
+    "LinhaPagamento.valor soma valorJuros/valorMulta junto com o principal — reflete o depósito real (achado N31)",
+    async () => {
+      const f = await criarFixtureBase();
+      const periodo = periodoHoje();
+
+      const orcamento = await criarOrcamentoAprovado(f, 5_000);
+      await prisma.pagamento.create({
+        data: {
+          orcamentoId: orcamento.id,
+          valor: 5_000,
+          valorJuros: 300,
+          valorMulta: 50,
+          forma: "PIX",
+        },
+      });
+
+      const dados = await buscarDadosExportacaoFinanceira(f.graficaId, periodo);
+
+      expect(dados.pagamentos).toHaveLength(1);
+      // ANTES: 5.000 (só o principal). CORRETO: 5.350 (principal + juros + multa).
+      expect(dados.pagamentos[0].valor.toFixed(2)).toBe("5350.00");
+    },
+    TIMEOUT_MS
+  );
 });

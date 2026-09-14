@@ -220,3 +220,81 @@ describe("registrarPagamento — reconciliação automática com ContaReceber (a
     TIMEOUT_MS
   );
 });
+
+// Achado N25 da auditoria de código (2026-09-12): a conciliação automática
+// não reconhecia status EM_COBRANCA em nenhum dos dois caminhos (match de
+// valor TOTAL, achado A8 acima; e match de SALDO REMANESCENTE) — justamente
+// a conta com MAIOR chance de ser paga fora do fluxo normal (o financeiro já
+// está atrás dela) ficava de fora, presa em EM_COBRANCA pra sempre mesmo
+// depois do pagamento lançado.
+describe("registrarPagamento — reconciliação também casa EM_COBRANCA (achado N25)", () => {
+  it(
+    "valor EXATO com o total de uma conta EM_COBRANCA (sem baixa nenhuma): fecha ela pelo caminho de match total",
+    async () => {
+      const f = await criarFixture({ total: 5000 });
+      vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(
+        (await prisma.usuario.findUniqueOrThrow({ where: { id: f.usuarioId } })) as never
+      );
+      const conta = await prisma.contaReceber.create({
+        data: {
+          graficaId: f.graficaId,
+          orcamentoId: f.orcamentoId,
+          descricao: "Parcela vencida em cobrança",
+          valor: 5000,
+          vencimento: new Date("2026-09-01T00:00:00Z"),
+          status: "EM_COBRANCA",
+        },
+      });
+
+      const resultado = await registrarPagamento(
+        null,
+        formDataDe({ orcamentoId: f.orcamentoId, valor: "5000", forma: "PIX" })
+      );
+
+      expect(resultado.ok).toBe(true);
+      const contaAtualizada = await prisma.contaReceber.findUniqueOrThrow({ where: { id: conta.id } });
+      expect(contaAtualizada.status).toBe("RECEBIDO");
+      expect(contaAtualizada.pagamentoId).not.toBeNull();
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "valor EXATO com o SALDO REMANESCENTE de uma conta EM_COBRANCA já com baixa parcial: fecha ela via BaixaContaReceber",
+    async () => {
+      const f = await criarFixture({ total: 5000 });
+      vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(
+        (await prisma.usuario.findUniqueOrThrow({ where: { id: f.usuarioId } })) as never
+      );
+      const conta = await prisma.contaReceber.create({
+        data: {
+          graficaId: f.graficaId,
+          orcamentoId: f.orcamentoId,
+          descricao: "Parcela vencida em cobrança",
+          valor: 5000,
+          vencimento: new Date("2026-09-01T00:00:00Z"),
+          status: "EM_COBRANCA",
+        },
+      });
+      const pagamentoPrevio = await prisma.pagamento.create({
+        data: { orcamentoId: f.orcamentoId, valor: 3000, forma: "PIX" },
+      });
+      await prisma.baixaContaReceber.create({
+        data: { contaReceberId: conta.id, pagamentoId: pagamentoPrevio.id, valor: 3000 },
+      });
+
+      const resultado = await registrarPagamento(
+        null,
+        formDataDe({ orcamentoId: f.orcamentoId, valor: "2000", forma: "PIX" })
+      );
+
+      expect(resultado.ok).toBe(true);
+      expect(resultado.mensagem).toContain("marcada como recebida automaticamente");
+      const contaAtualizada = await prisma.contaReceber.findUniqueOrThrow({ where: { id: conta.id } });
+      expect(contaAtualizada.status).toBe("RECEBIDO");
+      const saldo = await saldoContaReceber(prisma, contaAtualizada);
+      expect(saldo.toFixed(2)).toBe("0.00");
+    },
+    TIMEOUT_MS
+  );
+});

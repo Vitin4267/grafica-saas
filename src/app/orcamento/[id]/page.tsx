@@ -11,6 +11,7 @@ import {
   obterModulosVisiveis,
 } from "@/lib/auth/permissoes";
 import { resolverOrigemPublica } from "@/lib/url-publica";
+import { decifrarOuNull } from "@/lib/cripto";
 import { buscarCustoRealVsOrcado } from "@/lib/custo-producao";
 import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
 import { verificarProntidaoFiscal, resolverDadosFiscais } from "@/lib/nota-fiscal";
@@ -36,6 +37,7 @@ import {
   calcularMargemItemOrcamento,
   calcularMargemAgregadaOrcamento,
   lerAvisoGramaturaAproximada,
+  lerAvisoGramaturaAproximadaEditorial,
   LIMIAR_MARGEM_RUIM,
   LIMIAR_MARGEM_ATENCAO,
 } from "@/lib/orcamento-margem";
@@ -207,6 +209,14 @@ export default async function OrcamentoDetalhePage({
   if (!orcamento) {
     notFound();
   }
+
+  // Achado da auditoria de segurança (2026-09-13) — decifra UMA VEZ aqui
+  // (nunca gravado em claro no banco, ver Orcamento.linkPublicoTokenHash no
+  // schema) e reaproveita nos dois pontos que reexibem a URL do link público
+  // (PrimeiroOrcamentoCelebracao/CompartilharOrcamento, abaixo).
+  const linkPublicoUrl = orcamento.linkPublicoTokenCifrado
+    ? `${origem}/o/${decifrarOuNull(orcamento.linkPublicoTokenCifrado)}`
+    : null;
 
   // Saldo em aberto de cada ContaReceber PARCIAL ou EM_COBRANCA (achado A5
   // da Parte 4, 2026-09-09 — uma conta EM_COBRANCA pode vir de uma PARCIAL,
@@ -473,6 +483,14 @@ export default async function OrcamentoDetalhePage({
       .filter((par): par is [string, { gramaturaBasePapel: number }] => par[1] !== null)
   );
 
+  // Achado C2 — mesmo aviso, mas pro EDITORIAL (2 papéis independentes, ver
+  // lerAvisoGramaturaAproximadaEditorial).
+  const avisosGramaturaEditorialPorItemId = new Map(
+    orcamento.itens
+      .map((item) => [item.id, lerAvisoGramaturaAproximadaEditorial(item.breakdown)] as const)
+      .filter((par): par is [string, { miolo: number | null; capa: number | null }] => par[1] !== null)
+  );
+
   function mapearTinta(item: NonNullable<typeof orcamento>["itens"][number]) {
     if (!item.tinta) return null;
     return {
@@ -533,9 +551,7 @@ export default async function OrcamentoDetalhePage({
         {ehPrimeiroOrcamento && (
           <PrimeiroOrcamentoCelebracao
             orcamentoId={orcamento.id}
-            linkExistente={
-              orcamento.linkPublicoToken ? `${origem}/o/${orcamento.linkPublicoToken}` : null
-            }
+            linkExistente={linkPublicoUrl}
           />
         )}
 
@@ -765,6 +781,21 @@ export default async function OrcamentoDetalhePage({
                     </Alert>
                   </div>
                 )}
+                {avisosGramaturaEditorialPorItemId.get(item.id) && (
+                  <div className="mb-4 -mt-2">
+                    <Alert variant="warning">
+                      Preço estimado a partir da gramatura mais próxima cadastrada
+                      {avisosGramaturaEditorialPorItemId.get(item.id)!.miolo !== null &&
+                        ` no miolo (${avisosGramaturaEditorialPorItemId.get(item.id)!.miolo}g/m²)`}
+                      {avisosGramaturaEditorialPorItemId.get(item.id)!.miolo !== null &&
+                        avisosGramaturaEditorialPorItemId.get(item.id)!.capa !== null &&
+                        " e"}
+                      {avisosGramaturaEditorialPorItemId.get(item.id)!.capa !== null &&
+                        ` na capa (${avisosGramaturaEditorialPorItemId.get(item.id)!.capa}g/m²)`}
+                      {" "}— o papel escolhido não tem preço cadastrado na gramatura exata.
+                    </Alert>
+                  </div>
+                )}
                 <AnaliseTintaCard
                   orcamentoItemId={item.id}
                   podeUsar={acessoTinta.liberado}
@@ -854,6 +885,19 @@ export default async function OrcamentoDetalhePage({
                     Preço estimado a partir da gramatura mais próxima cadastrada (
                     {avisosGramaturaPorItemId.get(item.id)!.gramaturaBasePapel}g/m²) — o papel
                     escolhido neste item não tem preço cadastrado na gramatura exata.
+                  </Alert>
+                )}
+                {avisosGramaturaEditorialPorItemId.get(item.id) && (
+                  <Alert variant="warning">
+                    Preço estimado a partir da gramatura mais próxima cadastrada
+                    {avisosGramaturaEditorialPorItemId.get(item.id)!.miolo !== null &&
+                      ` no miolo (${avisosGramaturaEditorialPorItemId.get(item.id)!.miolo}g/m²)`}
+                    {avisosGramaturaEditorialPorItemId.get(item.id)!.miolo !== null &&
+                      avisosGramaturaEditorialPorItemId.get(item.id)!.capa !== null &&
+                      " e"}
+                    {avisosGramaturaEditorialPorItemId.get(item.id)!.capa !== null &&
+                      ` na capa (${avisosGramaturaEditorialPorItemId.get(item.id)!.capa}g/m²)`}
+                    {" "}— o papel escolhido não tem preço cadastrado na gramatura exata.
                   </Alert>
                 )}
                 {item.etiqueta && <EtiquetaResumo etiqueta={item.etiqueta} />}
@@ -969,9 +1013,7 @@ export default async function OrcamentoDetalhePage({
           </div>
           <CompartilharOrcamento
             orcamentoId={orcamento.id}
-            linkExistente={
-              orcamento.linkPublicoToken ? `${origem}/o/${orcamento.linkPublicoToken}` : null
-            }
+            linkExistente={linkPublicoUrl}
             clienteNome={orcamento.cliente.nome}
             clienteTelefone={orcamento.cliente.telefone}
             graficaNome={usuario.grafica.nome}

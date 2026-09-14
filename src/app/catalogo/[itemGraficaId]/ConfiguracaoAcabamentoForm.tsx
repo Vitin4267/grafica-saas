@@ -52,10 +52,19 @@ export function ConfiguracaoAcabamentoForm({
     <form action={formAction}>
       <input type="hidden" name="itemGraficaId" value={itemGraficaId} />
       <Card className="flex flex-col gap-5 p-6">
-        <Alert variant="success">
+        {/* Achado B3 da auditoria do motor de preço (2026-09-13) — sem
+            preço de compra e sem nenhum custo fixo (setup/mínimo/
+            ferramental) configurado, este acabamento custava R$0,00 em
+            silêncio; agora o orçamento recusa usá-lo (CUSTO_INVALIDO) até
+            que ao menos um dos custos seja preenchido, mas o aviso aqui já
+            precisa deixar isso visível ANTES do vendedor tentar orçar —
+            "não definido" nunca deveria ler como "ok" (variant success). */}
+        <Alert variant={precoCompra ? "success" : "warning"}>
           Custo unitário usado na fórmula ={" "}
           {precoCompra ? `R$ ${Number(precoCompra).toFixed(2)}` : "não definido"} — é o
           preço de compra deste serviço, editável em Catálogo.
+          {!precoCompra &&
+            " Sem preço de compra E sem custo de setup/mínimo/ferramental preenchidos abaixo, este acabamento fica bloqueado no orçamento."}
         </Alert>
 
         <Select

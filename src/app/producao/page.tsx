@@ -13,6 +13,7 @@ import {
 import { verificarEDispararAlertasAtraso } from "@/lib/alerta-atraso";
 import { dataEhPassado, limitesDiaBrasilia, dataParaInputValue } from "@/lib/data";
 import { resolverOrigemPublica } from "@/lib/url-publica";
+import { decifrarOuNull } from "@/lib/cripto";
 import { listarMaquinasSelecionaveis, sugerirMaquinaPedido, resolverMaquinaAtualPedido } from "@/lib/apontamento-etapa";
 import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
 import { fornecedorProntoParaNfe } from "@/lib/nota-fiscal";
@@ -496,7 +497,7 @@ export default async function ProducaoPage({
     // ver terceirizacao-nfe-actions.ts).
     prisma.dadosFiscaisGrafica.findUnique({
       where: { graficaId: usuario.graficaId },
-      select: { focusNfeToken: true },
+      select: { focusNfeTokenCifrado: true },
     }),
     // Achado C1 — mesma query reaproveitada de Máquinas/cadastro de produto
     // (ver buscarManutencoesAtivas, src/lib/manutencao-maquina-db.ts),
@@ -504,7 +505,7 @@ export default async function ProducaoPage({
     // sub-raias do Kanban.
     buscarManutencoesAtivas(usuario.graficaId),
   ]);
-  const focusNfeConfigurado = Boolean(dadosFiscaisGrafica?.focusNfeToken);
+  const focusNfeConfigurado = Boolean(dadosFiscaisGrafica?.focusNfeTokenCifrado);
   // Achado C1 — Set de ids de máquina com manutenção ativa AGORA, pra
   // decidir o badge de cada raia do Kanban; Map id->nome (a partir das
   // máquinas ATIVAS já buscadas em maquinasSelecionaveis) pra dar nome
@@ -702,7 +703,11 @@ export default async function ProducaoPage({
                 arteAprovadaEm={pedido.arteAprovadaEm}
                 arteRespondidaPor={pedido.arteRespondidaPor}
                 arteComentarioCliente={pedido.arteComentarioCliente}
-                linkArtePublico={pedido.arteLinkToken ? `${origem}/a/${pedido.arteLinkToken}` : null}
+                linkArtePublico={
+                  pedido.arteLinkTokenCifrado
+                    ? `${origem}/a/${decifrarOuNull(pedido.arteLinkTokenCifrado)}`
+                    : null
+                }
                 preflightAvisos={(pedido.preflightAvisos as AvisoPreflight[] | null) ?? []}
                 responsaveisEtapa={responsaveisPorEtapa[pedido.status] ?? []}
                 categoriasCustoAtivas={categoriasCustoAtivas}

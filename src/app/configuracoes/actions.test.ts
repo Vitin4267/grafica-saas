@@ -243,4 +243,74 @@ describe("salvarParametros", () => {
 
       expect(Number(parametrosSalvos?.toleranciaTiragemPercent)).toEqual(0);
   }, TIMEOUT_MS);
+
+  it(
+    "achado A5 da auditoria do motor de preço (2026-09-13): rejeita paginasPorCadernoPadrao que não é múltiplo de 4",
+    async () => {
+      fixture = await criarFixture();
+
+      vi.mocked(exigirUsuarioAutenticado).mockResolvedValue({
+        id: fixture.usuarioId,
+        graficaId: fixture.graficaId,
+        nome: "Teste",
+        email: "teste@example.com",
+        papel: "DONO",
+      } as any);
+
+      for (const paginasPorCadernoPadrao of ["2", "3", "6", "10"]) {
+        const formData = new FormData();
+        formData.append("overheadPercent", "0.15");
+        formData.append("margemPadrao", "0.20");
+        formData.append("impostoPercent", "0.06");
+        formData.append("comissaoPercent", "0");
+        formData.append("taxaFinanceiraPercent", "0");
+        formData.append("pedidoMinimo", "0");
+        formData.append("incrementoArredondamento", "0.10");
+        formData.append("margemSegurancaPadrao", "0.02");
+        formData.append("gapPecasPadrao", "0.008");
+        formData.append("comissaoVendedorBase", "VALOR");
+        formData.append("unidadePadraoDimensao", "CM");
+        formData.append("diasValidadeOrcamentoPadrao", "15");
+        formData.append("diasAlertaOrcamentoParado", "5");
+        formData.append("alertaPrazoAtivo", "on");
+        formData.append("alertaPrazoLimiar1Dias", "5");
+        formData.append("alertaPrazoLimiar2Dias", "3");
+        formData.append("alertaPrazoLimiar3Dias", "0");
+        formData.append("mostrarEspecificacoesTecnicas", "on");
+        formData.append("custoAutomaticoConsumo", "on");
+        formData.append("perdaEhCustoDoPedido", "on");
+        formData.append("comissaoEntraNoCustoPedido", "off");
+        formData.append("bloqueiaAoUltrapassarLimiteCredito", "off");
+        formData.append("margemFaixaBaixa", "10");
+        formData.append("margemFaixaBoa", "25");
+        formData.append("descontoMaxSemAprovacao", "100");
+        formData.append("toleranciaTiragemPadraoPercent", "10");
+        formData.append("toleranciaTiragemPercent", "0");
+        formData.append("diasPrecoInsumoDesatualizado", "90");
+        formData.append("diasAlertaCompraPadrao", "30");
+        formData.append("leadTimePadraoDias", "7");
+        formData.append("gramaturaMinGm2", "30");
+        formData.append("gramaturaMaxGm2", "500");
+        formData.append("diasAlertaValidadeEstoque", "30");
+        formData.append("paginasPorCadernoPadrao", paginasPorCadernoPadrao);
+        formData.append("prazoEmDiasUteis", "on");
+        formData.append("diaFuncionamento", "0");
+        formData.append("diaFuncionamento", "1");
+        formData.append("diaFuncionamento", "2");
+        formData.append("diaFuncionamento", "3");
+        formData.append("diaFuncionamento", "4");
+
+        const resultado = await salvarParametros(null, formData);
+
+        expect(resultado.ok).toBe(false);
+      }
+
+      // Nada foi salvo por cima do valor original (16) em nenhuma tentativa.
+      const parametrosSalvos = await prisma.parametrosGrafica.findUnique({
+        where: { graficaId: fixture.graficaId },
+      });
+      expect(parametrosSalvos?.paginasPorCadernoPadrao ?? 16).toBe(16);
+    },
+    TIMEOUT_MS
+  );
 });

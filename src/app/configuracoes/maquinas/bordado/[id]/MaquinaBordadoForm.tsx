@@ -17,6 +17,7 @@ type ValoresMaquinaBordado = {
   custoMatrizDigitalizacao: string;
   cabecas: string;
   custoHoraMaq: string;
+  velocidadePontosPorMinuto: string;
   custoMinimo: string;
 };
 
@@ -107,7 +108,7 @@ export function MaquinaBordadoForm({
               label={
                 <>
                   Custo por hora de máquina (R$, opcional)
-                  <CampoAjuda texto="Deixe em branco se o custo de máquina já está embutido no custo por mil pontos acima. Preencha só se quiser separar o custo de hora-máquina (energia, manutenção) do custo por ponto." />
+                  <CampoAjuda texto="Deixe em branco se o custo de máquina já está embutido no custo por mil pontos acima. Preencha SÓ se quiser separar o custo de hora-máquina (energia, manutenção) do custo por ponto — e nesse caso, preencha também a velocidade ao lado, senão este valor não entra na conta." />
                 </>
               }
               name="custoHoraMaq"
@@ -118,16 +119,31 @@ export function MaquinaBordadoForm({
               placeholder="opcional"
             />
             <Input
-              label="Custo mínimo do job (R$, opcional)"
-              name="custoMinimo"
+              label={
+                <>
+                  Velocidade (pontos/minuto, opcional)
+                  <CampoAjuda texto="Quantos pontos a máquina borda por minuto — é assim que o motor converte o custo por hora acima num custo real por pedido (nº de pontos da arte ÷ velocidade = minutos). Obrigatório junto com o custo por hora — um sem o outro não tem como virar custo." />
+                </>
+              }
+              name="velocidadePontosPorMinuto"
               type="number"
-              step="0.01"
-              min="0"
-              defaultValue={valoresIniciais.custoMinimo}
+              step="1"
+              min="1"
+              defaultValue={valoresIniciais.velocidadePontosPorMinuto}
               placeholder="opcional"
-              hint="Piso do custo — o pedido nunca custa menos que isso, mesmo com poucos pontos/peças."
+              hint="Referência de mercado: ~600 a 1.000 pontos/minuto."
             />
           </div>
+          <Input
+            label="Custo mínimo do job (R$, opcional)"
+            name="custoMinimo"
+            type="number"
+            step="0.01"
+            min="0"
+            defaultValue={valoresIniciais.custoMinimo}
+            placeholder="opcional"
+            hint="Piso do custo — o pedido nunca custa menos que isso, mesmo com poucos pontos/peças."
+          />
         </Card>
 
         {state && <Alert variant={state.ok ? "success" : "error"}>{state.mensagem}</Alert>}

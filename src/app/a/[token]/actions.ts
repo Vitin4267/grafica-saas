@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolverOrigemPublica } from "@/lib/url-publica";
+import { hashToken } from "@/lib/auth/session";
 import { dispararEventoEmail, type EventoEmail } from "@/lib/email/webhook-email";
 import { templateArteAlteracaoSolicitada, templateArteAprovada } from "@/lib/email/templates";
 import { tentarRegistrarRespostaArte } from "@/lib/auth/rate-limit";
@@ -65,7 +66,7 @@ export async function responderArtePublica(
   }
 
   const pedido = await prisma.pedido.findUnique({
-    where: { arteLinkToken: token },
+    where: { arteLinkTokenHash: hashToken(token) },
     include: {
       orcamento: {
         include: {
@@ -132,7 +133,7 @@ export async function responderArtePublica(
     // que arteAprovadaEm — nunca num update solto depois, senão dá pra ter
     // arte aprovada sem nenhum nome associado.
     const resultado = await prisma.pedido.updateMany({
-      where: { arteLinkToken: token, arteAprovadaEm: null },
+      where: { arteLinkTokenHash: hashToken(token), arteAprovadaEm: null },
       data: { arteAprovadaEm: new Date(), arteRespondidaPor: nome },
     });
     if (resultado.count === 0) {
@@ -161,7 +162,7 @@ export async function responderArtePublica(
     }
 
     const resultado = await prisma.pedido.updateMany({
-      where: { arteLinkToken: token, arteAprovadaEm: null },
+      where: { arteLinkTokenHash: hashToken(token), arteAprovadaEm: null },
       data: { arteComentarioCliente: comentario, arteRespondidaPor: nome },
     });
     if (resultado.count === 0) {
@@ -219,7 +220,7 @@ export async function responderArteItemPublica(
   }
 
   const pedido = await prisma.pedido.findUnique({
-    where: { arteLinkToken: token },
+    where: { arteLinkTokenHash: hashToken(token) },
     include: { orcamento: { include: { cliente: true, grafica: true } } },
   });
   if (!pedido) {

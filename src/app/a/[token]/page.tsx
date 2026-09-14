@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { hashToken } from "@/lib/auth/session";
 import { formatoInstanteRealComHora } from "@/lib/data";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -15,9 +16,10 @@ export default async function ArtePublicaPage({
   const { token } = await params;
 
   // Rota pública, sem exigirUsuarioAutenticado() — mesmo padrão de
-  // o/[token]/page.tsx: o token em si é a credencial.
+  // o/[token]/page.tsx: o token em si é a credencial. Hash do token (achado
+  // da auditoria de segurança 2026-09-13), nunca gravado em claro.
   const pedido = await prisma.pedido.findUnique({
-    where: { arteLinkToken: token },
+    where: { arteLinkTokenHash: hashToken(token) },
     include: {
       orcamento: {
         include: {

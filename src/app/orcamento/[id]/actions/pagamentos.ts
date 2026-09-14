@@ -201,15 +201,26 @@ export async function registrarPagamento(
       },
     });
 
+    // Achado N25 da auditoria de código (2026-09-12) — EM_COBRANCA entra
+    // junto com PENDENTE: é só um PENDENTE vencido que o financeiro marcou
+    // "em cobrança" pra rastrear, com o MESMO saldo total em aberto (sem
+    // baixa nenhuma ainda). Antes, essa era justamente a conta com MAIOR
+    // chance de ser paga fora do fluxo normal (o financeiro já está atrás
+    // dela) e ficava de fora da conciliação automática — o pagamento era
+    // lançado, mas a conta ficava presa em EM_COBRANCA pra sempre.
     const candidata = await tx.contaReceber.findFirst({
-      where: { orcamentoId, graficaId: usuario.graficaId, status: "PENDENTE", valor },
+      where: { orcamentoId, graficaId: usuario.graficaId, status: { in: ["PENDENTE", "EM_COBRANCA"] }, valor },
       orderBy: { vencimento: "asc" },
     });
 
     let vinculada: { id: string; descricao: string } | null = null;
     if (candidata) {
       const cas = await tx.contaReceber.updateMany({
-        where: { id: candidata.id, status: "PENDENTE" },
+        // status: candidata.status (não mais "PENDENTE" fixo) — o
+        // compare-and-swap precisa aceitar o status REAL que a busca acima
+        // encontrou (PENDENTE ou EM_COBRANCA), senão o CAS falha sempre
+        // pra uma candidata EM_COBRANCA (achado N25).
+        where: { id: candidata.id, status: candidata.status },
         data: { status: "RECEBIDO", recebidoEm: new Date(), pagamentoId: pagamentoCriado.id },
       });
       if (cas.count > 0) {
@@ -229,15 +240,21 @@ export async function registrarPagamento(
     // acontece com escolha explícita do usuário, em
     // registrarBaixaContaReceber (financeiro/contas-receber/actions.ts).
     if (!vinculada) {
+      // Achado N25 — EM_COBRANCA entra junto com PARCIAL: uma conta em
+      // cobrança pode já ter recebido baixa parcial antes de virar
+      // EM_COBRANCA (o status vira EM_COBRANCA, mas o saldo remanescente
+      // continua o mesmo cálculo de sempre — ver saldoContaReceber).
       const parciais = await tx.contaReceber.findMany({
-        where: { orcamentoId, graficaId: usuario.graficaId, status: "PARCIAL" },
+        where: { orcamentoId, graficaId: usuario.graficaId, status: { in: ["PARCIAL", "EM_COBRANCA"] } },
         orderBy: { vencimento: "asc" },
       });
       for (const conta of parciais) {
         const saldo = await saldoContaReceber(tx, conta);
         if (!saldo.eq(valor)) continue;
         const cas = await tx.contaReceber.updateMany({
-          where: { id: conta.id, status: "PARCIAL" },
+          // status: conta.status (PARCIAL ou EM_COBRANCA) — mesmo motivo do
+          // CAS acima.
+          where: { id: conta.id, status: conta.status },
           data: { status: "RECEBIDO", recebidoEm: new Date() },
         });
         if (cas.count > 0) {

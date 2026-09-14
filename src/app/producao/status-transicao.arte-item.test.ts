@@ -87,7 +87,7 @@ function pedidoParaAvanco(
     status,
     arteUrl: opts.arteUrl ?? null,
     arteAprovadaEm: opts.arteAprovadaEm ?? null,
-    producaoLinkToken: null,
+    producaoLinkTokenCifrado: null,
     orcamento: {
       clienteId: f.clienteId,
       condicaoPagamentoId: null,

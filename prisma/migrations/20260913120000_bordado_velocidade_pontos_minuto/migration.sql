@@ -1,0 +1,13 @@
+-- Achado B1 da auditoria do motor de preço (2026-09-13) — MaquinaBordado.
+-- custoHoraMaq (R$/h) era validado, gravado e prometido na tela mas nunca
+-- chegava no motor de cálculo (calcularBordado nem recebia o valor): sem
+-- saber quanto TEMPO um pedido consome, R$/h não vira custo nenhum. Este
+-- campo (pontos/minuto da máquina) é o que faltava pra derivar o tempo a
+-- partir de numeroPontos (já existe por pedido) — ver comentário em
+-- src/lib/pricing/bordado.ts.
+-- Aditivo: 1 coluna nullable, sem default diferente de NULL, sem backfill —
+-- toda máquina existente continua sem velocidade cadastrada (mesmo efeito
+-- de antes: custoHoraMaq sem par vira MAQUINA_BORDADO_SEM_VELOCIDADE na
+-- hora de precificar, em vez de custo zero em silêncio — ver
+-- validarParametrosMaquinaBordado em src/lib/pricing/validar.ts).
+ALTER TABLE "maquinas_bordado" ADD COLUMN "velocidadePontosPorMinuto" INTEGER;

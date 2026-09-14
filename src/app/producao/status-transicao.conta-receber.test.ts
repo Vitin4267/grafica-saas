@@ -101,7 +101,7 @@ function pedidoParaAvanco(f: Fixture, status: StatusPedido, opts: { total: numbe
     status,
     arteUrl: null,
     arteAprovadaEm: null,
-    producaoLinkToken: null,
+    producaoLinkTokenCifrado: null,
     orcamento: {
       clienteId: f.clienteId,
       condicaoPagamentoId: opts.condicaoPagamentoId,

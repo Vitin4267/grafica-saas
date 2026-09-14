@@ -204,4 +204,46 @@ describe("buscarVisaoGeralNegocio — saldoReal (correção do achado A3)", () =
     },
     TIMEOUT_MS
   );
+
+  // Achado N31 da Parte 9 da auditoria de código (2026-09-12) — Pagamento.
+  // valor fica limitado ao saldo do PRINCIPAL (registrarBaixaContaReceber
+  // rejeita valor > saldoAtual); juros/multa recebidos JUNTO com o
+  // principal ficam em valorJuros/valorMulta, campos à parte. Cenário da
+  // auditoria: conta de R$5.000 paga com R$300 de juros — o cliente
+  // depositou R$5.300 de verdade, e saldoReal precisa refletir isso.
+  it(
+    "conta valorJuros/valorMulta junto com valor — dinheiro real recebido, não só o principal (achado N31)",
+    async () => {
+      const f = await criarFixture();
+      graficaIdsParaLimpar.push(f.graficaId);
+
+      const orcamento = await prisma.orcamento.create({
+        data: {
+          graficaId: f.graficaId,
+          clienteId: f.clienteId,
+          usuarioId: f.usuarioId,
+          status: "APROVADO",
+          total: 5_000,
+        },
+      });
+      // Conta de R$5.000 paga com R$300 de juros — o cliente depositou
+      // R$5.300 de verdade.
+      await prisma.pagamento.create({
+        data: {
+          orcamentoId: orcamento.id,
+          valor: 5_000,
+          valorJuros: 300,
+          valorMulta: 0,
+          forma: "PIX",
+        },
+      });
+
+      const visao = await buscarVisaoGeralNegocio(f.graficaId);
+
+      // ANTES: saldoReal = 5.000 (só valor, juros ignorados).
+      // CORRETO: saldoReal = 5.300 (valor + valorJuros).
+      expect(visao.saldoReal).toBe(5_300);
+    },
+    TIMEOUT_MS
+  );
 });

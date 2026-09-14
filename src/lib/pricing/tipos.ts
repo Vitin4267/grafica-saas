@@ -297,6 +297,14 @@ export type PedidoSetupPorPeca = {
 // motor precificava a peça em branco a R$0.
 export type ContextoSetupPorPeca = {
   custoSubstratoPorPeca: number; // = ItemGrafica.precoCompra do produto, mesma fonte que Digital já usa
+  // Achado B10 da auditoria do motor de preço (2026-09-13) — mesmo campo de
+  // ContextoDigital/ContextoBordado (achado B7): setup-por-peça era o único
+  // dos 3 motores com substrato SEM essa flag nem a trava correspondente em
+  // validar.ts — um produto SERIGRAFIA/SUBLIMACAO/ESTAMPAGEM_QUENTE/
+  // PERSONALIZACAO cadastrado sem precoCompra passava direto, custo da peça
+  // em branco = R$0 em silêncio. true = o cliente trouxe a peça, zera de
+  // propósito (mesma semântica dos irmãos).
+  materialFornecidoPeloCliente?: boolean;
 };
 
 // ---------- Parâmetros da máquina de setup por peça (custo de máquina, os 3 modelos acima) ----------
@@ -353,6 +361,16 @@ export type ParametrosMaquinaBordado = {
   custoPorMilPontos: number;
   custoMatrizDigitalizacao: number; // 1× por pedido, não escala com Q — mesmo princípio do clichê de etiqueta
   custoMinimo: number; // piso do job — 0 quando a máquina não tem piso cadastrado
+  // Achado B1 da auditoria do motor de preço (2026-09-13) — os dois andam
+  // juntos (ou os dois undefined, ou os dois preenchidos; ver
+  // salvarMaquinaBordado em configuracoes/maquinas/bordado/actions.ts).
+  // custoHoraMaq (R$/h) só vira custo real dividindo numeroPontos do PEDIDO
+  // pela velocidade da máquina (pontos/min) pra achar os minutos —
+  // calcularBordado lança MAQUINA_BORDADO_SEM_VELOCIDADE se só um dos dois
+  // estiver presente (nunca deveria acontecer vindo do cadastro, mas é
+  // defesa em profundidade, mesmo padrão do resto do motor).
+  custoHoraMaq?: number;
+  velocidadePontosPorMinuto?: number;
 };
 
 // ---------- Cenário 9 (tempo de máquina — achado A6, sem nesting) ----------
@@ -421,6 +439,27 @@ export type ContextoEditorial = {
   // parâmetros pra uma única fórmula — carregarContextoPrecificacao sempre
   // ecoa o mesmo valor de parametros.paginasPorCadernoPadrao.
   paginasPorCaderno: number;
+  // Achado C2 da auditoria do motor de preço (2026-09-13) — mesmo par
+  // gramaturaBasePapel/origemPrecoPapel que ContextoOffset já usa (achado
+  // N12), só que EDITORIAL resolve DOIS papéis (miolo e capa), então são 2
+  // pares, não 1. Sem isso, resolverPrecoPapel caía pra gramatura mais
+  // próxima em silêncio e nada avisava o vendedor — nem sabia mostrar o
+  // aviso que denunciaria o C1 (gramatura fora da faixa) em ação. Opcionais
+  // só pra não quebrar fixture de teste antiga; carregarContextoPrecificacao
+  // sempre popula os dois pares.
+  gramaturaBaseMiolo?: number;
+  origemPrecoPapelMiolo?: OrigemPrecoPapel;
+  gramaturaBaseCapa?: number;
+  origemPrecoPapelCapa?: OrigemPrecoPapel;
+  // Achado C1 da auditoria do motor de preço (2026-09-13) — mesma faixa
+  // configurável que OFFSET já usa (ParametrosTenant.gramaturaMinGm2/
+  // gramaturaMaxGm2, achado N13), plumada aqui do mesmo jeito (ver
+  // precificar.ts, que injeta contexto.parametros.gramaturaMin/MaxGm2 na
+  // hora de chamar calcularEditorial — não em carregarContextoPrecificacao,
+  // espelhando o OFFSET). Opcional só pra não quebrar fixture de teste
+  // antiga; validarPedidoEditorial cai pro default 30/500 quando omitido.
+  gramaturaMinGm2?: number;
+  gramaturaMaxGm2?: number;
 };
 
 // ---------- Cenario 11 (chapa rigida -- achado A7, imposicao em folha) ----------

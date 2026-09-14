@@ -12,6 +12,7 @@ import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { registrarAuditoria, criarDiffCampos } from "@/lib/auditoria";
+import { cifrar, ultimosCaracteres } from "@/lib/cripto";
 import {
   validarArquivoLogo,
   extensaoLogo,
@@ -546,10 +547,14 @@ export async function salvarDadosFiscaisFilial(
 
   // Campo de token é write-only: em branco = "manter o valor salvo" (nunca
   // reexibimos o token de verdade no formulário, só os últimos 4 caracteres).
+  // Cifrado antes de gravar (ver src/lib/cripto.ts) — mesmo tratamento de
+  // src/app/configuracoes/fiscal/actions.ts.
   const novoToken = formData.get("focusNfeToken");
   const tokenAlterado = typeof novoToken === "string" && novoToken.trim().length > 0;
   if (tokenAlterado) {
-    dados.focusNfeToken = novoToken.trim();
+    const tokenLimpo = novoToken.trim();
+    dados.focusNfeTokenCifrado = cifrar(tokenLimpo);
+    dados.focusNfeTokenUltimos4 = ultimosCaracteres(tokenLimpo, 4);
   }
 
   const dadosAntes = await prisma.dadosFiscaisFilial.findUnique({ where: { filialId } });

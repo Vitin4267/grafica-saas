@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { Prisma } from "@/generated/prisma/client";
+import type { PrismaTransactionClient } from "@/lib/prisma";
 import type { TipoItemCatalogo, UnidadeMedida } from "@/generated/prisma/enums";
 import { parseNumeroBrasileiro } from "./planilha";
 // import type: escritores.ts importa a FUNÇÃO deste arquivo — ver comentário
@@ -97,7 +98,7 @@ export function normalizarUnidade(
 }
 
 export async function escreverLinhaCatalogo(
-  tx: Prisma.TransactionClient,
+  tx: PrismaTransactionClient,
   graficaId: string,
   linha: Record<string, string>
 ): Promise<ResultadoEscritaLinha> {

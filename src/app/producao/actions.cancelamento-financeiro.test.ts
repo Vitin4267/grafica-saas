@@ -114,7 +114,7 @@ afterEach(async () => {
 
 describe("cancelarPedido desfaz financeiro (achado N2)", () => {
   it(
-    "cancela ContaReceber PENDENTE e Comissao PENDENTE do orçamento, mas preserva conta PARCIAL",
+    "cancela ContaReceber PENDENTE e EM_COBRANCA e Comissao PENDENTE do orçamento, mas preserva conta PARCIAL",
     async () => {
       const f = await criarFixture();
       vi.mocked(exigirUsuarioAutenticado).mockResolvedValue(
@@ -129,6 +129,21 @@ describe("cancelarPedido desfaz financeiro (achado N2)", () => {
           valor: 1000,
           vencimento: new Date(),
           status: "PENDENTE",
+        },
+      });
+      // Achado N24 da auditoria de código (2026-09-12) — conta vencida que o
+      // financeiro marcou "em cobrança", SEM nenhuma baixa registrada. Antes
+      // da correção, ficava presa em EM_COBRANCA pra sempre depois do
+      // pedido cancelado (voltava a entrar no aging/exposição de
+      // crédito/exportação contábil de um pedido que não existe mais).
+      const contaEmCobranca = await prisma.contaReceber.create({
+        data: {
+          graficaId: f.graficaId,
+          orcamentoId: f.orcamentoId,
+          descricao: "Parcela vencida em cobrança",
+          valor: 800,
+          vencimento: new Date(),
+          status: "EM_COBRANCA",
         },
       });
       // Uma segunda conta, já com baixa parcial — não deve ser tocada, pois
@@ -162,6 +177,11 @@ describe("cancelarPedido desfaz financeiro (achado N2)", () => {
       const contaPendenteDepois = await prisma.contaReceber.findUniqueOrThrow({ where: { id: contaPendente.id } });
       expect(contaPendenteDepois.status).toBe("CANCELADO");
 
+      const contaEmCobrancaDepois = await prisma.contaReceber.findUniqueOrThrow({
+        where: { id: contaEmCobranca.id },
+      });
+      expect(contaEmCobrancaDepois.status).toBe("CANCELADO");
+
       const contaParcialDepois = await prisma.contaReceber.findUniqueOrThrow({ where: { id: contaParcial.id } });
       expect(contaParcialDepois.status).toBe("PARCIAL"); // não mexido — dinheiro real já entrou
 
@@ -170,6 +190,9 @@ describe("cancelarPedido desfaz financeiro (achado N2)", () => {
 
       const logs = await prisma.logAuditoria.findMany({ where: { graficaId: f.graficaId } });
       expect(logs.some((l) => l.acao === "conta_receber.cancelar" && l.entidadeId === contaPendente.id)).toBe(true);
+      expect(logs.some((l) => l.acao === "conta_receber.cancelar" && l.entidadeId === contaEmCobranca.id)).toBe(
+        true
+      );
       expect(logs.some((l) => l.acao === "comissao.cancelar" && l.entidadeId === comissao.id)).toBe(true);
       // A conta parcial não gera log de cancelamento nenhum.
       expect(logs.some((l) => l.entidadeId === contaParcial.id)).toBe(false);

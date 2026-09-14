@@ -73,7 +73,7 @@ function pedidoParaAvanco(params: { graficaId: string; orcamentoId: string; pedi
     status: "CLICHE_FACA",
     arteUrl: null,
     arteAprovadaEm: null,
-    producaoLinkToken: null,
+    producaoLinkTokenCifrado: null,
     orcamento: {
       clienteId: "cliente-teste",
       condicaoPagamentoId: null,

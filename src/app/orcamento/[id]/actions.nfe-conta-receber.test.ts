@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
+import { cifrar } from "@/lib/cripto";
 
 // Teste de INTEGRAÇÃO de verdade (toca o Postgres de dev via DATABASE_URL,
 // mesmo padrão de actions.condicao-pagamento.test.ts) — cobre o achado R1 da
@@ -69,7 +70,7 @@ async function criarFixtureFiscal(opts: {
   await prisma.dadosFiscaisGrafica.create({
     data: {
       graficaId: grafica.id,
-      focusNfeToken: "token-teste",
+      focusNfeTokenCifrado: cifrar("token-teste"),
       cnpj: "12345678000199",
       razaoSocial: `Gráfica Teste ${s} LTDA`,
       enderecoLogradouro: "Rua Teste",

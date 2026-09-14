@@ -90,7 +90,7 @@ function pedidoParaAvanco(f: Fixture, status: StatusPedido): PedidoParaAvanco {
     status,
     arteUrl: null,
     arteAprovadaEm: null,
-    producaoLinkToken: null,
+    producaoLinkTokenCifrado: null,
     orcamento: {
       clienteId: "cliente-teste",
       condicaoPagamentoId: null,

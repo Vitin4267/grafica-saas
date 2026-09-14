@@ -143,21 +143,29 @@ export type ResultadoPrecificacao = ResultadoComposicao & {
 
 // Campos de ContextoAcabamento que não vêm do cenário de cálculo em si, e sim
 // da geometria do item + de um dado avulso do orçamento — os mesmos em todos
-// os 6 branches abaixo, centralizados aqui pra não repetir a fórmula 6x.
-// perimetroOuEmenda = 2×(largura + altura efetiva), a mesma peça retangular
-// que o resto do motor já usa — cobre BaseCobranca.METRO_LINEAR (ilhós,
-// bainha, instalação por metro). Nos modelos sem nesting (DIGITAL e os 3 de
-// setup-por-peça), largura/altura efetiva já caem em 0 quando não
-// informadas — o perímetro também cai em 0, e é papel do chamador (guard em
-// orcamento-precificacao.ts) impedir que um acabamento METRO_LINEAR/HORA
-// chegue aqui sem os dados que precisa, em vez de custar R$0 em silêncio.
+// os 8 branches abaixo, centralizados aqui pra não repetir a fórmula 8x.
+//
+// Achado B5 da auditoria do motor de preço (2026-09-13, "erro estrutural"):
+// perimetroOuEmenda PRECISA vir da dimensão NOMINAL da peça (pedido.pedido.
+// larguraM/alturaM, o que o vendedor digitou — o tamanho FÍSICO real da
+// peça acabada), nunca da "efetiva" que M2/DTF (margem de segurança, achado
+// B5: +0,02 por lado) e OFFSET/FLEXOGRAFIA (sangria, +0,003 por lado) somam
+// só pra dimensionar CONSUMO DE MATERIAL. Bainha/ilhós/costura (base
+// METRO_LINEAR) são feitos na peça ACABADA, depois do corte — cobrar pelo
+// perímetro com folga de material infla o metro linear sem nenhuma relação
+// com o mundo físico (etiqueta 0,10×0,05m: perímetro real 0,30m vs "efetivo"
+// M2 0,32m = +53%, exatamente o exemplo da auditoria). Por isso esta função
+// recebe a dimensão NOMINAL como parâmetro dedicado, nunca a "efetiva" que
+// cada branch usa pra base M2 (essa continua motor-específica, sem mudança —
+// M2-base é sobre CONSUMO DE MATERIAL, onde a folga de segurança faz
+// sentido; só METRO_LINEAR precisa da peça sem folga nenhuma).
 function ctxAcabamentoExtra(
   contexto: ContextoPrecificacao,
-  larguraEfetivaM: number,
-  alturaEfetivaM: number
+  larguraNominalM: number,
+  alturaNominalM: number
 ): Pick<ContextoAcabamento, "perimetroOuEmenda" | "horasEstimadas"> {
   return {
-    perimetroOuEmenda: 2 * (larguraEfetivaM + alturaEfetivaM),
+    perimetroOuEmenda: 2 * (larguraNominalM + alturaNominalM),
     horasEstimadas: contexto.horasEstimadas,
   };
 }
@@ -185,7 +193,10 @@ export function precificar(
       quantidade: pedido.pedido.quantidade,
       larguraEfetivaM: resultado.larguraEfetivaM.toNumber(),
       alturaEfetivaM: resultado.alturaEfetivaM.toNumber(),
-      ...ctxAcabamentoExtra(contexto, resultado.larguraEfetivaM.toNumber(), resultado.alturaEfetivaM.toNumber()),
+      // Achado B5 — perímetro (METRO_LINEAR) usa a dimensão NOMINAL da
+      // peça, não a "efetiva" (com margem de segurança) usada acima pro
+      // M2 — ver comentário de ctxAcabamentoExtra.
+      ...ctxAcabamentoExtra(contexto, pedido.pedido.larguraM, pedido.pedido.alturaM),
     };
     const acabamentos = calcularAcabamentos(pedido.acabamentos, ctxAcabamento);
 
@@ -277,7 +288,10 @@ export function precificar(
       alturaEfetivaM: resultado.alturaEfetivaM.toNumber(),
       folhasBoas: resultado.folhasBoas,
       folhasPerda: resultado.folhasPerda,
-      ...ctxAcabamentoExtra(contexto, resultado.larguraEfetivaM.toNumber(), resultado.alturaEfetivaM.toNumber()),
+      // Achado B5 — perímetro (METRO_LINEAR) usa a dimensão NOMINAL da
+      // peça, não a "efetiva" (com sangria) usada acima — ver comentário
+      // de ctxAcabamentoExtra.
+      ...ctxAcabamentoExtra(contexto, pedido.pedido.larguraM, pedido.pedido.alturaM),
     };
     const acabamentos = calcularAcabamentos(pedido.acabamentos, ctxAcabamento);
 
@@ -481,6 +495,10 @@ export function precificar(
         custoMatriz: resultado.custoMatriz.toNumber(),
         custoPontos: resultado.custoPontos.toNumber(),
         custoSubstrato: resultado.custoSubstrato.toNumber(),
+        // Achado B1 — separado de custoPontos pra quem configurou
+        // custoHoraMaq/velocidade poder ver o custo de hora-máquina
+        // destacado na tela, do jeito que o texto de ajuda sempre prometeu.
+        custoMaquina: resultado.custoMaquina.toNumber(),
         maquinaBordadoUsada: contexto.maquinaBordadoUsada ?? null,
       },
     };
@@ -538,7 +556,14 @@ export function precificar(
       );
     }
 
-    const resultado = calcularEditorial(pedido.pedido, contexto.editorial);
+    const resultado = calcularEditorial(pedido.pedido, {
+      ...contexto.editorial,
+      // Achado C1 — mesmo padrão de plumbing do OFFSET acima
+      // (gramaturaMinGm2/MaxGm2 vêm de ParametrosTenant, não de
+      // carregarContextoPrecificacao).
+      gramaturaMinGm2: contexto.parametros.gramaturaMinGm2,
+      gramaturaMaxGm2: contexto.parametros.gramaturaMaxGm2,
+    });
 
     // COM dimensões (diferente do Digital/setup-por-peça acima) — a página
     // fechada do livro É a geometria do item, mesmo raciocínio de OFFSET.
@@ -580,6 +605,14 @@ export function precificar(
         custoPapelCapa: resultado.custoPapelCapa.toNumber(),
         custoImpressaoCapa: resultado.custoImpressaoCapa.toNumber(),
         custoEncadernacao: resultado.custoEncadernacao.toNumber(),
+        // Achado C2 — mesmo par que OFFSET já grava (achado N12), só que em
+        // dobro (miolo e capa são papéis independentes). lerAvisoGramatura
+        // AproximadaEditorial (orcamento-margem.ts) lê estes 4 campos de
+        // volta pra tela avisar o vendedor.
+        gramaturaBaseMiolo: contexto.editorial.gramaturaBaseMiolo,
+        origemPrecoPapelMiolo: contexto.editorial.origemPrecoPapelMiolo,
+        gramaturaBaseCapa: contexto.editorial.gramaturaBaseCapa,
+        origemPrecoPapelCapa: contexto.editorial.origemPrecoPapelCapa,
       },
     };
   }
@@ -724,7 +757,10 @@ export function precificar(
     quantidade: pedido.pedido.quantidade,
     larguraEfetivaM: resultado.larguraEfetivaM.toNumber(),
     alturaEfetivaM: resultado.alturaEfetivaM.toNumber(),
-    ...ctxAcabamentoExtra(contexto, resultado.larguraEfetivaM.toNumber(), resultado.alturaEfetivaM.toNumber()),
+    // Achado B5 — perímetro (METRO_LINEAR) usa a dimensão NOMINAL da peça,
+    // não a "efetiva" (com sangria) usada acima — ver comentário de
+    // ctxAcabamentoExtra.
+    ...ctxAcabamentoExtra(contexto, pedido.pedido.larguraM, pedido.pedido.alturaM),
   };
   const acabamentos = calcularAcabamentos(pedido.acabamentos, ctxAcabamento);
 

@@ -1,5 +1,7 @@
 import { describe, it, expect, afterEach, beforeAll, afterAll, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
+import { hashToken } from "@/lib/auth/session";
+import { cifrar, decifrarOuNull } from "@/lib/cripto";
 
 // Teste de INTEGRAÇÃO de verdade (toca o Postgres de dev via DATABASE_URL) —
 // espelha src/app/orcamento/[id]/actions.vendedor-cliente.test.ts, mas pelo
@@ -115,7 +117,8 @@ async function criarFixture(opts: {
       usuarioId: criador.id,
       status: "ENVIADO",
       total: 1000,
-      linkPublicoToken: `token-vendedor-${s}`,
+      linkPublicoTokenHash: hashToken(`token-vendedor-${s}`),
+      linkPublicoTokenCifrado: cifrar(`token-vendedor-${s}`),
     },
   });
   await prisma.orcamentoItem.create({
@@ -185,7 +188,7 @@ describe("aprovação pública de orçamento — vendedor do cliente na comissã
       const resultado = await responderOrcamentoPublico(
         null,
         formDataDe({
-          token: orcamento.linkPublicoToken!,
+          token: decifrarOuNull(orcamento.linkPublicoTokenCifrado)!,
           decisao: "APROVADO",
           nome: "Cliente Teste",
         })
@@ -211,7 +214,7 @@ describe("aprovação pública de orçamento — vendedor do cliente na comissã
       const resultado = await responderOrcamentoPublico(
         null,
         formDataDe({
-          token: orcamento.linkPublicoToken!,
+          token: decifrarOuNull(orcamento.linkPublicoTokenCifrado)!,
           decisao: "APROVADO",
           nome: "Cliente Teste",
         })

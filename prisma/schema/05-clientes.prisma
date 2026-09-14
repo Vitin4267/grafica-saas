@@ -203,8 +203,8 @@ model Cliente {
   // quem calcula o percentual/valor de cada tributo retido é a gráfica, na
   // tela (ver model RetencaoContaReceber). @default(false)/null preservam
   // 100% o comportamento de hoje pra todo cliente já cadastrado.
-  retemImpostos   Boolean       @default(false)
-  tipoTomador     TipoTomador?
+  retemImpostos    Boolean      @default(false)
+  tipoTomador      TipoTomador?
   // Só preenchido (e obrigatório, validado na action) quando
   // tipoTomador=OUTRO — mesmo padrão enum-fechado+OUTRO de origem/segmento
   // acima.

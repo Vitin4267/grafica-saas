@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { validarWebhookUrl } from "@/lib/webhook-assistente";
 import { construirEnvelope } from "@/lib/webhook-envelope";
+import { decifrarOuNull } from "@/lib/cripto";
 
 // Eventos do hub de automação — disparados fire-and-forget pro webhook n8n
 // (ou qualquer outro) que a PRÓPRIA gráfica configura em
@@ -80,18 +81,24 @@ export type AutomacaoConfig = {
 // /configuracoes/automacao (linha ainda não existe), os toggles caem no
 // mesmo default `true` do schema — mas como webhookUrl vem null nesse caso,
 // nada dispara de qualquer forma.
+//
+// Achado da auditoria de segurança (2026-09-13): a coluna real
+// (`webhookUrlCifrado`) está cifrada (ver src/lib/cripto.ts) — esta função é
+// o ÚNICO ponto do sistema que decifra. Todo call site (producao/actions.ts,
+// status-transicao.ts, alerta-atraso.ts) continua recebendo `webhookUrl` em
+// claro, sem precisar saber que o banco guarda cifra.
 export async function buscarAutomacaoGrafica(graficaId: string): Promise<AutomacaoConfig> {
   const automacao = await prisma.automacaoGrafica.findUnique({
     where: { graficaId },
     select: {
-      webhookUrl: true,
+      webhookUrlCifrado: true,
       notificarStatusMudou: true,
       notificarEstoqueCritico: true,
       notificarPedidoAtrasado: true,
     },
   });
   return {
-    webhookUrl: automacao?.webhookUrl ?? null,
+    webhookUrl: decifrarOuNull(automacao?.webhookUrlCifrado),
     notificarStatusMudou: automacao?.notificarStatusMudou ?? true,
     notificarEstoqueCritico: automacao?.notificarEstoqueCritico ?? true,
     notificarPedidoAtrasado: automacao?.notificarPedidoAtrasado ?? true,

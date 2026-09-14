@@ -15,9 +15,10 @@ vi.mock("next/cache", () => ({
   unstable_cache: (fn: unknown) => fn,
 }));
 
-vi.mock("@/lib/auth/session", () => ({
-  exigirUsuarioAutenticado: vi.fn(),
-}));
+vi.mock("@/lib/auth/session", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/auth/session")>();
+  return { ...real, exigirUsuarioAutenticado: vi.fn() };
+});
 vi.mock("@/lib/auth/email-verificacao", () => ({
   exigirEmailVerificado: vi.fn(async () => {}),
 }));

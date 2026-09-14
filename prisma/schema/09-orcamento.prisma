@@ -70,13 +70,26 @@ model Transportadora {
 }
 
 model Orcamento {
-  id               String          @id @default(cuid())
-  graficaId        String
-  clienteId        String
-  usuarioId        String
-  status           StatusOrcamento @default(RASCUNHO)
-  total            Decimal         @default(0) @db.Decimal(12, 2)
-  linkPublicoToken String?         @unique
+  id        String          @id @default(cuid())
+  graficaId String
+  clienteId String
+  usuarioId String
+  status    StatusOrcamento @default(RASCUNHO)
+  total     Decimal         @default(0) @db.Decimal(12, 2)
+
+  // Achado da auditoria de segurança (2026-09-13) — token de capability de
+  // /o/[token] (aceita/recusa o orçamento SEM login). Antes gravado em
+  // texto claro; um dump do banco/backup entregava todo link público de
+  // toda gráfica, e com ele dava pra aprovar orçamento no lugar do cliente.
+  // Agora hash+cifra, mesmo padrão de Sessao.tokenHash (ver comentário lá):
+  // - linkPublicoTokenHash: SHA-256 do token, é por onde a rota BUSCA (ver
+  //   hashToken em src/lib/auth/session.ts, reaproveitado, não duplicado).
+  // - linkPublicoTokenCifrado: AES-256-GCM (src/lib/cripto.ts), decifrado só
+  //   quando a gráfica precisa REVER o link já gerado (CompartilharOrcamento.tsx
+  //   mostra a URL inteira num <input readOnly> — diferente de Sessao, aqui
+  //   hash puro não bastava, a tela precisa remontar a URL depois de criada).
+  linkPublicoTokenHash    String? @unique
+  linkPublicoTokenCifrado String?
 
   // Quem respondeu pelo link público, e quando. Nome DECLARADO, não
   // verificado — quem tem o link digita o que quiser. Vale como registro
@@ -293,20 +306,20 @@ model Orcamento {
   // src/lib/orcamento-opcoes.ts), mesmo princípio de Comissao.baseCalculo.
   opcaoEscolhidaNome String?
 
-  grafica                  Grafica            @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  cliente                  Cliente            @relation(fields: [clienteId], references: [id])
-  usuario                  Usuario            @relation(fields: [usuarioId], references: [id])
+  grafica                  Grafica                      @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  cliente                  Cliente                      @relation(fields: [clienteId], references: [id])
+  usuario                  Usuario                      @relation(fields: [usuarioId], references: [id])
   // Nome de relação explícito ("OrcamentoVendedor") — Prisma exige quando há
   // mais de uma relação entre os dois mesmos models (`usuario` acima já
   // liga Orcamento a Usuario via usuarioId).
-  vendedorUsuario          Usuario?           @relation("OrcamentoVendedor", fields: [vendedorUsuarioId], references: [id], onDelete: SetNull)
-  filial                   Filial?            @relation(fields: [filialId], references: [id], onDelete: SetNull)
-  contatoCliente           ContatoCliente?    @relation(fields: [contatoClienteId], references: [id], onDelete: SetNull)
-  condicaoPagamento        CondicaoPagamento? @relation(fields: [condicaoPagamentoId], references: [id], onDelete: SetNull)
-  enderecoEntrega          EnderecoCliente?   @relation(fields: [enderecoEntregaId], references: [id], onDelete: SetNull)
+  vendedorUsuario          Usuario?                     @relation("OrcamentoVendedor", fields: [vendedorUsuarioId], references: [id], onDelete: SetNull)
+  filial                   Filial?                      @relation(fields: [filialId], references: [id], onDelete: SetNull)
+  contatoCliente           ContatoCliente?              @relation(fields: [contatoClienteId], references: [id], onDelete: SetNull)
+  condicaoPagamento        CondicaoPagamento?           @relation(fields: [condicaoPagamentoId], references: [id], onDelete: SetNull)
+  enderecoEntrega          EnderecoCliente?             @relation(fields: [enderecoEntregaId], references: [id], onDelete: SetNull)
   // Nome do campo de relação diferente do scalar `transportadora` (texto
   // livre) acima — Prisma não permite os dois com o mesmo nome.
-  transportadoraCadastrada Transportadora?    @relation(fields: [transportadoraId], references: [id], onDelete: SetNull)
+  transportadoraCadastrada Transportadora?              @relation(fields: [transportadoraId], references: [id], onDelete: SetNull)
   itens                    OrcamentoItem[]
   opcoes                   OrcamentoOpcao[]
   // Achado B3/Parte 1 da auditoria de abrangência (versão contratual
@@ -322,8 +335,8 @@ model Orcamento {
   // filtra por `modelo: "NFE"` antes de tratar como singular.
   notaFiscal               NotaFiscal[]
   comissao                 Comissao?
-  duplicadoDe              Orcamento?         @relation("DuplicacaoOrcamento", fields: [duplicadoDeId], references: [id], onDelete: SetNull)
-  duplicados               Orcamento[]        @relation("DuplicacaoOrcamento")
+  duplicadoDe              Orcamento?                   @relation("DuplicacaoOrcamento", fields: [duplicadoDeId], references: [id], onDelete: SetNull)
+  duplicados               Orcamento[]                  @relation("DuplicacaoOrcamento")
 
   pagamentos                  Pagamento[]
   contasReceber               ContaReceber[]
@@ -539,7 +552,7 @@ model OrcamentoItem {
   // Motor avançado (M2/OFFSET/FLEXOGRAFIA): snapshot do modelo usado + árvore de
   // custo auditável (spec §0d). Fica null pra itens SIMPLES — nada muda no caminho
   // existente.
-  modeloCalculo                ModeloCalculo @default(SIMPLES)
+  modeloCalculo                ModeloCalculo              @default(SIMPLES)
   corFrente                    Int?
   corVerso                     Int?
   // Nº de cores da arte — modeloCalculo=FLEXOGRAFIA only. Deliberadamente separado
@@ -573,8 +586,8 @@ model OrcamentoItem {
   // independentes; o motor só cobra o que estiver preenchido (ver
   // calcularTempoMaquina em src/lib/pricing/tempo-maquina.ts). Decimal (não
   // Int) porque o vendedor pode estimar em fração de minuto/metro.
-  tempoEstimadoMin             Decimal?      @db.Decimal(10, 2)
-  metrosCorte                  Decimal?      @db.Decimal(10, 2)
+  tempoEstimadoMin             Decimal?                   @db.Decimal(10, 2)
+  metrosCorte                  Decimal?                   @db.Decimal(10, 2)
   // Achado A10 (rota 1) da auditoria de abrangência — modeloCalculo=
   // EDITORIAL only (ver src/lib/pricing/editorial.ts). numeroPaginas é do
   // MIOLO (a capa não conta aqui — sempre um "caderno" próprio de 4
@@ -587,11 +600,11 @@ model OrcamentoItem {
   // escolhida. temOrelhas/larguraOrelhaCm SÃO usados no cálculo (aumentam a
   // largura da capa aberta) — mesma unidade cm de largura/altura acima,
   // seguindo unidadeDimensao pra entrada/exibição.
-  numeroPaginas                 Int?
-  tipoEncadernacao               TipoEncadernacaoEditorial?
-  tipoEncadernacaoOutro          String?
-  temOrelhas                     Boolean                    @default(false)
-  larguraOrelhaCm                Decimal?                   @db.Decimal(8, 2)
+  numeroPaginas                Int?
+  tipoEncadernacao             TipoEncadernacaoEditorial?
+  tipoEncadernacaoOutro        String?
+  temOrelhas                   Boolean                    @default(false)
+  larguraOrelhaCm              Decimal?                   @db.Decimal(8, 2)
   // Papel/gramatura/cores do MIOLO e da CAPA — campos DIRETOS em
   // OrcamentoItem (duplicando com sufixo Miolo/Capa, não um model de
   // override separado como OrcamentoItemPrecificacaoOffset): diferente do
@@ -604,17 +617,17 @@ model OrcamentoItem {
   // (ex: "1x1", "4x4") — a Rota 1 não decompõe custo de impressão por
   // número de cores (ver comentário em ModeloCalculo.EDITORIAL), só
   // registra o que foi usado.
-  papelMioloId                   String?
-  gramaturaMioloGm2               Decimal?                  @db.Decimal(6, 1)
-  coresMiolo                      String?
-  papelCapaId                     String?
-  gramaturaCapaGm2                Decimal?                  @db.Decimal(6, 1)
-  coresCapa                       String?
+  papelMioloId                 String?
+  gramaturaMioloGm2            Decimal?                   @db.Decimal(6, 1)
+  coresMiolo                   String?
+  papelCapaId                  String?
+  gramaturaCapaGm2             Decimal?                   @db.Decimal(6, 1)
+  coresCapa                    String?
   // Estimativa de horas — só usada quando o item tem um acabamento anexado
   // com ConfiguracaoAcabamento.baseCobranca=HORA (ex: instalação, criação de
   // arte). Independente de modeloCalculo, ao contrário de numeroSetups
   // acima: acabamento por hora pode ser anexado a qualquer motor.
-  horasEstimadas               Decimal?      @db.Decimal(8, 2)
+  horasEstimadas               Decimal?                   @db.Decimal(8, 2)
   // Achado N10 da auditoria de abrangência (2026-09-03) — custo de
   // ferramental (faca de corte-e-vinco, matriz...) R$ livre, POR ITEM,
   // pro motor avançado FORA do M2 com clichê de etiqueta: aquele caso já
@@ -626,14 +639,14 @@ model OrcamentoItem {
   // aqui (embalagem/cartonagem que paga faca de corte-e-vinco); nenhum
   // gate de banco impede outro modelo avançado gravar aqui no futuro sem
   // migration nova.
-  custoFaca                    Decimal?      @db.Decimal(12, 4)
+  custoFaca                    Decimal?                   @db.Decimal(12, 4)
   // Override opcional, POR ORÇAMENTO, do custo de aquisição do fornecedor —
   // modeloCalculo=REVENDA only (achado A12). O preço de um brinde muda por
   // cotação/faixa de quantidade a cada orçamento; quando null, o motor cai no
   // ItemGrafica.precoCompra do catálogo (mesmo fallback que
   // ContextoDigital/ContextoSetupPorPeca já usam a partir de precoCompra —
   // ver src/lib/pricing/carregar.ts).
-  custoAquisicaoUnitario       Decimal?      @db.Decimal(12, 4)
+  custoAquisicaoUnitario       Decimal?                   @db.Decimal(12, 4)
   // Achado B7 (correção de regressão introduzida pelo A2, 2026-08-24): quando
   // true, a gráfica só aplica a estampa/gravação — o cliente já trouxe a
   // peça em branco (camiseta/caneca/boné) — então o motor zera
@@ -644,7 +657,7 @@ model OrcamentoItem {
   // "custo de aquisição" É o produto inteiro, não um substrato aplicado.
   // @default(false) preserva 100% o comportamento de todo item já existente
   // (continua cobrando o substrato normalmente).
-  materialFornecidoPeloCliente Boolean       @default(false)
+  materialFornecidoPeloCliente Boolean                    @default(false)
   // Achado B6 — sobrepõe o nome do catálogo (ItemGrafica.itemCatalogo.nome)
   // no PDF e no link público quando preenchido (ver src/lib/pdf/mapear-dados.ts
   // e src/app/o/[token]/page.tsx). Puramente descritivo: nunca entra no motor
@@ -654,7 +667,7 @@ model OrcamentoItem {
   // comportamento de sempre. Não remove a exigência de itemGraficaId — só
   // resolve a falta de descrição específica, não a falta de item de catálogo
   // (parte maior do achado B6, deixada de fora de propósito).
-  descricaoLivre               String?       @db.Text
+  descricaoLivre               String?                    @db.Text
   breakdown                    Json?
 
   // Achado F1 da Parte 7 da auditoria de abrangência — vínculo INFORMATIVO,

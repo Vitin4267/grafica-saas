@@ -70,6 +70,7 @@ export default async function MaquinaBordadoDetalhePage({
             custoMatrizDigitalizacao: maquina.custoMatrizDigitalizacao.toString(),
             cabecas: maquina.cabecas.toString(),
             custoHoraMaq: maquina.custoHoraMaq?.toString() ?? "",
+            velocidadePontosPorMinuto: maquina.velocidadePontosPorMinuto?.toString() ?? "",
             custoMinimo: maquina.custoMinimo?.toString() ?? "",
           }}
         />

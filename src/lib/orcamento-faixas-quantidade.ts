@@ -56,15 +56,44 @@ export type ItemOrigemParaFaixa = {
   precificacaoOffset: { papelId: string | null; gramaturaGm2: Decimalish | null } | null;
 };
 
+// Achado B2 da auditoria do motor de preço (2026-09-13) — tempoEstimadoMin/
+// metrosCorte/horasEstimadas NÃO são taxas por peça (diferente de
+// numeroCliques/numeroPontos/custoFaca, que os motores já multiplicam por Q
+// internamente): são um número ABSOLUTO que o vendedor digitou pensando na
+// quantidade do item ORIGINAL ("200 minutos pra cortar as 50 peças deste
+// pedido"). Antes desta correção, uma faixa de quantidade diferente
+// reaproveitava esse número absoluto sem tocar nele — a faixa "200 unidades"
+// saía calculada com o MESMO tempo de máquina das 50 originais, ~4× mais
+// barata do que a máquina real rodaria. Escala linear (tempo/metros/horas ×
+// novaQuantidade ÷ quantidadeOriginal) é uma ESTIMATIVA, não os minutos
+// reais de uma tiragem que ninguém rodou ainda — mas é a mesma suposição que
+// qualquer vendedor faria de cabeça, e reaproveitar o valor cru era pior:
+// não era estimativa nenhuma, era simplesmente ERRADO (tempo fixo não
+// escala com Q nenhum). custoSetupPorJob/custoSetup continuam fixos (não
+// dependem de tempoEstimadoMin), então a diluição de setup entre mais peças
+// continua correta sozinha, sem entrar nesta conta.
+function escalarPorQuantidade(
+  valor: Decimalish | null,
+  quantidadeOriginal: number,
+  novaQuantidade: number
+): number | null {
+  if (valor === null) return null;
+  const proporcao = novaQuantidade / quantidadeOriginal;
+  return Number(valor) * proporcao;
+}
+
 // Reconstrói os dados de ENTRADA que calcularItemOrcamento precisa pra
 // recalcular a MESMA configuração do item, só trocando a quantidade — usado
 // por adicionarFaixaQuantidadeOrcamento (src/app/orcamento/[id]/actions/faixas.ts)
 // pra gerar cada linha da tabela comparativa ("1.000/3.000/5.000 unidades").
+// quantidadeOriginal é a quantidade do item BASE (de onde tempoEstimadoMin/
+// metrosCorte/horasEstimadas foram digitados — ver achado B2 acima).
 // margemLucroOverride é passado à parte (propriedade do CLIENTE do
 // orçamento, não do item — mesmo padrão de montarDadosItemParaRecalculo em
 // src/lib/orcamento-duplicar.ts).
 export function montarDadosParaFaixa(
   item: ItemOrigemParaFaixa,
+  quantidadeOriginal: number,
   quantidade: number,
   margemLucroOverride: number | null
 ): DadosItemOrcamento {
@@ -78,9 +107,11 @@ export function montarDadosParaFaixa(
     numeroCliques: item.numeroCliques,
     numeroSetups: item.numeroSetups,
     numeroPontos: item.numeroPontos,
-    tempoEstimadoMin: item.tempoEstimadoMin !== null ? Number(item.tempoEstimadoMin) : null,
-    metrosCorte: item.metrosCorte !== null ? Number(item.metrosCorte) : null,
-    horasEstimadas: item.horasEstimadas !== null ? Number(item.horasEstimadas) : null,
+    // Achado B2 — escalados pela razão novaQuantidade/quantidadeOriginal,
+    // não copiados crus (ver escalarPorQuantidade acima).
+    tempoEstimadoMin: escalarPorQuantidade(item.tempoEstimadoMin, quantidadeOriginal, quantidade),
+    metrosCorte: escalarPorQuantidade(item.metrosCorte, quantidadeOriginal, quantidade),
+    horasEstimadas: escalarPorQuantidade(item.horasEstimadas, quantidadeOriginal, quantidade),
     custoAquisicaoUnitario:
       item.custoAquisicaoUnitario !== null ? Number(item.custoAquisicaoUnitario) : null,
     materialFornecidoPeloCliente: item.materialFornecidoPeloCliente,

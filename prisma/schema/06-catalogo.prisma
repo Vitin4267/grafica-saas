@@ -243,8 +243,8 @@ model ItemCatalogo {
   codigoServicoMunicipal String? // código de serviço do MUNICÍPIO do emitente (tabela varia por prefeitura, sem padrão nacional único) — só relevante quando tipo=SERVICO
   createdAt              DateTime @default(now())
 
-  grafica      Grafica?      @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  itensGrafica ItemGrafica[]
+  grafica        Grafica?        @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  itensGrafica   ItemGrafica[]
   // Achado A12 da Parte 4 da auditoria de abrangência (2026-09-09) — ver
   // model RegraComissao (11-financeiro.prisma).
   regrasComissao RegraComissao[]
