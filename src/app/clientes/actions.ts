@@ -309,10 +309,17 @@ export async function criarCliente(
     enderecoUf: formData.get("enderecoUf"),
     observacoes: formData.get("observacoes"),
     preferenciasProducao: formData.get("preferenciasProducao"),
-    razaoSocial: formData.get("razaoSocial"),
-    nomeFantasia: formData.get("nomeFantasia"),
-    inscricaoEstadual: formData.get("inscricaoEstadual"),
-    inscricaoMunicipal: formData.get("inscricaoMunicipal"),
+    // ?? "" (não só formData.get) — estes 4 campos só existem no DOM quando
+    // tipoPessoa === "JURIDICA" (ver ClienteForm.tsx); pra qualquer outro
+    // cliente (a maioria, pessoa física) o input nem é renderizado, então
+    // formData.get devolve null — que clienteSchema (campo "opcional",
+    // string | undefined | "") rejeita com "Invalid input" genérico. Achado
+    // em teste manual (2026-09-14): cadastro de cliente comum, sem tocar no
+    // seletor de tipo de pessoa, quebrava sempre.
+    razaoSocial: formData.get("razaoSocial") ?? "",
+    nomeFantasia: formData.get("nomeFantasia") ?? "",
+    inscricaoEstadual: formData.get("inscricaoEstadual") ?? "",
+    inscricaoMunicipal: formData.get("inscricaoMunicipal") ?? "",
   });
 
   if (!parsed.success) {
@@ -463,10 +470,12 @@ export async function atualizarCliente(
     enderecoUf: formData.get("enderecoUf"),
     observacoes: formData.get("observacoes"),
     preferenciasProducao: formData.get("preferenciasProducao"),
-    razaoSocial: formData.get("razaoSocial"),
-    nomeFantasia: formData.get("nomeFantasia"),
-    inscricaoEstadual: formData.get("inscricaoEstadual"),
-    inscricaoMunicipal: formData.get("inscricaoMunicipal"),
+    // ?? "" — mesmo achado de criarCliente acima: só existem no DOM quando
+    // tipoPessoa === "JURIDICA".
+    razaoSocial: formData.get("razaoSocial") ?? "",
+    nomeFantasia: formData.get("nomeFantasia") ?? "",
+    inscricaoEstadual: formData.get("inscricaoEstadual") ?? "",
+    inscricaoMunicipal: formData.get("inscricaoMunicipal") ?? "",
     observacaoFinanceira: formData.get("observacaoFinanceira"),
   });
 
