@@ -645,6 +645,31 @@ export async function carregarContextoPrecificacao(
   return contexto;
 }
 
+// Achado B3 da auditoria do motor de preço (2026-09-13) — extraído de
+// dentro de resolverConfigAcabamentos pra ser reaproveitado também por
+// src/lib/pendencias-configuracao.ts (aviso PROATIVO antes do dono
+// esbarrar no CUSTO_INVALIDO na hora de montar orçamento) — mesma
+// condição, uma implementação só, pra nunca as duas leituras divergirem
+// (o mesmo risco de "trava que não foi replicada no gêmeo" que a própria
+// auditoria flagrou em outros pontos do motor).
+export function acabamentoEstaSemCusto(item: {
+  precoCompra: { toString(): string } | number | null;
+  configuracaoAcabamento: {
+    custoSetup: { toString(): string } | number;
+    custoMinimo: { toString(): string } | number;
+    custoFerramental: { toString(): string } | number | null;
+  };
+}): boolean {
+  const custoUnitario = Number(item.precoCompra ?? 0);
+  const custoSetup = Number(item.configuracaoAcabamento.custoSetup);
+  const custoMinimo = Number(item.configuracaoAcabamento.custoMinimo);
+  const custoFerramental =
+    item.configuracaoAcabamento.custoFerramental !== null
+      ? Number(item.configuracaoAcabamento.custoFerramental)
+      : 0;
+  return custoUnitario <= 0 && custoSetup <= 0 && custoMinimo <= 0 && custoFerramental <= 0;
+}
+
 // Traduz os ItemGrafica escolhidos como acabamento (motor M2/OFFSET, ver
 // calcularItemOrcamento) pro shape que o motor de custo entende. Cada um precisa
 // ser um SERVICO do catálogo da própria gráfica com ConfiguracaoAcabamento
@@ -695,7 +720,12 @@ export async function resolverConfigAcabamentos(
     // custoSetup preenchido (taxa fixa, sem cobrança por unidade) ou só
     // custoMinimo (piso do job) continua legítimo — não força
     // custoUnitario > 0 pra todo mundo, só recusa "sem custo nenhum".
-    if (custoUnitario <= 0 && custoSetup <= 0 && custoMinimo <= 0 && custoFerramental <= 0) {
+    // Condição em acabamentoEstaSemCusto (acima) — reaproveitada também
+    // pela pendência proativa em src/lib/pendencias-configuracao.ts.
+    // { ...item, configuracaoAcabamento: item.configuracaoAcabamento } (não
+    // só `item`) porque o narrow do `if` acima só se aplica ao acesso
+    // direto da propriedade, não ao tipo estrutural do objeto pai.
+    if (acabamentoEstaSemCusto({ ...item, configuracaoAcabamento: item.configuracaoAcabamento })) {
       throw new ErroPrecificacao(
         "CUSTO_INVALIDO",
         `Acabamento "${item.itemCatalogo.nome}" está sem nenhum custo configurado (preço de compra, setup, mínimo e ferramental todos vazios/zerados) — configure ao menos um em Catálogo antes de usar.`,

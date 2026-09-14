@@ -2,10 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { exigirUsuarioAutenticado, obterUsuarioAtual } from "@/lib/auth/session";
+import { exigirUsuarioAutenticado, obterUsuarioAtual, obterSessaoAtual } from "@/lib/auth/session";
 import { podeEditarModulo } from "@/lib/auth/permissoes";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { listarPendenciasConfiguracao, type PendenciaConfiguracao } from "@/lib/pendencias-configuracao";
+import { chaveDaPendencia } from "@/lib/pendencia-chave";
 import { obterStatusOnboarding } from "@/lib/onboarding";
 
 // Refile default — mesmo valor já usado como ponto de partida em
@@ -28,12 +29,57 @@ const REFILE_PADRAO = 0.02;
 // Só mostra pendência depois que a gráfica já passou do onboarding básico
 // (mesmo sinal `completo` de /comecar: tem cliente e tem catálogo vendável)
 // — uma conta recém-criada não pode competir com o checklist de /comecar.
+//
+// Filtra fora toda pendência cuja chave já esteja em
+// Sessao.pendenciasDispensadas (achado da expansão modal->banner,
+// 2026-09-14) — "Depois" agora persiste no servidor, não num useState do
+// componente (que resetava a cada navegação, já que UserNav — onde este
+// banner é montado — está em quase toda página). Uma pendência NOVA (chave
+// nunca vista) continua aparecendo mesmo com outras já dispensadas.
 export async function obterPendenciasConfiguracao(): Promise<PendenciaConfiguracao[]> {
   const usuario = await obterUsuarioAtual();
   if (!usuario || usuario.papel !== "DONO") return [];
   const onboarding = await obterStatusOnboarding(usuario.graficaId);
   if (!onboarding.completo) return [];
-  return listarPendenciasConfiguracao(usuario.graficaId);
+
+  const [pendencias, sessao] = await Promise.all([
+    listarPendenciasConfiguracao(usuario.graficaId),
+    obterSessaoAtual(),
+  ]);
+
+  const dispensadas = new Set(
+    Array.isArray(sessao?.pendenciasDispensadas) ? (sessao.pendenciasDispensadas as string[]) : []
+  );
+  if (dispensadas.size === 0) return pendencias;
+
+  return pendencias.filter((p) => !dispensadas.has(chaveDaPendencia(p)));
+}
+
+export type DispensarPendenciaResult = { ok: boolean };
+
+// Substitui o antigo aoFechar/setFechadoNestaSessao (useState local do
+// PendenciasConfiguracaoModal, nunca persistido) — grava a chave na própria
+// linha de Sessao (não num cookie novo): uma sessão NOVA no próximo login
+// já nasce sem nada dispensado, então "até o próximo login" cai de graça,
+// sem precisar de nenhuma limpeza manual em encerrarSessao().
+export async function dispensarPendencia(chave: string): Promise<DispensarPendenciaResult> {
+  const usuario = await obterUsuarioAtual();
+  if (!usuario) return { ok: false };
+
+  const sessao = await obterSessaoAtual();
+  if (!sessao) return { ok: false };
+
+  const atuais = Array.isArray(sessao.pendenciasDispensadas)
+    ? (sessao.pendenciasDispensadas as string[])
+    : [];
+  if (atuais.includes(chave)) return { ok: true }; // já dispensada, nada a fazer
+
+  await prisma.sessao.update({
+    where: { id: sessao.id },
+    data: { pendenciasDispensadas: [...atuais, chave] },
+  });
+
+  return { ok: true };
 }
 
 export type ResponderPendenciaResult = { ok: boolean; mensagem: string };

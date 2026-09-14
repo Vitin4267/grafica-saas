@@ -300,13 +300,22 @@ model AlcadaAprovacao {
 // Guardar apenas o hash do token faz um vazamento do banco não virar sessões utilizáveis,
 // e apagar a linha revoga a sessão imediatamente (logout, troca de senha, etc).
 model Sessao {
-  id        String   @id @default(cuid())
-  usuarioId String
-  tokenHash String   @unique
-  userAgent String?
-  ip        String?
-  criadaEm  DateTime @default(now())
-  expiraEm  DateTime
+  id                    String   @id @default(cuid())
+  usuarioId             String
+  tokenHash             String   @unique
+  userAgent             String?
+  ip                    String?
+  criadaEm              DateTime @default(now())
+  expiraEm              DateTime
+  // Chaves de PendenciaConfiguracao (ex: "MAQUINA_NAO_VINCULADA:item-123")
+  // que o dono já dispensou ("Depois") nesta sessão, ver
+  // src/lib/pendencias-configuracao.ts e PendenciasConfiguracaoBanner.tsx.
+  // Nullable = nenhuma dispensada ainda (comportamento de sempre). Uma
+  // sessão NOVA (próximo login) sempre nasce sem essa coluna preenchida —
+  // é assim que "dispensar até o próximo login" funciona sem precisar de
+  // nenhuma limpeza manual em encerrarSessao(): a linha inteira some no
+  // logout, junto com tudo que ela guardava.
+  pendenciasDispensadas Json?
 
   usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
 

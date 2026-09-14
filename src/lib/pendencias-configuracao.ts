@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { calcularSituacaoAliquotaSimples } from "@/lib/simples-nacional-db";
+import { acabamentoEstaSemCusto } from "@/lib/pricing/carregar";
 
 // Registro de pendências de configuração que o DONO precisa resolver pra
 // deixar o sistema pronto pra usar — mostrado como um "questionário" assim
@@ -26,6 +27,31 @@ export type PendenciaConfiguracao =
     }
   | {
       tipo: "MAQUINA_NAO_VINCULADA";
+      itemGraficaId: string;
+      nomeProduto: string;
+    }
+  | {
+      // Achado B1 da auditoria do motor de preço (2026-09-13) —
+      // MaquinaBordado.custoHoraMaq só vira custo real com
+      // velocidadePontosPorMinuto preenchido também (ver
+      // validarParametrosMaquinaBordado em src/lib/pricing/validar.ts,
+      // código MAQUINA_BORDADO_SEM_VELOCIDADE) — sem isso, todo orçamento
+      // que usar essa máquina é recusado pelo motor. Antes só aparecia na
+      // hora de orçar; pega aqui, na tela de configuração da máquina.
+      tipo: "MAQUINA_BORDADO_SEM_VELOCIDADE";
+      maquinaId: string;
+      nomeMaquina: string;
+    }
+  | {
+      // Achado B3 da auditoria do motor de preço (2026-09-13) —
+      // acabamento sem NENHUM custo configurado (preço de compra, setup,
+      // mínimo e ferramental todos vazios/zerados) é recusado pelo motor
+      // na hora de orçar (ver resolverConfigAcabamentos em
+      // src/lib/pricing/carregar.ts, código CUSTO_INVALIDO). Antes um
+      // acabamento assim aparecia como "incluído" no PDF por R$0,00 até a
+      // trava ser adicionada; agora nem monta orçamento com ele. Pega
+      // aqui, na tela de configuração do acabamento.
+      tipo: "ACABAMENTO_SEM_CUSTO";
       itemGraficaId: string;
       nomeProduto: string;
     }
@@ -120,6 +146,11 @@ export async function listarPendenciasConfiguracao(
         },
         { modeloCalculo: "BORDADO", maquinaBordadoId: null },
         { modeloCalculo: "TEMPO_MAQUINA", maquinaTempoId: null },
+        // Achado A3 da auditoria do motor de preço (2026-09-13) — chapa
+        // rígida é matéria-prima FIXA no produto (não escolhida por
+        // orçamento, diferente do papel do Digital), mesmo raciocínio de
+        // PRENSA_NAO_CONFIGURADA/MAQUINA_FLEXO_NAO_CONFIGURADA acima.
+        { modeloCalculo: "CHAPA_RIGIDA", chapaId: null },
       ],
     },
     include: { itemCatalogo: true },
@@ -130,6 +161,50 @@ export async function listarPendenciasConfiguracao(
     itemGraficaId: item.id,
     nomeProduto: item.itemCatalogo.nome,
   }));
+
+  // Achado B1 da auditoria do motor de preço (2026-09-13) — custoHoraMaq
+  // só vira custo real com velocidadePontosPorMinuto preenchido também
+  // (ver validarParametrosMaquinaBordado em src/lib/pricing/validar.ts) —
+  // sem isso, todo orçamento que usar essa máquina é recusado pelo motor.
+  const maquinasBordadoSemVelocidade = await prisma.maquinaBordado.findMany({
+    where: { graficaId, ativa: true, custoHoraMaq: { not: null }, velocidadePontosPorMinuto: null },
+  });
+
+  const pendenciasBordadoVelocidade = maquinasBordadoSemVelocidade.map((maquina) => ({
+    tipo: "MAQUINA_BORDADO_SEM_VELOCIDADE" as const,
+    maquinaId: maquina.id,
+    nomeMaquina: maquina.nome,
+  }));
+
+  // Achado B3 da auditoria do motor de preço (2026-09-13) — acabamento
+  // sem nenhum custo configurado (mesma condição exata do motor real, ver
+  // acabamentoEstaSemCusto em src/lib/pricing/carregar.ts) é recusado com
+  // CUSTO_INVALIDO na hora de montar orçamento. Filtro em JS (não em
+  // Prisma `where`) de propósito: combinar campos do nível raiz
+  // (precoCompra) com campos de dentro de uma relação (configuracaoAcabamento)
+  // numa única cláusula é mais frágil do que buscar os candidatos e
+  // aplicar a MESMA função booleana que o motor usa.
+  const itensAcabamento = await prisma.itemGrafica.findMany({
+    where: {
+      graficaId,
+      ativo: true,
+      itemCatalogo: { tipo: "SERVICO" },
+      configuracaoAcabamento: { isNot: null },
+    },
+    include: { itemCatalogo: true, configuracaoAcabamento: true },
+  });
+
+  const pendenciasAcabamento = itensAcabamento
+    // configuracaoAcabamento: { isNot: null } já garante isso no `where`
+    // acima, mas o tipo do Prisma não estreita o `include` — narrow
+    // explícito pra acabamentoEstaSemCusto aceitar sem cast.
+    .filter((item) => item.configuracaoAcabamento !== null)
+    .filter((item) => acabamentoEstaSemCusto({ ...item, configuracaoAcabamento: item.configuracaoAcabamento! }))
+    .map((item) => ({
+      tipo: "ACABAMENTO_SEM_CUSTO" as const,
+      itemGraficaId: item.id,
+      nomeProduto: item.itemCatalogo.nome,
+    }));
 
   // Achado A10 — só se aplica no Simples Nacional (calcularSituacaoAliquotaSimples
   // devolve null pra Presumido/Real ou fiscal ainda não cadastrado). Sem
@@ -149,5 +224,12 @@ export async function listarPendenciasConfiguracao(
         ]
       : [];
 
-  return [...pendenciasBobina, ...pendenciasPapel, ...pendenciasMaquina, ...pendenciasImposto];
+  return [
+    ...pendenciasBobina,
+    ...pendenciasPapel,
+    ...pendenciasMaquina,
+    ...pendenciasBordadoVelocidade,
+    ...pendenciasAcabamento,
+    ...pendenciasImposto,
+  ];
 }

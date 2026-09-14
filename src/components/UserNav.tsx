@@ -30,8 +30,8 @@ const ChatAssistente = dynamic(
 // Lazy pelo mesmo motivo do ChatAssistente acima: a maioria das visitas não é
 // DONO ou não tem pendência nenhuma (o componente checa isso sozinho e
 // renderiza null), então não vale pagar o parse do JS em toda rota.
-const PendenciasConfiguracaoModal = dynamic(
-  () => import("@/components/PendenciasConfiguracaoModal").then((m) => m.PendenciasConfiguracaoModal),
+const PendenciasConfiguracaoBanner = dynamic(
+  () => import("@/components/PendenciasConfiguracaoBanner").then((m) => m.PendenciasConfiguracaoBanner),
   { ssr: false }
 );
 
@@ -132,6 +132,7 @@ export function UserNav({
   }
 
   return (
+    <>
     <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/80 backdrop-blur dark:border-slate-800 dark:bg-slate-950/80">
       <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
         <div className="flex items-center gap-8">
@@ -281,7 +282,8 @@ export function UserNav({
       )}
 
       <ChatAssistente />
-      <PendenciasConfiguracaoModal />
     </header>
+    <PendenciasConfiguracaoBanner />
+    </>
   );
 }
