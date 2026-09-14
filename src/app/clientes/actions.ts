@@ -1122,7 +1122,15 @@ export async function criarEnderecoCliente(
     complemento: formData.get("complemento"),
     bairro: formData.get("bairro"),
     municipio: formData.get("municipio"),
-    codigoIbge: formData.get("codigoIbge"),
+    // ?? "" — CamposEndereco (EnderecoClienteCard.tsx) nunca renderiza um
+    // <input name="codigoIbge"> de verdade (só existe no endereço fiscal do
+    // Cliente, via EnderecoFields.tsx) — formData.get devolve null sempre,
+    // não só condicionalmente, e enderecoClienteSchema.codigoIbge ("opcional"
+    // = .optional() sem .nullable()) rejeita null. Sem isso, todo
+    // cadastro/edição de endereço adicional de cliente quebra com "Dados
+    // inválidos", sempre — mesmo achado de null-vs-string-vazia de
+    // src/app/clientes/actions.ts (criarCliente/atualizarCliente).
+    codigoIbge: formData.get("codigoIbge") ?? "",
     uf: formData.get("uf"),
     contatoNome: formData.get("contatoNome"),
     contatoTelefone: formData.get("contatoTelefone"),
@@ -1221,7 +1229,15 @@ export async function atualizarEnderecoCliente(
     complemento: formData.get("complemento"),
     bairro: formData.get("bairro"),
     municipio: formData.get("municipio"),
-    codigoIbge: formData.get("codigoIbge"),
+    // ?? "" — CamposEndereco (EnderecoClienteCard.tsx) nunca renderiza um
+    // <input name="codigoIbge"> de verdade (só existe no endereço fiscal do
+    // Cliente, via EnderecoFields.tsx) — formData.get devolve null sempre,
+    // não só condicionalmente, e enderecoClienteSchema.codigoIbge ("opcional"
+    // = .optional() sem .nullable()) rejeita null. Sem isso, todo
+    // cadastro/edição de endereço adicional de cliente quebra com "Dados
+    // inválidos", sempre — mesmo achado de null-vs-string-vazia de
+    // src/app/clientes/actions.ts (criarCliente/atualizarCliente).
+    codigoIbge: formData.get("codigoIbge") ?? "",
     uf: formData.get("uf"),
     contatoNome: formData.get("contatoNome"),
     contatoTelefone: formData.get("contatoTelefone"),
