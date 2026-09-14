@@ -18,13 +18,17 @@ const isDev = process.env.NODE_ENV === "development";
 // assinada temporária (src/lib/blob-assinado.ts), que vive em
 // *.private.blob.vercel-storage.com — sem o wildcard cobrindo os dois, o
 // navegador bloqueia o <img> por CSP mesmo com o arquivo carregando normalmente.
+// *.ingest.us.sentry.io: destino do SDK client do Sentry (src/instrumentation-client.ts,
+// só ativa com NEXT_PUBLIC_SENTRY_DSN configurada) — sem isso o navegador bloqueia
+// o envio do erro antes de sair (achado em produção 2026-09-14: erro real
+// acontecendo mas nunca aparecendo no painel do Sentry).
 const cspHeader = `
   default-src 'self';
   script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com${isDev ? " 'unsafe-eval'" : ""};
   style-src 'self' 'unsafe-inline';
   img-src 'self' blob: data: https://*.blob.vercel-storage.com;
   font-src 'self';
-  connect-src 'self' https://challenges.cloudflare.com https://viacep.com.br;
+  connect-src 'self' https://challenges.cloudflare.com https://viacep.com.br https://*.ingest.us.sentry.io;
   frame-src https://challenges.cloudflare.com;
   object-src 'none';
   base-uri 'self';
