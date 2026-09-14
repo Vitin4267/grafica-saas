@@ -395,6 +395,21 @@ export function ParametrosForm({
               min="0"
               defaultValue={parametros.gapPecasPadrao}
             />
+            <Input
+              label={
+                <>
+                  Perda padrão M2 (%)
+                  <CampoAjuda texto="Percentual de material que normalmente se perde no processo (calibragem, corte, defeito) — aplicado automaticamente no cálculo de produtos M2, pra já embutir essa perda esperada no preço. Mesmo campo que Offset e Flexografia já têm por máquina; M2 não tem máquina própria, então o default é por gráfica." />
+                </>
+              }
+              name="perdaPercentPadraoM2"
+              type="number"
+              step="0.0001"
+              min="0"
+              max="1"
+              defaultValue={parametros.perdaPercentPadraoM2}
+              hint="ex: 0.03 = 3% — é uma fração, não um percentual inteiro"
+            />
           </div>
         </Card>
 

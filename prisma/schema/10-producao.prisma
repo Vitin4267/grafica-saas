@@ -380,7 +380,9 @@ model Pedido {
   // Achado B1/B2 da Parte 2 (Produção) — histórico de transição de etapa,
   // ver ApontamentoEtapa.
   apontamentos        ApontamentoEtapa[]
-  entrega             Entrega?
+  // Achado F2 — deixou de ser 1:1 (Entrega?), ver comentário completo no
+  // model Entrega acima.
+  entregas            Entrega[]
   filaGangRun         FilaGangRun[]
   // Lado inverso de SolicitacaoCompra.pedidoId — compras feitas
   // especificamente pra este pedido (origem=PEDIDO_ESPECIFICO, achado A3 da
@@ -394,6 +396,11 @@ model Pedido {
   // que este pedido ficou PARADO (aguardando material, aprovação do
   // cliente, etc.), ver model ParadaPedido.
   paradas             ParadaPedido[]
+  // Achado F3 da auditoria de abrangência (2026-09-14, escopo reduzido) —
+  // marcador de progresso por item DESTE pedido, ver model
+  // ItemPedidoStatus. [] pra TODO pedido cujos itens nunca foram marcados
+  // individualmente (comportamento de hoje, acompanha só Pedido.status).
+  itensStatus         ItemPedidoStatus[]
   // Achado F5 da auditoria de abrangência (Parte 7) — arte por item deste
   // pedido, ver comentário completo no model ArteItem
   // (prisma/schema/09-orcamento.prisma). [] pra TODO pedido que nunca usou
@@ -509,6 +516,42 @@ model ParadaPedido {
   // comentário grande acima do model).
   @@index([pedidoId, finalizadaEm])
   @@map("paradas_pedido")
+}
+
+// Achado F3 da auditoria de abrangência (2026-09-14), escopo reduzido — o
+// achado original ("produção monolítica por pedido, não por item") pedia
+// uma FSM completa por item, algo que dependeria de reformar
+// avancarStatusPedido (CAS, status-transicao.ts) inteiro. Em vez disso,
+// mesmo espírito de ParadaPedido acima: um marcador de progresso ADITIVO e
+// PARALELO, que NUNCA muda Pedido.status nem interfere na FSM — só ajuda o
+// dono a ver "faltam 2 dos 5 itens" num pedido grande. Ausência de linha =
+// item ainda não concluído (comportamento de hoje, sem essa granularidade)
+// — por isso não existe um campo `concluido: Boolean`, a linha só existe
+// quando o item foi de fato marcado (toggle: marcar cria, desmarcar apaga).
+model ItemPedidoStatus {
+  id              String @id @default(cuid())
+  graficaId       String
+  pedidoId        String
+  orcamentoItemId String
+
+  concluidoEm    DateTime @default(now())
+  // SetNull (não Restrict): remover o usuário que marcou não pode apagar o
+  // registro de que o item foi concluído, só perde a referência de QUEM
+  // marcou — mesmo padrão de AprovacaoProducao.aprovadoPorId.
+  concluidoPorId String?
+
+  grafica       Grafica       @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  pedido        Pedido        @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  orcamentoItem OrcamentoItem @relation(fields: [orcamentoItemId], references: [id], onDelete: Cascade)
+  concluidoPor  Usuario?      @relation(fields: [concluidoPorId], references: [id], onDelete: SetNull)
+
+  // No máximo 1 marcação por item dentro de um mesmo pedido — evita 2
+  // linhas concorrentes pro mesmo item (toggle sempre olha se já existe
+  // antes de criar, mas a garantia real é este índice único).
+  @@unique([pedidoId, orcamentoItemId])
+  @@index([graficaId])
+  @@index([orcamentoItemId])
+  @@map("item_pedido_status")
 }
 
 // Achado A1 da auditoria de abrangência (Parte 2/Produção, pesquisa-
@@ -690,17 +733,24 @@ enum StatusEntrega {
 // Status ESTRUTURADO da entrega física de um pedido — substitui o texto
 // livre que hoje só existe em Orcamento.frete/transportadora/localEntrega
 // (preenchido uma vez na aprovação do orçamento, nunca mais atualizado).
-// 1:1 com Pedido (não com Orcamento): entrega só faz sentido depois que a
+// N:1 com Pedido (não com Orcamento): entrega só faz sentido depois que a
 // produção física começou — ver ESTAGIOS_PRE_PRODUCAO em
 // src/lib/producao-estagios.ts (Arte/Clichê-Faca ainda não têm nada físico
 // pra rastrear). Não confundir com StatusPedido.ENTREGUE (que marca a
 // PRODUÇÃO como concluída e fora da fila) — este model é o rastreamento
 // OPERACIONAL da entrega em si (motorista, quando saiu, quando chegou),
 // independente e mais granular.
+//
+// Achado F2 da auditoria de abrangência (2026-09-14) — era 1:1 com Pedido
+// (pedidoId @unique); virou N:1 pra permitir mais de uma entrega no mesmo
+// pedido (remessa dividida, ou uma entrega com PROBLEMA seguida de uma nova
+// do zero). Regra de negócio (nunca mais de uma "em voo" ao mesmo tempo)
+// vive na Server Action, não no banco — ver criarEntrega em
+// entrega-actions.ts.
 model Entrega {
   id        String        @id @default(cuid())
   graficaId String
-  pedidoId  String        @unique
+  pedidoId  String
   status    StatusEntrega @default(AGUARDANDO)
 
   // Texto livre, não cadastro relacional — mesmo princípio de
@@ -754,6 +804,10 @@ model Entrega {
   motoristaColaborador Colaborador?    @relation("EntregaMotoristaColaborador", fields: [motoristaColaboradorId], references: [id], onDelete: SetNull)
 
   @@index([graficaId])
+  // Achado F2 — pedidoId deixou de ser @unique (era o índice implícito da
+  // constraint), então precisa de um índice explícito pra continuar rápido
+  // buscar "todas as entregas deste pedido" (criarEntrega/producao/page.tsx).
+  @@index([pedidoId])
   @@index([transportadoraId])
   @@index([motoristaColaboradorId])
   @@map("entregas")

@@ -21,6 +21,7 @@ const CAMPOS_DECIMAL = [
   "incrementoArredondamento",
   "margemSegurancaPadrao",
   "gapPecasPadrao",
+  "perdaPercentPadraoM2",
 ] as const;
 
 const CAMPOS_INTEIRO = [] as const;
@@ -38,6 +39,7 @@ const ROTULO_CAMPO_PARAMETRO: Record<(typeof CAMPOS_DECIMAL)[number], string> = 
   incrementoArredondamento: "Incremento de arredondamento",
   margemSegurancaPadrao: "Margem de segurança (nesting)",
   gapPecasPadrao: "Gap entre peças (nesting)",
+  perdaPercentPadraoM2: "Perda padrão M2 (%)",
 };
 const CAMPOS_PERCENTUAL_PARAMETRO = new Set<(typeof CAMPOS_DECIMAL)[number]>([
   "overheadPercent",
@@ -47,6 +49,7 @@ const CAMPOS_PERCENTUAL_PARAMETRO = new Set<(typeof CAMPOS_DECIMAL)[number]>([
   "taxaFinanceiraPercent",
   "margemSegurancaPadrao",
   "gapPecasPadrao",
+  "perdaPercentPadraoM2",
 ]);
 const formatoPercentualParametro = new Intl.NumberFormat("pt-BR", {
   style: "percent",

@@ -51,18 +51,38 @@ type Candidato = {
 const DEFAULTS_M2 = {
   margemSegurancaPadrao: 0.02,
   gapPecasPadrao: 0.008,
+  perdaPercentPadraoM2: 0,
 };
 
 export function calcularM2(
   pedido: PedidoM2,
   contexto: ContextoM2,
-  defaults: { margemSegurancaPadrao: number; gapPecasPadrao: number } = DEFAULTS_M2
+  defaults: {
+    margemSegurancaPadrao: number;
+    gapPecasPadrao: number;
+    // Achado A8 — opcional (default 0) pelo mesmo motivo de
+    // ParametrosTenant.perdaPercentPadraoM2 em tipos.ts: fixture de teste
+    // antiga que monta `defaults` à mão sem esse campo continua calculando
+    // exatamente igual a antes (0% de perda), zero regressão.
+    perdaPercentPadraoM2?: number;
+  } = DEFAULTS_M2
 ): ResultadoM2 {
-  validarPedidoM2(pedido, contexto);
+  const perdaPercentPadraoM2 = defaults.perdaPercentPadraoM2 ?? 0;
+  validarPedidoM2(pedido, contexto, { perdaPercentPadraoM2 });
 
   const s = paraDecimal(pedido.margemSeguranca ?? defaults.margemSegurancaPadrao);
   const g = paraDecimal(pedido.gapPecas ?? defaults.gapPecasPadrao);
   const Q = pedido.quantidade;
+
+  // Achado A8 — mesmo campo RESOLVIDO validado acima (pedido sobrepõe
+  // cadastro). Aplicado só ao CUSTO do material consumido (fatorPerda
+  // multiplica custoMaterial abaixo, nos dois caminhos — nesting normal e
+  // emenda), nunca à área/eficiência de EXIBIÇÃO (areaFaturavel retornado,
+  // eficiencia, areaCobrada continuam nominais) — mesmo espírito de
+  // FLEXOGRAFIA, onde perda infla metragemTotal só pra custear, sem tocar
+  // métrica de exibição equivalente.
+  const perdaPercent = paraDecimal(pedido.perdaPercent ?? perdaPercentPadraoM2);
+  const fatorPerda = paraDecimal(1).plus(perdaPercent);
 
   const w = paraDecimal(pedido.larguraM);
   const h = paraDecimal(pedido.alturaM);
@@ -101,7 +121,10 @@ export function calcularM2(
       // — matematicamente igual a numFaixas×(b+g) − g.
       const lConsumido = paraDecimal(numFaixas).times(b).plus(g.times(numFaixas - 1));
       const areaFaturavel = larguraNominal.times(lConsumido);
-      const custoMaterial = areaFaturavel.times(custoM2Material);
+      // Achado A8 — fatorPerda só entra no CUSTO (comparação de candidatos
+      // continua correta: multiplica todos pelo mesmo fator, então a ordem
+      // por custoMaterial não muda), areaFaturavel retornado fica nominal.
+      const custoMaterial = areaFaturavel.times(fatorPerda).times(custoM2Material);
 
       candidatos.push({
         bobina,
@@ -192,7 +215,8 @@ export function calcularM2(
         const numFaixas = Q * numPaineisOrientacao;
         const lConsumido = paraDecimal(numFaixas).times(b.plus(g));
         const areaFaturavel = larguraNominal.times(lConsumido);
-        const custoMaterial = areaFaturavel.times(custoM2Material);
+        // Achado A8 — mesmo fatorPerda do caminho normal acima.
+        const custoMaterial = areaFaturavel.times(fatorPerda).times(custoM2Material);
 
         // "Comprimento da emenda" = b, a dimensão perpendicular à direção do
         // corte/emenda (normalmente a altura da peça — ver comentário do

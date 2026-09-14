@@ -121,6 +121,7 @@ describe("salvarParametros", () => {
       formData.append("incrementoArredondamento", "0.10");
       formData.append("margemSegurancaPadrao", "0.02");
       formData.append("gapPecasPadrao", "0.008");
+      formData.append("perdaPercentPadraoM2", "0.03");
       formData.append("comissaoVendedorBase", "VALOR");
       formData.append("unidadePadraoDimensao", "CM");
       formData.append("diasValidadeOrcamentoPadrao", "15");
@@ -201,6 +202,7 @@ describe("salvarParametros", () => {
       formData.append("incrementoArredondamento", "0.10");
       formData.append("margemSegurancaPadrao", "0.02");
       formData.append("gapPecasPadrao", "0.008");
+      formData.append("perdaPercentPadraoM2", "0.03");
       formData.append("comissaoVendedorBase", "VALOR");
       formData.append("unidadePadraoDimensao", "CM");
       formData.append("diasValidadeOrcamentoPadrao", "15");
@@ -268,6 +270,7 @@ describe("salvarParametros", () => {
         formData.append("incrementoArredondamento", "0.10");
         formData.append("margemSegurancaPadrao", "0.02");
         formData.append("gapPecasPadrao", "0.008");
+        formData.append("perdaPercentPadraoM2", "0.03");
         formData.append("comissaoVendedorBase", "VALOR");
         formData.append("unidadePadraoDimensao", "CM");
         formData.append("diasValidadeOrcamentoPadrao", "15");

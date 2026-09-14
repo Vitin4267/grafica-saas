@@ -40,6 +40,7 @@ import { AprovacaoProducaoSecao, type AprovacaoResumo } from "./AprovacaoProduca
 import type { MaquinaOpcaoUI } from "./SeletorMaquina";
 import { cancelarPedido, avancarPedido } from "./actions";
 import { PrioridadePedidoSeletor } from "./PrioridadePedidoSeletor";
+import { ItemPedidoStatusCheckbox } from "./ItemPedidoStatusCheckbox";
 import { rotuloPrioridadePedido } from "@/lib/prioridade-pedido";
 
 type Custo = {
@@ -88,7 +89,7 @@ export function PedidoLinha({
   categoriasCustoAtivas,
   custos,
   lucro,
-  entrega,
+  entregas,
   colaboradoresMotoristas,
   terceirizacoes,
   fornecedores,
@@ -102,6 +103,7 @@ export function PedidoLinha({
   sequencia,
   rotulos,
   ehRetrabalho = false,
+  itens = [],
 }: {
   pedidoId: string;
   orcamentoId: string;
@@ -168,11 +170,12 @@ export function PedidoLinha({
   categoriasCustoAtivas: { id: string; nome: string }[];
   custos: Custo[];
   lucro: number | null;
-  // null quando o pedido ainda está em pré-produção (ver
+  // [] quando o pedido ainda está em pré-produção (ver
   // etapas.estagiosPreProducao em src/lib/etapa-grafica.ts — entrega ainda
-  // não faz sentido) — a seção inteira nem é renderizada nesse caso, mesmo
-  // critério de "ainda não construído" que o resto da tela usa.
-  entrega: EntregaResumo | null;
+  // não faz sentido) ou quando ainda não tem nenhuma registrada — a seção
+  // inteira nem é renderizada no primeiro caso (ver `!emPreProducao`
+  // abaixo). Achado F2 — lista (não mais 1:1), ver EntregaPedidoSecao.tsx.
+  entregas: EntregaResumo[];
   // Achado D1 da auditoria de abrangência (Parte 4/Qualidade-pessoas) —
   // Colaboradores ATIVOS tipo=MOTORISTA da gráfica (grafica-wide, buscados
   // uma vez em producao/page.tsx, mesmo padrão de `fornecedores` abaixo) pra
@@ -230,6 +233,12 @@ export function PedidoLinha({
   // normal da FSM. Default false pra qualquer chamador que ainda não passe
   // esta prop, mesmo critério de quantidadePedido/prioridade acima.
   ehRetrabalho?: boolean;
+  // Achado F3 da auditoria de abrangência (2026-09-14, escopo reduzido) —
+  // itens DESTE pedido (id/nome/quantidade + se já foi marcado concluído,
+  // ver ItemPedidoStatus). Default [] pra qualquer chamador que ainda não
+  // passe esta prop. A lista só renderiza quando tem mais de 1 item — pedido
+  // de item único não ganha nada com a granularidade extra.
+  itens?: { id: string; nome: string; quantidade: number; concluido: boolean }[];
 }) {
   const [state, formAction, isPending] = useActionState(cancelarPedido, null);
   const [confirmando, setConfirmando] = useState(false);
@@ -289,6 +298,25 @@ export function PedidoLinha({
           <div>
             <p className="font-medium text-slate-900 dark:text-white">{clienteNome}</p>
             <p className="text-sm text-slate-500">{itensResumo}</p>
+            {/* Achado F3 — granularidade extra só quando vale a pena (mais
+                de 1 item); pedido de item único já mostra tudo em
+                itensResumo acima. */}
+            {podeEditar && itens.length > 1 && (
+              <ul className="mt-1 flex flex-col gap-0.5">
+                {itens.map((item) => (
+                  <li key={item.id} className="flex items-center gap-2">
+                    <ItemPedidoStatusCheckbox
+                      pedidoId={pedidoId}
+                      orcamentoItemId={item.id}
+                      concluidoInicial={item.concluido}
+                    />
+                    <span className="text-xs text-slate-500">
+                      {item.nome} ({item.quantidade})
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
             <Link
               href={`/orcamento/${orcamentoId}`}
               className="text-xs text-teal-700 hover:underline dark:text-teal-400"
@@ -456,7 +484,7 @@ export function PedidoLinha({
       {!emPreProducao && (
         <EntregaPedidoSecao
           pedidoId={pedidoId}
-          entrega={entrega}
+          entregas={entregas}
           podeEditar={podeEditar}
           colaboradoresMotoristas={colaboradoresMotoristas}
         />

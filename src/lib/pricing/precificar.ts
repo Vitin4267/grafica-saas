@@ -187,6 +187,7 @@ export function precificar(
     const resultado = calcularM2(pedido.pedido, contexto.m2, {
       margemSegurancaPadrao: contexto.parametros.margemSegurancaPadrao,
       gapPecasPadrao: contexto.parametros.gapPecasPadrao,
+      perdaPercentPadraoM2: contexto.parametros.perdaPercentPadraoM2,
     });
 
     const ctxAcabamento: ContextoAcabamento = {

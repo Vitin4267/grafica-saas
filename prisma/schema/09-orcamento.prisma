@@ -737,6 +737,12 @@ model OrcamentoItem {
   // do MESMO item ("1.000/3.000/5.000 unidades"), ver comentário completo no
   // model OrcamentoItemFaixaQuantidade abaixo.
   faixasQuantidade     OrcamentoItemFaixaQuantidade[]
+  // Achado F3 da auditoria de abrangência (2026-09-14, escopo reduzido) —
+  // marcador de progresso deste item DENTRO de um pedido específico (um
+  // mesmo OrcamentoItem só tem Pedido através de Orcamento.pedido, então
+  // no máximo 1 linha por item na prática, mas [] porque a FK real é
+  // ItemPedidoStatus.pedidoId, não um 1:1 direto aqui).
+  itensStatusPedido    ItemPedidoStatus[]
 
   @@index([orcamentoId])
   @@index([opcaoId])
