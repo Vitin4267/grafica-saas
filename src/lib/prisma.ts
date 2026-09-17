@@ -87,7 +87,17 @@ export function criarClient(connectionString: string | undefined = process.env.D
           if (!estado || !model || !MODELOS_COM_RLS_ATIVO.has(model) || transacaoJaConfigurada()) {
             return query(args);
           }
-          const [, resultado] = await base.$transaction([construirSetConfigRaw(base, estado), query(args)]);
+          console.log("DEBUG $allOperations wrap:", { model, operation, estadoTipo: estado.tipo });
+          const [setConfigResult, resultado] = await base.$transaction([
+            construirSetConfigRaw(base, estado),
+            query(args),
+          ]);
+          console.log("DEBUG $allOperations resultado:", {
+            model,
+            operation,
+            setConfigResult,
+            resultadoLength: Array.isArray(resultado) ? resultado.length : "n/a",
+          });
           return resultado;
         },
       },
