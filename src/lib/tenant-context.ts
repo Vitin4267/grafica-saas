@@ -24,7 +24,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 //     checagem que carrega o peso real do isolamento neste guard.
 export type EstadoTenant = { tipo: "tenant"; graficaId: string } | { tipo: "isento"; motivo: string };
 
-const contextoTenant = new AsyncLocalStorage<EstadoTenant>();
+const contextoTenant = new AsyncLocalStorage<EstadoTenant | undefined>();
 
 // Chamado por exigirUsuarioAutenticado logo após resolver a sessão. Usa
 // `enterWith` (não `run`) DE PROPÓSITO: o padrão do repo inteiro é
@@ -69,6 +69,19 @@ export function semTenant<T>(motivo: string, fn: () => Promise<T>): Promise<T> {
 // as fixtures de teste já seguem hoje.
 export function tenantAtual(): EstadoTenant | undefined {
   return contextoTenant.getStore();
+}
+
+// Só pra teste que chama definirTenantAtual/semTenant DIRETO (não
+// mockado, ex: src/lib/rls.test.ts) — achado rodando esse teste em CI
+// (2026-09-17): `enterWith` não tem reset natural, então o contexto
+// definido por um `it()` vazava pro próximo teste que rodasse na MESMA
+// worker do Vitest, mesmo em arquivo sem nenhuma ligação com tenant —
+// contaminou 2 suítes inteiras que rodaram depois. `.run()` (não
+// `enterWith`) escopa de verdade: reverte sozinho ao sair, mesmo se `fn`
+// lançar. Todo teste que chama definirTenantAtual/semTenant direto deve
+// envolver o corpo inteiro nisto.
+export function comContextoIsolado<T>(fn: () => Promise<T>): Promise<T> {
+  return contextoTenant.run(undefined, fn);
 }
 
 // Segunda AsyncLocalStorage, independente da de identidade do tenant acima

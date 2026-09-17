@@ -1,6 +1,6 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { prisma, transacaoComTenant } from "./prisma";
-import { definirTenantAtual, semTenant } from "./tenant-context";
+import { definirTenantAtual, semTenant, comContextoIsolado } from "./tenant-context";
 
 // Teste de INTEGRAÇÃO de verdade (toca o Postgres via DATABASE_URL) pra
 // Fase B do isolamento multi-tenant (RLS real no Postgres, achado da
@@ -40,43 +40,51 @@ afterAll(async () => {
 });
 
 describe("RLS piloto (Cliente) — mecanismo de app (definirTenantAtual + prisma normal)", () => {
-  it("só enxerga o cliente da própria gráfica, nunca o de outra", async () => {
-    const a = await criarGraficaComCliente();
-    const b = await criarGraficaComCliente();
-    graficasCriadas.push(a.graficaId, b.graficaId);
+  // comContextoIsolado envolve CADA teste inteiro (não só a parte que
+  // chama definirTenantAtual) — a criação das fixtures também precisa
+  // rodar isolada, senão um contexto vazado de um teste anterior já
+  // quebraria o create do Cliente da fixture (ver comentário em
+  // comContextoIsolado, tenant-context.ts).
+  it("só enxerga o cliente da própria gráfica, nunca o de outra", () =>
+    comContextoIsolado(async () => {
+      const a = await criarGraficaComCliente();
+      const b = await criarGraficaComCliente();
+      graficasCriadas.push(a.graficaId, b.graficaId);
 
-    definirTenantAtual(a.graficaId);
-    const vistosDeA = await prisma.cliente.findMany({ where: { id: { in: [a.clienteId, b.clienteId] } } });
-    expect(vistosDeA.map((c) => c.id)).toEqual([a.clienteId]);
+      definirTenantAtual(a.graficaId);
+      const vistosDeA = await prisma.cliente.findMany({ where: { id: { in: [a.clienteId, b.clienteId] } } });
+      expect(vistosDeA.map((c) => c.id)).toEqual([a.clienteId]);
 
-    definirTenantAtual(b.graficaId);
-    const vistosDeB = await prisma.cliente.findMany({ where: { id: { in: [a.clienteId, b.clienteId] } } });
-    expect(vistosDeB.map((c) => c.id)).toEqual([b.clienteId]);
-  });
+      definirTenantAtual(b.graficaId);
+      const vistosDeB = await prisma.cliente.findMany({ where: { id: { in: [a.clienteId, b.clienteId] } } });
+      expect(vistosDeB.map((c) => c.id)).toEqual([b.clienteId]);
+    }));
 
-  it("semTenant (bypass_rls) enxerga os dois", async () => {
-    const a = await criarGraficaComCliente();
-    const b = await criarGraficaComCliente();
-    graficasCriadas.push(a.graficaId, b.graficaId);
+  it("semTenant (bypass_rls) enxerga os dois", () =>
+    comContextoIsolado(async () => {
+      const a = await criarGraficaComCliente();
+      const b = await criarGraficaComCliente();
+      graficasCriadas.push(a.graficaId, b.graficaId);
 
-    const vistos = await semTenant("teste rls.test.ts — bypass", () =>
-      prisma.cliente.findMany({ where: { id: { in: [a.clienteId, b.clienteId] } } })
-    );
-    expect(vistos.map((c) => c.id).sort()).toEqual([a.clienteId, b.clienteId].sort());
-  });
+      const vistos = await semTenant("teste rls.test.ts — bypass", () =>
+        prisma.cliente.findMany({ where: { id: { in: [a.clienteId, b.clienteId] } } })
+      );
+      expect(vistos.map((c) => c.id).sort()).toEqual([a.clienteId, b.clienteId].sort());
+    }));
 
-  it("transacaoComTenant (transação interativa) isola corretamente, sem duplicar o set_config", async () => {
-    const a = await criarGraficaComCliente();
-    const b = await criarGraficaComCliente();
-    graficasCriadas.push(a.graficaId, b.graficaId);
+  it("transacaoComTenant (transação interativa) isola corretamente, sem duplicar o set_config", () =>
+    comContextoIsolado(async () => {
+      const a = await criarGraficaComCliente();
+      const b = await criarGraficaComCliente();
+      graficasCriadas.push(a.graficaId, b.graficaId);
 
-    definirTenantAtual(a.graficaId);
-    const resultado = await transacaoComTenant(async (tx) => {
-      const dentro = await tx.cliente.findMany({ where: { id: { in: [a.clienteId, b.clienteId] } } });
-      return dentro.map((c) => c.id);
-    });
-    expect(resultado).toEqual([a.clienteId]);
-  });
+      definirTenantAtual(a.graficaId);
+      const resultado = await transacaoComTenant(async (tx) => {
+        const dentro = await tx.cliente.findMany({ where: { id: { in: [a.clienteId, b.clienteId] } } });
+        return dentro.map((c) => c.id);
+      });
+      expect(resultado).toEqual([a.clienteId]);
+    }));
 });
 
 // Confirma diretamente contra o Postgres (sem passar pelo mecanismo do
@@ -85,25 +93,26 @@ describe("RLS piloto (Cliente) — mecanismo de app (definirTenantAtual + prisma
 // vaza por omissão. Usa $queryRawUnsafe puro, fora do $allOperations do
 // app, pra testar a policy isolada do resto do mecanismo.
 describe("RLS piloto (Cliente) — policy pura no Postgres, fail-closed por ausência de contexto", () => {
-  it("sem set_config nenhum, uma conexão nova não enxerga NENHUMA linha", async () => {
-    if (!RLS_DATABASE_URL) {
-      throw new Error("RLS_TEST_DATABASE_URL/DATABASE_URL ausente — não dá pra rodar este teste.");
-    }
-    const a = await criarGraficaComCliente();
-    graficasCriadas.push(a.graficaId);
+  it("sem set_config nenhum, uma conexão nova não enxerga NENHUMA linha", () =>
+    comContextoIsolado(async () => {
+      if (!RLS_DATABASE_URL) {
+        throw new Error("RLS_TEST_DATABASE_URL/DATABASE_URL ausente — não dá pra rodar este teste.");
+      }
+      const a = await criarGraficaComCliente();
+      graficasCriadas.push(a.graficaId);
 
-    // Conexão nova, isolada do resto do processo — nenhum set_config foi
-    // chamado nela ainda, simula exatamente o caso "código esqueceu de
-    // estabelecer contexto de tenant".
-    const { PrismaPg } = await import("@prisma/adapter-pg");
-    const { PrismaClient } = await import("@/generated/prisma/client");
-    const adapter = new PrismaPg({ connectionString: RLS_DATABASE_URL });
-    const clientCru = new PrismaClient({ adapter });
-    try {
-      const semContexto = await clientCru.cliente.findMany({ where: { id: a.clienteId } });
-      expect(semContexto).toHaveLength(0);
-    } finally {
-      await clientCru.$disconnect();
-    }
-  });
+      // Conexão nova, isolada do resto do processo — nenhum set_config foi
+      // chamado nela ainda, simula exatamente o caso "código esqueceu de
+      // estabelecer contexto de tenant".
+      const { PrismaPg } = await import("@prisma/adapter-pg");
+      const { PrismaClient } = await import("@/generated/prisma/client");
+      const adapter = new PrismaPg({ connectionString: RLS_DATABASE_URL });
+      const clientCru = new PrismaClient({ adapter });
+      try {
+        const semContexto = await clientCru.cliente.findMany({ where: { id: a.clienteId } });
+        expect(semContexto).toHaveLength(0);
+      } finally {
+        await clientCru.$disconnect();
+      }
+    }));
 });
