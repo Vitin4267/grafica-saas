@@ -81,7 +81,15 @@ jobs:
             GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ci_app_restrito;
           "
 
+      # DATABASE_URL sobrescrita SÓ pra este step (achado rodando o job de
+      # verdade, 2026-09-17): `postgres` é superuser, e Postgres NUNCA
+      # aplica RLS a superuser, mesmo com policy — os testes que usam o
+      # client normal do app (prisma.cliente.findMany, etc.) passariam
+      # "verde" sem a policy nunca ter chance de bloquear nada. Trocar pro
+      # role restrito aqui replica exatamente produção (`grafica_app`).
       - run: npm test
+        env:
+          DATABASE_URL: postgresql://ci_app_restrito:ci_app_restrito@localhost:5432/grafica_saas_test?schema=public
 
   sast:
     runs-on: ubuntu-latest
