@@ -10,6 +10,13 @@ export default defineConfig({
     seed: "tsx prisma/seed.ts",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    // Migração precisa de CREATE/ALTER/DROP TABLE (role owner do Neon);
+    // DATABASE_URL sozinha passou a ser um role restrito (só CRUD, achado
+    // de segurança 2026-09-17 — menor privilégio, ver
+    // security_grafica_saas.md) que não tem esse privilégio. Fallback pra
+    // DATABASE_URL cobre quem ainda não criou o role restrito local/CI
+    // (o Postgres descartável do CI usa superuser, então nunca precisa
+    // dessa variável separada).
+    url: process.env["MIGRATION_DATABASE_URL"] ?? process.env["DATABASE_URL"],
   },
 });
