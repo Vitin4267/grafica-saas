@@ -56,8 +56,23 @@ export function definirTenantAtual(graficaId: string): void {
 // definirTenantAtual, aqui a gente TEM o callback que representa
 // exatamente o trecho isento (fn), então `run()` escopa a isenção só a
 // ele e reverte automaticamente ao sair, mesmo em chamada aninhada.
+//
+// PEGADINHA REAL (achada depurando rls.test.ts em CI, 2026-09-17):
+// `PrismaPromise` é preguiçosa — só dispara a query de verdade quando
+// alguém dá `await`/`.then()` nela. Se `fn` fosse só repassado direto pra
+// `.run()` e o CALLER passasse uma arrow síncrona tipo `() =>
+// prisma.cliente.findMany(...)` (sem await interno), a arrow só CRIARIA a
+// promise e devolveria — `.run()` já teria retornado e o AsyncLocalStorage
+// já teria revertido o contexto ANTES da query disparar de verdade (o
+// `await semTenant(...)` do CALLER dispara ela DEPOIS, já fora do escopo).
+// `$allOperations` (src/lib/prisma.ts) veria `tenantAtual() === undefined`
+// em vez do isento esperado — RLS bloquearia tudo, bypass nunca
+// aconteceria, silenciosamente. Por isso `fn` roda aqui dentro de um
+// wrapper `async` PRÓPRIO com `await` explícito — a garantia fica na
+// implementação, não depende do CALLER lembrar de escrever `async () =>
+// await ...` certinho toda vez.
 export function semTenant<T>(motivo: string, fn: () => Promise<T>): Promise<T> {
-  return contextoTenant.run({ tipo: "isento", motivo }, fn);
+  return contextoTenant.run({ tipo: "isento", motivo }, async () => await fn());
 }
 
 // undefined = nenhum contexto de tenant foi estabelecido neste ponto da
@@ -79,9 +94,11 @@ export function tenantAtual(): EstadoTenant | undefined {
 // contaminou 2 suítes inteiras que rodaram depois. `.run()` (não
 // `enterWith`) escopa de verdade: reverte sozinho ao sair, mesmo se `fn`
 // lançar. Todo teste que chama definirTenantAtual/semTenant direto deve
-// envolver o corpo inteiro nisto.
+// envolver o corpo inteiro nisto. `async () => await fn()` — mesma
+// blindagem contra a pegadinha de Promise preguiçosa documentada em
+// semTenant() acima.
 export function comContextoIsolado<T>(fn: () => Promise<T>): Promise<T> {
-  return contextoTenant.run(undefined, fn);
+  return contextoTenant.run(undefined, async () => await fn());
 }
 
 // Segunda AsyncLocalStorage, independente da de identidade do tenant acima
@@ -105,10 +122,11 @@ export function transacaoJaConfigurada(): boolean {
   return dentroDeTransacaoConfigurada.getStore() === true;
 }
 
-// `.run()` — mesmo raciocínio de semTenant(): o component `client.$transaction`
-// TEM o callback que representa exatamente a transação (fn), então escopa
-// a marcação só a ela, revertendo sozinho ao sair (inclusive se `fn`
-// lançar).
+// `.run()` — mesmo raciocínio de semTenant(): quem chama (transacaoComTenant,
+// em src/lib/prisma.ts) TEM o callback que representa exatamente a
+// transação (fn), então escopa a marcação só a ela, revertendo sozinho ao
+// sair (inclusive se `fn` lançar). `async () => await fn()` — mesma
+// blindagem de semTenant() contra a pegadinha de Promise preguiçosa.
 export function marcarTransacaoConfigurada<T>(fn: () => Promise<T>): Promise<T> {
-  return dentroDeTransacaoConfigurada.run(true, fn);
+  return dentroDeTransacaoConfigurada.run(true, async () => await fn());
 }

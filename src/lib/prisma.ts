@@ -22,7 +22,7 @@ function construirSetConfigRaw(
 ) {
   return estado.tipo === "tenant"
     ? client.$executeRaw`SELECT set_config('app.grafica_id', ${estado.graficaId}, TRUE)`
-    : client.$executeRaw`SELECT set_config('app.bypass_rls', ${"on"}, TRUE)`;
+    : client.$executeRaw`SELECT set_config('app.bypass_rls', 'on', TRUE)`;
 }
 
 // Exportado (achado da auditoria de segurança 2026-09-17, testando RLS de
@@ -87,17 +87,7 @@ export function criarClient(connectionString: string | undefined = process.env.D
           if (!estado || !model || !MODELOS_COM_RLS_ATIVO.has(model) || transacaoJaConfigurada()) {
             return query(args);
           }
-          console.log("DEBUG $allOperations wrap:", { model, operation, estadoTipo: estado.tipo });
-          const [setConfigResult, resultado] = await base.$transaction([
-            construirSetConfigRaw(base, estado),
-            query(args),
-          ]);
-          console.log("DEBUG $allOperations resultado:", {
-            model,
-            operation,
-            setConfigResult,
-            resultadoLength: Array.isArray(resultado) ? resultado.length : "n/a",
-          });
+          const [, resultado] = await base.$transaction([construirSetConfigRaw(base, estado), query(args)]);
           return resultado;
         },
       },
