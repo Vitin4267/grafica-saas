@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
-import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import { prisma, transacaoComTenant, type PrismaTransactionClient } from "@/lib/prisma";
 import { hashToken } from "@/lib/auth/session";
 import { cifrar, decifrarOuNull } from "@/lib/cripto";
 import { Prisma } from "@/generated/prisma/client";
@@ -1267,7 +1267,7 @@ export async function avancarStatusPedido(
       }
       const categoriaFallbackCacheRefugo: { valor: string | null | undefined } = { valor: undefined };
 
-      await prisma.$transaction(async (tx) => {
+      await transacaoComTenant(async (tx) => {
         const resultado = await tx.pedido.updateMany({
           where: { id: pedido.id, status: statusAnterior },
           data: { status: proximoStatus },

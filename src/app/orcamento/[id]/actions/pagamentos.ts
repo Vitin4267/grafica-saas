@@ -7,7 +7,7 @@ import { after } from "next/server";
 import { randomBytes } from "node:crypto";
 import { put, del } from "@vercel/blob";
 import { exigirTokenBlobPrivado } from "@/lib/blob-assinado";
-import { prisma } from "@/lib/prisma";
+import { prisma, transacaoComTenant } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
@@ -188,7 +188,7 @@ export async function registrarPagamento(
   // ela for marcada como recebida ou cancelada por outra requisição bem no
   // meio disso, não sobrescreve. ESTE BLOCO NÃO MUDOU desde 2026-08-16 —
   // preservado 100% (ver bloco de saldo remanescente logo abaixo, achado A8).
-  const { pagamento, contaReceberVinculada } = await prisma.$transaction(async (tx) => {
+  const { pagamento, contaReceberVinculada } = await transacaoComTenant(async (tx) => {
     const pagamentoCriado = await tx.pagamento.create({
       data: {
         orcamentoId,

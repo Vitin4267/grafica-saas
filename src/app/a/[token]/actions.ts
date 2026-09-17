@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { semTenant, definirTenantAtual } from "@/lib/tenant-context";
 import { resolverOrigemPublica } from "@/lib/url-publica";
 import { hashToken } from "@/lib/auth/session";
 import { dispararEventoEmail, type EventoEmail } from "@/lib/email/webhook-email";
@@ -65,21 +66,27 @@ export async function responderArtePublica(
     return { ok: false, mensagem: "Nome muito longo — use até 200 caracteres." };
   }
 
-  const pedido = await prisma.pedido.findUnique({
-    where: { arteLinkTokenHash: hashToken(token) },
-    include: {
-      orcamento: {
-        include: {
-          cliente: true,
-          grafica: true,
-          itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
+  // semTenant (achado da auditoria de segurança 2026-09-17, Fase B/RLS):
+  // resolver o token é cross-tenant por design — ainda não sabemos a
+  // gráfica dona deste pedido neste ponto.
+  const pedido = await semTenant("resolver token público de resposta de arte", () =>
+    prisma.pedido.findUnique({
+      where: { arteLinkTokenHash: hashToken(token) },
+      include: {
+        orcamento: {
+          include: {
+            cliente: true,
+            grafica: true,
+            itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
+          },
         },
       },
-    },
-  });
+    })
+  );
   if (!pedido) {
     return { ok: false, mensagem: "Arte não encontrada." };
   }
+  definirTenantAtual(pedido.graficaId);
   if (pedido.arteAprovadaEm) {
     return { ok: false, mensagem: "Esta arte já foi aprovada." };
   }
@@ -219,13 +226,19 @@ export async function responderArteItemPublica(
     return { ok: false, mensagem: "Nome muito longo — use até 200 caracteres." };
   }
 
-  const pedido = await prisma.pedido.findUnique({
-    where: { arteLinkTokenHash: hashToken(token) },
-    include: { orcamento: { include: { cliente: true, grafica: true } } },
-  });
+  // semTenant (achado da auditoria de segurança 2026-09-17, Fase B/RLS):
+  // resolver o token é cross-tenant por design — ainda não sabemos a
+  // gráfica dona deste pedido neste ponto.
+  const pedido = await semTenant("resolver token público de resposta de arte por item", () =>
+    prisma.pedido.findUnique({
+      where: { arteLinkTokenHash: hashToken(token) },
+      include: { orcamento: { include: { cliente: true, grafica: true } } },
+    })
+  );
   if (!pedido) {
     return { ok: false, mensagem: "Arte não encontrada." };
   }
+  definirTenantAtual(pedido.graficaId);
 
   // pedidoId: pedido.id — garante que a ArteItem pertence a ESTE pedido
   // (o token só é credencial sobre o pedido dele, nunca sobre outro).

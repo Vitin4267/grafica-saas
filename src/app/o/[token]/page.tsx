@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { semTenant, definirTenantAtual } from "@/lib/tenant-context";
 import { hashToken } from "@/lib/auth/session";
 import { formatoMoeda } from "@/lib/moeda";
 import { formatoInstanteRealComHora, formatoData } from "@/lib/data";
@@ -32,7 +33,14 @@ export default async function OrcamentoPublicoPage({
   // Busca só pelo token — rota pública, sem exigirUsuarioAutenticado(). Hash
   // do token (achado da auditoria de segurança 2026-09-13), nunca gravado em
   // claro — ver comentário de Orcamento.linkPublicoTokenHash no schema.
-  const orcamento = await prisma.orcamento.findUnique({
+  //
+  // semTenant (achado da auditoria de segurança 2026-09-17, Fase B/RLS):
+  // resolver o token é cross-tenant por design — o objetivo desta query é
+  // justamente DESCOBRIR a gráfica, então não dá pra exigir contexto de
+  // tenant nela (o `include: { cliente: true }` abaixo já tocaria RLS de
+  // Cliente sem isso). Mesma categoria dos crons de backup/lifecycle.
+  const orcamento = await semTenant("resolver token público de orçamento", () =>
+    prisma.orcamento.findUnique({
     where: { linkPublicoTokenHash: hashToken(token) },
     include: {
       cliente: true,
@@ -73,11 +81,13 @@ export default async function OrcamentoPublicoPage({
       // mesmo cronograma, qualquer que seja a opção escolhida nas abas.
       entregasProgramadas: { orderBy: { ordem: "asc" } },
     },
-  });
+    })
+  );
 
   if (!orcamento) {
     notFound();
   }
+  definirTenantAtual(orcamento.graficaId);
 
   const ehPdf = orcamento.arteUrl?.toLowerCase().endsWith(".pdf") ?? false;
   // Achado N29 da auditoria de código (2026-09-12) — validarSomaCronogramaEntrega

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { semTenant, definirTenantAtual } from "@/lib/tenant-context";
 import { hashToken } from "@/lib/auth/session";
 import { obterIpRequisicao } from "@/lib/auth/ip";
 import { tentarRegistrarConfirmacaoEstagio } from "@/lib/auth/rate-limit";
@@ -25,21 +26,28 @@ export async function confirmarEstagioPublico(
 
   // Hash do token (achado da auditoria de segurança 2026-09-13), nunca
   // gravado em claro — ver comentário de Pedido.producaoLinkTokenHash no schema.
-  const pedido = await prisma.pedido.findUnique({
-    where: { producaoLinkTokenHash: hashToken(token) },
-    include: {
-      orcamento: {
-        include: {
-          cliente: true,
-          grafica: true,
-          itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
+  //
+  // semTenant (achado da auditoria de segurança 2026-09-17, Fase B/RLS):
+  // resolver o token é cross-tenant por design — ainda não sabemos a
+  // gráfica dona deste pedido neste ponto.
+  const pedido = await semTenant("resolver token público de confirmação de etapa", () =>
+    prisma.pedido.findUnique({
+      where: { producaoLinkTokenHash: hashToken(token) },
+      include: {
+        orcamento: {
+          include: {
+            cliente: true,
+            grafica: true,
+            itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
+          },
         },
       },
-    },
-  });
+    })
+  );
   if (!pedido) {
     return { ok: false, mensagem: "Pedido não encontrado." };
   }
+  definirTenantAtual(pedido.graficaId);
 
   // Sem sessão de usuário aqui, então não dá pra reaproveitar
   // exigirAssinaturaAtiva (que espera usuario.grafica.assinatura já

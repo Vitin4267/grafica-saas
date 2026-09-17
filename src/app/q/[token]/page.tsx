@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { hashToken } from "@/lib/auth/session";
+import { semTenant, definirTenantAtual } from "@/lib/tenant-context";
 import { Card } from "@/components/ui/Card";
 import { Logo } from "@/components/Logo";
 import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
@@ -20,22 +21,29 @@ export default async function EtiquetaPedidoPage({
 
   // Hash do token (achado da auditoria de segurança 2026-09-13), nunca
   // gravado em claro — ver comentário de Pedido.qrTokenHash no schema.
-  const pedido = await prisma.pedido.findUnique({
-    where: { qrTokenHash: hashToken(token) },
-    include: {
-      orcamento: {
-        include: {
-          cliente: true,
-          grafica: true,
-          itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
+  //
+  // semTenant (achado da auditoria de segurança 2026-09-17, Fase B/RLS):
+  // resolver o token é cross-tenant por design — Pedido e o `cliente: true`
+  // aqui dentro já tocam RLS antes de sabermos a gráfica.
+  const pedido = await semTenant("resolver token público de etiqueta (QR)", () =>
+    prisma.pedido.findUnique({
+      where: { qrTokenHash: hashToken(token) },
+      include: {
+        orcamento: {
+          include: {
+            cliente: true,
+            grafica: true,
+            itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
+          },
         },
       },
-    },
-  });
+    })
+  );
 
   if (!pedido) {
     notFound();
   }
+  definirTenantAtual(pedido.graficaId);
 
   // Achado A1 (Fase 1) — sequência/etapas atribuíveis DESTA gráfica (ver
   // EtapaGrafica), não mais os arrays literais fixos.

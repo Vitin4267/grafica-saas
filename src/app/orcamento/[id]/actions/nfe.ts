@@ -7,7 +7,7 @@ import { after } from "next/server";
 import { randomBytes } from "node:crypto";
 import { put, del } from "@vercel/blob";
 import { exigirTokenBlobPrivado } from "@/lib/blob-assinado";
-import { prisma } from "@/lib/prisma";
+import { prisma, transacaoComTenant } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
@@ -302,7 +302,7 @@ export async function emitirNotaFiscal(
     // condição de pagamento com âncora EMISSAO_NOTA (achado R1 da auditoria
     // de abrangência, ver src/lib/condicao-pagamento.ts) — atômico com a
     // criação da nota, nunca uma sem a outra.
-    await prisma.$transaction(async (tx) => {
+    await transacaoComTenant(async (tx) => {
       await tx.notaFiscal.create({
         data: {
           graficaId: usuario.graficaId,
@@ -397,7 +397,7 @@ export async function atualizarStatusNotaFiscal(
     // idempotência dentro de gerarContasReceberDaEmissaoNota), gera as
     // ContaReceber com âncora EMISSAO_NOTA. Mesmo padrão de emitirNotaFiscal
     // acima.
-    await prisma.$transaction(async (tx) => {
+    await transacaoComTenant(async (tx) => {
       await tx.notaFiscal.update({
         where: { id: notaFiscal.id },
         data: {

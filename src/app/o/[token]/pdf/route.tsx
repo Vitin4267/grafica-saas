@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { OrcamentoDocumento } from "@/lib/pdf/OrcamentoDocumento";
 import { mapearDadosPdf, nomeArquivoPdf } from "@/lib/pdf/mapear-dados";
 import { hashToken } from "@/lib/auth/session";
+import { semTenant, definirTenantAtual } from "@/lib/tenant-context";
 
 export async function GET(
   _request: Request,
@@ -14,7 +15,13 @@ export async function GET(
   // Rota pública, sem exigirUsuarioAutenticado() — mesmo padrão de
   // o/[token]/page.tsx: o token em si é a credencial. Hash do token (achado
   // da auditoria de segurança 2026-09-13), nunca gravado em claro.
-  const orcamento = await prisma.orcamento.findUnique({
+  //
+  // semTenant (achado da auditoria de segurança 2026-09-17, Fase B/RLS) —
+  // mesmo motivo de o/[token]/page.tsx: resolver o token é cross-tenant
+  // por design, e o `include: { cliente: true }` abaixo já tocaria RLS de
+  // Cliente antes de sabermos a gráfica.
+  const orcamento = await semTenant("resolver token público de orçamento (PDF)", () =>
+    prisma.orcamento.findUnique({
     where: { linkPublicoTokenHash: hashToken(token) },
     include: {
       cliente: true,
@@ -53,11 +60,13 @@ export async function GET(
       // entrega combinado com o cliente, exibido no PDF (ver mapearDadosPdf).
       entregasProgramadas: { orderBy: { ordem: "asc" } },
     },
-  });
+    })
+  );
 
   if (!orcamento) {
     notFound();
   }
+  definirTenantAtual(orcamento.graficaId);
 
   const buffer = await renderToBuffer(
     <OrcamentoDocumento dados={mapearDadosPdf(orcamento)} />

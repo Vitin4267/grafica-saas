@@ -3,7 +3,8 @@
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, transacaoComTenant } from "@/lib/prisma";
+import { semTenant, definirTenantAtual } from "@/lib/tenant-context";
 import { hashToken } from "@/lib/auth/session";
 import { cifrar } from "@/lib/cripto";
 import { TRANSICOES_VALIDAS, orcamentoEstaExpirado, type StatusOrcamento } from "@/lib/orcamento-status";
@@ -106,22 +107,29 @@ export async function responderOrcamentoPublico(
   const opcaoEscolhidaId = opcaoIdBruto || null;
 
   // vendedorId: achado A8 — ver bloco de comissão logo abaixo.
-  const orcamento = await prisma.orcamento.findUnique({
-    where: { linkPublicoTokenHash: hashToken(token) },
-    include: {
-      // limiteCredito: achado A6 da Parte 4 — ver bloco de crédito logo
-      // abaixo. Nunca populamos `aviso` pro cliente por aqui (é o próprio
-      // cliente aprovando, não faz sentido avisar ele que está bloqueado),
-      // mas um bloqueio DE VERDADE (ParametrosGrafica.bloqueiaAoUltrapassarLimiteCredito)
-      // precisa valer nos dois caminhos, senão a trava não tem efeito nenhum
-      // — o link público é justamente o caminho sem revisão humana.
-      cliente: { select: { nome: true, vendedorId: true, limiteCredito: true } },
-      grafica: { select: { nome: true, corPrimaria: true } },
-    },
-  });
+  //
+  // semTenant (achado da auditoria de segurança 2026-09-17, Fase B/RLS):
+  // resolver o token é cross-tenant por design — ainda não sabemos a
+  // gráfica dona deste orçamento neste ponto.
+  const orcamento = await semTenant("resolver token público de resposta de orçamento", () =>
+    prisma.orcamento.findUnique({
+      where: { linkPublicoTokenHash: hashToken(token) },
+      include: {
+        // limiteCredito: achado A6 da Parte 4 — ver bloco de crédito logo
+        // abaixo. Nunca populamos `aviso` pro cliente por aqui (é o próprio
+        // cliente aprovando, não faz sentido avisar ele que está bloqueado),
+        // mas um bloqueio DE VERDADE (ParametrosGrafica.bloqueiaAoUltrapassarLimiteCredito)
+        // precisa valer nos dois caminhos, senão a trava não tem efeito nenhum
+        // — o link público é justamente o caminho sem revisão humana.
+        cliente: { select: { nome: true, vendedorId: true, limiteCredito: true } },
+        grafica: { select: { nome: true, corPrimaria: true } },
+      },
+    })
+  );
   if (!orcamento) {
     return { ok: false, mensagem: "Orçamento não encontrado." };
   }
+  definirTenantAtual(orcamento.graficaId);
 
   // Furo de paywall (achado de revisão de código): o link público é evergreen
   // e nunca expira por design, então uma gráfica com assinatura cancelada
@@ -321,7 +329,7 @@ export async function responderOrcamentoPublico(
       itens: itensComCusto,
     });
 
-    const resultado = await prisma.$transaction(async (tx) => {
+    const resultado = await transacaoComTenant(async (tx) => {
       // Nome + instante gravados na MESMA operação que muda o status — nunca
       // num update solto depois, senão dá pra ter status mudado sem nome
       // (ex: o CAS abaixo falha por corrida, mas um update de nome solto já
@@ -505,7 +513,7 @@ export async function responderOrcamentoPublico(
     // ainda precisa valer (ver src/lib/orcamento-opcoes.ts) — base nunca é
     // tocada. Mesmo cuidado do branch REJEITADO da action autenticada
     // (atualizarStatusOrcamento).
-    const rejeitado = await prisma.$transaction(async (tx) => {
+    const rejeitado = await transacaoComTenant(async (tx) => {
       const cas = await tx.orcamento.updateMany({
         where: { id: orcamento.id, status: orcamento.status },
         data: {
@@ -579,16 +587,22 @@ export async function solicitarAjusteOrcamento(
     return { ok: false, mensagem: "Mensagem muito longa — resuma em até 2000 caracteres." };
   }
 
-  const orcamento = await prisma.orcamento.findUnique({
-    where: { linkPublicoTokenHash: hashToken(token) },
-    include: {
-      cliente: { select: { nome: true } },
-      grafica: { select: { nome: true, corPrimaria: true } },
-    },
-  });
+  // semTenant (achado da auditoria de segurança 2026-09-17, Fase B/RLS):
+  // resolver o token é cross-tenant por design — ainda não sabemos a
+  // gráfica dona deste orçamento neste ponto.
+  const orcamento = await semTenant("resolver token público de solicitação de ajuste de orçamento", () =>
+    prisma.orcamento.findUnique({
+      where: { linkPublicoTokenHash: hashToken(token) },
+      include: {
+        cliente: { select: { nome: true } },
+        grafica: { select: { nome: true, corPrimaria: true } },
+      },
+    })
+  );
   if (!orcamento) {
     return { ok: false, mensagem: "Orçamento não encontrado." };
   }
+  definirTenantAtual(orcamento.graficaId);
 
   // Mesmo furo de paywall documentado em responderOrcamentoPublico — sem
   // esta checagem, uma gráfica com assinatura cancelada continuaria

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { prisma, transacaoComTenant } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
@@ -113,7 +113,7 @@ export async function retornarEtapa(
   const statusAnterior = pedido.status;
 
   try {
-    await prisma.$transaction(async (tx) => {
+    await transacaoComTenant(async (tx) => {
       // CAS: updateMany com o status ANTERIOR no where (não update por id) —
       // mesmo padrão de todo o resto de status-transicao.ts/actions.ts.
       const resultado = await tx.pedido.updateMany({

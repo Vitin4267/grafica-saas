@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { prisma, transacaoComTenant } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
@@ -193,7 +193,7 @@ export async function criarDespesa(
   // espelho em CustoPedido (criarCustoAutomaticoDespesa) entra na MESMA
   // transação — nunca lançar a despesa sem o custo espelhado (ou vice-versa)
   // por causa de uma falha no meio do caminho.
-  const despesa = await prisma.$transaction(async (tx) => {
+  const despesa = await transacaoComTenant(async (tx) => {
     const criada = await tx.despesa.create({
       data: {
         graficaId: usuario.graficaId,
@@ -309,7 +309,7 @@ export async function editarDespesa(
   // criarCustoAutomaticoDespesa decide sozinha se cria/atualiza/estorna o
   // espelho em CustoPedido conforme pedidoId/categoriaCustoId mudaram nesta
   // edição (ver comentário completo em src/lib/custo-pedido.ts).
-  await prisma.$transaction(async (tx) => {
+  await transacaoComTenant(async (tx) => {
     await tx.despesa.update({
       where: { id: despesaId },
       data: {
@@ -403,7 +403,7 @@ export async function excluirDespesa(
   // existindo pra auditoria. A FK CustoPedido.despesaId (onDelete: SetNull)
   // cuida sozinha de zerar o vínculo quando a despesa for excluída logo
   // abaixo, na mesma transação.
-  await prisma.$transaction(async (tx) => {
+  await transacaoComTenant(async (tx) => {
     await tx.custoPedido.updateMany({
       where: { despesaId, estornadoEm: null },
       data: { estornadoEm: new Date() },
@@ -486,7 +486,7 @@ export async function marcarComoPaga(
   const formaDetalheFinal = formaPagamento === "OUTRO" ? (formaPagamentoDetalhe ?? null) : null;
 
   try {
-    await prisma.$transaction(async (tx) => {
+    await transacaoComTenant(async (tx) => {
       const cas = await tx.despesa.updateMany({
         where: { id: despesaId, status: statusLido },
         data: fecha

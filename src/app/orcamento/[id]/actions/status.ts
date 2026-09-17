@@ -7,7 +7,7 @@ import { after } from "next/server";
 import { randomBytes } from "node:crypto";
 import { put, del } from "@vercel/blob";
 import { exigirTokenBlobPrivado } from "@/lib/blob-assinado";
-import { prisma } from "@/lib/prisma";
+import { prisma, transacaoComTenant } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { exigirUsuarioAutenticado, hashToken } from "@/lib/auth/session";
 import { cifrar } from "@/lib/cripto";
@@ -320,7 +320,7 @@ export async function atualizarStatusOrcamento(
     // contra duplo clique (orcamentoId único em Pedido e Comissao).
     let aprovado: boolean;
     try {
-      aprovado = await prisma.$transaction(async (tx) => {
+      aprovado = await transacaoComTenant(async (tx) => {
         const cas = await tx.orcamento.updateMany({
           where: { id: orcamentoId, status: orcamento.status },
           data: { status: "APROVADO" },
@@ -514,7 +514,7 @@ export async function atualizarStatusOrcamento(
     // src/lib/orcamento-opcoes.ts). Base nunca é tocada. Precisa de
     // transação (a CAS sozinha, como as outras transições abaixo, não basta
     // mais aqui: tem uma segunda escrita condicionada ao mesmo sucesso).
-    const rejeitado = await prisma.$transaction(async (tx) => {
+    const rejeitado = await transacaoComTenant(async (tx) => {
       const cas = await tx.orcamento.updateMany({
         where: { id: orcamentoId, status: orcamento.status },
         data: { status: novoStatus },

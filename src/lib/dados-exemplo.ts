@@ -1,6 +1,6 @@
 import "server-only";
 
-import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import { prisma, transacaoComTenant, type PrismaTransactionClient } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import type { SegmentoGrafica } from "@/generated/prisma/enums";
 import { calcularItemOrcamento, type DadosItemOrcamento } from "@/lib/orcamento-precificacao";
@@ -915,7 +915,7 @@ export async function carregarDadosExemplo(graficaId: string): Promise<Resultado
   const pacotesSecundarios = await resolverPacotesSecundarios(graficaId);
 
   try {
-    await prisma.$transaction(async (tx) => {
+    await transacaoComTenant(async (tx) => {
       await tx.cliente.create({
         data: {
           graficaId,
@@ -978,7 +978,7 @@ export async function limparDadosExemplo(graficaId: string): Promise<ResultadoLi
   // deles.
   let catalogoRemovido = true;
   try {
-    await prisma.$transaction(async (tx) => {
+    await transacaoComTenant(async (tx) => {
       const itensCatalogoExemplo = await tx.itemCatalogo.findMany({
         where: { graficaId, nome: { startsWith: PREFIXO_EXEMPLO } },
         select: { id: true },

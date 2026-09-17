@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { hashToken } from "@/lib/auth/session";
+import { semTenant, definirTenantAtual } from "@/lib/tenant-context";
 import { formatoInstanteRealComHora } from "@/lib/data";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -18,7 +19,12 @@ export default async function ArtePublicaPage({
   // Rota pública, sem exigirUsuarioAutenticado() — mesmo padrão de
   // o/[token]/page.tsx: o token em si é a credencial. Hash do token (achado
   // da auditoria de segurança 2026-09-13), nunca gravado em claro.
-  const pedido = await prisma.pedido.findUnique({
+  //
+  // semTenant (achado da auditoria de segurança 2026-09-17, Fase B/RLS):
+  // resolver o token é cross-tenant por design — Pedido e o `cliente: true`
+  // aqui dentro já tocam RLS antes de sabermos a gráfica.
+  const pedido = await semTenant("resolver token público de arte", () =>
+    prisma.pedido.findUnique({
     where: { arteLinkTokenHash: hashToken(token) },
     include: {
       orcamento: {
@@ -38,7 +44,8 @@ export default async function ArtePublicaPage({
         },
       },
     },
-  });
+    })
+  );
 
   // Achado F5 — item com ArteItem própria conta como "tem arte pra
   // aprovar" mesmo quando o pedido nunca teve arteUrl de cabeçalho (feature
@@ -48,6 +55,7 @@ export default async function ArtePublicaPage({
   if (!pedido || (!pedido.arteUrl && itensComArte.length === 0)) {
     notFound();
   }
+  definirTenantAtual(pedido.graficaId);
 
   const ehPdf = pedido.arteUrl?.toLowerCase().endsWith(".pdf") ?? false;
 

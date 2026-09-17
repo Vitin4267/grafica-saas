@@ -129,6 +129,19 @@ const MODELOS_COM_GRAFICA_ID = new Set([
   "Usuario",
 ]);
 
+// Fase B do isolamento (RLS real no Postgres, 2026-09-17) — subconjunto de
+// MODELOS_COM_GRAFICA_ID acima que JÁ TEM `ENABLE ROW LEVEL SECURITY`
+// ligado no banco (ver migration em prisma/migrations e o plano em
+// ~/.claude/plans/deep-zooming-parasol.md). Começa só com o piloto de 5
+// tabelas — cada modelo aqui listado faz src/lib/prisma.ts embrulhar toda
+// operação solta (fora de transação) numa transação extra só pra setar
+// `app.grafica_id`/`app.bypass_rls` antes da query real, o que custa 1
+// round-trip a mais por chamada. Deliberadamente SEPARADO de
+// MODELOS_COM_GRAFICA_ID (que é sobre "tem a coluna", não "tem RLS ligado
+// no banco de verdade") — só cresce quando uma migration nova liga RLS
+// numa tabela a mais, nunca antes.
+export const MODELOS_COM_RLS_ATIVO = new Set(["Cliente", "ContaReceber", "DadosFiscaisGrafica", "Pedido", "Entrega"]);
+
 const OPERACOES_CREATE = new Set(["create", "createMany", "createManyAndReturn"]);
 const OPERACOES_ESCRITA_BULK = new Set(["updateMany", "updateManyAndReturn", "deleteMany"]);
 

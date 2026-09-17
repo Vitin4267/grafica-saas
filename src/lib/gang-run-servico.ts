@@ -1,5 +1,5 @@
 import "server-only";
-import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import { prisma, transacaoComTenant, type PrismaTransactionClient } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { paraDecimal } from "@/lib/pricing/decimal";
 import {
@@ -207,7 +207,7 @@ export async function combinarGrupoGangRun(params: {
     return { ok: false, mensagem: "Selecione ao menos dois itens pra combinar." };
   }
 
-  return prisma.$transaction(async (tx) => {
+  return transacaoComTenant(async (tx) => {
     const itens = await tx.filaGangRun.findMany({
       where: { id: { in: idsUnicos }, graficaId: params.graficaId },
     });

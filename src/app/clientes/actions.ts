@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { prisma, transacaoComTenant } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
@@ -913,7 +913,7 @@ export async function criarContatoCliente(
   // no schema) — desmarca qualquer outro principal do mesmo cliente antes de
   // marcar este, dentro da mesma transação pra não deixar 2 principais
   // simultâneos em caso de corrida.
-  await prisma.$transaction(async (tx) => {
+  await transacaoComTenant(async (tx) => {
     if (principal) {
       await tx.contatoCliente.updateMany({
         where: { clienteId, principal: true },
@@ -983,7 +983,7 @@ export async function atualizarContatoCliente(
   const { nome, cargo, departamento, email, telefone, whatsapp } = parsed.data;
   const principal = formData.get("principal") === "on";
 
-  await prisma.$transaction(async (tx) => {
+  await transacaoComTenant(async (tx) => {
     if (principal) {
       await tx.contatoCliente.updateMany({
         where: { clienteId: contato.clienteId, principal: true, id: { not: contatoId } },
@@ -1166,7 +1166,7 @@ export async function criarEnderecoCliente(
   // marcar este, dentro da mesma transação pra não deixar 2 padrão
   // simultâneos em caso de corrida. Mesmo mecanismo de
   // criarContatoCliente/principal acima, mas escopado também por `tipo`.
-  await prisma.$transaction(async (tx) => {
+  await transacaoComTenant(async (tx) => {
     if (padrao) {
       await tx.enderecoCliente.updateMany({
         where: { clienteId, tipo: validacaoTipo.tipo, padrao: true },
@@ -1268,7 +1268,7 @@ export async function atualizarEnderecoCliente(
   } = parsed.data;
   const padrao = formData.get("padrao") === "on";
 
-  await prisma.$transaction(async (tx) => {
+  await transacaoComTenant(async (tx) => {
     if (padrao) {
       await tx.enderecoCliente.updateMany({
         where: {

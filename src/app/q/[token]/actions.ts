@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { semTenant, definirTenantAtual } from "@/lib/tenant-context";
 import { hashToken } from "@/lib/auth/session";
 import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
 import { avancarStatusPedido } from "@/app/producao/status-transicao";
@@ -27,21 +28,28 @@ export async function avancarStatusQr(
 
   // Hash do token (achado da auditoria de segurança 2026-09-13), nunca
   // gravado em claro — ver comentário de Pedido.qrTokenHash no schema.
-  const pedido = await prisma.pedido.findUnique({
-    where: { qrTokenHash: hashToken(token) },
-    include: {
-      orcamento: {
-        include: {
-          cliente: true,
-          grafica: true,
-          itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
+  //
+  // semTenant (achado da auditoria de segurança 2026-09-17, Fase B/RLS):
+  // resolver o token é cross-tenant por design — ainda não sabemos a
+  // gráfica dona deste pedido neste ponto.
+  const pedido = await semTenant("resolver token público de QR de etiqueta", () =>
+    prisma.pedido.findUnique({
+      where: { qrTokenHash: hashToken(token) },
+      include: {
+        orcamento: {
+          include: {
+            cliente: true,
+            grafica: true,
+            itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
+          },
         },
       },
-    },
-  });
+    })
+  );
   if (!pedido) {
     return { ok: false, mensagem: "Pedido não encontrado." };
   }
+  definirTenantAtual(pedido.graficaId);
 
   // Mesma checagem de assinatura de confirmarEstagioPublico — sem sessão de
   // usuário aqui, então busca a assinatura da gráfica DONA do pedido pelo

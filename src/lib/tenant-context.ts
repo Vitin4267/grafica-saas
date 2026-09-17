@@ -70,3 +70,32 @@ export function semTenant<T>(motivo: string, fn: () => Promise<T>): Promise<T> {
 export function tenantAtual(): EstadoTenant | undefined {
   return contextoTenant.getStore();
 }
+
+// Segunda AsyncLocalStorage, independente da de identidade do tenant acima
+// — Fase B (RLS real, 2026-09-17). Marca que a transação Postgres ATUAL já
+// teve o runtime parameter (`app.grafica_id`/`app.bypass_rls`) setado via
+// `set_config(..., TRUE)` (ver o component `client.$transaction` em
+// src/lib/prisma.ts). Sem isso, cada operação individual dentro de uma
+// `prisma.$transaction(async (tx) => ...)` já aberta (este repo usa isso
+// pesado pra CAS de status — status-transicao.ts, entrega-transicao.ts,
+// checkout-reserva.ts) tentaria abrir uma transação ANINHADA nova só pra
+// setar de novo — Postgres/Prisma não suporta isso. O Prisma 7 instalado
+// não expõe nenhum sinal nativo de "esta operação já está dentro de uma
+// transação" pro hook `query.$allOperations` (confirmado contra
+// node_modules/@prisma/client/runtime/client.d.ts, tipo
+// `QueryOptionsCbArgs` — só tem `model`/`operation`/`args`/`query`), por
+// isso esse sinal precisa vir de um estado próprio, no mesmo espírito do
+// `EstadoTenant` acima.
+const dentroDeTransacaoConfigurada = new AsyncLocalStorage<true>();
+
+export function transacaoJaConfigurada(): boolean {
+  return dentroDeTransacaoConfigurada.getStore() === true;
+}
+
+// `.run()` — mesmo raciocínio de semTenant(): o component `client.$transaction`
+// TEM o callback que representa exatamente a transação (fn), então escopa
+// a marcação só a ela, revertendo sozinho ao sair (inclusive se `fn`
+// lançar).
+export function marcarTransacaoConfigurada<T>(fn: () => Promise<T>): Promise<T> {
+  return dentroDeTransacaoConfigurada.run(true, fn);
+}

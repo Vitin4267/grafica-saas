@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { hashToken } from "@/lib/auth/session";
+import { semTenant, definirTenantAtual } from "@/lib/tenant-context";
 import { Card } from "@/components/ui/Card";
 import { Logo } from "@/components/Logo";
 import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
@@ -24,14 +25,22 @@ export default async function ConfirmarEstagioPage({
   // intenção (ver confirmarEstagioPublico em ./actions.ts).
   // Hash do token (achado da auditoria de segurança 2026-09-13), nunca
   // gravado em claro — ver comentário de Pedido.producaoLinkTokenHash no schema.
-  const pedido = await prisma.pedido.findUnique({
-    where: { producaoLinkTokenHash: hashToken(token) },
-    include: { orcamento: { include: { cliente: true, grafica: true } } },
-  });
+  //
+  // semTenant (achado da auditoria de segurança 2026-09-17, Fase B/RLS):
+  // resolver o token é cross-tenant por design — Pedido e o `include:
+  // { cliente: true }` aqui dentro já tocam RLS antes de sabermos a
+  // gráfica.
+  const pedido = await semTenant("resolver token público de acompanhamento de pedido", () =>
+    prisma.pedido.findUnique({
+      where: { producaoLinkTokenHash: hashToken(token) },
+      include: { orcamento: { include: { cliente: true, grafica: true } } },
+    })
+  );
 
   if (!pedido) {
     notFound();
   }
+  definirTenantAtual(pedido.graficaId);
 
   // Achado A1 (Fase 1) — etapas atribuíveis DESTA gráfica (ver
   // EtapaGrafica), não mais a lista fixa.

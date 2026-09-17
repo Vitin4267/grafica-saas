@@ -33,6 +33,13 @@ jobs:
       # (achado ao abrir o PR #8, 2026-09-14: CI nunca tinha rodado testes que
       # tocam cripto.ts antes desta branch).
       ENCRYPTION_KEY: B4SkFfk7cy8Cv633i/pe36o3aHDUP91VTYi0rJFb+GE=
+      # Achado da auditoria de segurança 2026-09-17 (Fase B/RLS): o
+      # Postgres deste job roda como `postgres` (superuser), que ignora
+      # RLS por padrão — sem um role restrito próprio, src/lib/rls.test.ts
+      # passaria "verde" sem nunca testar a policy de verdade. Role criado
+      # no step "Cria role restrito..." abaixo, mesmos privilégios do
+      # `grafica_app` de produção (só CRUD, sem CREATE/ALTER/DROP TABLE).
+      RLS_TEST_DATABASE_URL: postgresql://ci_app_restrito:ci_app_restrito@localhost:5432/grafica_saas_test?schema=public
 
     steps:
       # Achado do Semgrep (SAST, 2026-09-17): tag mutável (@v4) pode ser
@@ -57,6 +64,22 @@ jobs:
       - run: npm run lint
 
       - run: npx prisma migrate deploy
+
+      # Achado da auditoria de segurança 2026-09-17 (Fase B/RLS) — mesmos
+      # privilégios do role `grafica_app` criado em produção (ver migration
+      # de menor privilégio): só CRUD, sem DDL nem gerenciar role. Roda
+      # DEPOIS do migrate deploy (as tabelas e as policies de RLS do piloto
+      # já existem nesse ponto). ubuntu-latest já traz `psql`.
+      - name: Cria role restrito pra testar RLS de verdade
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d grafica_saas_test -c "
+            CREATE ROLE ci_app_restrito WITH LOGIN PASSWORD 'ci_app_restrito' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;
+            GRANT USAGE ON SCHEMA public TO ci_app_restrito;
+            GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ci_app_restrito;
+            GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ci_app_restrito;
+          "
 
       - run: npm test
 
