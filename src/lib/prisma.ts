@@ -25,8 +25,16 @@ function construirSetConfigRaw(
     : client.$executeRaw`SELECT set_config('app.bypass_rls', 'on', TRUE)`;
 }
 
-function criarClient() {
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+// Exportado (achado da auditoria de segurança 2026-09-17, testando RLS de
+// verdade em CI): src/lib/rls.test.ts precisa de um client à parte,
+// plugado direto no role restrito de teste (RLS_TEST_DATABASE_URL), sem
+// depender do DATABASE_URL global do resto da suíte — senão testar RLS de
+// verdade exigiria trocar o DATABASE_URL de TODO o `npm test`, o que quebra
+// as ~86 fixtures de teste que criam Cliente/Pedido/etc. sem estabelecer
+// contexto de tenant (a maioria mocka autenticação). Parametrizado por
+// connectionString com fallback pro comportamento de sempre.
+export function criarClient(connectionString: string | undefined = process.env.DATABASE_URL) {
+  const adapter = new PrismaPg({ connectionString });
 
   // Timeouts default do Prisma pra transações interativas ($transaction com
   // callback) são maxWait: 2000ms e timeout: 5000ms — curtos demais aqui:
