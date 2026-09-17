@@ -109,7 +109,7 @@ describe("salvarParametros", () => {
         nome: "Teste",
         email: "teste@example.com",
         papel: "DONO",
-      } as any);
+      } as never);
 
       const formData = new FormData();
       formData.append("overheadPercent", "0.15");
@@ -190,7 +190,7 @@ describe("salvarParametros", () => {
         nome: "Teste",
         email: "teste@example.com",
         papel: "DONO",
-      } as any);
+      } as never);
 
       const formData = new FormData();
       formData.append("overheadPercent", "0.15");
@@ -257,7 +257,7 @@ describe("salvarParametros", () => {
         nome: "Teste",
         email: "teste@example.com",
         papel: "DONO",
-      } as any);
+      } as never);
 
       for (const paginasPorCadernoPadrao of ["2", "3", "6", "10"]) {
         const formData = new FormData();

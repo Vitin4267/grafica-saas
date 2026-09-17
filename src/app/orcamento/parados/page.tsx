@@ -35,6 +35,12 @@ export default async function OrcamentosParadosPage() {
   // ENVIADO que já foi respondido (aprovado/rejeitado troca de status junto
   // com a resposta, então isto é defensivo). enviadoEm <= corte é a mesma
   // conta de diasParado(enviadoEm) >= diasAlerta, só que feita no banco.
+  // react-hooks/purity (regra do eslint-config-next, pensada pra Client
+  // Component/React Compiler) marca Date.now() como "impuro durante a
+  // renderização" — mas isto aqui é um Server Component, roda uma vez por
+  // request no servidor, sem re-render concorrente (mesmo caso já tratado
+  // em configuracoes/assinatura/page.tsx).
+  // eslint-disable-next-line react-hooks/purity
   const corte = new Date(Date.now() - diasAlerta * 86_400_000);
   const orcamentosParados = await prisma.orcamento.findMany({
     where: {

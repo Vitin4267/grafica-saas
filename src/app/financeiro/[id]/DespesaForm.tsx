@@ -386,8 +386,8 @@ export function DespesaForm({
                   Valor variável a cada ocorrência
                 </span>
                 <span className="block text-xs text-slate-500">
-                  Pra conta que muda de valor (ex: luz, água) — cada ocorrência nova nasce "a
-                  confirmar" (R$ 0,00) até você editar o valor real.
+                  Pra conta que muda de valor (ex: luz, água) — cada ocorrência nova nasce &quot;a
+                  confirmar&quot; (R$ 0,00) até você editar o valor real.
                 </span>
               </span>
             </label>

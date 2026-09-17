@@ -83,7 +83,7 @@ export default async function RegrasComissaoPage() {
           <p className="mt-1 text-slate-500">
             Percentuais diferentes de comissão por vendedor, produto/
             categoria ou faixa de margem — além da taxa única de cada pessoa.
-            Deixe um filtro em branco pra "vale pra qualquer um" nessa
+            Deixe um filtro em branco pra &quot;vale pra qualquer um&quot; nessa
             dimensão.
           </p>
         </div>

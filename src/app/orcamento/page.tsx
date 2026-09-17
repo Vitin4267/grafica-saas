@@ -106,12 +106,19 @@ export default async function OrcamentoPage() {
         select: { diasAlertaOrcamentoParado: true },
       })
     )?.diasAlertaOrcamentoParado ?? 5;
+  // react-hooks/purity (regra do eslint-config-next, pensada pra Client
+  // Component/React Compiler) marca Date.now() como "impuro durante a
+  // renderização" — mas isto aqui é um Server Component, roda uma vez por
+  // request no servidor, sem re-render concorrente (mesmo caso já tratado
+  // em configuracoes/assinatura/page.tsx).
+  // eslint-disable-next-line react-hooks/purity
+  const corteOrcamentosParados = new Date(Date.now() - diasAlertaOrcamentoParado * 86_400_000);
   const totalOrcamentosParados = await prisma.orcamento.count({
     where: {
       graficaId: usuario.graficaId,
       status: "ENVIADO",
       respostaPublicaEm: null,
-      enviadoEm: { not: null, lte: new Date(Date.now() - diasAlertaOrcamentoParado * 86_400_000) },
+      enviadoEm: { not: null, lte: corteOrcamentosParados },
     },
   });
 

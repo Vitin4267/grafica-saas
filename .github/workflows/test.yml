@@ -44,6 +44,30 @@ jobs:
 
       - run: npm ci
 
+      # Achado da auditoria de segurança 2026-09-17: CI nunca rodava lint,
+      # então erro acumulava sem ninguém notar (28 erros pré-existentes até
+      # essa data, corrigidos na mesma sessão). Roda antes da suíte de
+      # testes (não depende do Postgres do job, falha rápido).
+      - run: npm run lint
+
       - run: npx prisma migrate deploy
 
       - run: npm test
+
+  sast:
+    runs-on: ubuntu-latest
+    # Achado da auditoria de segurança 2026-09-17: nenhuma análise estática
+    # de segurança rodava no CI. Semgrep via imagem oficial (não uma Action
+    # de terceiro com versão própria pra manter atualizada) com rulesets
+    # públicos — não precisa de conta/token do Semgrep. --error faz o job
+    # falhar se achar algo, pra não virar um scan que ninguém olha.
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - run: >-
+          semgrep scan --error
+          --config=p/security-audit
+          --config=p/owasp-top-ten
+          --config=p/typescript
+          --config=p/react

@@ -86,7 +86,7 @@ describe("salvarDadosPagamento (achado F6)", () => {
       nome: "Teste",
       email: "teste@example.com",
       papel: "DONO",
-    } as any);
+    } as never);
 
     const formData = new FormData();
     formData.append("chavePix", "contato@grafica.com.br");
@@ -130,7 +130,7 @@ describe("salvarDadosPagamento (achado F6)", () => {
       nome: "Teste",
       email: "teste@example.com",
       papel: "DONO",
-    } as any);
+    } as never);
 
     const formData = new FormData();
 
@@ -157,7 +157,7 @@ describe("salvarDadosPagamento (achado F6)", () => {
       nome: "Teste",
       email: "teste@example.com",
       papel: "DONO",
-    } as any);
+    } as never);
 
     const formData = new FormData();
     formData.append("chavePix", "11999998888");
@@ -196,7 +196,7 @@ describe("salvarSegmento (achado F9 — segmentosSecundarios)", () => {
       nome: "Teste",
       email: "teste@example.com",
       papel: "DONO",
-    } as any);
+    } as never);
 
     const formData = new FormData();
     formData.append("segmento", "OFFSET_COMERCIAL");
@@ -223,7 +223,7 @@ describe("salvarSegmento (achado F9 — segmentosSecundarios)", () => {
       nome: "Teste",
       email: "teste@example.com",
       papel: "DONO",
-    } as any);
+    } as never);
 
     const formData = new FormData();
     formData.append("segmento", "FLEXOGRAFIA");
@@ -248,7 +248,7 @@ describe("salvarSegmento (achado F9 — segmentosSecundarios)", () => {
       nome: "Teste",
       email: "teste@example.com",
       papel: "DONO",
-    } as any);
+    } as never);
 
     const formData = new FormData();
     formData.append("segmentosSecundarios", "MARCENARIA");
@@ -268,7 +268,7 @@ describe("salvarSegmento (achado F9 — segmentosSecundarios)", () => {
       nome: "Teste",
       email: "teste@example.com",
       papel: "DONO",
-    } as any);
+    } as never);
 
     const formData = new FormData();
     formData.append("segmentosSecundarios", "OUTRO");
@@ -287,7 +287,7 @@ describe("salvarSegmento (achado F9 — segmentosSecundarios)", () => {
       nome: "Teste",
       email: "teste@example.com",
       papel: "DONO",
-    } as any);
+    } as never);
 
     const resultado = await salvarSegmento(null, new FormData());
 

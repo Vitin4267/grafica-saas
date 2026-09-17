@@ -105,7 +105,7 @@ export function CamposPrecificacaoEtiquetaOrcamento({
 
       {divergeDaFichaTecnica && (
         <Alert variant="warning">
-          "Cores rótulo" + "Cores contra-rótulo" (ficha técnica, mais abaixo) somam {somaDescritiva}, mas
+          &quot;Cores rótulo&quot; + &quot;Cores contra-rótulo&quot; (ficha técnica, mais abaixo) somam {somaDescritiva}, mas
           a quantidade de cores usada no preço está em {quantidadeCoresNum}. Confira se é isso mesmo —
           divergência intencional acontece (ex: uma cor reaproveitada entre rótulo e contra-rótulo no
           mesmo clichê), mas costuma ser um campo que ficou desatualizado.

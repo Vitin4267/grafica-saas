@@ -156,10 +156,12 @@ export function ContaReceberLinha({
   // Achado A5 da Parte 4 — dias de atraso (mesmo cálculo de calcularAging em
   // src/lib/exportacao-financeira.ts, versão local só pra sugestão de UI:
   // não precisa da precisão de data-pura UTC exata, é sempre editável
-  // depois). <= 0 = ainda não venceu, sem sugestão.
-  const diasAtraso = Math.max(
-    0,
-    Math.round((Date.now() - new Date(conta.vencimento).getTime()) / (24 * 60 * 60 * 1000))
+  // depois). <= 0 = ainda não venceu, sem sugestão. Computado dentro de um
+  // inicializador preguiçoso de useState (não direto no corpo do
+  // componente) pra satisfazer react-hooks/purity — só roda 1x, na
+  // primeira renderização, igual valorMulta/valorJuros logo abaixo.
+  const [diasAtraso] = useState(() =>
+    Math.max(0, Math.round((Date.now() - new Date(conta.vencimento).getTime()) / (24 * 60 * 60 * 1000)))
   );
   const [valorMulta, setValorMulta] = useState(() => {
     if (diasAtraso <= 0 || multaAtrasoPercent <= 0) return "";
