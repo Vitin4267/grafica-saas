@@ -10,6 +10,13 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    # Achado do Semgrep (SAST, 2026-09-17): pacote recém-publicado pode ser
+    # malicioso ou instável (typosquat, conta comprometida) — espera 7 dias
+    # antes de propor update, dando tempo da comunidade/npm derrubar algo
+    # ruim antes de chegar aqui. GitHub já aplica 3 dias por padrão desde
+    # 14/07/2026; 7 é mais conservador, sem custo real pra um projeto solo.
+    cooldown:
+      default-days: 7
     # Agrupa updates de patch/minor num PR só, pra não inundar o repo —
     # major version sempre isolado (pode ter breaking change, precisa de
     # revisão própria, ex: o próprio Next.js já quebrou API entre versões
@@ -29,3 +36,5 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7

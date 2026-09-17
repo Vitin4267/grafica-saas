@@ -22,6 +22,13 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 const VERSAO_ATUAL = "v1";
 const ALGORITMO = "aes-256-gcm";
 const TAMANHO_IV_BYTES = 12; // recomendado pro GCM (96 bits)
+// Achado do Semgrep (SAST, 2026-09-17): sem authTagLength explícito, o
+// Node aceita um authTag mais curto do que o esperado na hora de decifrar
+// (verificação mais fraca contra forjar/truncar o tag). Fixar em 16 bytes
+// (128 bits, o tamanho que cipher.getAuthTag() já produz por padrão) faz
+// createDecipheriv REJEITAR de cara qualquer valor com tag de tamanho
+// diferente, em vez de só confiar no que veio salvo no banco.
+const TAMANHO_AUTH_TAG_BYTES = 16;
 
 function obterChave(): Buffer {
   const chaveBase64 = process.env.ENCRYPTION_KEY;
@@ -46,7 +53,7 @@ function obterChave(): Buffer {
 export function cifrar(texto: string): string {
   const chave = obterChave();
   const iv = randomBytes(TAMANHO_IV_BYTES);
-  const cipher = createCipheriv(ALGORITMO, chave, iv);
+  const cipher = createCipheriv(ALGORITMO, chave, iv, { authTagLength: TAMANHO_AUTH_TAG_BYTES });
   const cifrado = Buffer.concat([cipher.update(texto, "utf8"), cipher.final()]);
   const authTag = cipher.getAuthTag();
   return [VERSAO_ATUAL, iv.toString("base64"), authTag.toString("base64"), cifrado.toString("base64")].join(":");
@@ -65,7 +72,7 @@ export function decifrar(valor: string): string {
   const iv = Buffer.from(ivBase64, "base64");
   const authTag = Buffer.from(authTagBase64, "base64");
   const cifrado = Buffer.from(cifradoBase64, "base64");
-  const decipher = createDecipheriv(ALGORITMO, chave, iv);
+  const decipher = createDecipheriv(ALGORITMO, chave, iv, { authTagLength: TAMANHO_AUTH_TAG_BYTES });
   decipher.setAuthTag(authTag);
   const decifrado = Buffer.concat([decipher.update(cifrado), decipher.final()]);
   return decifrado.toString("utf8");
