@@ -79,6 +79,20 @@ describe("RLS piloto (Cliente) — mecanismo de app (definirTenantAtual + client
       const b = await criarGraficaComCliente();
       graficasCriadas.push(a.graficaId, b.graficaId);
 
+      // DIAGNÓSTICO TEMPORÁRIO — testa o mecanismo cru, sem passar pela
+      // extensão $allOperations, pra isolar se o problema é a policy do
+      // Postgres ou o wrapping em prisma.ts.
+      const [, diagnostico] = await prismaRls.$transaction([
+        prismaRls.$executeRaw`SELECT set_config('app.bypass_rls', 'on', TRUE)`,
+        prismaRls.$queryRaw<{ grafica: string | null; bypass: string | null }[]>`SELECT current_setting('app.grafica_id', TRUE) AS grafica, current_setting('app.bypass_rls', TRUE) AS bypass`,
+      ]);
+      console.log("DIAGNOSTICO bypass_rls (mesma transacao do set_config):", diagnostico);
+      const [, vistosCru] = await prismaRls.$transaction([
+        prismaRls.$executeRaw`SELECT set_config('app.bypass_rls', 'on', TRUE)`,
+        prismaRls.$queryRaw<{ id: string }[]>`SELECT id FROM clientes WHERE id = ANY(${[a.clienteId, b.clienteId]})`,
+      ]);
+      console.log("DIAGNOSTICO vistosCru (raw, bypass no mesmo batch):", vistosCru);
+
       const vistos = await semTenant("teste rls.test.ts — bypass", () =>
         prismaRls.cliente.findMany({ where: { id: { in: [a.clienteId, b.clienteId] } } })
       );
