@@ -22,7 +22,7 @@ function construirSetConfigRaw(
 ) {
   return estado.tipo === "tenant"
     ? client.$executeRaw`SELECT set_config('app.grafica_id', ${estado.graficaId}, TRUE)`
-    : client.$executeRaw`SELECT set_config('app.bypass_rls', 'on', TRUE)`;
+    : client.$executeRaw`SELECT set_config('app.bypass_rls', ${"on"}, TRUE)`;
 }
 
 // Exportado (achado da auditoria de segurança 2026-09-17, testando RLS de
