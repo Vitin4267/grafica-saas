@@ -1,6 +1,6 @@
 import "server-only";
 
-import { prisma } from "@/lib/prisma";
+import { prisma, transacaoComTenant } from "@/lib/prisma";
 import { ErroPrecificacao } from "./erros";
 import { resolverPrecoPapel } from "./papel";
 import type {
@@ -20,11 +20,27 @@ import type {
 export async function carregarParametrosTenant(graficaId: string): Promise<ParametrosTenant> {
   // Self-healing: se a gráfica ainda não tem parâmetros (ex: tenants criados antes
   // dessa feature), cria uma linha com os defaults do schema na primeira leitura.
-  const registro = await prisma.parametrosGrafica.upsert({
-    where: { graficaId },
-    update: {},
-    create: { graficaId },
-  });
+  //
+  // transacaoComTenant (não prisma.parametrosGrafica.upsert direto) — achado
+  // real de produção (2026-09-18, erro 42501 em /configuracoes logo depois
+  // do lote 2 do RLS): ParametrosGrafica nunca tinha sido exercitada sob RLS
+  // de verdade antes (só entrou no lote 2, o piloto não incluía). Não
+  // reproduzi o 42501 num script sequencial simples (o mecanismo isolado
+  // funciona), o que aponta pra alguma interação de concorrência real do
+  // Next.js (Server Components/`cache()`) que não replica fora dele — mas
+  // envolver a leitura de app.grafica_id numa transação explícita própria
+  // (1 leitura de tenantAtual(), 1 set_config, conexão fixa) é
+  // categoricamente mais robusto que depender do $allOperations reler o
+  // AsyncLocalStorage e abrir uma transação nova por trás dos panos pra
+  // cada chamada — mesmo padrão já usado com sucesso no resto do repo pra
+  // sequências de escrita sensíveis a isolamento de tenant.
+  const registro = await transacaoComTenant((tx) =>
+    tx.parametrosGrafica.upsert({
+      where: { graficaId },
+      update: {},
+      create: { graficaId },
+    })
+  );
 
   return {
     overheadPercent: Number(registro.overheadPercent),

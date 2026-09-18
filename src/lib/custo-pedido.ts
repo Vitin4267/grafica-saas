@@ -1,7 +1,7 @@
 import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 import type { SegmentoGrafica } from "@/generated/prisma/enums";
-import { prisma, type PrismaTransactionClient } from "@/lib/prisma";
+import { prisma, transacaoComTenant, type PrismaTransactionClient } from "@/lib/prisma";
 
 // Conjunto sugerido de categorias, POR PERFIL DE GRÁFICA (Grafica.segmento —
 // achado A6 da Parte 6 da auditoria de abrangência, 2026-08-27). "PADRAO" é
@@ -527,15 +527,21 @@ export async function garantirCategoriasCustoPadrao(graficaId: string): Promise<
   const existentes = await prisma.categoriaCusto.count({ where: { graficaId } });
   if (existentes > 0) return;
 
-  const grafica = await prisma.grafica.findUnique({ where: { id: graficaId }, select: { segmento: true } });
-  const categoriasSugeridas = CATEGORIAS_CUSTO_SUGERIDAS[grafica?.segmento ?? "PADRAO"];
+  // transacaoComTenant — mesma categoria de achado real de produção
+  // (2026-09-18) de src/lib/pricing/carregar.ts e
+  // src/lib/perfis-acesso-padrao.ts: CategoriaCusto só entrou no lote 2 do
+  // RLS, nunca tinha rodado sob RLS de verdade até hoje.
+  await transacaoComTenant(async (tx) => {
+    const grafica = await tx.grafica.findUnique({ where: { id: graficaId }, select: { segmento: true } });
+    const categoriasSugeridas = CATEGORIAS_CUSTO_SUGERIDAS[grafica?.segmento ?? "PADRAO"];
 
-  await prisma.categoriaCusto.createMany({
-    data: categoriasSugeridas.map((nome, indice) => ({
-      graficaId,
-      nome,
-      ordem: indice,
-    })),
+    await tx.categoriaCusto.createMany({
+      data: categoriasSugeridas.map((nome, indice) => ({
+        graficaId,
+        nome,
+        ordem: indice,
+      })),
+    });
   });
 }
 

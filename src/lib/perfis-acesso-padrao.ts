@@ -1,5 +1,5 @@
 import "server-only";
-import { prisma } from "@/lib/prisma";
+import { prisma, transacaoComTenant } from "@/lib/prisma";
 import type { FuncaoPerfil, ModuloPermissao } from "@/generated/prisma/enums";
 
 type PermissaoPerfilSugerida = {
@@ -95,20 +95,28 @@ export async function garantirPerfisAcessoPadrao(graficaId: string): Promise<voi
   const existentes = await prisma.perfilAcesso.count({ where: { graficaId } });
   if (existentes > 0) return;
 
-  for (const sugestao of PERFIS_ACESSO_PADRAO) {
-    await prisma.perfilAcesso.create({
-      data: {
-        graficaId,
-        nome: sugestao.nome,
-        funcaoBase: sugestao.funcaoBase,
-        permissoes: {
-          create: sugestao.permissoes.map((p) => ({
-            modulo: p.modulo,
-            podeVer: p.podeVer,
-            podeEditar: p.podeEditar,
-          })),
+  // transacaoComTenant (achado real de produção 2026-09-18, mesma categoria
+  // do fix em src/lib/pricing/carregar.ts — ver comentário completo lá)
+  // — PerfilAcesso só entrou no lote 2 do RLS, nunca tinha rodado sob RLS
+  // de verdade. Uma transação só pras 6 criações (em vez de 6 chamadas
+  // independentes, cada uma decidindo sozinha se embrulha) também evita
+  // ficar com metade dos cargos padrão criados se algo falhar no meio.
+  await transacaoComTenant(async (tx) => {
+    for (const sugestao of PERFIS_ACESSO_PADRAO) {
+      await tx.perfilAcesso.create({
+        data: {
+          graficaId,
+          nome: sugestao.nome,
+          funcaoBase: sugestao.funcaoBase,
+          permissoes: {
+            create: sugestao.permissoes.map((p) => ({
+              modulo: p.modulo,
+              podeVer: p.podeVer,
+              podeEditar: p.podeEditar,
+            })),
+          },
         },
-      },
-    });
-  }
+      });
+    }
+  });
 }
