@@ -110,6 +110,81 @@ describe("RLS piloto (Cliente) — mecanismo de app (definirTenantAtual + client
     }));
 });
 
+// Regressão do INCIDENTE de 2026-09-18 — aplicar o lote 2 do RLS (Usuario
+// incluso) derrubou login/sessão do site inteiro: obterUsuarioAtual()
+// (session.ts) faz prisma.sessao.findUnique({ include: { usuario } }) —
+// é A query que BOOTSTRAPA o tenant, então roda ANTES de qualquer
+// definirTenantAtual. O fix (semTenant ali) só funciona se o model do
+// TOPO da chamada (Sessao, não Usuario) também estiver em
+// MODELOS_COM_RLS_ATIVO — esqueci isso na primeira rodada do fix, o app
+// ficou fora do ar mais uma vez depois de um deploy que "deveria" ter
+// corrigido. Teste trava esse mecanismo pra nunca mais regredir em
+// silêncio.
+describe("RLS — bootstrap de sessão (Sessao->Usuario), regressão do incidente 2026-09-18", () => {
+  it("sem semTenant, sessao.usuario vem null (mesmo bug do incidente)", () =>
+    comContextoIsolado(async () => {
+      const a = await criarGraficaComCliente();
+      graficasCriadas.push(a.graficaId);
+      const s = sufixo();
+      const { usuarioId, tokenHash } = await semTenant("fixture — usuario+sessao", async () => {
+        const usuario = await prismaRls.usuario.create({
+          data: {
+            graficaId: a.graficaId,
+            nome: `Usuario RLS ${s}`,
+            email: `usuario-rls-${s}@example.com`,
+            senhaHash: "x",
+            papel: "DONO",
+          },
+        });
+        const tokenHash = `token-hash-${s}`;
+        await prismaRls.sessao.create({
+          data: { usuarioId: usuario.id, tokenHash, expiraEm: new Date(Date.now() + 60_000) },
+        });
+        return { usuarioId: usuario.id, tokenHash };
+      });
+
+      // Nenhum contexto de tenant estabelecido aqui — exatamente a
+      // situação de um cookie de sessão chegando do zero.
+      const sessao = await prismaRls.sessao.findUnique({
+        where: { tokenHash },
+        include: { usuario: true },
+      });
+      expect(sessao?.usuario ?? null).toBeNull();
+      void usuarioId;
+    }));
+
+  it("com semTenant (e Sessao no MODELOS_COM_RLS_ATIVO), sessao.usuario resolve certo", () =>
+    comContextoIsolado(async () => {
+      const a = await criarGraficaComCliente();
+      graficasCriadas.push(a.graficaId);
+      const s = sufixo();
+      const { usuarioId, tokenHash } = await semTenant("fixture — usuario+sessao", async () => {
+        const usuario = await prismaRls.usuario.create({
+          data: {
+            graficaId: a.graficaId,
+            nome: `Usuario RLS ${s}`,
+            email: `usuario-rls-2-${s}@example.com`,
+            senhaHash: "x",
+            papel: "DONO",
+          },
+        });
+        const tokenHash = `token-hash-2-${s}`;
+        await prismaRls.sessao.create({
+          data: { usuarioId: usuario.id, tokenHash, expiraEm: new Date(Date.now() + 60_000) },
+        });
+        return { usuarioId: usuario.id, tokenHash };
+      });
+
+      const sessao = await semTenant("resolver sessão por cookie — tenant ainda desconhecido", async () => {
+        return await prismaRls.sessao.findUnique({
+          where: { tokenHash },
+          include: { usuario: true },
+        });
+      });
+      expect(sessao?.usuario?.id).toBe(usuarioId);
+    }));
+});
+
 // Confirma diretamente contra o Postgres (client raro, sem NENHUMA
 // extensão do app) que a policy em si é fail-closed: sem NENHUM
 // app.grafica_id/app.bypass_rls setado na conexão, a tabela devolve zero

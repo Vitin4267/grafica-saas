@@ -194,6 +194,25 @@ export const MODELOS_COM_RLS_ATIVO = new Set([
   "EtapaTerceirizada",
   "FilaGangRun",
   "RetencaoContaReceber",
+
+  // Achado do INCIDENTE de 2026-09-18 (não do achado acima) — o fix do
+  // bug de /orcamento tinha um furo: adicionar `semTenant(...)` num call
+  // site (session.ts, login/actions.ts, registro/actions.ts) só funciona
+  // se o model do TOPO daquela chamada específica também estiver NESTE
+  // Set. `semTenant` estabelece "isento" no AsyncLocalStorage, mas é
+  // `$allOperations` (src/lib/prisma.ts) quem LÊ esse estado e de fato
+  // chama `construirSetConfigRaw` — e ele só faz isso quando
+  // `MODELOS_COM_RLS_ATIVO.has(model)` do TOPO da chamada é true. Sessao
+  // faltando aqui foi o motivo do fix de auth ter subido e continuado
+  // quebrado: prisma.sessao.findUnique({ include: { usuario } }) tem
+  // `model = "Sessao"`, não "Usuario" — sem Sessao aqui, o wrap nunca
+  // acontecia, bypass_rls nunca era setado, RLS de Usuario continuava
+  // negando a linha aninhada. Grafica entra pelo mesmo motivo: o
+  // deleteMany de conta abandonada em registro/actions.ts filtra por
+  // `usuarios: { every: {...} }` (relação pra dentro de Usuario) com
+  // `model = "Grafica"`.
+  "Sessao",
+  "Grafica",
 ]);
 
 const OPERACOES_CREATE = new Set(["create", "createMany", "createManyAndReturn"]);
