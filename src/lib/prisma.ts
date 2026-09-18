@@ -84,6 +84,19 @@ export function criarClient(connectionString: string | undefined = process.env.D
           // QueryOptionsCbArgs) — não expõe, por isso o sinal vem de
           // transacaoJaConfigurada() (AsyncLocalStorage própria).
           const estado = tenantAtual();
+          // DIAGNOSTICO TEMPORARIO (2026-09-18, incidente 42501 em
+          // /configuracoes e /usuarios) — se isto aparecer nos logs de
+          // produção, confirma que tenantAtual() está vindo undefined bem
+          // depois de exigirUsuarioAutenticado() já ter rodado na mesma
+          // requisição (achado real: RLS bloqueando escrita em
+          // parametros_grafica/perfis_acesso com "new row violates RLS
+          // policy", mesmo com login funcionando). Remover depois de
+          // confirmar a causa.
+          if (!estado && model && MODELOS_COM_RLS_ATIVO.has(model)) {
+            console.error(
+              `[DIAGNOSTICO RLS] tenantAtual() undefined pra ${model}.${operation} — contexto de tenant perdido nesta requisição.`
+            );
+          }
           if (!estado || !model || !MODELOS_COM_RLS_ATIVO.has(model) || transacaoJaConfigurada()) {
             return query(args);
           }
@@ -131,13 +144,23 @@ export type PrismaTransactionClient = Parameters<Parameters<typeof prisma.$trans
 // (`$executeRaw`, `$transaction`), mesmo custando tocar nos call sites que
 // afetam tabela com RLS.
 export function transacaoComTenant<T>(fn: (tx: PrismaTransactionClient) => Promise<T>): Promise<T> {
+  // Achado real de produção (2026-09-18, incidente 42501 em /configuracoes
+  // e /usuarios) — `tenantAtual()` lido AQUI, na função síncrona, ANTES de
+  // `prisma.$transaction(...)` cruzar seu próprio limite assíncrono
+  // (abertura de transação/conexão), e capturado por closure — em vez de
+  // relido de dentro do callback, depois de já ter atravessado esse
+  // limite. Não confirmei 100% que a releitura de dentro do callback era a
+  // causa exata (não reproduzi fora de produção), mas essa é a garantia
+  // mais forte disponível: `estadoCapturado` não depende de o
+  // AsyncLocalStorage sobreviver a mais nenhuma travessia assíncrona depois
+  // deste ponto.
+  const estadoCapturado = tenantAtual();
   return prisma.$transaction(async (tx) => {
-    const estado = tenantAtual();
-    if (!estado) {
+    if (!estadoCapturado) {
       return fn(tx);
     }
     return marcarTransacaoConfigurada(async () => {
-      await construirSetConfigRaw(tx, estado);
+      await construirSetConfigRaw(tx, estadoCapturado);
       return fn(tx);
     });
   });
