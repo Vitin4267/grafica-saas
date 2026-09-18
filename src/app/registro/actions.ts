@@ -2,7 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { after } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, transacaoComTenant } from "@/lib/prisma";
+import { semTenant } from "@/lib/tenant-context";
 import { hashPassword } from "@/lib/auth/password";
 import { criarSessao } from "@/lib/auth/session";
 import { tentarRegistrarCadastro } from "@/lib/auth/rate-limit";
@@ -122,28 +123,36 @@ export async function registrar(
   const trialExpiraEm = new Date();
   trialExpiraEm.setUTCDate(trialExpiraEm.getUTCDate() + TRIAL_DIAS);
 
-  const usuario = await prisma.$transaction(async (tx) => {
-    const grafica = await tx.grafica.create({
-      data: { nome: graficaNome, slug },
-    });
+  // semTenant (achado da auditoria de segurança 2026-09-17, Fase B/RLS —
+  // Usuario entrou no lote de expansão do RLS): registro cria a GRÁFICA em
+  // si, então não existe tenant nenhum estabelecido ainda pra este
+  // request — mesma categoria de bypass dos crons e da resolução de token
+  // público (o próprio objetivo desta transação é fazer o tenant passar a
+  // existir). transacaoComTenant por dentro aplica o bypass na transação.
+  const usuario = await semTenant("criar gráfica nova no registro — ainda não existe tenant", () =>
+    transacaoComTenant(async (tx) => {
+      const grafica = await tx.grafica.create({
+        data: { nome: graficaNome, slug },
+      });
 
-    // O relógio do trial começa no cadastro, não na primeira vez que o DONO
-    // abre /configuracoes/assinatura — senão alguém que nunca visita essa
-    // tela ficaria com trial "infinito" por omissão.
-    await tx.assinaturaGrafica.create({
-      data: { graficaId: grafica.id, status: "TRIALING", trialExpiraEm },
-    });
+      // O relógio do trial começa no cadastro, não na primeira vez que o DONO
+      // abre /configuracoes/assinatura — senão alguém que nunca visita essa
+      // tela ficaria com trial "infinito" por omissão.
+      await tx.assinaturaGrafica.create({
+        data: { graficaId: grafica.id, status: "TRIALING", trialExpiraEm },
+      });
 
-    return tx.usuario.create({
-      data: {
-        graficaId: grafica.id,
-        nome,
-        email,
-        senhaHash,
-        papel: "DONO",
-      },
-    });
-  });
+      return tx.usuario.create({
+        data: {
+          graficaId: grafica.id,
+          nome,
+          email,
+          senhaHash,
+          papel: "DONO",
+        },
+      });
+    })
+  );
 
   await criarSessao(usuario.id);
 

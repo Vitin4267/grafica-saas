@@ -1,5 +1,5 @@
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { prisma, transacaoComTenant } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import {
   TRANSICOES_VALIDAS,
@@ -126,7 +126,7 @@ export async function avancarSituacaoTerceirizacao(
     dados.valorFinal !== undefined ? dados.valorFinal : etapa.valorFinal !== null ? Number(etapa.valorFinal) : null;
 
   try {
-    await prisma.$transaction(async (tx) => {
+    await transacaoComTenant(async (tx) => {
       const resultado = await tx.etapaTerceirizada.updateMany({
         where: { id: etapa.id, situacao: situacaoAnterior },
         data: dadosUpdate as Prisma.EtapaTerceirizadaUpdateManyMutationInput,

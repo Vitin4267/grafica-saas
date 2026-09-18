@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { prisma, transacaoComTenant } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
@@ -2006,7 +2006,7 @@ export async function lancarEntradaCompra(
   const agora = new Date();
 
   try {
-    await prisma.$transaction(async (tx) => {
+    await transacaoComTenant(async (tx) => {
       // Compare-and-swap: só grava se estoqueAtual ainda for o valor lido
       // acima (ver ErroEstoqueDivergente) — mesmo princípio de
       // salvarCatalogo/salvarVariantesMateriaPrima.
@@ -2120,7 +2120,7 @@ export async function lancarSaidaManual(
   const quantidadeDec = new D(quantidade);
 
   try {
-    await prisma.$transaction(async (tx) => {
+    await transacaoComTenant(async (tx) => {
       // Sem controle de estoque (estoqueAtual null) — grava o histórico da
       // saída mesmo assim, só não mexe num número que não existe (mesmo
       // princípio de "sem controle de estoque" já usado na baixa automática).
@@ -2219,7 +2219,7 @@ export async function lancarAjusteInventario(
   }
 
   try {
-    await prisma.$transaction(async (tx) => {
+    await transacaoComTenant(async (tx) => {
       // Compare-and-swap — ver ErroEstoqueDivergente. Especialmente
       // importante aqui: o "novo estoque" digitado é um valor ABSOLUTO
       // baseado na contagem física que o operador viu quando abriu o form —

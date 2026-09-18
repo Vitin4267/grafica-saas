@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { prisma, transacaoComTenant } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
@@ -137,7 +137,7 @@ export async function lancarMovimentacaoContaPrepaga(
   const valorDec = new D(valor);
   const agora = new Date();
 
-  const movimentacao = await prisma.$transaction(async (tx) => {
+  const movimentacao = await transacaoComTenant(async (tx) => {
     const mov = await tx.movimentacaoContaPrepaga.create({
       data: {
         contaId: conta.id,
