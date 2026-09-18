@@ -1,5 +1,10 @@
 # Auditoria de código — GrafPro (2026-09-12) — Parte 9
 
+> **RECONCILIADO 2026-09-18** — os 12 achados abaixo (N19-N31) estão todos
+> construídos. N19-N23 já tinham marcador; N24-N31 foram resolvidos no mesmo
+> commit `1684868` do dia seguinte (junto com os 19 achados do motor de
+> preço) e só não tinham o marcador escrito no doc.
+>
 > Escopo: só os 10 commits de financeiro/produção construídos DEPOIS da Parte 8
 > (`auditoria-codigo-2026-09-02.md`, fechada). Lente = "o que está ERRADO"
 > (bug de lógica real), não "o que falta". Achados confirmados por leitura de
@@ -126,7 +131,7 @@ omissão dessas é um número errado em relatório ou um efeito colateral não d
 
 ## Achados 🟡
 
-### N24 — Cancelar pedido não cancela `ContaReceber` em `EM_COBRANCA` (mesmo buraco do N2 da Parte 8, por um status novo)
+### N24 — Cancelar pedido não cancela `ContaReceber` em `EM_COBRANCA` (mesmo buraco do N2 da Parte 8, por um status novo) — CONSTRUÍDO (commit 1684868, 2026-09-13)
 - **Domínio:** Produção / Financeiro (Fin-A5 × correção do N2)
 - **Arquivo:** `src/app/producao/actions.ts:454-456`
 - **Severidade:** 🟡 média
@@ -138,7 +143,7 @@ omissão dessas é um número errado em relatório ou um efeito colateral não d
   `PARCIAL` fica de fora (tem dinheiro real recebido); `EM_COBRANCA` sem nenhuma
   baixa não tem essa justificativa — só foi esquecido.
 
-### N25 — Pagamento lançado na tela do orçamento nunca concilia com conta `EM_COBRANCA`
+### N25 — Pagamento lançado na tela do orçamento nunca concilia com conta `EM_COBRANCA` — CONSTRUÍDO (commit 1684868, 2026-09-13)
 - **Domínio:** Financeiro (Fin-A5)
 - **Arquivo:** `src/app/orcamento/[id]/actions/pagamentos.ts:205` e `:233`
 - **Severidade:** 🟡 média
@@ -150,7 +155,7 @@ omissão dessas é um número errado em relatório ou um efeito colateral não d
   `EM_COBRANCA` aberta indefinidamente. Ironicamente é a conta com **maior**
   probabilidade de ser paga fora do fluxo normal que deixa de conciliar.
 
-### N26 — Retorno de etapa por "erro de arte" não invalida a aprovação de arte do cliente
+### N26 — Retorno de etapa por "erro de arte" não invalida a aprovação de arte do cliente — CONSTRUÍDO (commit 1684868, 2026-09-13)
 - **Domínio:** Produção (interação Prod-D2 `d16dc0a` × gates de arte)
 - **Arquivo:** `src/app/producao/retorno-etapa-actions.ts:110-140`; gates em `src/app/producao/status-transicao.ts:571` e `:587`
 - **Severidade:** 🟡 média
@@ -164,7 +169,7 @@ omissão dessas é um número errado em relatório ou um efeito colateral não d
   aprovação de qualidade ao `ApontamentoEtapa` da passagem atual "pra retrabalho não
   herdar aprovação de rodada anterior" — o gate de arte herda.
 
-### N27 — Uma `RegraComissao` genérica (todos os filtros vazios) derruba `Usuario.comissaoPercent` de todo mundo e fura o opt-in do vendedor sem cadastro
+### N27 — Uma `RegraComissao` genérica (todos os filtros vazios) derruba `Usuario.comissaoPercent` de todo mundo e fura o opt-in do vendedor sem cadastro — CONSTRUÍDO (commit 1684868, 2026-09-13)
 - **Domínio:** Financeiro (A12, commit `4dd9327`)
 - **Arquivo:** `src/lib/comissao-aprovacao.ts:162-171`; especificidade em `src/lib/comissao.ts:~100`
 - **Severidade:** 🟡 média
@@ -179,7 +184,7 @@ omissão dessas é um número errado em relatório ou um efeito colateral não d
   mas a regra genérica (usuarioId=null) casa com `usuarioAlvo=null` e passa a gerar
   `Comissao` pra todo `Orcamento.vendedor` texto-livre.
 
-### N28 — `ordem` de cronograma de entrega = contagem atual, sem renumerar na remoção, contra um `@@unique` → P2002 não tratado
+### N28 — `ordem` de cronograma de entrega = contagem atual, sem renumerar na remoção, contra um `@@unique` → P2002 não tratado — CONSTRUÍDO (commit 1684868, 2026-09-13)
 - **Domínio:** Orçamento (B3, commit `632aa62`)
 - **Arquivo:** `src/app/orcamento/[id]/actions/entrega-programada.ts:88`; `prisma/schema/09-orcamento.prisma:870` (`@@unique([orcamentoId, ordem])`)
 - **Severidade:** 🟡 média
@@ -190,7 +195,7 @@ omissão dessas é um número errado em relatório ou um efeito colateral não d
   action, sem `try/catch` (compare com o cuidado de `ehViolacaoDeUnicidade` em
   `despesa-recorrente.ts:149`). O usuário leva um erro de aplicação num fluxo trivial.
 
-### N29 — Cronograma de entrega é validado só na escrita; mudar os itens do orçamento depois deixa a promessa acima do vendido
+### N29 — Cronograma de entrega é validado só na escrita; mudar os itens do orçamento depois deixa a promessa acima do vendido — CONSTRUÍDO (commit 1684868, 2026-09-13)
 - **Domínio:** Orçamento (B3)
 - **Arquivo:** `src/lib/orcamento-entrega-programada.ts:35-50`; consumo em `src/lib/pdf/mapear-dados.ts` e `src/app/o/[token]/page.tsx`
 - **Severidade:** 🟡 média
@@ -204,7 +209,7 @@ omissão dessas é um número errado em relatório ou um efeito colateral não d
   então a referência de validação já é um número sem significado em orçamento
   multi-linha.
 
-### N30 — Item precificado pelo modelo SIMPLES entra na receita do card de overhead mas contribui 0 de overhead cobrado
+### N30 — Item precificado pelo modelo SIMPLES entra na receita do card de overhead mas contribui 0 de overhead cobrado — CONSTRUÍDO (commit 1684868, 2026-09-13)
 - **Domínio:** Financeiro (Fin-A2)
 - **Arquivo:** `src/lib/cobertura-overhead-db.ts:63-70` e `:85-100`
 - **Severidade:** 🟡 média
@@ -217,7 +222,7 @@ omissão dessas é um número errado em relatório ou um efeito colateral não d
   relatório está medindo cobertura de um mecanismo que aquela gráfica não usa, sem
   dizer isso em lugar nenhum da tela.
 
-### N31 — Juros/multa recebidos entram na DRE mas não no caixa: `Pagamento.valor` continua limitado ao saldo do principal
+### N31 — Juros/multa recebidos entram na DRE mas não no caixa: `Pagamento.valor` continua limitado ao saldo do principal — CONSTRUÍDO (commit 1684868, 2026-09-13)
 - **Domínio:** Financeiro (Fin-A5)
 - **Arquivo:** `src/app/financeiro/contas-receber/actions.ts:259-292`; consumo em `src/lib/dre-query.ts:88-95`
 - **Severidade:** 🟡 média

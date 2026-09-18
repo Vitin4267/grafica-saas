@@ -167,6 +167,33 @@ export const MODELOS_COM_RLS_ATIVO = new Set([
   "RegraComissao",
   "CategoriaCusto",
   "CustoPedido",
+
+  // Achado real de produção (2026-09-18, Sentry pegou em /orcamento) —
+  // categoria DIFERENTE dos nomes acima. Estes 6 models NÃO têm (nem vão
+  // ganhar) RLS na própria tabela — entram aqui só porque cada um faz
+  // include/select aninhado pra dentro de Cliente/Pedido/ContaReceber (RLS
+  // já ativo em produção desde o piloto). O $allOperations só embrulha o
+  // model do TOPO da chamada — sem entrar aqui, a query roda sem
+  // app.grafica_id setado, a policy de RLS nega a linha aninhada, e o
+  // Prisma devolve null onde o schema promete um objeto obrigatório
+  // (mesmo mecanismo do bug do /orcamento, ver commit que introduziu este
+  // comentário). Achados confirmados lendo cada call site até o consumo
+  // (não só o include): CreditoCliente→cliente (creditos-clientes/page.tsx),
+  // SolicitacaoCompra→pedido→orcamento→cliente (compras/[id]/page.tsx,
+  // guardado com "&&", mas escondia silenciosamente o link do pedido),
+  // Ferramental→cliente (ferramentais/page.tsx, idem, mostrava "Da gráfica"
+  // errado pro dono de um ferramental que É do cliente), EtapaTerceirizada→
+  // pedido→orcamento→cliente/filialId (alerta-atraso.ts, crasha dentro de
+  // um after() de webhook; terceirizacao-nfe-actions.ts, crasha emitindo
+  // NF-e de remessa), FilaGangRun→pedido→orcamento→cliente (gang-run-servico.ts,
+  // crasha a fila de Gang Run inteira), RetencaoContaReceber→contaReceber
+  // (contas-receber/actions.ts, crasha excluindo retenção de imposto).
+  "CreditoCliente",
+  "SolicitacaoCompra",
+  "Ferramental",
+  "EtapaTerceirizada",
+  "FilaGangRun",
+  "RetencaoContaReceber",
 ]);
 
 const OPERACOES_CREATE = new Set(["create", "createMany", "createManyAndReturn"]);
