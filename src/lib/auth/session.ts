@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { SESSION_COOKIE_NAME } from "./constants";
 import { obterIpRequisicao } from "./ip";
-import { definirTenantAtual } from "@/lib/tenant-context";
+import { definirTenantAtual, semTenant } from "@/lib/tenant-context";
 
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 7; // 7 dias
 
@@ -62,10 +62,23 @@ export const obterUsuarioAtual = cache(async () => {
   if (!tokenBruto) return null;
 
   const tokenHash = hashToken(tokenBruto);
-  const sessao = await prisma.sessao.findUnique({
-    where: { tokenHash },
-    include: { usuario: { include: { grafica: { include: { assinatura: true } } } } },
-  });
+  // Achado real de produção (2026-09-18, tirou o app do ar assim que o
+  // lote 2 do RLS foi aplicado) — esta é A query que BOOTSTRAPA o tenant:
+  // ninguém chama definirTenantAtual antes dela, porque é dela que se
+  // descobre o graficaId (usuario.graficaId, logo abaixo). Sem semTenant,
+  // ela rodava sem app.grafica_id setado; Usuario (RLS ativo desde o lote
+  // 2) negava a linha aninhada, `sessao.usuario` virava null, e
+  // `sessao.usuario.desativadoEm` explodia — em TODA página autenticada
+  // do app, pra todo mundo. Mesma categoria de bypass do registro
+  // (src/app/registro/actions.ts) e da resolução de token público: tenant
+  // genuinamente desconhecido neste ponto, é EXATAMENTE pra isso que
+  // bypass_rls existe.
+  const sessao = await semTenant("resolver sessão por cookie — tenant ainda desconhecido", () =>
+    prisma.sessao.findUnique({
+      where: { tokenHash },
+      include: { usuario: { include: { grafica: { include: { assinatura: true } } } } },
+    })
+  );
 
   // desativadoEm preenchido = funcionário removido (ver comentário do campo
   // no schema): tratado exatamente como sessão inválida/expirada, não como

@@ -7,6 +7,7 @@ import { hashToken } from "@/lib/auth/session";
 import { tokenResetValido } from "@/lib/auth/token-reset";
 import { senhaSchema } from "@/lib/auth/validation";
 import { hashPassword } from "@/lib/auth/password";
+import { semTenant } from "@/lib/tenant-context";
 
 export type RedefinirSenhaResult = { ok: boolean; mensagem: string };
 
@@ -39,20 +40,27 @@ export async function redefinirSenha(
 
   const senhaHash = await hashPassword(senha);
 
-  await prisma.$transaction([
-    prisma.usuario.update({
-      where: { id: tokenReset.usuarioId },
-      data: { senhaHash },
-    }),
-    prisma.tokenResetSenha.update({
-      where: { id: tokenReset.id },
-      data: { usadoEm: new Date() },
-    }),
-    // Se a senha vazou e havia sessão ativa, redefinir a senha derruba
-    // esse acesso na hora — mesmo princípio de revogação já documentado
-    // no model Sessao.
-    prisma.sessao.deleteMany({ where: { usuarioId: tokenReset.usuarioId } }),
-  ]);
+  // semTenant (achado real de produção 2026-09-18, mesma categoria de
+  // login/esqueci-senha) — link de reset é acessado sem sessão nenhuma;
+  // ninguém chamou definirTenantAtual nesta cadeia. Sem isso o
+  // prisma.usuario.update abaixo não acha a linha sob RLS (Usuario ativo
+  // desde o lote 2) e explode com "Record not found".
+  await semTenant("redefinir senha via token — sem sessão, tenant desconhecido", () =>
+    prisma.$transaction([
+      prisma.usuario.update({
+        where: { id: tokenReset.usuarioId },
+        data: { senhaHash },
+      }),
+      prisma.tokenResetSenha.update({
+        where: { id: tokenReset.id },
+        data: { usadoEm: new Date() },
+      }),
+      // Se a senha vazou e havia sessão ativa, redefinir a senha derruba
+      // esse acesso na hora — mesmo princípio de revogação já documentado
+      // no model Sessao.
+      prisma.sessao.deleteMany({ where: { usuarioId: tokenReset.usuarioId } }),
+    ])
+  );
 
   redirect("/login?senhaRedefinida=1");
 }

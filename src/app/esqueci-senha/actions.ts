@@ -11,6 +11,7 @@ import { loginSchema } from "@/lib/auth/validation";
 import { resolverOrigemPublica } from "@/lib/url-publica";
 import { dispararEventoEmail } from "@/lib/email/webhook-email";
 import { templateResetSenha } from "@/lib/email/templates";
+import { semTenant } from "@/lib/tenant-context";
 
 export type SolicitarResetResult = { ok: boolean; mensagem: string };
 
@@ -49,10 +50,15 @@ export async function solicitarResetSenha(
     return { ok: false, mensagem: MENSAGEM_BLOQUEIO };
   }
 
-  const usuario = await prisma.usuario.findUnique({
-    where: { email },
-    include: { grafica: { select: { corPrimaria: true } } },
-  });
+  // semTenant (achado real de produção 2026-09-18, mesma categoria de
+  // src/app/login/actions.ts) — reset de senha também descobre o tenant
+  // pelo e-mail, antes de qualquer sessão existir.
+  const usuario = await semTenant("reset de senha — descobrindo o tenant a partir do e-mail", () =>
+    prisma.usuario.findUnique({
+      where: { email },
+      include: { grafica: { select: { corPrimaria: true } } },
+    })
+  );
 
   if (usuario) {
     const tokenBruto = gerarTokenBruto();

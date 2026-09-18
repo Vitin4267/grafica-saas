@@ -82,7 +82,16 @@ export async function registrar(
 
   const { graficaNome, nome, email, senha } = parsed.data;
 
-  let emailExistente = await prisma.usuario.findUnique({ where: { email } });
+  // semTenant (achado real de produção 2026-09-18, mesma categoria do
+  // bloco de criação mais abaixo) — checar e-mail duplicado também roda
+  // ANTES de qualquer tenant existir. Sem isso, prisma.usuario.findUnique
+  // sempre devolvia null sob RLS (Usuario ativo desde o lote 2) —
+  // silencioso, não crashava, mas deixava cadastrar o MESMO e-mail duas
+  // vezes (a checagem de duplicidade nunca achava ninguém).
+  let emailExistente = await semTenant(
+    "checar e-mail duplicado no registro — tenant ainda desconhecido",
+    () => prisma.usuario.findUnique({ where: { email } })
+  );
 
   // Conta nunca verificada (ninguém confirmou o código de 6 dígitos) e
   // parada há mais de 24h: trata como abandonada e libera o e-mail. Sem
@@ -97,19 +106,21 @@ export async function registrar(
     const contaAbandonada =
       Date.now() - emailExistente.createdAt.getTime() > VINTE_QUATRO_HORAS_MS;
     if (contaAbandonada) {
-      // deleteMany (não delete): não lança se outra requisição concorrente do
-      // mesmo e-mail já apagou a gráfica (dois cadastros simultâneos), e a
-      // condição `usuarios.every.emailVerificadoEm = null` garante que a
-      // gráfica não seja apagada se o dono legítimo acabou de verificar o
-      // e-mail na janela de corrida. Reconsulto depois pra refletir o estado
-      // real: se ainda existir (ninguém apagou / virou verificada), bloqueia.
-      await prisma.grafica.deleteMany({
-        where: {
-          id: emailExistente.graficaId,
-          usuarios: { every: { emailVerificadoEm: null } },
-        },
+      await semTenant("liberar e-mail de conta abandonada no registro — tenant ainda desconhecido", async () => {
+        // deleteMany (não delete): não lança se outra requisição concorrente do
+        // mesmo e-mail já apagou a gráfica (dois cadastros simultâneos), e a
+        // condição `usuarios.every.emailVerificadoEm = null` garante que a
+        // gráfica não seja apagada se o dono legítimo acabou de verificar o
+        // e-mail na janela de corrida. Reconsulto depois pra refletir o estado
+        // real: se ainda existir (ninguém apagou / virou verificada), bloqueia.
+        await prisma.grafica.deleteMany({
+          where: {
+            id: emailExistente!.graficaId,
+            usuarios: { every: { emailVerificadoEm: null } },
+          },
+        });
+        emailExistente = await prisma.usuario.findUnique({ where: { email } });
       });
-      emailExistente = await prisma.usuario.findUnique({ where: { email } });
     }
   }
 

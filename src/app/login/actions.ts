@@ -9,6 +9,7 @@ import { obterIpRequisicao } from "@/lib/auth/ip";
 import { loginSchema } from "@/lib/auth/validation";
 import { verificarTurnstile } from "@/lib/turnstile";
 import { ehConflitoDeSerializacao } from "@/lib/prisma-conflito";
+import { semTenant } from "@/lib/tenant-context";
 
 const MENSAGEM_BLOQUEIO = "Muitas tentativas de login. Aguarde alguns minutos e tente novamente.";
 
@@ -59,7 +60,14 @@ export async function login(
     return { ok: false, mensagem: MENSAGEM_BLOQUEIO };
   }
 
-  const usuario = await prisma.usuario.findUnique({ where: { email } });
+  // semTenant (achado real de produção 2026-09-18, mesma categoria do
+  // bootstrap de sessão em src/lib/auth/session.ts) — login É o ponto que
+  // DESCOBRE o tenant a partir do e-mail; não dá pra saber o graficaId
+  // antes de achar o Usuario. Sem isso, RLS (Usuario ativo desde o lote 2)
+  // nega a linha e ninguém consegue logar.
+  const usuario = await semTenant("login — descobrindo o tenant a partir do e-mail", () =>
+    prisma.usuario.findUnique({ where: { email } })
+  );
 
   const senhaValida = await verifyPassword(
     usuario?.senhaHash ?? HASH_FANTASMA,
