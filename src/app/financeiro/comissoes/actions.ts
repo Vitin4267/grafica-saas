@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { prisma, transacaoComTenant } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
@@ -72,7 +72,7 @@ export async function marcarComissaoPaga(
 
   const agora = new Date();
   try {
-    await prisma.$transaction(async (tx) => {
+    await transacaoComTenant(async (tx) => {
       // Compare-and-swap: o updateMany só marca como PAGA se o status ainda
       // for PENDENTE. Sem isso, duas requisições concorrentes (duplo clique,
       // duas abas, dois dispositivos) passariam ambas pela leitura acima

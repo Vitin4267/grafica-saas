@@ -1,5 +1,5 @@
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { prisma, transacaoComTenant } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import type { PapelUsuario } from "@/generated/prisma/enums";
 import { D, type Dec } from "@/lib/pricing/decimal";
@@ -432,7 +432,7 @@ export async function avancarStatusCompra(
           : null;
       const custoTotalDesteLoteDec = custoUnitarioDec !== null ? custoUnitarioDec.times(quantidadeDec) : null;
 
-      await prisma.$transaction(async (tx) => {
+      await transacaoComTenant(async (tx) => {
         const casStatus = await tx.solicitacaoCompra.updateMany({
           where: { id: solicitacao.id, status: statusAnterior },
           data: dadosUpdate as Prisma.SolicitacaoCompraUpdateManyMutationInput,

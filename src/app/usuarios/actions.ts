@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath, updateTag } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { prisma, transacaoComTenant } from "@/lib/prisma";
 import { exigirUsuarioAutenticado } from "@/lib/auth/session";
 import { exigirAssinaturaAtiva } from "@/lib/auth/assinatura";
 import { exigirEmailVerificado } from "@/lib/auth/email-verificacao";
@@ -75,7 +75,7 @@ export async function criarUsuario(
         })
       : [];
 
-  const novoUsuario = await prisma.$transaction(async (tx) => {
+  const novoUsuario = await transacaoComTenant(async (tx) => {
     const criado = await tx.usuario.create({
       data: {
         graficaId: usuario.graficaId,

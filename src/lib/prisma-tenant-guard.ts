@@ -140,7 +140,34 @@ const MODELOS_COM_GRAFICA_ID = new Set([
 // MODELOS_COM_GRAFICA_ID (que é sobre "tem a coluna", não "tem RLS ligado
 // no banco de verdade") — só cresce quando uma migration nova liga RLS
 // numa tabela a mais, nunca antes.
-export const MODELOS_COM_RLS_ATIVO = new Set(["Cliente", "ContaReceber", "DadosFiscaisGrafica", "Pedido", "Entrega"]);
+// Lote 2 (2026-09-18) — expansão pra 15 tabelas a mais depois do piloto de
+// 5 confirmado estável em produção. ItemCatalogo tem uma nuance: seu
+// `graficaId` é NULLABLE (null = catálogo mestre compartilhado entre TODAS
+// as gráficas, preenchido = item privado — ver comentário no schema,
+// 06-catalogo.prisma) — a policy de tenant_isolation dela é diferente das
+// outras por causa disso (ver migration.sql do lote 2, item ESPECIAL).
+export const MODELOS_COM_RLS_ATIVO = new Set([
+  "Cliente",
+  "ContaReceber",
+  "DadosFiscaisGrafica",
+  "Pedido",
+  "Entrega",
+  "ParametrosGrafica",
+  "Filial",
+  "Orcamento",
+  "Fornecedor",
+  "ItemCatalogo",
+  "ItemGrafica",
+  "Usuario",
+  "PerfilAcesso",
+  "ContaFinanceira",
+  "Despesa",
+  "ContaPrepaga",
+  "Comissao",
+  "RegraComissao",
+  "CategoriaCusto",
+  "CustoPedido",
+]);
 
 const OPERACOES_CREATE = new Set(["create", "createMany", "createManyAndReturn"]);
 const OPERACOES_ESCRITA_BULK = new Set(["updateMany", "updateManyAndReturn", "deleteMany"]);
