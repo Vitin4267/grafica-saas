@@ -1,12 +1,70 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient, Prisma } from "@/generated/prisma/client";
-import { conferirIsolamentoTenant, MODELOS_COM_RLS_ATIVO } from "@/lib/prisma-tenant-guard";
+import { conferirIsolamentoTenant, extrairGraficaIds, MODELOS_COM_RLS_ATIVO } from "@/lib/prisma-tenant-guard";
 import {
   tenantAtual,
   transacaoJaConfigurada,
   marcarTransacaoConfigurada,
   type EstadoTenant,
 } from "@/lib/tenant-context";
+
+// INCIDENTE 2026-09-18 — confirmado em produção via log de diagnóstico
+// (não em teste local, nem em CI): tenantAtual() vem undefined pra TODA
+// query RLS-ativa em TODA página, mesmo bem depois de
+// exigirUsuarioAutenticado() já ter chamado definirTenantAtual() na MESMA
+// requisição. AsyncLocalStorage.enterWith() não está sobrevivendo à
+// travessia entre o fim de exigirUsuarioAutenticado() e o resto do corpo
+// da página/action neste runtime (Next.js/Turbopack no Vercel) — suspeita
+// forte (não 100% confirmada): a transpilação do Turbopack pra async/await
+// quebra a cadeia de continuação que async_hooks precisa rastrear. Trocar
+// enterWith por um `.run()` que envolva a página inteira exigiria reescrever
+// centenas de call sites (mesmo motivo documentado em tenant-context.ts pra
+// não ter feito isso desde o início) — inviável sob incidente ativo.
+//
+// Fallback: quando NÃO há estado ambiente, tenta extrair graficaId direto
+// de args.where/args.data — o mesmo valor que o guard da Fase A
+// (prisma-tenant-guard.ts) já lê pra conferir VALOR. Cobre o caso
+// disparado pelos logs (Cliente/ItemGrafica/Orcamento/Usuario/
+// ParametrosGrafica — todos com `where: { graficaId }` ou
+// `data: { graficaId }` direto, o idioma dominante do repo). NÃO cobre o
+// caso "query esqueceu de escopar completamente" (a lacuna que a Fase B
+// existe pra fechar) — mas esse gap já é PRÉ-EXISTENTE e documentado (Fase
+// A nunca cobriu isso sozinha), e o mecanismo ambiente está 100% quebrado
+// agora mesmo: usar o graficaId da própria query é estritamente melhor que
+// negar toda leitura/escrita legítima, que é o que está acontecendo hoje.
+// Achado rodando a suíte inteira com o fallback ligado pra TODA operação
+// (2026-09-18): quebrou `custos_pedido_pedidoId_fkey` num teste — uma
+// operação de escrita (custoPedido.create) que roda DENTRO de um
+// `prisma.$transaction(async (tx) => {...})` RAW (não via
+// transacaoComTenant, então transacaoJaConfigurada() não protege) ganhou o
+// fallback, abriu SUA PRÓPRIA base.$transaction([...]) SEPARADA — saiu da
+// transação externa, e o Pedido criado alguns statements antes (na
+// transação de fora, ainda não commitada) ficou invisível pra ela. `prisma.
+// $transaction()` raw sem transacaoComTenant é o padrão dominante do repo
+// pra sequências de escrita atômicas (status-transicao.ts e afins) — nunca
+// tinha esse risco antes porque o fallback não existia (tenantAtual()
+// sempre undefined = wrap sempre pulado = tudo ficava mesmo na transação
+// de fora). Escopar o fallback só pra LEITURA elimina o risco: leitura
+// nunca precisa ficar atômica com escrita de fora, e é exatamente onde
+// está o sintoma relatado (listas vazias, não escrita corrompida).
+const OPERACOES_LEITURA = new Set([
+  "findMany",
+  "findFirst",
+  "findFirstOrThrow",
+  "findUnique",
+  "findUniqueOrThrow",
+  "count",
+  "aggregate",
+  "groupBy",
+]);
+
+function extrairGraficaIdDosArgs(args: { where?: unknown; data?: unknown } & Record<string, unknown>): string | null {
+  const doWhere = args.where ? extrairGraficaIds(args.where) : [];
+  const doData = args.data ? extrairGraficaIds(args.data) : [];
+  const candidatos = [...new Set([...doWhere, ...doData])];
+  if (candidatos.length !== 1) return null; // ausente, ambíguo, ou forma não-comparável
+  return candidatos[0];
+}
 
 // Achado da auditoria de segurança (2026-09-17) — Fase B (RLS real no
 // Postgres, ver plano em ~/.claude/plans/deep-zooming-parasol.md). Runtime
@@ -83,20 +141,23 @@ export function criarClient(connectionString: string | undefined = process.env.D
           // $allOperations (ver node_modules/@prisma/client/runtime/client.d.ts,
           // QueryOptionsCbArgs) — não expõe, por isso o sinal vem de
           // transacaoJaConfigurada() (AsyncLocalStorage própria).
-          const estado = tenantAtual();
-          // DIAGNOSTICO TEMPORARIO (2026-09-18, incidente 42501 em
-          // /configuracoes e /usuarios) — se isto aparecer nos logs de
-          // produção, confirma que tenantAtual() está vindo undefined bem
-          // depois de exigirUsuarioAutenticado() já ter rodado na mesma
-          // requisição (achado real: RLS bloqueando escrita em
-          // parametros_grafica/perfis_acesso com "new row violates RLS
-          // policy", mesmo com login funcionando). Remover depois de
-          // confirmar a causa.
-          if (!estado && model && MODELOS_COM_RLS_ATIVO.has(model)) {
-            console.error(
-              `[DIAGNOSTICO RLS] tenantAtual() undefined pra ${model}.${operation} — contexto de tenant perdido nesta requisição.`
-            );
+          let estado = tenantAtual();
+
+          // Fallback do INCIDENTE 2026-09-18 — confirmado em produção
+          // (log de diagnóstico anterior a este commit): tenantAtual()
+          // vem undefined pra TODA query RLS-ativa em TODA página, mesmo
+          // bem depois de definirTenantAtual() já ter rodado na mesma
+          // requisição. enterWith() não sobrevive à travessia entre o fim
+          // de exigirUsuarioAutenticado() e o resto da página/action neste
+          // runtime — ver extrairGraficaIdDosArgs acima pro raciocínio
+          // completo e o trade-off de segurança aceito.
+          if (!estado && model && MODELOS_COM_RLS_ATIVO.has(model) && OPERACOES_LEITURA.has(operation)) {
+            const graficaIdDosArgs = extrairGraficaIdDosArgs(args);
+            if (graficaIdDosArgs) {
+              estado = { tipo: "tenant", graficaId: graficaIdDosArgs };
+            }
           }
+
           if (!estado || !model || !MODELOS_COM_RLS_ATIVO.has(model) || transacaoJaConfigurada()) {
             return query(args);
           }

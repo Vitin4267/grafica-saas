@@ -228,7 +228,7 @@ const OPERACOES_ESCRITA_BULK = new Set(["updateMany", "updateManyAndReturn", "de
 // qualquer outra forma de operador (in/not/gt...) conta como PRESENTE mas
 // não participa da checagem de VALOR (não dá pra reduzir com segurança a
 // um "bate/não bate" contra um tenant só).
-function extrairGraficaIds(valor: unknown, profundidade = 0): string[] {
+export function extrairGraficaIds(valor: unknown, profundidade = 0): string[] {
   if (profundidade > 4 || valor === null || typeof valor !== "object") return [];
   const encontrados: string[] = [];
   for (const [chave, item] of Object.entries(valor as Record<string, unknown>)) {

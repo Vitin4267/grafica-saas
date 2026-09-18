@@ -1,6 +1,7 @@
 import "server-only";
 
 import { prisma, transacaoComTenant } from "@/lib/prisma";
+import { definirTenantAtual } from "@/lib/tenant-context";
 import { ErroPrecificacao } from "./erros";
 import { resolverPrecoPapel } from "./papel";
 import type {
@@ -21,19 +22,18 @@ export async function carregarParametrosTenant(graficaId: string): Promise<Param
   // Self-healing: se a gráfica ainda não tem parâmetros (ex: tenants criados antes
   // dessa feature), cria uma linha com os defaults do schema na primeira leitura.
   //
-  // transacaoComTenant (não prisma.parametrosGrafica.upsert direto) — achado
-  // real de produção (2026-09-18, erro 42501 em /configuracoes logo depois
-  // do lote 2 do RLS): ParametrosGrafica nunca tinha sido exercitada sob RLS
-  // de verdade antes (só entrou no lote 2, o piloto não incluía). Não
-  // reproduzi o 42501 num script sequencial simples (o mecanismo isolado
-  // funciona), o que aponta pra alguma interação de concorrência real do
-  // Next.js (Server Components/`cache()`) que não replica fora dele — mas
-  // envolver a leitura de app.grafica_id numa transação explícita própria
-  // (1 leitura de tenantAtual(), 1 set_config, conexão fixa) é
-  // categoricamente mais robusto que depender do $allOperations reler o
-  // AsyncLocalStorage e abrir uma transação nova por trás dos panos pra
-  // cada chamada — mesmo padrão já usado com sucesso no resto do repo pra
-  // sequências de escrita sensíveis a isolamento de tenant.
+  // Achado real de produção (2026-09-18, incidente 42501 em /configuracoes)
+  // — confirmado nos logs: tenantAtual() vem undefined aqui mesmo com
+  // definirTenantAtual() já tendo rodado bem mais cedo na mesma requisição
+  // (enterWith() não sobrevive à travessia neste runtime). Escrita não pode
+  // usar o fallback de extrair graficaId dos args (ver prisma.ts,
+  // OPERACOES_LEITURA) — quebraria a atomicidade de quem chama isto de
+  // dentro de uma transação raw própria. Fix: reafirma o tenant NA HORA,
+  // usando o graficaId que esta função já recebe como parâmetro — sem
+  // nenhum await entre esta chamada e a leitura síncrona de tenantAtual()
+  // dentro de transacaoComTenant, então não há travessia assíncrona pra
+  // perder o contexto de novo.
+  definirTenantAtual(graficaId);
   const registro = await transacaoComTenant((tx) =>
     tx.parametrosGrafica.upsert({
       where: { graficaId },

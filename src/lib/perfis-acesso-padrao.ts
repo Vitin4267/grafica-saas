@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma, transacaoComTenant } from "@/lib/prisma";
+import { definirTenantAtual } from "@/lib/tenant-context";
 import type { FuncaoPerfil, ModuloPermissao } from "@/generated/prisma/enums";
 
 type PermissaoPerfilSugerida = {
@@ -95,12 +96,13 @@ export async function garantirPerfisAcessoPadrao(graficaId: string): Promise<voi
   const existentes = await prisma.perfilAcesso.count({ where: { graficaId } });
   if (existentes > 0) return;
 
-  // transacaoComTenant (achado real de produção 2026-09-18, mesma categoria
-  // do fix em src/lib/pricing/carregar.ts — ver comentário completo lá)
-  // — PerfilAcesso só entrou no lote 2 do RLS, nunca tinha rodado sob RLS
-  // de verdade. Uma transação só pras 6 criações (em vez de 6 chamadas
-  // independentes, cada uma decidindo sozinha se embrulha) também evita
-  // ficar com metade dos cargos padrão criados se algo falhar no meio.
+  // definirTenantAtual + transacaoComTenant (achado real de produção
+  // 2026-09-18, ver comentário completo em src/lib/pricing/carregar.ts) —
+  // reafirma o tenant NA HORA com o graficaId já recebido como parâmetro,
+  // sem depender de contexto estabelecido mais cedo na requisição. Uma
+  // transação só pras 6 criações também evita ficar com metade dos cargos
+  // padrão criados se algo falhar no meio.
+  definirTenantAtual(graficaId);
   await transacaoComTenant(async (tx) => {
     for (const sugestao of PERFIS_ACESSO_PADRAO) {
       await tx.perfilAcesso.create({

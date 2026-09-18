@@ -2,6 +2,7 @@ import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 import type { SegmentoGrafica } from "@/generated/prisma/enums";
 import { prisma, transacaoComTenant, type PrismaTransactionClient } from "@/lib/prisma";
+import { definirTenantAtual } from "@/lib/tenant-context";
 
 // Conjunto sugerido de categorias, POR PERFIL DE GRÁFICA (Grafica.segmento —
 // achado A6 da Parte 6 da auditoria de abrangência, 2026-08-27). "PADRAO" é
@@ -527,10 +528,11 @@ export async function garantirCategoriasCustoPadrao(graficaId: string): Promise<
   const existentes = await prisma.categoriaCusto.count({ where: { graficaId } });
   if (existentes > 0) return;
 
-  // transacaoComTenant — mesma categoria de achado real de produção
-  // (2026-09-18) de src/lib/pricing/carregar.ts e
-  // src/lib/perfis-acesso-padrao.ts: CategoriaCusto só entrou no lote 2 do
-  // RLS, nunca tinha rodado sob RLS de verdade até hoje.
+  // definirTenantAtual + transacaoComTenant — mesma categoria de achado
+  // real de produção (2026-09-18) de src/lib/pricing/carregar.ts e
+  // src/lib/perfis-acesso-padrao.ts: reafirma o tenant na hora, com o
+  // graficaId já recebido como parâmetro.
+  definirTenantAtual(graficaId);
   await transacaoComTenant(async (tx) => {
     const grafica = await tx.grafica.findUnique({ where: { id: graficaId }, select: { segmento: true } });
     const categoriasSugeridas = CATEGORIAS_CUSTO_SUGERIDAS[grafica?.segmento ?? "PADRAO"];
