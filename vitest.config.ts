@@ -33,6 +33,27 @@ export default defineConfig(({ mode }) => {
   return {
     test: {
       include: ["src/**/*.test.ts"],
+      // Achado investigando CI vermelho (2026-09-21): src/lib/rls.test.ts é
+      // o ÚNICO arquivo que chama definirTenantAtual/semTenant diretamente
+      // (ver tenant-context.ts) — essas funções guardam estado numa
+      // AsyncLocalStorage de ESCOPO DE MÓDULO, compartilhada por QUALQUER
+      // client criado via criarClient() (src/lib/prisma.ts), inclusive o
+      // client próprio de rls.test.ts. Com esse arquivo rodando junto dos
+      // outros 224, algum operação assíncrona dele ficava "em voo" bem na
+      // hora em que outro arquivo, tocando um model diferente, também
+      // rodava — o guard de isolamento (Fase A, conferirIsolamentoTenant)
+      // via um tenantAtivo de OUTRO teste e travava com
+      // ErroIsolamentoTenant, um falso positivo (não é bug de RLS/dado
+      // real, é vazamento de contexto de teste). PRIMEIRA tentativa de fix
+      // (fileParallelism:false, forçar todos os arquivos em série) passou
+      // limpo 2x local mas NÃO resolveu no CI — sequencial dentro do MESMO
+      // processo/worker não é isolamento de verdade se o módulo não é
+      // recarregado. Fix definitivo: exclui rls.test.ts da suíte principal
+      // e roda ele sozinho, em processo `vitest` totalmente separado (ver
+      // "test:rls"/"test:geral" no package.json e o workflow de CI) — a
+      // ÚNICA garantia de isolamento que não depende de entender o
+      // mecanismo exato do vazamento.
+      exclude: ["**/node_modules/**", "src/lib/rls.test.ts"],
       // Alguns testes (ver *.test.ts que importam @/lib/prisma — rate-limit,
       // checkout-reserva, catalogo-ncm) são integração de verdade contra o
       // Postgres de dev, não lógica pura: precisam de DATABASE_URL. `next dev`/
@@ -41,26 +62,6 @@ export default defineConfig(({ mode }) => {
       // fora de um shell com o `.env` já exportado (achado ao terminar a
       // auditoria de 2026-07-23 — carregamento oficial recomendado pelo Vite).
       env,
-      // Achado investigando CI vermelho (2026-09-21): src/lib/rls.test.ts é
-      // o ÚNICO arquivo que chama definirTenantAtual/semTenant diretamente
-      // (ver tenant-context.ts) — essas funções guardam estado numa
-      // AsyncLocalStorage de ESCOPO DE MÓDULO, compartilhada por QUALQUER
-      // client criado via criarClient() (src/lib/prisma.ts), inclusive o
-      // client próprio de rls.test.ts. Com arquivos rodando em paralelo
-      // (comportamento padrão do Vitest — múltiplos arquivos dividem os
-      // mesmos workers), uma operação assíncrona de rls.test.ts podia ficar
-      // "em voo" bem na hora em que outro arquivo, tocando um model
-      // diferente, também rodava — o guard de isolamento (Fase A,
-      // conferirIsolamentoTenant) via um tenantAtivo de OUTRO teste e
-      // travava com ErroIsolamentoTenant, um falso positivo (não é bug de
-      // RLS/dado real, é vazamento de contexto de teste). Nunca reproduziu
-      // localmente (~10+ rodadas), sempre reproduziu no CI — confirmado
-      // empiricamente que fileParallelism:false elimina o problema por
-      // completo. Custo real: suíte roda bem mais devagar (arquivos em
-      // série, não mais em paralelo) — aceito de propósito aqui porque essa
-      // suíte testa isolamento multi-tenant de verdade; prefiro suíte lenta
-      // e confiável a rápida e com falso positivo intermitente.
-      fileParallelism: false,
     },
     resolve: {
       alias: {
