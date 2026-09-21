@@ -339,6 +339,17 @@ export async function atualizarStatusOrcamento(
     // público aprovando enquanto o painel rejeita) poderiam ambas passar e a
     // última venceria, deixando um Pedido órfão. upsert continua idempotente
     // contra duplo clique (orcamentoId único em Pedido e Comissao).
+    // Achado investigando produção quebrada (2026-09-21) — mesma classe do
+    // achado itemCatalogo (ver comentário mais acima nesta função): o CAS
+    // abaixo escopa só por id+status, sem graficaId no where — se
+    // tenantAtual() já tiver se perdido a essa altura, transacaoComTenant
+    // não tem o que capturar, nenhum set_config é aplicado, e a policy de
+    // RLS de Orcamento silenciosamente devolve count:0 pra QUALQUER UPDATE
+    // (não só pra um id de outro tenant) — o código interpreta isso como
+    // "outra pessoa já mudou o status", uma falha de RLS disfarçada de
+    // conflito de concorrência real. Reafirma o contexto aqui, imediatamente
+    // antes do uso.
+    definirTenantAtual(usuario.graficaId);
     let aprovado: boolean;
     try {
       aprovado = await transacaoComTenant(async (tx) => {
@@ -535,6 +546,9 @@ export async function atualizarStatusOrcamento(
     // src/lib/orcamento-opcoes.ts). Base nunca é tocada. Precisa de
     // transação (a CAS sozinha, como as outras transições abaixo, não basta
     // mais aqui: tem uma segunda escrita condicionada ao mesmo sucesso).
+    // Mesmo achado de RLS/CAS falso-positivo do branch APROVADO acima —
+    // reafirma o contexto aqui também.
+    definirTenantAtual(usuario.graficaId);
     const rejeitado = await transacaoComTenant(async (tx) => {
       const cas = await tx.orcamento.updateMany({
         where: { id: orcamentoId, status: orcamento.status },
@@ -573,6 +587,13 @@ export async function atualizarStatusOrcamento(
       data.toleranciaTiragemPercent = null;
     }
 
+    // Mesmo achado de RLS/CAS falso-positivo dos branches APROVADO/REJEITADO
+    // acima — este é justamente o caminho ENVIADO/RASCUNHO, o que reproduziu
+    // em produção ("Marcar como enviado" travando com "já teve o status
+    // alterado" mesmo em orçamento intocado). updateMany solto (sem
+    // transacaoComTenant) só reforça a necessidade: sem contexto fresco
+    // aqui, NENHUM set_config é aplicado nesta chamada.
+    definirTenantAtual(usuario.graficaId);
     const cas = await prisma.orcamento.updateMany({
       where: { id: orcamentoId, status: orcamento.status },
       data,
