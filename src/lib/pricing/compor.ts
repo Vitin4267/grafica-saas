@@ -87,25 +87,35 @@ export function comporPreco(params: {
     paraDecimal(params.parametros.incrementoArredondamento)
   );
 
-  // precoUnitario é a fonte única de verdade pro arredondamento: arredonda pra
-  // 2 casas aqui (mesma precisão da coluna Decimal(12,2) do Postgres) e deriva
-  // precoFinal multiplicando o valor já arredondado pela quantidade. Assim as
-  // duas colunas sempre batem entre si quando gravadas no banco — inclusive
-  // pra validação de unitário × quantidade da NF-e. Ver calcularPreco em
-  // src/lib/orcamento.ts, que segue a mesma ordem.
+  // precoUnitario é a fonte única de verdade pro arredondamento: arredonda
+  // aqui e deriva precoFinal multiplicando o valor já arredondado pela
+  // quantidade. Assim as duas colunas sempre batem entre si quando gravadas
+  // no banco — inclusive pra validação de unitário × quantidade da NF-e. Ver
+  // calcularPreco em src/lib/orcamento.ts, que segue a mesma ordem.
+  //
+  // Achado da auditoria de precificação (2026-09-21) — 4 casas (não 2):
+  // arredondar o unitário pra 2 casas ANTES de multiplicar pela quantidade
+  // perdia precisão real em produto de alto volume/baixo valor unitário (ex:
+  // etiqueta a R$0,068/un virava R$0,07/un — 60.000 unidades erravam o total
+  // em ~3%, R$120 num pedido real). OrcamentoItem.precoUnitario/precoTotal e
+  // ItemGrafica.precoVenda agora são Decimal(12,4) (ver migration
+  // 20260921120000_precisao_preco_4_casas) — mesma precisão que
+  // precoSugeridoUnitario e o módulo de Compras já usavam, e o teto que a
+  // própria NF-e aceita no valor unitário (src/lib/focus-nfe.ts). Exibição
+  // continua arredondando pra 2 casas só na hora de mostrar (src/lib/moeda.ts),
+  // nunca no valor calculado/salvo aqui.
   //
   // Achado 4 da auditoria do motor M2/Offset (2026-09-12) — CORRIGIDO:
-  // `.toDecimalPlaces(2)` sozinho usa o rounding padrão de `D`
-  // (ROUND_HALF_UP), que pode arredondar PRA BAIXO (ex: 0,12345 → 0,12) e
-  // cancelar silenciosamente o ceil que `arredondarParaIncremento` acabou de
-  // fazer duas linhas acima — o preço final podia sair abaixo do alvo
-  // comercial (chegou a perder 2,8% do preço num cenário real de tiragem
-  // alta) e, no limite, zerar o unitário e abortar o orçamento inteiro em
-  // PRECO_ABAIXO_DO_CUSTO mesmo com preço bruto positivo. `ROUND_UP`
-  // (arredonda pra cima, nunca pra baixo) preserva a garantia que o ceil de
-  // `precoFinalAlvo` já tinha dado: `precoFinal` nunca fica abaixo do alvo
-  // arredondado no incremento comercial.
-  const precoUnitario = precoFinalAlvo.div(params.quantidade).toDecimalPlaces(2, D.ROUND_UP);
+  // `.toDecimalPlaces(4)` sozinho usa o rounding padrão de `D`
+  // (ROUND_HALF_UP), que pode arredondar PRA BAIXO e cancelar silenciosamente
+  // o ceil que `arredondarParaIncremento` acabou de fazer duas linhas acima —
+  // o preço final podia sair abaixo do alvo comercial e, no limite, zerar o
+  // unitário e abortar o orçamento inteiro em PRECO_ABAIXO_DO_CUSTO mesmo com
+  // preço bruto positivo. `ROUND_UP` (arredonda pra cima, nunca pra baixo)
+  // preserva a garantia que o ceil de `precoFinalAlvo` já tinha dado:
+  // `precoFinal` nunca fica abaixo do alvo arredondado no incremento
+  // comercial.
+  const precoUnitario = precoFinalAlvo.div(params.quantidade).toDecimalPlaces(4, D.ROUND_UP);
   const precoFinal = precoUnitario.times(params.quantidade);
 
   if (precoFinal.lt(custoDireto)) {

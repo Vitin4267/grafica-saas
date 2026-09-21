@@ -1034,6 +1034,6 @@ export async function recalcularTotalOrcamento(
   const incremento = paraDecimal(parametros?.incrementoArredondamento.toString() ?? "0.10");
   const total = aplicarPisoDoPedido(somaItens, pedidoMinimo, incremento);
 
-  await tx.orcamento.update({ where: { id: orcamentoId }, data: { total: total.toFixed(2) } });
+  await tx.orcamento.update({ where: { id: orcamentoId }, data: { total: total.toFixed(4) } });
   return total;
 }

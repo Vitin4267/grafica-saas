@@ -64,23 +64,25 @@ describe("comporPreco", () => {
     expect(resultado.precoFinal.toNumber()).toBe(1);
   });
 
-  it("precoUnitario × quantidade bate com precoFinal mesmo quando a divisão não fecha redondo (evita item.precoUnitario × item.quantidade ≠ item.precoTotal depois de gravar em Decimal(12,2))", () => {
+  it("precoUnitario × quantidade bate com precoFinal mesmo quando a divisão não fecha redondo (evita item.precoUnitario × item.quantidade ≠ item.precoTotal depois de gravar em Decimal(12,4))", () => {
     const resultado = comporPreco({
       quantidade: 7,
       custoBase: paraDecimal(10),
       parametros: PARAMS,
     });
 
-    // precoUnitario já deve sair arredondado pra 2 casas (fonte da verdade),
-    // e precoFinal deve ser o unitário × quantidade — não uma divisão à parte.
-    expect(resultado.precoUnitario.toNumber()).toBe(2.23);
-    expect(resultado.precoFinal.toNumber()).toBe(15.61);
+    // precoUnitario já deve sair arredondado pra 4 casas (fonte da verdade —
+    // achado da auditoria de precificação de 2026-09-21, ver comentário em
+    // compor.ts: 2 casas perdia precisão real em produto de alto volume), e
+    // precoFinal deve ser o unitário × quantidade — não uma divisão à parte.
+    expect(resultado.precoUnitario.toNumber()).toBe(2.2286);
+    expect(resultado.precoFinal.toNumber()).toBe(15.6002);
 
-    // Simula o que o Postgres faz ao gravar cada coluna Decimal(12,2)
-    // independentemente: arredonda as duas pra 2 casas e confere que ainda batem.
-    const unitarioGravado = Number(resultado.precoUnitario.toFixed(2));
-    const totalGravado = Number(resultado.precoFinal.toFixed(2));
-    expect(Math.round(unitarioGravado * 7 * 100) / 100).toBe(totalGravado);
+    // Simula o que o Postgres faz ao gravar cada coluna Decimal(12,4)
+    // independentemente: arredonda as duas pra 4 casas e confere que ainda batem.
+    const unitarioGravado = Number(resultado.precoUnitario.toFixed(4));
+    const totalGravado = Number(resultado.precoFinal.toFixed(4));
+    expect(Math.round(unitarioGravado * 7 * 10000) / 10000).toBe(totalGravado);
   });
 
   it("achado 4 da auditoria do motor M2/Offset (2026-09-12) — arredondamento do unitário nunca desfaz o ceil do incremento comercial", () => {
@@ -88,18 +90,21 @@ describe("comporPreco", () => {
     // todos 0) pra isolar só o arredondamento: precoBruto = custoDireto =
     // 12.34, incremento 0.1 → arredondarParaIncremento faz ceil(123.4)*0.1 =
     // 12.4 (precoFinalAlvo). Dividido por 100 unidades: 12.4/100 = 0.124 —
-    // na 3ª casa decimal (4, abaixo de 5), o rounding padrão ROUND_HALF_UP
-    // arredondaria pra BAIXO (0.12), e 0.12 × 100 = 12.00 fica ABAIXO do
-    // alvo de 12.4 — exatamente o bug do achado 4. Com ROUND_UP, 0.124 vira
-    // 0.13 (sempre pra cima), e 0.13 × 100 = 13.00 nunca fica abaixo do alvo.
+    // com 4 casas (achado da auditoria de precificação de 2026-09-21, ver
+    // compor.ts) isso já é exato, ROUND_UP não precisa arredondar nada, e
+    // precoFinal bate 1:1 com o alvo comercial (12.4), sem nenhum markup
+    // artificial. Antes (2 casas), 0.124 virava 0.13 — ROUND_UP evitava
+    // ficar ABAIXO do alvo (o bug original do achado 4), mas ao custo de
+    // sempre passar UM POUCO acima (13.00 em vez de 12.40); com mais
+    // precisão o problema nem chega a acontecer.
     const resultado = comporPreco({
       quantidade: 100,
       custoBase: paraDecimal(12.34),
       parametros: { ...PARAMS, overheadPercent: 0, margemPadrao: 0, impostoPercent: 0, incrementoArredondamento: 0.1 },
     });
 
-    expect(resultado.precoUnitario.toNumber()).toBe(0.13);
-    expect(resultado.precoFinal.toNumber()).toBe(13);
+    expect(resultado.precoUnitario.toNumber()).toBe(0.124);
+    expect(resultado.precoFinal.toNumber()).toBe(12.4);
     // A garantia que importa: nunca abaixo do alvo comercial arredondado (12.4).
     expect(resultado.precoFinal.toNumber()).toBeGreaterThanOrEqual(12.4);
   });

@@ -75,7 +75,9 @@ model Orcamento {
   clienteId String
   usuarioId String
   status    StatusOrcamento @default(RASCUNHO)
-  total     Decimal         @default(0) @db.Decimal(12, 2)
+  // 4 casas (não 2) desde 2026-09-21 — soma de OrcamentoItem.precoTotal
+  // (agora 4 casas), ver comentário lá pro motivo completo.
+  total     Decimal         @default(0) @db.Decimal(12, 4)
 
   // Achado da auditoria de segurança (2026-09-13) — token de capability de
   // /o/[token] (aceita/recusa o orçamento SEM login). Antes gravado em
@@ -472,7 +474,8 @@ model OrcamentoOpcao {
   // como um carrinho — ver adicionarOpcaoOrcamento; MVP não tem edição
   // incremental de item dentro de uma opção já criada, só remover a opção
   // inteira e recriar).
-  total       Decimal  @default(0) @db.Decimal(12, 2)
+  // 4 casas (não 2) desde 2026-09-21, mesmo motivo de Orcamento.total.
+  total       Decimal  @default(0) @db.Decimal(12, 4)
   ordem       Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -534,8 +537,16 @@ model OrcamentoItem {
   // precoUnitario/precoTotal continuam sendo o VALOR VENDIDO (deliberado —
   // PDF, link público, pagamentos e relatórios já leem estes campos). O
   // preço sugerido pelo motor vira campo paralelo, nunca substitui estes.
-  precoUnitario Decimal @db.Decimal(12, 2)
-  precoTotal    Decimal @db.Decimal(12, 2)
+  //
+  // 4 casas (não 2) desde a auditoria de precificação (2026-09-21) — mesmo
+  // motivo de precoSugeridoUnitario abaixo (já era 4 casas): o motor
+  // (compor.ts/orcamento.ts) parava de arredondar o unitário cedo demais
+  // só porque a coluna não aceitava mais que 2 casas, perdendo ~3% de
+  // precisão em pedido de alto volume/baixo valor unitário. Exibição
+  // (tela/PDF/NF-e) continua arredondando pra 2 casas só na hora de
+  // mostrar — nunca no valor salvo aqui.
+  precoUnitario Decimal @db.Decimal(12, 4)
+  precoTotal    Decimal @db.Decimal(12, 4)
 
   // Preço sugerido vs. negociado (ver fase-custo-real.md §2.4, §4.2) — nulo em
   // item sem desconto registrado, o que inclui todo item criado antes desta
@@ -802,8 +813,10 @@ model OrcamentoItemFaixaQuantidade {
   id              String   @id @default(cuid())
   orcamentoItemId String
   quantidade      Int
-  precoUnitario   Decimal  @db.Decimal(12, 2)
-  precoTotal      Decimal  @db.Decimal(12, 2)
+  // 4 casas (não 2) desde 2026-09-21, mesmo motivo de OrcamentoItem acima
+  // (faixa é calculada pelo mesmo calcularItemOrcamento).
+  precoUnitario   Decimal  @db.Decimal(12, 4)
+  precoTotal      Decimal  @db.Decimal(12, 4)
   // Snapshot da árvore de custo auditável desta faixa — mesmo padrão/formato
   // de OrcamentoItem.breakdown (resultado de calcularItemOrcamento
   // serializado), null pra item SIMPLES (motor não gera breakdown).

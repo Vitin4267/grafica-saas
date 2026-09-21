@@ -299,18 +299,19 @@ describe("golden #6 — cartão digital Q=500: imposição por folha (achado N4)
     // custoCliques = 25 × 1 × 0,08 = 2; custoSubstrato = 25 × 6 = 150;
     // custoBase = 152 -> custoTotal = 152 × 1,15 = 174,8 -> precoBruto =
     // 174,8 / (1 - 0,26) = 236,2162...  -> arredonda pra cima no incremento
-    // de 0,10 -> 236,30 -> precoUnitario = 236,30/500 = 0,4726 -> ARREDONDA
-    // PRA CIMA em 2 casas (achado 4 da auditoria do motor M2/Offset,
-    // 2026-09-12 — nunca ROUND_HALF_UP, que cancelaria o ceil acima) -> 0,48
-    // -> precoFinal = 0,48 × 500 = 240,00.
+    // de 0,10 -> 236,30 -> precoUnitario = 236,30/500 = 0,4726 exato em 4
+    // casas (achado da auditoria de precificação de 2026-09-21 — antes
+    // arredondava pra 2 casas aqui, 0,48, perdendo precisão real; ver
+    // compor.ts) -> precoFinal = 0,4726 × 500 = 236,30 (bate exatamente com
+    // o alvo comercial, sem markup artificial nenhum).
     expect(resultado.metricas.nUp).toBe(20);
     expect(resultado.metricas.numeroFolhas).toBe(25);
     expect(resultado.metricas.numeroCliques).toBe(1);
     expect(resultado.metricas.custoCliques as number).toBeCloseTo(2, 6);
     expect(resultado.metricas.custoSubstrato as number).toBeCloseTo(150, 6);
     expect(resultado.metricas.impressoraDigitalUsada).toMatchObject({ id: "impressora-1" });
-    expect(resultado.precoUnitario.toNumber()).toBeCloseTo(0.48, 6);
-    expect(resultado.precoFinal.toNumber()).toBeCloseTo(240, 6);
+    expect(resultado.precoUnitario.toNumber()).toBeCloseTo(0.4726, 6);
+    expect(resultado.precoFinal.toNumber()).toBeCloseTo(236.3, 6);
   });
 });
 
@@ -342,14 +343,15 @@ describe("golden #7 — camiseta serigrafia Q=200/2 telas: setup fixo + variáve
     // acima do custoMinimo de 150 (não domina) -> custoBase = 860 ->
     // custoTotal = 860 × 1,15 = 989 -> precoBruto = 989 / 0,74 = 1336,486... ->
     // arredonda pra cima no incremento de 0,10 -> 1336,50 -> precoUnitario =
-    // 1336,50/200 = 6,6825 -> ARREDONDA PRA CIMA em 2 casas (achado 4 da
-    // auditoria do motor M2/Offset, 2026-09-12) -> 6,69 -> precoFinal =
-    // 6,69 × 200 = 1338,00.
+    // 1336,50/200 = 6,6825 exato em 4 casas (achado da auditoria de
+    // precificação de 2026-09-21 — antes arredondava pra 2 casas aqui, 6,69,
+    // perdendo precisão real; ver compor.ts) -> precoFinal = 6,6825 × 200 =
+    // 1336,50 (bate exatamente com o alvo comercial, sem markup artificial).
     expect(resultado.metricas.custoSetup as number).toBeCloseTo(160, 6);
     expect(resultado.metricas.custoVariavel as number).toBeCloseTo(700, 6);
     expect(resultado.metricas.maquinaSetupPorPecaUsada).toMatchObject({ id: "carrossel-1" });
-    expect(resultado.precoUnitario.toNumber()).toBeCloseTo(6.69, 6);
-    expect(resultado.precoFinal.toNumber()).toBeCloseTo(1338, 6);
+    expect(resultado.precoUnitario.toNumber()).toBeCloseTo(6.6825, 6);
+    expect(resultado.precoFinal.toNumber()).toBeCloseTo(1336.5, 6);
   });
 
   it("custoMinimo age como piso mesmo dentro do dispatcher completo", () => {

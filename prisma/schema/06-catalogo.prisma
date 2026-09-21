@@ -277,7 +277,17 @@ model ItemGrafica {
   // (ParametrosGrafica.diasPrecoInsumoDesatualizado): sem dado é "não sei",
   // nunca "está velho".
   precoCompraAtualizadoEm    DateTime?
-  precoVenda                 Decimal?       @db.Decimal(12, 2)
+  // Achado da auditoria de precificação (2026-09-21) — 4 casas (não 2),
+  // mesma precisão de precoCompra acima. Motivo: preço unitário de
+  // produto de alto volume/baixo valor (ex: etiqueta a R$0,068/un) não
+  // cabe em 2 casas sem perder ~3% de precisão numa tiragem de dezenas
+  // de milhares — ver pesquisa-calculos-grafica-mercado.md (princípio:
+  // precisão do unitário sempre >= precisão do total) e o motor de
+  // precificação (src/lib/pricing/compor.ts, src/lib/orcamento.ts), que
+  // agora preserva 4 casas em vez de arredondar cedo demais. Exibição
+  // continua em 2 casas (src/lib/moeda.ts formata pra tela), NF-e já
+  // aceitava 4 casas no valor unitário (src/lib/focus-nfe.ts).
+  precoVenda                 Decimal?       @db.Decimal(12, 4)
   estoqueAtual               Decimal?       @db.Decimal(12, 4)
   estoqueMinimo              Decimal?       @db.Decimal(12, 4)
   // Quantas unidades individuais tem em cada "unidade cadastrada" deste item

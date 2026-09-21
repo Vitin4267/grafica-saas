@@ -30,13 +30,20 @@ export function calcularPreco({
   const areaM2 = cobraPorArea ? (larguraCm! / 100) * (alturaCm! / 100) : 1;
 
   // precoUnitario é a fonte única de verdade pro arredondamento: arredonda
-  // pra 2 casas aqui (mesma precisão da coluna Decimal(12,2) do Postgres) e
-  // deriva precoTotal multiplicando o valor já arredondado pela quantidade
-  // (arredondando de novo só pra corrigir epsilon de ponto flutuante, já que
-  // quantidade é inteira). Assim as duas colunas sempre batem entre si, e
-  // qualquer SUM(precoTotal) feito depois também bate com unitário × quantidade.
-  const precoUnitario = Math.round(precoBase * areaM2 * 100) / 100;
-  const precoTotal = Math.round(precoUnitario * quantidade * 100) / 100;
+  // aqui e deriva precoTotal multiplicando o valor já arredondado pela
+  // quantidade (arredondando de novo só pra corrigir epsilon de ponto
+  // flutuante, já que quantidade é inteira). Assim as duas colunas sempre
+  // batem entre si, e qualquer SUM(precoTotal) feito depois também bate com
+  // unitário × quantidade.
+  //
+  // Achado da auditoria de precificação (2026-09-21) — 4 casas (não 2): ver
+  // o mesmo comentário em src/lib/pricing/compor.ts (comporPreco) pro
+  // raciocínio completo. Aqui o preço-base (ItemGrafica.precoVenda) também
+  // ganhou precisão (Decimal(12,4), migration 20260921120000), então um
+  // produto SIMPLES cobrado por área de alto valor de área (ex: banner por
+  // m² a preço fracionário) já não perde precisão nem na entrada nem aqui.
+  const precoUnitario = Math.round(precoBase * areaM2 * 10000) / 10000;
+  const precoTotal = Math.round(precoUnitario * quantidade * 10000) / 10000;
 
   return { precoUnitario, precoTotal, areaM2, temDimensoes, cobraPorArea };
 }

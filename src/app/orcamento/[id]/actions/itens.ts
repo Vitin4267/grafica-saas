@@ -1439,8 +1439,14 @@ export async function aplicarDescontoItemOrcamento(
   let descontoTipoGravar: z.infer<typeof tipoDescontoFormSchema> | null = null;
   let descontoValorGravar: Dec | null = null;
 
+  // Achado da auditoria de precificação (2026-09-21) — 4 casas (não 2) nas
+  // 3 formas abaixo, mesmo motivo de compor.ts/orcamento.ts: precoSugerido
+  // já vem com 4 casas (precoSugeridoUnitario sempre foi Decimal(12,4)),
+  // colapsar pra 2 aqui jogava fora a precisão real do preço negociado —
+  // agora OrcamentoItem.precoUnitario também é Decimal(12,4) (migration
+  // 20260921120000_precisao_preco_4_casas), então não precisa mais.
   if (remover) {
-    novoPrecoUnitario = precoSugerido.toDecimalPlaces(2);
+    novoPrecoUnitario = precoSugerido.toDecimalPlaces(4);
   } else {
     const tipoParsed = tipoDescontoFormSchema.safeParse(formData.get("tipo"));
     if (!tipoParsed.success) {
@@ -1460,19 +1466,19 @@ export async function aplicarDescontoItemOrcamento(
       }
       novoPrecoUnitario = precoSugerido
         .times(paraDecimal(1).minus(paraDecimal(valorNumero).div(100)))
-        .toDecimalPlaces(2);
+        .toDecimalPlaces(4);
       descontoValorGravar = paraDecimal(valorNumero);
     } else if (tipoParsed.data === "VALOR_ABSOLUTO") {
       if (valorNumero < 0) {
         return { ok: false, mensagem: "Informe um valor de desconto maior ou igual a zero." };
       }
-      novoPrecoUnitario = precoSugerido.minus(paraDecimal(valorNumero)).toDecimalPlaces(2);
+      novoPrecoUnitario = precoSugerido.minus(paraDecimal(valorNumero)).toDecimalPlaces(4);
       descontoValorGravar = paraDecimal(valorNumero);
     } else {
       if (valorNumero < 0) {
         return { ok: false, mensagem: "Informe um preço final válido." };
       }
-      novoPrecoUnitario = paraDecimal(valorNumero).toDecimalPlaces(2);
+      novoPrecoUnitario = paraDecimal(valorNumero).toDecimalPlaces(4);
       descontoValorGravar = precoSugerido.minus(novoPrecoUnitario);
     }
     descontoTipoGravar = tipoParsed.data;
@@ -1579,8 +1585,8 @@ export async function aplicarDescontoItemOrcamento(
         await tx.orcamentoItem.update({
           where: { id: orcamentoItemId },
           data: {
-            precoUnitario: novoPrecoUnitario.toFixed(2),
-            precoTotal: novoPrecoTotal.toFixed(2),
+            precoUnitario: novoPrecoUnitario.toFixed(4),
+            precoTotal: novoPrecoTotal.toFixed(4),
             descontoTipo: descontoTipoGravar,
             descontoValor: descontoValorGravar ? descontoValorGravar.toFixed(4) : null,
             motivoDesconto: remover ? null : motivo,

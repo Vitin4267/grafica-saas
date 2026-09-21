@@ -151,7 +151,7 @@ export function calcularDescontoHerdado(params: {
   if (percentual.lte(0)) return null;
 
   const novoSugerido = paraDecimal(params.novoPrecoSugeridoUnitario);
-  const precoUnitario = novoSugerido.times(paraDecimal(1).minus(percentual.div(100))).toDecimalPlaces(2);
+  const precoUnitario = novoSugerido.times(paraDecimal(1).minus(percentual.div(100))).toDecimalPlaces(4);
   if (precoUnitario.lte(0)) return null;
 
   return {

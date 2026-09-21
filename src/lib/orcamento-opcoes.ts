@@ -89,7 +89,7 @@ export async function resolverOpcoesNaAprovacao(
       paraDecimal(parametros?.pedidoMinimo.toString() ?? "0"),
       paraDecimal(parametros?.incrementoArredondamento.toString() ?? "0.10")
     );
-    return { total: total.toFixed(2), opcaoEscolhidaNome: "Opção A" };
+    return { total: total.toFixed(4), opcaoEscolhidaNome: "Opção A" };
   }
 
   const vencedora = opcoes.find((o) => o.id === params.opcaoEscolhidaId);
