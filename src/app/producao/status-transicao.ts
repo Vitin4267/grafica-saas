@@ -3,6 +3,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { prisma, transacaoComTenant, type PrismaTransactionClient } from "@/lib/prisma";
+import { definirTenantAtual } from "@/lib/tenant-context";
 import { hashToken } from "@/lib/auth/session";
 import { cifrar, decifrarOuNull } from "@/lib/cripto";
 import { Prisma } from "@/generated/prisma/client";
@@ -124,7 +125,20 @@ class ErroEstoqueInsuficienteRefugo extends Error {}
 // pra montar a tela de confirmação) e a baixa de verdade abaixo — mantém os
 // dois call-sites com exatamente o mesmo formato de dado, evitando que a
 // tela de confirmação mostre algo diferente do que de fato será descontado.
-export function buscarOrcamentoParaBaixa(orcamentoId: string) {
+//
+// Achado investigando produção quebrada (2026-09-21), mesma classe do
+// achado Sessao/Grafica do incidente 18/09: esta query escopa só por
+// orcamentoId (onde: { id }), sem graficaId nos args — o fallback de
+// $allOperations (src/lib/prisma.ts) não consegue derivar nada aqui, então
+// depende inteiramente de tenantAtual() já estar correto. Orcamento já
+// está em MODELOS_COM_RLS_ATIVO, mas se o contexto já tiver se perdido a
+// essa altura da action (dezenas de linhas depois de
+// exigirUsuarioAutenticado — o cenário real do incidente), o include
+// aninhado inteiro (itens -> itemGrafica -> itemCatalogo/fichaTecnica)
+// volta null em silêncio. `graficaId` explícito aqui reafirma o contexto
+// imediatamente antes do uso, sem travessia assíncrona longa.
+export function buscarOrcamentoParaBaixa(orcamentoId: string, graficaId: string) {
+  definirTenantAtual(graficaId);
   return prisma.orcamento.findUnique({
     where: { id: orcamentoId },
     include: {
@@ -735,7 +749,7 @@ export async function avancarStatusPedido(
       // real" (custoAutomaticoConsumo/categoriaCustoConsumoPadraoId) não
       // mudam por causa desta transição.
       const [orcamentoComItens, parametrosGrafica] = await Promise.all([
-        buscarOrcamentoParaBaixa(pedido.orcamentoId),
+        buscarOrcamentoParaBaixa(pedido.orcamentoId, pedido.graficaId),
         prisma.parametrosGrafica.findUnique({ where: { graficaId: pedido.graficaId } }),
       ]);
       // Sem linha em ParametrosGrafica ainda (gráfica nunca abriu
@@ -1258,7 +1272,7 @@ export async function avancarStatusPedido(
       let categoriaCustoConsumoPadraoIdRefugo: string | null = null;
       if (refugoParaAplicar?.gerarBaixaEstoque) {
         const [orcamento, parametrosGrafica] = await Promise.all([
-          buscarOrcamentoParaBaixa(pedido.orcamentoId),
+          buscarOrcamentoParaBaixa(pedido.orcamentoId, pedido.graficaId),
           prisma.parametrosGrafica.findUnique({ where: { graficaId: pedido.graficaId } }),
         ]);
         orcamentoParaRefugo = orcamento;

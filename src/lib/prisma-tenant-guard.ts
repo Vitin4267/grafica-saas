@@ -213,6 +213,25 @@ export const MODELOS_COM_RLS_ATIVO = new Set([
   // `model = "Grafica"`.
   "Sessao",
   "Grafica",
+
+  // Mesma classe de bug do achado acima (Sessao/Grafica, incidente
+  // 18/09), achada de novo em produção (2026-09-21) — botão de aprovar
+  // orçamento quebrando com "Cannot read properties of null (reading
+  // 'itemCatalogo')". atualizarStatusOrcamento (src/app/orcamento/[id]/
+  // actions/status.ts) faz `prisma.orcamentoItem.findMany({ where: {
+  // orcamentoId, opcaoId }, include: { itemGrafica: { itemCatalogo } }
+  // })` — o TOPO da chamada é OrcamentoItem (sem graficaId próprio,
+  // nunca precisou de policy dele mesmo), mas o include aninhado toca
+  // ItemGrafica/ItemCatalogo, que TÊM RLS ativo. Sem OrcamentoItem aqui,
+  // o wrap nunca disparava pra essa chamada — se tenantAtual() já tivesse
+  // se perdido a essa altura da action, o join aninhado voltava null em
+  // silêncio (RLS fail-closed na tabela filha) em vez de dar erro
+  // explícito, e o código seguinte (`item.itemGrafica.itemCatalogo`)
+  // explodia. OrcamentoItem não tem policy própria no Postgres (nunca
+  // precisou, RLS_LOTE nenhum ligou nela) — entrar aqui só garante que o
+  // set_config da transação fica visível pros JOINs aninhados, mesmo
+  // mecanismo do achado do Sessao/Grafica acima.
+  "OrcamentoItem",
 ]);
 
 const OPERACOES_CREATE = new Set(["create", "createMany", "createManyAndReturn"]);

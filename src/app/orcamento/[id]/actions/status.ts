@@ -8,6 +8,7 @@ import { randomBytes } from "node:crypto";
 import { put, del } from "@vercel/blob";
 import { exigirTokenBlobPrivado } from "@/lib/blob-assinado";
 import { prisma, transacaoComTenant } from "@/lib/prisma";
+import { definirTenantAtual } from "@/lib/tenant-context";
 import { Prisma } from "@/generated/prisma/client";
 import { exigirUsuarioAutenticado, hashToken } from "@/lib/auth/session";
 import { cifrar } from "@/lib/cripto";
@@ -197,6 +198,26 @@ export async function atualizarStatusOrcamento(
         return { ok: false, mensagem: "Opção escolhida não encontrada neste orçamento." };
       }
     }
+
+    // Achado investigando produção quebrada (2026-09-21) — a query logo
+    // abaixo é em OrcamentoItem (NÃO está em MODELOS_COM_RLS_ATIVO, só
+    // ItemGrafica/ItemCatalogo do include aninhado estão), e não carrega
+    // graficaId em nenhum lugar dos args (escopa só por orcamentoId/
+    // opcaoId, o idioma dominante do repo) — o fallback de
+    // $allOperations (src/lib/prisma.ts) NUNCA age aqui, nem pro topo
+    // (model errado) nem por derivação (sem graficaId nos args). Se
+    // tenantAtual() já tiver se perdido a essa altura (dezenas de linhas
+    // depois de exigirUsuarioAutenticado — exatamente o cenário do
+    // incidente de 18/09), o include aninhado em ItemGrafica volta null
+    // silenciosamente (RLS fail-closed na tabela filha), e
+    // `item.itemGrafica.itemCatalogo` explode com "Cannot read properties
+    // of null" — o bug real visto em produção no botão de aprovar.
+    // Reafirma o contexto aqui, imediatamente antes do uso (sem travessia
+    // assíncrona longa entre o set e o uso, ao contrário da chamada
+    // original em exigirUsuarioAutenticado) — mitigação pontual, não
+    // resolve a causa raiz (enterWith não sobrevive de forma confiável no
+    // runtime da Vercel), mas fecha esta lacuna específica.
+    definirTenantAtual(usuario.graficaId);
 
     // Leitura fora da transação de propósito (mesmo cuidado de avancarPedido
     // em src/app/producao/actions.ts): ficha de custo/comissão não muda por

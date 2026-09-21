@@ -103,7 +103,7 @@ export async function previsaoBaixaEstoque(pedidoId: string): Promise<PrevisaoBa
     return { ok: false, mensagem: "Este pedido não está pronto pra iniciar a produção." };
   }
 
-  const orcamentoComItens = await buscarOrcamentoParaBaixa(pedido.orcamentoId);
+  const orcamentoComItens = await buscarOrcamentoParaBaixa(pedido.orcamentoId, pedido.graficaId);
 
   // custoEstimado só viaja pro client quando o usuário tem CUSTOS.podeVer —
   // achado da revisão de segurança da fase "custo real": esta tela é
