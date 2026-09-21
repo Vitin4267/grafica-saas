@@ -101,6 +101,25 @@ export function comContextoIsolado<T>(fn: () => Promise<T>): Promise<T> {
   return contextoTenant.run(undefined, async () => await fn());
 }
 
+// Achado investigando CI vermelho (2026-09-21) — SÓ pra uso em
+// src/test/setup.ts (beforeEach global da suíte). `enterWith` não tem
+// reset natural (ver comentário acima): QUALQUER teste que exercite um
+// caminho de produção que chame definirTenantAtual de verdade (não
+// mockado — ex: exigirUsuarioAutenticado sem vi.mock, ou as novas
+// chamadas defensivas em status.ts/status-transicao.ts) deixa
+// contextoTenant com um valor que nunca reverte sozinho, vazando pro
+// PRÓXIMO teste que rodar na mesma worker do Vitest, mesmo em arquivo
+// sem nenhuma relação com tenant — o guard de isolamento (Fase A) então
+// vê um tenantAtivo de outro teste e trava com ErroIsolamentoTenant, um
+// falso positivo. Isolar só rls.test.ts (processo separado) não foi
+// suficiente — o vazamento acontece em QUALQUER teste que chame o
+// mecanismo de verdade, não só ali. `enterWith(undefined)` aqui é a
+// única forma de "zerar" a AsyncLocalStorage entre testes sem precisar
+// saber de onde veio o vazamento.
+export function resetTenantParaTeste(): void {
+  contextoTenant.enterWith(undefined);
+}
+
 // Segunda AsyncLocalStorage, independente da de identidade do tenant acima
 // — Fase B (RLS real, 2026-09-17). Marca que a transação Postgres ATUAL já
 // teve o runtime parameter (`app.grafica_id`/`app.bypass_rls`) setado via

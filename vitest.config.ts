@@ -54,6 +54,11 @@ export default defineConfig(({ mode }) => {
       // ÚNICA garantia de isolamento que não depende de entender o
       // mecanismo exato do vazamento.
       exclude: ["**/node_modules/**", "src/lib/rls.test.ts"],
+      // Ver src/test/setup.ts — zera contextoTenant antes de cada teste,
+      // defesa em profundidade contra vazamento de enterWith entre testes
+      // (mesmo achado que motivou isolar rls.test.ts acima, mas cobre
+      // QUALQUER fonte do vazamento, não só aquele arquivo específico).
+      setupFiles: ["src/test/setup.ts"],
       // Alguns testes (ver *.test.ts que importam @/lib/prisma — rate-limit,
       // checkout-reserva, catalogo-ncm) são integração de verdade contra o
       // Postgres de dev, não lógica pura: precisam de DATABASE_URL. `next dev`/
