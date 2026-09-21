@@ -130,3 +130,37 @@ export function transacaoJaConfigurada(): boolean {
 export function marcarTransacaoConfigurada<T>(fn: () => Promise<T>): Promise<T> {
   return dentroDeTransacaoConfigurada.run(true, async () => await fn());
 }
+
+// Terceira AsyncLocalStorage — fecha a última lacuna da Fase B (achada
+// 2026-09-21): transação em forma CALLBACK (`prisma.$transaction(async tx
+// => ...)`) cujo `tenantAtual()` vem undefined (enterWith perdido) rodava
+// sem NENHUM set_config — seguro (atômica, cai tudo junto), mas
+// indisponível à toa quando o graficaId está bem ali nos args de alguma
+// operação lá dentro (o mesmo fallback que já existe pra escrita solta e
+// pra transação em ARRAY, ver derivarEstadoDeOperacoesArray em
+// src/lib/prisma.ts). Diferente dos outros dois casos, aqui não dá pra
+// derivar TUDO de uma vez antes de abrir a transação — o corpo do callback
+// só se conhece rodando. Solução: guarda uma referência MUTÁVEL pro `tx` e
+// um flag `configurado`, e $allOperations (prisma.ts) tenta derivar da
+// PRIMEIRA operação RLS-ativa que carregar um graficaId localizável nos
+// seus próprios args — como `set_config(..., TRUE)` vale pra transação
+// INTEIRA (não só a operação que disparou), uma vez achado, protege
+// automaticamente toda operação seguinte da mesma transação, mesmo as que
+// não carregam graficaId (ex: update por id já validado).
+export type TxComExecutorRaw = {
+  $executeRaw(query: TemplateStringsArray, ...values: unknown[]): unknown;
+};
+type EstadoTxPendente = { tx: TxComExecutorRaw; configurado: boolean };
+const txPendenteDeConfigRls = new AsyncLocalStorage<EstadoTxPendente>();
+
+export function txPendenteAtual(): EstadoTxPendente | undefined {
+  return txPendenteDeConfigRls.getStore();
+}
+
+// `jaConfigurado` = true quando quem chamou já aplicou set_config por fora
+// (tenantAtual() estava disponível) — $allOperations então nem tenta
+// derivar de novo, só segue o fluxo normal. `.run()` pelo mesmo motivo de
+// sempre: escopa à transação exata, reverte sozinho ao sair.
+export function comTxPendenteDeConfig<T>(tx: TxComExecutorRaw, jaConfigurado: boolean, fn: () => Promise<T>): Promise<T> {
+  return txPendenteDeConfigRls.run({ tx, configurado: jaConfigurado }, async () => await fn());
+}
