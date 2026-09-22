@@ -139,7 +139,7 @@ async function criarFixtureFiscal(opts: { total: number; valorFrete?: number | n
       valorFrete: opts.valorFrete ?? null,
     },
   });
-  await prisma.orcamentoItem.create({
+  const orcamentoItem = await prisma.orcamentoItem.create({
     data: {
       orcamentoId: orcamento.id,
       itemGraficaId: itemGrafica.id,
@@ -150,7 +150,15 @@ async function criarFixtureFiscal(opts: { total: number; valorFrete?: number | n
   });
 
   graficaIdsParaLimpar.push(grafica.id);
-  return { graficaId: grafica.id, orcamentoId: orcamento.id, dono };
+  return { graficaId: grafica.id, orcamentoId: orcamento.id, orcamentoItemId: orcamentoItem.id, dono };
+}
+
+// Feature de nota fiscal PARCIAL (2026-09-22) — emitirNotaFiscal agora lê a
+// quantidade de cada item de um campo `quantidade_${orcamentoItemId}` (ver
+// mesmo helper em actions.nfe-conta-receber.test.ts). Fixture deste arquivo
+// também tem um item só, quantidade 1.
+function formDataEmitirTudo(f: { orcamentoId: string; orcamentoItemId: string }): FormData {
+  return formDataDe({ orcamentoId: f.orcamentoId, [`quantidade_${f.orcamentoItemId}`]: "1" });
 }
 
 afterEach(async () => {
@@ -287,7 +295,7 @@ describe("emissão de NF-e — valor_frete reflete Orcamento.valorFrete (achado 
       );
       vi.stubGlobal("fetch", fetchMock);
 
-      const resultado = await emitirNotaFiscal(null, formDataDe({ orcamentoId: f.orcamentoId }));
+      const resultado = await emitirNotaFiscal(null, formDataEmitirTudo(f));
       expect(resultado.ok).toBe(true);
 
       const corpoEnviado = JSON.parse(String(fetchMock.mock.calls[0][1].body));
@@ -306,7 +314,7 @@ describe("emissão de NF-e — valor_frete reflete Orcamento.valorFrete (achado 
       );
       vi.stubGlobal("fetch", fetchMock);
 
-      const resultado = await emitirNotaFiscal(null, formDataDe({ orcamentoId: f.orcamentoId }));
+      const resultado = await emitirNotaFiscal(null, formDataEmitirTudo(f));
       expect(resultado.ok).toBe(true);
 
       const corpoEnviado = JSON.parse(String(fetchMock.mock.calls[0][1].body));

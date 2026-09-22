@@ -33,6 +33,7 @@ import {
   prepararNotificacaoNotaFiscal,
   resolverDadosFiscais,
   resolverCfop,
+  quantidadeRestanteParaFaturar,
   type DadosFiscaisResolvidos,
 } from "@/lib/nota-fiscal";
 import {
@@ -184,7 +185,17 @@ export async function emitirNotaFiscal(
     include: {
       cliente: true,
       notaFiscal: true,
-      itens: { include: { itemGrafica: { include: { itemCatalogo: true } } } },
+      itens: {
+        include: {
+          itemGrafica: { include: { itemCatalogo: true } },
+          // Feature de nota fiscal PARCIAL (2026-09-22) — pra calcular
+          // quanto de cada item já foi faturado (ver
+          // quantidadeRestanteParaFaturar em src/lib/nota-fiscal.ts), só o
+          // status da nota de cada NotaFiscalItem importa aqui (REJEITADA/
+          // CANCELADA liberam a quantidade de volta).
+          notaFiscalItens: { include: { notaFiscal: { select: { status: true } } } },
+        },
+      },
     },
   });
   if (!orcamento) {
@@ -193,22 +204,37 @@ export async function emitirNotaFiscal(
   if (orcamento.status !== "APROVADO") {
     return { ok: false, mensagem: "Só é possível emitir nota fiscal de um orçamento aprovado." };
   }
-  // Achado F2 da auditoria de abrangência (Parte 7, 2026-09-05) —
-  // Orcamento.notaFiscal virou lista (1 nota por MODELO por orçamento, não
-  // mais 1:1). Esta Server Action só emite NF-e (emissão de NFS-e é fase 2,
-  // fora de escopo) — filtra explicitamente pela nota modelo=NFE, ignorando
-  // qualquer NFS-e que já exista pro mesmo orçamento numa venda mista.
-  const notaFiscalNfeExistente = orcamento.notaFiscal.find((n) => n.modelo === "NFE") ?? null;
-  if (notaFiscalNfeExistente && notaFiscalNfeExistente.status !== "REJEITADA") {
-    return { ok: false, mensagem: "Este orçamento já tem uma nota fiscal emitida." };
+
+  // Feature de nota fiscal PARCIAL (2026-09-22) — cada item pode entrar
+  // nesta nota com uma quantidade de 0 até o restante a faturar (campo
+  // `quantidade_${orcamentoItemId}` no FormData, vazio/0 = item de fora
+  // desta nota). Validação DURA (não "com observação" como o recebimento
+  // parcial de compras) — nota fiscal é documento fiscal de verdade, pedir
+  // mais do que resta nunca é uma divergência aceitável, é errado.
+  const itensSelecionados: {
+    item: (typeof orcamento.itens)[number];
+    quantidade: Dec;
+  }[] = [];
+  for (const item of orcamento.itens) {
+    const bruto = formData.get(`quantidade_${item.id}`);
+    const texto = bruto === null ? "" : String(bruto).trim();
+    if (!texto) continue;
+    const numero = Number(texto);
+    if (!Number.isFinite(numero) || numero <= 0) continue;
+
+    const restante = quantidadeRestanteParaFaturar(item);
+    const solicitada = paraDecimal(numero);
+    const nomeItem = item.descricaoLivre ?? item.itemGrafica.itemCatalogo.nome;
+    if (solicitada.gt(restante)) {
+      return {
+        ok: false,
+        mensagem: `Quantidade pedida de "${nomeItem}" (${solicitada.toFixed(4)}) é maior que o restante a faturar (${restante.toFixed(4)}).`,
+      };
+    }
+    itensSelecionados.push({ item, quantidade: solicitada });
   }
-  if (notaFiscalNfeExistente) {
-    // Nota anterior foi rejeitada (dados inválidos) ou denegada (bloqueio
-    // fiscal do destinatário na SEFAZ) — nos dois casos a Focus NFe nunca
-    // autorizou a nota, então não sobrou nada fiscal pra preservar aqui.
-    // `referencia` é UNIQUE e sempre igual a orcamentoId (ver criação
-    // abaixo), então a nota antiga precisa sair antes de tentarmos de novo.
-    await prisma.notaFiscal.delete({ where: { id: notaFiscalNfeExistente.id } });
+  if (itensSelecionados.length === 0) {
+    return { ok: false, mensagem: "Selecione ao menos um item com quantidade pra faturar." };
   }
 
   const dadosFiscais = await resolverDadosFiscais(orcamento.filialId, usuario.graficaId);
@@ -216,7 +242,7 @@ export async function emitirNotaFiscal(
   const checagem = verificarProntidaoFiscal({
     dadosFiscais,
     cliente: orcamento.cliente,
-    itens: orcamento.itens.map((item) => ({
+    itens: itensSelecionados.map(({ item }) => ({
       nome: item.itemGrafica.itemCatalogo.nome,
       ncm: item.itemGrafica.itemCatalogo.ncm,
     })),
@@ -225,11 +251,25 @@ export async function emitirNotaFiscal(
     return { ok: false, mensagem: checagem.pendencias.join(" ") };
   }
 
+  // Referência mandada pra Focus NFe — precisa variar por nota agora que um
+  // orçamento pode ter várias NFE (antes era sempre === orcamentoId,
+  // garantido único pelo índice único que existia em (orcamentoId, modelo)
+  // — removido nesta mesma feature). `referencia` continua @unique no
+  // banco: uma colisão aqui (corrida entre duas emissões simultâneas lendo
+  // a mesma contagem) faz a transação abaixo falhar com erro claro em vez
+  // de sobrescrever silenciosamente, e o usuário só tenta de novo.
+  const referencia = `${orcamentoId}-${orcamento.notaFiscal.length + 1}`;
+
+  const valorTotalSelecionado = itensSelecionados.reduce(
+    (soma, { item, quantidade }) => soma.plus(paraDecimal(item.precoUnitario.toString()).times(quantidade)),
+    paraDecimal(0)
+  );
+
   try {
     const resposta = await emitirNfe(
       { token: dadosFiscais.focusNfeToken!, ambiente: dadosFiscais.ambiente as AmbienteFocusNfe },
       {
-        referencia: orcamentoId,
+        referencia,
         naturezaOperacao: dadosFiscais.naturezaOperacaoPadrao,
         emitente: {
           cnpj: dadosFiscais.cnpj!,
@@ -261,8 +301,14 @@ export async function emitirNotaFiscal(
         // (antes era "0" fixo, ver resolverValorFrete em src/lib/focus-nfe.ts).
         // null (frete não preenchido) preserva o comportamento de sempre.
         valorFrete: orcamento.valorFrete ? Number(orcamento.valorFrete) : null,
-        itens: orcamento.itens.map((item, indice) => {
-          const valorBruto = Number(item.precoTotal);
+        // Feature de nota fiscal PARCIAL (2026-09-22) — só os itens
+        // selecionados nesta nota, com a quantidade PEDIDA (não a
+        // quantidade total do item) e o valor bruto recalculado em cima
+        // dela (preço unitário nunca muda, só a quantidade faturada agora).
+        itens: itensSelecionados.map(({ item, quantidade }, indice) => {
+          const valorUnitarioDec = paraDecimal(item.precoUnitario.toString());
+          const valorBrutoDec = valorUnitarioDec.times(quantidade);
+          const valorBruto = valorBrutoDec.toNumber();
           return {
             numeroItem: indice + 1,
             codigoProduto: item.itemGraficaId,
@@ -280,13 +326,13 @@ export async function emitirNotaFiscal(
               item.itemGrafica.itemCatalogo.unidade,
               item.itemGrafica.itemCatalogo.unidadeOutro
             ),
-            quantidade: item.quantidade,
-            valorUnitario: Number(item.precoUnitario),
+            quantidade: quantidade.toNumber(),
+            valorUnitario: valorUnitarioDec.toNumber(),
             valorBruto,
             ...construirCamposFiscaisItemNfe(dadosFiscais, valorBruto),
           };
         }),
-        valorTotal: Number(orcamento.total),
+        valorTotal: valorTotalSelecionado.toNumber(),
       }
     );
 
@@ -297,13 +343,23 @@ export async function emitirNotaFiscal(
           ? "REJEITADA"
           : "PROCESSANDO";
 
-    // Transação: cria a NotaFiscal e, se já veio autorizada nesta mesma
-    // chamada (a Focus NFe pode responder síncrono), gera as ContaReceber da
-    // condição de pagamento com âncora EMISSAO_NOTA (achado R1 da auditoria
-    // de abrangência, ver src/lib/condicao-pagamento.ts) — atômico com a
-    // criação da nota, nunca uma sem a outra.
+    // Transação: cria a NotaFiscal + NotaFiscalItem e, se já veio autorizada
+    // nesta mesma chamada (a Focus NFe pode responder síncrono), gera as
+    // ContaReceber da condição de pagamento com âncora EMISSAO_NOTA (achado
+    // R1 da auditoria de abrangência, ver src/lib/condicao-pagamento.ts) —
+    // atômico com a criação da nota, nunca uma sem a outra.
     await transacaoComTenant(async (tx) => {
-      await tx.notaFiscal.create({
+      // Feature de nota fiscal PARCIAL (2026-09-22) — decidido DE PROPÓSITO
+      // não reconferir o saldo aqui dentro, depois de emitirNfe já ter
+      // rodado acima: se a Focus NFe já autorizou a nota nesta chamada, ela
+      // é um documento fiscal REAL — travar aqui e jogar um erro perderia o
+      // registro local de uma nota que já existe de verdade na SEFAZ, o que
+      // é bem pior do que o risco que essa reconferência evitaria (duas
+      // emissões simultâneas do mesmo item, cenário raro pra um único
+      // operador por orçamento). A checagem que já rodou antes de chamar
+      // emitirNfe (usando quantidadeRestanteParaFaturar) é a proteção real;
+      // aqui só grava o que a Focus NFe já processou.
+      const notaCriada = await tx.notaFiscal.create({
         data: {
           graficaId: usuario.graficaId,
           orcamentoId,
@@ -311,7 +367,7 @@ export async function emitirNotaFiscal(
           // sendo o @default(NFE) do schema: esta Server Action só emite
           // NF-e (emissão de NFS-e é fase 2, fora de escopo desta rodada).
           modelo: "NFE",
-          referencia: orcamentoId,
+          referencia,
           status: statusNota,
           numero: resposta.numero,
           serie: resposta.serie,
@@ -320,6 +376,19 @@ export async function emitirNotaFiscal(
           danfeUrl: resposta.caminhoDanfe,
           mensagemErro: formatarMensagemErroNfe(resposta),
         },
+      });
+
+      await tx.notaFiscalItem.createMany({
+        data: itensSelecionados.map(({ item, quantidade }) => {
+          const precoUnitario = paraDecimal(item.precoUnitario.toString());
+          return {
+            notaFiscalId: notaCriada.id,
+            orcamentoItemId: item.id,
+            quantidade: quantidade.toFixed(4),
+            precoUnitario: precoUnitario.toFixed(4),
+            precoTotal: precoUnitario.times(quantidade).toFixed(4),
+          };
+        }),
       });
 
       if (statusNota === "AUTORIZADA") {
@@ -355,14 +424,14 @@ export async function atualizarStatusNotaFiscal(
     return { ok: false, mensagem: "Você não tem permissão pra editar orçamentos." };
   }
   const orcamentoId = String(formData.get("orcamentoId"));
+  // Feature de nota fiscal PARCIAL (2026-09-22) — orcamentoId sozinho não
+  // identifica mais uma nota única (um orçamento pode ter várias NFE, além
+  // de uma eventual NFSE numa venda mista). A tela agora tem um botão
+  // "Atualizar status" por nota da lista, cada um mandando o próprio id.
+  const notaFiscalId = String(formData.get("notaFiscalId"));
 
   const notaFiscal = await prisma.notaFiscal.findFirst({
-    // Achado F2 da auditoria de abrangência — orcamentoId sozinho não é mais
-    // único (pode ter 1 NFE + 1 NFSE pro mesmo orçamento numa venda mista).
-    // Esta Server Action (chamada pelo botão "Atualizar status" do
-    // NotaFiscalCard, que só existe pra NF-e nesta rodada) filtra
-    // explicitamente modelo=NFE.
-    where: { orcamentoId, graficaId: usuario.graficaId, modelo: "NFE" },
+    where: { id: notaFiscalId, orcamentoId, graficaId: usuario.graficaId, modelo: "NFE" },
     include: {
       orcamento: { select: { filialId: true, clienteId: true, condicaoPagamentoId: true, total: true } },
     },

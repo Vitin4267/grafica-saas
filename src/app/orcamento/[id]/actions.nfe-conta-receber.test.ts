@@ -121,7 +121,7 @@ async function criarFixtureFiscal(opts: {
       condicaoPagamentoId: opts.condicaoPagamentoId ?? null,
     },
   });
-  await prisma.orcamentoItem.create({
+  const orcamentoItem = await prisma.orcamentoItem.create({
     data: {
       orcamentoId: orcamento.id,
       itemGraficaId: itemGrafica.id,
@@ -138,9 +138,20 @@ async function criarFixtureFiscal(opts: {
     clienteId: cliente.id,
     usuarioId: dono.id,
     orcamentoId: orcamento.id,
+    orcamentoItemId: orcamentoItem.id,
     dono,
     nomeCatalogo: catalogo.nome,
   };
+}
+
+// Feature de nota fiscal PARCIAL (2026-09-22) — emitirNotaFiscal agora lê a
+// quantidade de cada item de um campo `quantidade_${orcamentoItemId}` (em
+// vez de faturar o orçamento inteiro sempre). Todas as fixtures deste
+// arquivo têm um item só, quantidade 1 — este helper monta o FormData já
+// pedindo a quantidade inteira daquele item, preservando o comportamento
+// "emitir tudo" que os testes abaixo esperam.
+function formDataEmitirTudo(f: { orcamentoId: string; orcamentoItemId: string }): FormData {
+  return formDataDe({ orcamentoId: f.orcamentoId, [`quantidade_${f.orcamentoItemId}`]: "1" });
 }
 
 function formDataDe(campos: Record<string, string>): FormData {
@@ -212,7 +223,7 @@ describe("emissão de NF-e — geração automática de ContaReceber (achado R1)
         )
       );
 
-      const resultado = await emitirNotaFiscal(null, formDataDe({ orcamentoId: f.orcamentoId }));
+      const resultado = await emitirNotaFiscal(null, formDataEmitirTudo(f));
       expect(resultado.ok).toBe(true);
 
       const notaFiscal = await prisma.notaFiscal.findFirstOrThrow({ where: { orcamentoId: f.orcamentoId } });
@@ -247,11 +258,10 @@ describe("emissão de NF-e — geração automática de ContaReceber (achado R1)
         vi.fn().mockResolvedValueOnce(respostaFocusNfe({ status: "processando_autorizacao" }))
       );
 
-      const emissao = await emitirNotaFiscal(null, formDataDe({ orcamentoId: f.orcamentoId }));
+      const emissao = await emitirNotaFiscal(null, formDataEmitirTudo(f));
       expect(emissao.ok).toBe(true);
-      expect((await prisma.notaFiscal.findFirstOrThrow({ where: { orcamentoId: f.orcamentoId } })).status).toBe(
-        "PROCESSANDO"
-      );
+      const notaProcessando = await prisma.notaFiscal.findFirstOrThrow({ where: { orcamentoId: f.orcamentoId } });
+      expect(notaProcessando.status).toBe("PROCESSANDO");
       // Ainda processando — nenhuma ContaReceber gerada.
       expect(await prisma.contaReceber.count({ where: { orcamentoId: f.orcamentoId } })).toBe(0);
 
@@ -261,7 +271,10 @@ describe("emissão de NF-e — geração automática de ContaReceber (achado R1)
           respostaFocusNfe({ status: "autorizado", numero: "2002", serie: "1", chave_nfe: "35260" })
         )
       );
-      const consulta1 = await atualizarStatusNotaFiscal(null, formDataDe({ orcamentoId: f.orcamentoId }));
+      const consulta1 = await atualizarStatusNotaFiscal(
+        null,
+        formDataDe({ orcamentoId: f.orcamentoId, notaFiscalId: notaProcessando.id })
+      );
       expect(consulta1.ok).toBe(true);
       expect((await prisma.notaFiscal.findFirstOrThrow({ where: { orcamentoId: f.orcamentoId } })).status).toBe(
         "AUTORIZADA"
@@ -285,7 +298,10 @@ describe("emissão de NF-e — geração automática de ContaReceber (achado R1)
           respostaFocusNfe({ status: "autorizado", numero: "2002", serie: "1", chave_nfe: "35260" })
         )
       );
-      const consulta2 = await atualizarStatusNotaFiscal(null, formDataDe({ orcamentoId: f.orcamentoId }));
+      const consulta2 = await atualizarStatusNotaFiscal(
+        null,
+        formDataDe({ orcamentoId: f.orcamentoId, notaFiscalId: notaProcessando.id })
+      );
       expect(consulta2.ok).toBe(true);
 
       const contasDepoisDaSegundaConsulta = await prisma.contaReceber.findMany({
@@ -316,7 +332,7 @@ describe("emissão de NF-e — descrição do item (achado N17)", () => {
       );
       vi.stubGlobal("fetch", fetchMock);
 
-      const resultado = await emitirNotaFiscal(null, formDataDe({ orcamentoId: f.orcamentoId }));
+      const resultado = await emitirNotaFiscal(null, formDataEmitirTudo(f));
       expect(resultado.ok).toBe(true);
 
       const corpoEnviado = JSON.parse(String(fetchMock.mock.calls[0][1].body));
@@ -335,7 +351,7 @@ describe("emissão de NF-e — descrição do item (achado N17)", () => {
       );
       vi.stubGlobal("fetch", fetchMock);
 
-      const resultado = await emitirNotaFiscal(null, formDataDe({ orcamentoId: f.orcamentoId }));
+      const resultado = await emitirNotaFiscal(null, formDataEmitirTudo(f));
       expect(resultado.ok).toBe(true);
 
       const corpoEnviado = JSON.parse(String(fetchMock.mock.calls[0][1].body));

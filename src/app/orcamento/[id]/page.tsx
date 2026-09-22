@@ -14,7 +14,7 @@ import { resolverOrigemPublica } from "@/lib/url-publica";
 import { decifrarOuNull } from "@/lib/cripto";
 import { buscarCustoRealVsOrcado } from "@/lib/custo-producao";
 import { resolverEtapasGrafica } from "@/lib/etapa-grafica";
-import { verificarProntidaoFiscal, resolverDadosFiscais } from "@/lib/nota-fiscal";
+import { verificarProntidaoFiscal, resolverDadosFiscais, quantidadeRestanteParaFaturar } from "@/lib/nota-fiscal";
 import { formatoMoeda } from "@/lib/moeda";
 import { calcularConversoesPreco } from "@/lib/unidade-contagem";
 import {
@@ -129,6 +129,10 @@ export default async function OrcamentoDetalhePage({
             precificacaoDigital: true, // achado N4
             precificacaoOffset: true, // achado N8
             faixasQuantidade: { orderBy: { quantidade: "asc" } }, // achado B5
+            // Feature de nota fiscal PARCIAL (2026-09-22) — pra calcular o
+            // restante a faturar de cada item (quantidadeRestanteParaFaturar,
+            // src/lib/nota-fiscal.ts).
+            notaFiscalItens: { include: { notaFiscal: { select: { status: true } } } },
           },
         },
         opcoes: {
@@ -408,19 +412,36 @@ export default async function OrcamentoDetalhePage({
   // Orcamento.notaFiscal virou lista (1 nota por MODELO por orçamento, não
   // mais 1:1) pra permitir NFE+NFSE na mesma venda mista. O NotaFiscalCard
   // só existe pra NF-e nesta rodada (emissão de NFS-e é fase 2, fora de
-  // escopo) — filtra explicitamente a nota modelo=NFE.
-  const notaFiscalNfe = orcamento.notaFiscal.find((n) => n.modelo === "NFE") ?? null;
+  // escopo) — filtra explicitamente as notas modelo=NFE.
+  //
+  // Feature de nota fiscal PARCIAL (2026-09-22) — passa a ser uma LISTA
+  // (não mais "a" nota), mais o restante a faturar de cada item (soma de
+  // NotaFiscalItem já não-rejeitada/cancelada, ver
+  // quantidadeRestanteParaFaturar em src/lib/nota-fiscal.ts).
+  const notasFiscaisNfe = orcamento.notaFiscal
+    .filter((n) => n.modelo === "NFE")
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+  const itensComRestante = orcamento.itens.map((item) => ({
+    id: item.id,
+    nome: item.descricaoLivre ?? item.itemGrafica.itemCatalogo.nome,
+    quantidadeTotal: item.quantidade,
+    restante: quantidadeRestanteParaFaturar(item).toNumber(),
+  }));
+  const faltaFaturarAlgumItem = itensComRestante.some((item) => item.restante > 0);
 
   let checagemFiscal: { pronto: boolean; pendencias: string[] } | null = null;
-  if (orcamento.status === "APROVADO" && !notaFiscalNfe) {
+  if (orcamento.status === "APROVADO" && faltaFaturarAlgumItem) {
     const dadosFiscais = await resolverDadosFiscais(orcamento.filialId, usuario.graficaId);
     checagemFiscal = verificarProntidaoFiscal({
       dadosFiscais,
       cliente: orcamento.cliente,
-      itens: orcamento.itens.map((item) => ({
-        nome: item.itemGrafica.itemCatalogo.nome,
-        ncm: item.itemGrafica.itemCatalogo.ncm,
-      })),
+      itens: orcamento.itens
+        .filter((item) => itensComRestante.find((i) => i.id === item.id)!.restante > 0)
+        .map((item) => ({
+          nome: item.itemGrafica.itemCatalogo.nome,
+          ncm: item.itemGrafica.itemCatalogo.ncm,
+        })),
     });
   }
 
@@ -1087,7 +1108,8 @@ export default async function OrcamentoDetalhePage({
         {orcamento.status === "APROVADO" && (
           <NotaFiscalCard
             orcamentoId={orcamento.id}
-            notaFiscal={notaFiscalNfe}
+            notasFiscais={notasFiscaisNfe}
+            itens={itensComRestante}
             pendencias={checagemFiscal?.pendencias ?? []}
           />
         )}

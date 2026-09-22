@@ -6,9 +6,11 @@ import type {
   IndicadorInscricaoEstadual,
   ModeloDocumentoFiscal,
   RegimeTributario,
+  StatusNotaFiscal,
   TipoFrete,
 } from "@/generated/prisma/enums";
 import { decifrarOuNull } from "@/lib/cripto";
+import { paraDecimal, type Dec } from "@/lib/pricing/decimal";
 
 // Dados fiscais "resolvidos" pra um orçamento/filial — DadosFiscaisFilial
 // espelha DadosFiscaisGrafica campo a campo (só troca graficaId por
@@ -222,6 +224,36 @@ export function verificarProntidaoFiscal(input: {
   }
 
   return { pronto: pendencias.length === 0, pendencias };
+}
+
+// Feature de nota fiscal PARCIAL (2026-09-22) — quanto de um OrcamentoItem
+// já foi coberto por alguma NotaFiscal, e quanto ainda resta. Mesmo idioma
+// de saldoContaReceber/saldoDespesa (src/lib/baixa-financeira.ts): NUNCA um
+// campo cumulativo solto no banco (que pode dessincronizar se uma nota for
+// rejeitada/cancelada depois) — sempre recalculado somando as filhas
+// (NotaFiscalItem) na hora. REJEITADA/CANCELADA são excluídas da soma: a
+// Focus NFe nunca autorizou essas notas, então a quantidade que elas
+// tentaram cobrir nunca saiu de verdade — volta a ficar disponível pra
+// faturar de novo. PROCESSANDO conta como já comprometida (não IGNORAMOS
+// só porque ainda não confirmou) — senão duas notas parciais enviadas em
+// sequência rápida, ambas ainda PROCESSANDO, poderiam juntas ultrapassar a
+// quantidade do item antes de qualquer uma virar AUTORIZADA/REJEITADA.
+const STATUS_NOTA_QUE_LIBERA_QUANTIDADE = new Set<StatusNotaFiscal>(["REJEITADA", "CANCELADA"]);
+
+export type ItemParaSaldoFaturamento = {
+  id: string;
+  quantidade: number;
+  notaFiscalItens: { quantidade: Prisma.Decimal; notaFiscal: { status: StatusNotaFiscal } }[];
+};
+
+export function quantidadeJaFaturada(item: ItemParaSaldoFaturamento): Dec {
+  return item.notaFiscalItens
+    .filter((ni) => !STATUS_NOTA_QUE_LIBERA_QUANTIDADE.has(ni.notaFiscal.status))
+    .reduce((soma, ni) => soma.plus(paraDecimal(ni.quantidade.toString())), paraDecimal(0));
+}
+
+export function quantidadeRestanteParaFaturar(item: ItemParaSaldoFaturamento): Dec {
+  return paraDecimal(item.quantidade).minus(quantidadeJaFaturada(item));
 }
 
 // CFOP fixo de venda interestadual de mercadoria adquirida/recebida de

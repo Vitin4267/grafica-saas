@@ -165,17 +165,26 @@ enum ModeloDocumentoFiscal {
 
 // Uma nota fiscal emitida (ou em processamento) pra um orçamento aprovado.
 // Até o achado F2, 1:1 com Orcamento (mesmo padrão de Pedido) — `orcamentoId`
-// sozinho era @unique. Agora N:1 (ver Orcamento.notaFiscal NotaFiscal[]):
-// um MESMO orçamento pode ter uma NFE (mercadoria) e uma NFSE (serviço) numa
-// venda mista (ex: outdoor com material do cliente + revenda de brinde no
-// mesmo pedido) — @@unique([orcamentoId, modelo]) permite no máximo UMA nota
-// por MODELO por orçamento (continua impedindo duas NF-e pro mesmo
-// orçamento), estritamente menos restritivo que o @unique simples de antes.
+// sozinho era @unique. Depois, N:1 por MODELO (uma NFE + uma NFSE no mesmo
+// orçamento, venda mista) via @@unique([orcamentoId, modelo]).
+//
+// Feature de nota fiscal PARCIAL (2026-09-22): @@unique([orcamentoId,
+// modelo]) virou @@index simples — um orçamento pode ter VÁRIAS NFE agora,
+// cada uma cobrindo só uma parte da quantidade de cada item (ex: cliente
+// pediu urgência numa parte do pedido). O que cada nota cobriu de fato mora
+// em NotaFiscalItem (abaixo) — quanto já foi faturado de um OrcamentoItem é
+// sempre a SOMA de NotaFiscalItem.quantidade através das notas não
+// REJEITADA/CANCELADA daquele item (mesmo idioma de saldoContaReceber/
+// saldoDespesa em src/lib/baixa-financeira.ts: nunca um campo cumulativo
+// solto que pode dessincronizar, sempre recalculado a partir das filhas).
+// Validação de "não pode faturar mais do que resta" vive na Server Action
+// (emitirNotaFiscal, src/app/orcamento/[id]/actions/nfe.ts), não aqui.
+//
 // `referencia` continua @unique GLOBAL (chave que mandamos pra Focus NFe pra
-// idempotência) — hoje sempre igual a orcamentoId; um futuro emissor de
-// NFS-e/NFC-e pro MESMO orçamento precisa de uma referencia distinta (ex:
-// "${orcamentoId}-NFSE"), já que não dá pra repetir orcamentoId puro numa
-// segunda linha. `chaveAcesso` só existe depois de AUTORIZADA.
+// idempotência) — antes sempre igual a orcamentoId; agora precisa variar por
+// nota (`${orcamentoId}-${sequencial}`, ver emitirNotaFiscal) já que pode
+// haver várias NFE pro mesmo orçamento. `chaveAcesso` só existe depois de
+// AUTORIZADA.
 model NotaFiscal {
   id           String                @id @default(cuid())
   graficaId    String
@@ -192,10 +201,38 @@ model NotaFiscal {
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
 
-  grafica   Grafica   @relation(fields: [graficaId], references: [id], onDelete: Cascade)
-  orcamento Orcamento @relation(fields: [orcamentoId], references: [id])
+  grafica   Grafica          @relation(fields: [graficaId], references: [id], onDelete: Cascade)
+  orcamento Orcamento        @relation(fields: [orcamentoId], references: [id])
+  itens     NotaFiscalItem[]
 
-  @@unique([orcamentoId, modelo])
+  @@index([orcamentoId, modelo])
   @@index([graficaId])
   @@map("notas_fiscais")
+}
+
+// Filha de NotaFiscal — snapshot de quanto de cada OrcamentoItem foi
+// incluído NESTA nota específica (feature de nota fiscal parcial,
+// 2026-09-22). Sem graficaId próprio: escopada via notaFiscalId, mesmo
+// idioma de BaixaContaReceber/PagamentoDespesa (src/lib/baixa-financeira.ts)
+// — filha de um pai já validado no request, não repete graficaId. Por isso
+// também não entra em MODELOS_COM_GRAFICA_ID/MODELOS_COM_RLS_ATIVO
+// (src/lib/prisma-tenant-guard.ts), mesmo caso das duas acima.
+// precoUnitario/precoTotal em 4 casas (Decimal(12,4)) — mesma precisão de
+// OrcamentoItem desde a rodada de precisão de preço (2026-09-21), nunca
+// arredondado antes da hora.
+model NotaFiscalItem {
+  id              String   @id @default(cuid())
+  notaFiscalId    String
+  orcamentoItemId String
+  quantidade      Decimal  @db.Decimal(12, 4)
+  precoUnitario   Decimal  @db.Decimal(12, 4)
+  precoTotal      Decimal  @db.Decimal(12, 4)
+  createdAt       DateTime @default(now())
+
+  notaFiscal    NotaFiscal    @relation(fields: [notaFiscalId], references: [id], onDelete: Cascade)
+  orcamentoItem OrcamentoItem @relation(fields: [orcamentoItemId], references: [id], onDelete: Cascade)
+
+  @@index([notaFiscalId])
+  @@index([orcamentoItemId])
+  @@map("nota_fiscal_itens")
 }

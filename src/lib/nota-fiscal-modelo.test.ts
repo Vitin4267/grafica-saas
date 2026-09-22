@@ -168,7 +168,29 @@ describe("achado F2 — NotaFiscal.modelo e @@unique([orcamentoId, modelo])", ()
   );
 
   it(
-    "continua impedindo DUAS notas do MESMO modelo pro mesmo orçamento (a constraint de antes não regrediu)",
+    "feature de nota fiscal parcial (2026-09-22): PERMITE duas notas do MESMO modelo pro mesmo orçamento agora " +
+      "(a constraint única virou índice normal — validação de quantidade restante é regra de aplicação, não de banco)",
+    async () => {
+      const { graficaId, orcamentoId } = await criarFixture();
+      await prisma.notaFiscal.create({
+        data: { graficaId, orcamentoId, modelo: "NFE", referencia: `${orcamentoId}-1` },
+      });
+      const segunda = await prisma.notaFiscal.create({
+        data: { graficaId, orcamentoId, modelo: "NFE", referencia: `${orcamentoId}-2` },
+      });
+      expect(segunda.modelo).toBe("NFE");
+
+      const orcamentoComNotas = await prisma.orcamento.findUniqueOrThrow({
+        where: { id: orcamentoId },
+        include: { notaFiscal: true },
+      });
+      expect(orcamentoComNotas.notaFiscal.filter((n) => n.modelo === "NFE")).toHaveLength(2);
+    },
+    TIMEOUT_MS
+  );
+
+  it(
+    "referencia continua @unique global — duas notas não podem repetir a mesma referencia",
     async () => {
       const { graficaId, orcamentoId } = await criarFixture();
       await prisma.notaFiscal.create({
@@ -176,9 +198,60 @@ describe("achado F2 — NotaFiscal.modelo e @@unique([orcamentoId, modelo])", ()
       });
       await expect(
         prisma.notaFiscal.create({
-          data: { graficaId, orcamentoId, modelo: "NFE", referencia: `${orcamentoId}-outra` },
+          data: { graficaId, orcamentoId, modelo: "NFE", referencia: orcamentoId },
         })
       ).rejects.toThrow();
+    },
+    TIMEOUT_MS
+  );
+});
+
+describe("feature de nota fiscal parcial (2026-09-22) — NotaFiscalItem", () => {
+  it(
+    "grava quantidade/precoUnitario/precoTotal em 4 casas, escopado por notaFiscalId (sem graficaId próprio)",
+    async () => {
+      const { graficaId, orcamentoId } = await criarFixture();
+      const s = sufixo();
+      const itemCatalogo = await prisma.itemCatalogo.create({
+        data: { graficaId, tipo: "PRODUTO", categoria: "Etiqueta", nome: `Etiqueta ${s}` },
+      });
+      const itemGrafica = await prisma.itemGrafica.create({
+        data: { graficaId, itemCatalogoId: itemCatalogo.id, precoVenda: "0.0680" },
+      });
+      const orcamentoItem = await prisma.orcamentoItem.create({
+        data: {
+          orcamentoId,
+          itemGraficaId: itemGrafica.id,
+          quantidade: 60000,
+          precoUnitario: "0.0680",
+          precoTotal: "4080.00",
+        },
+      });
+      const nota = await prisma.notaFiscal.create({
+        data: { graficaId, orcamentoId, modelo: "NFE", referencia: `${orcamentoId}-1` },
+      });
+      const notaItem = await prisma.notaFiscalItem.create({
+        data: {
+          notaFiscalId: nota.id,
+          orcamentoItemId: orcamentoItem.id,
+          quantidade: "30000.0000",
+          precoUnitario: "0.0680",
+          precoTotal: "2040.0000",
+        },
+      });
+      expect(notaItem.quantidade.toString()).toBe("30000");
+      expect(notaItem.precoUnitario.toString()).toBe("0.068");
+      expect(notaItem.precoTotal.toString()).toBe("2040");
+
+      // Limpeza explícita, na ordem certa de dependência — o afterEach
+      // compartilhado deste arquivo só sabe apagar orcamento (cascata até
+      // orcamentoItem) e itemCatalogo, nessa ordem; itemGrafica.itemCatalogoId
+      // é RESTRICT (não Cascade) e orcamentoItem.itemGraficaId também, então
+      // sem isto aqui o afterEach quebra tentando apagar itemCatalogo com
+      // itemGrafica ainda vivo.
+      await prisma.notaFiscalItem.deleteMany({ where: { notaFiscalId: nota.id } });
+      await prisma.orcamentoItem.deleteMany({ where: { id: orcamentoItem.id } });
+      await prisma.itemGrafica.deleteMany({ where: { graficaId } });
     },
     TIMEOUT_MS
   );

@@ -754,6 +754,10 @@ model OrcamentoItem {
   // no máximo 1 linha por item na prática, mas [] porque a FK real é
   // ItemPedidoStatus.pedidoId, não um 1:1 direto aqui).
   itensStatusPedido    ItemPedidoStatus[]
+  // Feature de nota fiscal parcial (2026-09-22) — quanto deste item já foi
+  // incluído em alguma NotaFiscal, ver comentário completo em
+  // NotaFiscalItem (02-fiscal.prisma).
+  notaFiscalItens      NotaFiscalItem[]
 
   @@index([orcamentoId])
   @@index([opcaoId])

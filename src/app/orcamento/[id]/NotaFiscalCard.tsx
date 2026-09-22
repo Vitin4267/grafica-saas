@@ -22,7 +22,7 @@ const COR_STATUS: Record<string, string> = {
   ERRO: "bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300",
 };
 
-// Espelha o prefixo que actions.ts (formatarMensagemErroNfe) grava em
+// Espelha o prefixo que actions/nfe.ts (formatarMensagemErroNfe) grava em
 // mensagemErro quando a SEFAZ denega a nota — diferente de uma rejeição por
 // dados inválidos, denegação é bloqueio fiscal do destinatário e pode não
 // sumir só corrigindo um campo. StatusNotaFiscal não tem um valor DENEGADO
@@ -30,6 +30,7 @@ const COR_STATUS: Record<string, string> = {
 const PREFIXO_DENEGADO = "SEFAZ denegou:";
 
 type NotaFiscalExistente = {
+  id: string;
   status: string;
   chaveAcesso: string | null;
   xmlUrl: string | null;
@@ -37,110 +38,143 @@ type NotaFiscalExistente = {
   mensagemErro: string | null;
 };
 
-export function NotaFiscalCard({
-  orcamentoId,
-  notaFiscal,
-  pendencias,
-}: {
-  orcamentoId: string;
-  notaFiscal: NotaFiscalExistente | null;
-  pendencias: string[];
-}) {
-  const [estadoEmissao, emitirAction, emitindo] = useActionState(emitirNotaFiscal, null);
+// Feature de nota fiscal PARCIAL (2026-09-22) — um item do orçamento com o
+// restante já calculado no servidor (quantidadeRestanteParaFaturar, ver
+// page.tsx), pronto pra virar uma linha do formulário de emissão.
+type ItemParaFaturar = {
+  id: string;
+  nome: string;
+  quantidadeTotal: number;
+  restante: number;
+};
+
+function CardNotaExistente({ nota }: { nota: NotaFiscalExistente }) {
   const [estadoAtualizacao, atualizarAction, atualizando] = useActionState(
     atualizarStatusNotaFiscal,
     null
   );
 
   return (
-    <Card className="mb-6 p-5">
-      <div className="mb-3 flex items-center justify-between">
-        <p className="text-sm font-medium text-slate-500">Nota fiscal</p>
-        {notaFiscal && (
-          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${COR_STATUS[notaFiscal.status]}`}>
-            {ROTULO_STATUS[notaFiscal.status]}
-          </span>
-        )}
+    <div className="flex flex-col gap-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+      <div className="flex items-center justify-between">
+        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${COR_STATUS[nota.status]}`}>
+          {ROTULO_STATUS[nota.status]}
+        </span>
       </div>
-
-      {!notaFiscal ? (
-        pendencias.length > 0 ? (
-          <Alert variant="error">
-            <span className="font-medium">Falta configurar antes de emitir:</span>
-            <ul className="mt-1 list-disc pl-4">
-              {pendencias.map((pendencia) => (
-                <li key={pendencia}>{pendencia}</li>
-              ))}
-            </ul>
-          </Alert>
-        ) : (
-          <form action={emitirAction}>
-            <input type="hidden" name="orcamentoId" value={orcamentoId} />
-            {estadoEmissao && !estadoEmissao.ok && (
-              <Alert variant="error">{estadoEmissao.mensagem}</Alert>
-            )}
-            <Button type="submit" loading={emitindo} className="mt-2">
-              {emitindo ? "Emitindo..." : "Emitir nota fiscal"}
-            </Button>
-          </form>
-        )
-      ) : (
-        <div className="flex flex-col gap-3">
-          {notaFiscal.chaveAcesso && (
-            <p className="break-all text-xs text-slate-500">
-              Chave de acesso: {notaFiscal.chaveAcesso}
-            </p>
+      {nota.chaveAcesso && (
+        <p className="break-all text-xs text-slate-500">Chave de acesso: {nota.chaveAcesso}</p>
+      )}
+      {nota.mensagemErro && (
+        <Alert variant={nota.status === "AUTORIZADA" ? "success" : "error"}>{nota.mensagemErro}</Alert>
+      )}
+      {nota.status === "REJEITADA" && nota.mensagemErro?.startsWith(PREFIXO_DENEGADO) && (
+        <Alert variant="error">
+          Essa nota foi <span className="font-medium">denegada pela SEFAZ</span>, não apenas rejeitada
+          por dados inválidos — geralmente é um bloqueio fiscal do destinatário (ex.: CNPJ irregular).
+          Pode ser necessário regularizar a situação do cliente antes de emitir de novo.
+        </Alert>
+      )}
+      {nota.status === "AUTORIZADA" && (nota.xmlUrl || nota.danfeUrl) && (
+        <div className="flex gap-4 text-sm font-medium text-teal-700 dark:text-teal-400">
+          {nota.danfeUrl && (
+            <a href={nota.danfeUrl} target="_blank" rel="noopener noreferrer" className="hover:underline">
+              Baixar DANFE (PDF)
+            </a>
           )}
-          {notaFiscal.mensagemErro && (
-            <Alert variant={notaFiscal.status === "AUTORIZADA" ? "success" : "error"}>
-              {notaFiscal.mensagemErro}
-            </Alert>
-          )}
-          {notaFiscal.status === "REJEITADA" && notaFiscal.mensagemErro?.startsWith(PREFIXO_DENEGADO) && (
-            <Alert variant="error">
-              Essa nota foi <span className="font-medium">denegada pela SEFAZ</span>, não apenas
-              rejeitada por dados inválidos — geralmente é um bloqueio fiscal do destinatário
-              (ex.: CNPJ irregular). Pode ser necessário regularizar a situação do cliente antes
-              de tentar emitir de novo.
-            </Alert>
-          )}
-          {notaFiscal.status === "AUTORIZADA" && (notaFiscal.xmlUrl || notaFiscal.danfeUrl) && (
-            <div className="flex gap-4 text-sm font-medium text-teal-700 dark:text-teal-400">
-              {notaFiscal.danfeUrl && (
-                <a href={notaFiscal.danfeUrl} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                  Baixar DANFE (PDF)
-                </a>
-              )}
-              {notaFiscal.xmlUrl && (
-                <a href={notaFiscal.xmlUrl} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                  Baixar XML
-                </a>
-              )}
-            </div>
-          )}
-          {notaFiscal.status === "PROCESSANDO" && (
-            <form action={atualizarAction}>
-              <input type="hidden" name="orcamentoId" value={orcamentoId} />
-              {estadoAtualizacao && !estadoAtualizacao.ok && (
-                <Alert variant="error">{estadoAtualizacao.mensagem}</Alert>
-              )}
-              <Button type="submit" variant="outline" loading={atualizando} className="mt-1">
-                {atualizando ? "Consultando..." : "Atualizar status"}
-              </Button>
-            </form>
-          )}
-          {notaFiscal.status === "REJEITADA" && (
-            <form action={emitirAction}>
-              <input type="hidden" name="orcamentoId" value={orcamentoId} />
-              {estadoEmissao && !estadoEmissao.ok && (
-                <Alert variant="error">{estadoEmissao.mensagem}</Alert>
-              )}
-              <Button type="submit" loading={emitindo} className="mt-1">
-                {emitindo ? "Emitindo..." : "Tentar emitir de novo"}
-              </Button>
-            </form>
+          {nota.xmlUrl && (
+            <a href={nota.xmlUrl} target="_blank" rel="noopener noreferrer" className="hover:underline">
+              Baixar XML
+            </a>
           )}
         </div>
+      )}
+      {nota.status === "PROCESSANDO" && (
+        <form action={atualizarAction}>
+          <input type="hidden" name="notaFiscalId" value={nota.id} />
+          {estadoAtualizacao && !estadoAtualizacao.ok && <Alert variant="error">{estadoAtualizacao.mensagem}</Alert>}
+          <Button type="submit" variant="outline" loading={atualizando} className="mt-1">
+            {atualizando ? "Consultando..." : "Atualizar status"}
+          </Button>
+        </form>
+      )}
+    </div>
+  );
+}
+
+export function NotaFiscalCard({
+  orcamentoId,
+  notasFiscais,
+  itens,
+  pendencias,
+}: {
+  orcamentoId: string;
+  notasFiscais: NotaFiscalExistente[];
+  itens: ItemParaFaturar[];
+  pendencias: string[];
+}) {
+  const [estadoEmissao, emitirAction, emitindo] = useActionState(emitirNotaFiscal, null);
+  const itensComRestante = itens.filter((item) => item.restante > 0);
+
+  return (
+    <Card className="mb-6 p-5">
+      <p className="mb-3 text-sm font-medium text-slate-500">Nota fiscal</p>
+
+      {notasFiscais.length > 0 && (
+        <div className="mb-4 flex flex-col gap-3">
+          {notasFiscais.map((nota) => (
+            <CardNotaExistente key={nota.id} nota={nota} />
+          ))}
+        </div>
+      )}
+
+      {itensComRestante.length === 0 ? (
+        notasFiscais.length === 0 && (
+          <p className="text-sm text-slate-500">Nenhum item pra faturar.</p>
+        )
+      ) : pendencias.length > 0 ? (
+        <Alert variant="error">
+          <span className="font-medium">Falta configurar antes de emitir:</span>
+          <ul className="mt-1 list-disc pl-4">
+            {pendencias.map((pendencia) => (
+              <li key={pendencia}>{pendencia}</li>
+            ))}
+          </ul>
+        </Alert>
+      ) : (
+        <form action={emitirAction} className="flex flex-col gap-3">
+          <input type="hidden" name="orcamentoId" value={orcamentoId} />
+          <p className="text-xs text-slate-500">
+            {notasFiscais.length > 0
+              ? "Ainda falta faturar parte deste orçamento — escolha a quantidade de cada item pra incluir nesta nota."
+              : "Escolha a quantidade de cada item pra incluir nesta nota (pré-preenchida com o total, edite pra emitir uma nota parcial)."}
+          </p>
+          <div className="flex flex-col gap-2">
+            {itensComRestante.map((item) => (
+              <div key={item.id} className="flex items-center justify-between gap-3 text-sm">
+                <label htmlFor={`quantidade_${item.id}`} className="min-w-0 flex-1 truncate" title={item.nome}>
+                  {item.nome}
+                  <span className="ml-1 text-xs text-slate-500">
+                    (restam {item.restante} de {item.quantidadeTotal})
+                  </span>
+                </label>
+                <input
+                  id={`quantidade_${item.id}`}
+                  name={`quantidade_${item.id}`}
+                  type="number"
+                  min={0}
+                  max={item.restante}
+                  step="any"
+                  defaultValue={item.restante}
+                  className="w-24 rounded-md border border-slate-300 px-2 py-1 text-right text-sm dark:border-slate-600 dark:bg-slate-800"
+                />
+              </div>
+            ))}
+          </div>
+          {estadoEmissao && !estadoEmissao.ok && <Alert variant="error">{estadoEmissao.mensagem}</Alert>}
+          <Button type="submit" loading={emitindo} className="mt-1">
+            {emitindo ? "Emitindo..." : "Emitir nota fiscal"}
+          </Button>
+        </form>
       )}
     </Card>
   );
