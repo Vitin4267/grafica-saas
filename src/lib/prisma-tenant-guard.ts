@@ -232,6 +232,50 @@ export const MODELOS_COM_RLS_ATIVO = new Set([
   // set_config da transação fica visível pros JOINs aninhados, mesmo
   // mecanismo do achado do Sessao/Grafica acima.
   "OrcamentoItem",
+
+  // Auditoria completa do repo (2026-09-22, agente dedicado — pendência
+  // deixada em aberto desde o achado do OrcamentoItem acima) atrás de
+  // TODAS as instâncias restantes deste mesmo padrão: top-level de uma
+  // chamada Prisma fora deste Set, cujo include/select aninhado alcança
+  // um model com RLS real (Cliente, ContaReceber, DadosFiscaisGrafica,
+  // Pedido, Entrega, ParametrosGrafica, Filial, Orcamento, Fornecedor,
+  // ItemCatalogo, ItemGrafica, Usuario, PerfilAcesso, ContaFinanceira,
+  // Despesa, ContaPrepaga, Comissao, RegraComissao, CategoriaCusto,
+  // CustoPedido). Achou 19 call sites a mais, em 15 arquivos, nenhum deles
+  // com policy própria — cada um entra aqui pelo MESMO motivo dos de cima
+  // (deixar o set_config visível pro join aninhado), nunca por ter RLS
+  // própria no Postgres:
+  // - ResponsavelAdministrativo (3 call sites: alerta-prazo-email.ts,
+  //   alerta-estoque.ts, nota-fiscal.ts — todos `include: { usuario }`,
+  //   consumido sem null-guard)
+  // - VarianteMateriaPrima (alerta-estoque.ts — `itemGrafica.itemCatalogo`)
+  // - ContratoFornecimento (4 call sites — contrato-fornecimento-db.ts,
+  //   compras/nova/page.tsx, compras/contratos/page.tsx e [id]/page.tsx —
+  //   `fornecedor`/`itemGrafica.itemCatalogo`)
+  // - MovimentacaoEstoque (3 call sites — custo-producao.ts,
+  //   comparativo-fornecedores-db.ts, configuracoes/fornecedores/[id]/
+  //   page.tsx — `itemGrafica.itemCatalogo`/`fornecedor`)
+  // - CotacaoFornecedor (4 call sites — cotacao-fornecedor-db.ts,
+  //   compras/[id]/page.tsx, compras/actions.ts×2 — `fornecedor`/`usuario`)
+  // - OrcamentoEntregaProgramada (actions/entrega-programada.ts —
+  //   `orcamento.itens`)
+  // - ArteItem (a/[token]/actions.ts — rota pública de aprovação de arte,
+  //   `orcamentoItem.itemGrafica.itemCatalogo`, MESMA assinatura de crash
+  //   do incidente de 2026-09-21, só que via token público em vez da
+  //   action autenticada)
+  // - Pagamento (exportacao-financeira-query.ts — `orcamento.cliente`)
+  // - NotaFiscal (actions/nfe.ts, atualizarStatusNotaFiscal —
+  //   `orcamento.filialId`; achado pré-existente, não introduzido pela
+  //   feature de nota fiscal parcial desta mesma sessão)
+  "ResponsavelAdministrativo",
+  "VarianteMateriaPrima",
+  "ContratoFornecimento",
+  "MovimentacaoEstoque",
+  "CotacaoFornecedor",
+  "OrcamentoEntregaProgramada",
+  "ArteItem",
+  "Pagamento",
+  "NotaFiscal",
 ]);
 
 const OPERACOES_CREATE = new Set(["create", "createMany", "createManyAndReturn"]);
