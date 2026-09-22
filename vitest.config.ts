@@ -59,6 +59,29 @@ export default defineConfig(({ mode }) => {
       // (mesmo achado que motivou isolar rls.test.ts acima, mas cobre
       // QUALQUER fonte do vazamento, não só aquele arquivo específico).
       setupFiles: ["src/test/setup.ts"],
+      // Achado investigando CI vermelho de novo (2026-09-22, depois do fix
+      // de isolamento acima já estar aplicado): a falha deixou de ser
+      // ErroIsolamentoTenant (zero ocorrência nos logs desde então) — virou
+      // "Transaction API error: Unable to start a transaction in the given
+      // time" (P2028) num arquivo ALEATÓRIO diferente a cada rodada (2
+      // rodadas seguidas, 2 arquivos sem nenhuma relação entre si, nenhum
+      // deles falha local isoladamente). Suspeita: o Postgres do CI
+      // (container `postgres:16-alpine`, recursos padrão, compartilhado com
+      // o resto do runner de 4 vCPU) fica sob pressão quando os forks
+      // (processos) do Vitest rodam em paralelo — cada fork abre seu
+      // próprio pool de conexão (`pg.Pool` via `@prisma/adapter-pg`,
+      // instanciado 1x por processo em src/lib/prisma.ts) E, desde a Fase B
+      // de RLS (2026-09-17), toda operação num model RLS-ativo já embrulha
+      // numa transação EXTRA só pra `set_config` — dobra o número de
+      // idas-e-vindas por operação. Não confirmei o mecanismo exato (não
+      // instrumentei pg_stat_activity dentro do job de CI), mas reduzir a
+      // concorrência é uma mudança segura e barata de testar: só em CI
+      // (`process.env.CI`, setado automaticamente pelo GitHub Actions),
+      // nunca localmente (onde a suíte inteira já roda bem com o
+      // paralelismo padrão, contra Neon).
+      ...(process.env.CI
+        ? { poolOptions: { forks: { maxForks: 2, minForks: 1 } } }
+        : {}),
       // Alguns testes (ver *.test.ts que importam @/lib/prisma — rate-limit,
       // checkout-reserva, catalogo-ncm) são integração de verdade contra o
       // Postgres de dev, não lógica pura: precisam de DATABASE_URL. `next dev`/
