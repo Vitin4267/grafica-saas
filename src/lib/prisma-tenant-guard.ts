@@ -168,6 +168,27 @@ export const MODELOS_COM_RLS_ATIVO = new Set([
   "CategoriaCusto",
   "CustoPedido",
 
+  // Rodada de 2026-09-22 — mais 2 tabelas com policy PRÓPRIA no Postgres
+  // (ver migration 20260922170000_rls_notafiscal_colaborador_auditoria):
+  // Colaborador (dado pessoal de funcionário) e LogAuditoria (integridade
+  // da trilha de auditoria entre tenants — um tenant nunca pode ler/
+  // adulterar o log de outro). Nenhuma das duas tem graficaId nullable,
+  // não precisa da variação especial de ItemCatalogo. Investigação prévia
+  // (call-site inventory completo antes de ligar a policy): todos os usos
+  // de Colaborador passam por exigirUsuarioAutenticado, nenhum semTenant,
+  // nenhum outro model inclui Colaborador aninhado — não precisou de mais
+  // nenhuma entrada no Set por causa dela. LogAuditoria é escrita só via
+  // registrarAuditoria() (src/lib/auditoria.ts), sempre depois do tenant
+  // já estabelecido (inclusive nas rotas de token público, onde o token
+  // resolve sob semTenant e SÓ DEPOIS a auditoria roda com tenant normal);
+  // allow_insert é incondicional, então mesmo se o contexto se perder no
+  // meio de um request, criar log nunca é bloqueado pela RLS, só leitura.
+  // NotaFiscal (a terceira tabela desta mesma migration) já estava neste
+  // Set desde a auditoria de ontem (só join-visibility) — agora também
+  // tem policy própria, sem precisar de nenhuma mudança de código aqui.
+  "Colaborador",
+  "LogAuditoria",
+
   // Achado real de produção (2026-09-18, Sentry pegou em /orcamento) —
   // categoria DIFERENTE dos nomes acima. Estes 6 models NÃO têm (nem vão
   // ganhar) RLS na própria tabela — entram aqui só porque cada um faz
